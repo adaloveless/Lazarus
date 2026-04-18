@@ -133,7 +133,7 @@ function Ensure-VPConfig {
 -Fu$rtlUnits
 -Fu$pkgUnits
 "@
-    Set-Content -Path $VPCfgPath -Value $cfgContent -Encoding UTF8
+    [IO.File]::WriteAllText($VPCfgPath, $cfgContent, (New-Object System.Text.UTF8Encoding $false))
     Log-Info "Generated VibePascal config: $VPCfgPath"
 }
 
@@ -295,6 +295,17 @@ function Find-Make {
     foreach ($p in $makePaths) {
         if ($p -and (Test-Path $p)) { return $p }
     }
+    foreach ($root in @("C:\lazarus\fpc", "C:\FPC")) {
+        if (Test-Path $root) {
+            $versionedDirs = Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^\d+\.\d+' } |
+                Sort-Object Name -Descending
+            foreach ($d in $versionedDirs) {
+                $candidate = Join-Path $d.FullName "bin\x86_64-win64\make.exe"
+                if (Test-Path $candidate) { return $candidate }
+            }
+        }
+    }
     return $null
 }
 
@@ -317,12 +328,15 @@ function Rebuild-Lazbuild {
     Log-Info "Using make: $make"
     Log-Info "Using compiler: $VPCompiler"
 
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & $make -C $LazarusDir clean 2>&1 | Select-Object -Last 1
 
     & $make -C $LazarusDir lazbuild `
         "PP=$VPCompiler" `
         "FPCDIR=$VPDir" `
         "OPT=-n @$VPCfgPath" 2>&1 | Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
+    $ErrorActionPreference = $prevEAP
 
     $lazbuildExe = Join-Path $LazarusDir "lazbuild.exe"
     if (Test-Path $lazbuildExe) {
@@ -355,8 +369,11 @@ function Rebuild-IDE {
     Log-Info "Using compiler: $VPCompiler"
     Log-Info "Building IDE with win32 widgetset..."
 
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 2>&1 |
         Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
+    $ErrorActionPreference = $prevEAP
 
     $lazarusExe = Join-Path $LazarusDir "lazarus.exe"
     if (Test-Path $lazarusExe) {
@@ -371,10 +388,13 @@ function Rebuild-IDE {
         Log-Info "Building startlazarus..."
         $make = Find-Make
         if ($make) {
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
             & $make -C $LazarusDir starter `
                 "PP=$VPCompiler" `
                 "FPCDIR=$VPDir" `
                 "OPT=-n @$VPCfgPath" 2>&1 | Where-Object { $_ -match "Linking|Fatal|Error" }
+            $ErrorActionPreference = $prevEAP
             if (Test-Path $starterExe) {
                 Log-Ok "startlazarus.exe built"
             }
@@ -486,6 +506,11 @@ function Configure-Environment {
         }
     }
 
+    if (-not (Test-Path $vpBinDir)) {
+        New-Item -ItemType Directory -Path $vpBinDir -Force | Out-Null
+        Log-Info "Created VibePascal bin directory: $vpBinDir"
+    }
+
     $vpCfgFile = Join-Path $vpBinDir "fpc.cfg"
     if (Test-Path $vpCfgFile) {
         $cfgContent = Get-Content $vpCfgFile -Raw
@@ -503,7 +528,7 @@ function Configure-Environment {
             "-Fu$VPDir\rtl\units\x86_64-win64",
             "-Fu$VPDir\packages\*\units\x86_64-win64"
         )
-        Set-Content -Path $vpCfgFile -Value ($cfgLines -join "`n") -Encoding UTF8
+        [IO.File]::WriteAllText($vpCfgFile, ($cfgLines -join "`n"), (New-Object System.Text.UTF8Encoding $false))
         Log-Ok "Created $vpCfgFile"
     }
 
