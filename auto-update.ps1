@@ -4,6 +4,7 @@ param(
     [switch]$NoBuild,
     [switch]$Release,
     [switch]$UpstreamOnly,
+    [switch]$Setup,
     [string]$VPDir,
     [switch]$Help
 )
@@ -23,6 +24,7 @@ if ($Help) {
     Write-Host "  -NoBuild        Pull updates but skip rebuild"
     Write-Host "  -Release        Also rebuild release tarballs after updating"
     Write-Host "  -UpstreamOnly   Only sync upstream Lazarus (skip VibePascal)"
+    Write-Host "  -Setup          Configure Lazarus IDE to use VibePascal compiler"
     Write-Host "  -VPDir <path>   Path to VibePascal source (auto-detected if omitted)"
     Write-Host "  -Help           Show this help"
     Write-Host ""
@@ -82,10 +84,10 @@ function Ensure-VPConfig {
 }
 
 function Invoke-Git {
-    param([string]$WorkDir, [string[]]$Args)
+    param([string]$WorkDir, [string[]]$GitArgs)
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "git"
-    $psi.Arguments = $Args -join " "
+    $psi.Arguments = $GitArgs -join " "
     $psi.WorkingDirectory = $WorkDir
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
@@ -100,7 +102,7 @@ function Invoke-Git {
 
 function Get-GitOutput {
     param([string]$WorkDir, [string[]]$GitArgs)
-    $result = Invoke-Git -WorkDir $WorkDir -Args $GitArgs
+    $result = Invoke-Git -WorkDir $WorkDir -GitArgs $GitArgs
     return $result.Output
 }
 
@@ -112,7 +114,7 @@ function Check-VPUpdates {
         return
     }
 
-    Invoke-Git -WorkDir $VPDir -Args @("fetch", "origin") | Out-Null
+    Invoke-Git -WorkDir $VPDir -GitArgs @("fetch", "origin") | Out-Null
 
     $behind = Get-GitOutput -WorkDir $VPDir -GitArgs @("rev-list", "--count", "HEAD..origin/main")
     if (-not $behind) { $behind = "0" }
@@ -131,7 +133,7 @@ function Pull-VP {
     if (-not $script:VPUpdated) { return }
 
     Log-Header "Pulling VibePascal updates"
-    $result = Invoke-Git -WorkDir $VPDir -Args @("pull", "--ff-only", "origin", "main")
+    $result = Invoke-Git -WorkDir $VPDir -GitArgs @("pull", "--ff-only", "origin", "main")
     if ($result.ExitCode -ne 0) {
         Log-Err "VibePascal pull failed: $($result.Error)"
         return
@@ -165,7 +167,7 @@ function Check-LazarusUpstream {
 function Check-LazarusOrigin {
     Log-Header "Checking Lazarus origin (adaloveless/Lazarus)"
 
-    Invoke-Git -WorkDir $LazarusDir -Args @("fetch", "origin") | Out-Null
+    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "origin") | Out-Null
 
     $behind = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "HEAD..origin/main")
     if (-not $behind) { $behind = "0" }
@@ -189,7 +191,7 @@ function Pull-LazarusUpstream {
     if (-not $localCommits) { $localCommits = "0" }
 
     if ([int]$localCommits -eq 0) {
-        $result = Invoke-Git -WorkDir $LazarusDir -Args @("merge", "--ff-only", "upstream/main")
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "--ff-only", "upstream/main")
         if ($result.ExitCode -ne 0) {
             Log-Err "Fast-forward merge failed: $($result.Error)"
             return
@@ -197,7 +199,7 @@ function Pull-LazarusUpstream {
         Log-Ok "Fast-forward merge from upstream"
     } else {
         Log-Info "Rebasing $localCommits local commit(s) onto upstream..."
-        $result = Invoke-Git -WorkDir $LazarusDir -Args @("rebase", "upstream/main")
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("rebase", "upstream/main")
         if ($result.ExitCode -ne 0) {
             Log-Err "Rebase failed: $($result.Error)"
             Log-Err "Resolve conflicts manually, then re-run."
@@ -207,7 +209,7 @@ function Pull-LazarusUpstream {
     }
 
     Log-Info "Pushing to origin..."
-    $result = Invoke-Git -WorkDir $LazarusDir -Args @("push", "origin", "main")
+    $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("push", "origin", "main")
     if ($result.ExitCode -ne 0) {
         Log-Warn "Push failed (non-critical): $($result.Error)"
     } else {
@@ -219,7 +221,7 @@ function Pull-LazarusUpstream {
 function Pull-LazarusOrigin {
     if ($script:LazarusUpdated -and -not $script:UpstreamUpdated) {
         Log-Header "Pulling Lazarus origin changes"
-        $result = Invoke-Git -WorkDir $LazarusDir -Args @("pull", "--ff-only", "origin", "main")
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("pull", "--ff-only", "origin", "main")
         if ($result.ExitCode -ne 0) {
             Log-Err "Pull failed: $($result.Error)"
         } else {
@@ -309,6 +311,101 @@ function Print-Summary {
     Write-Host "VibePascal HEAD: $vpHead"
 }
 
+function Configure-Environment {
+    Log-Header "Configuring Lazarus IDE for VibePascal"
+
+    $envOptsDir = Join-Path $env:LOCALAPPDATA "lazarus"
+    $envOptsFile = Join-Path $envOptsDir "environmentoptions.xml"
+
+    if (-not (Test-Path $envOptsDir)) {
+        New-Item -ItemType Directory -Path $envOptsDir -Force | Out-Null
+        Log-Info "Created Lazarus config directory: $envOptsDir"
+    }
+
+    $vpUnitsDir = Join-Path $VPDir "units"
+    $vpBinDir = Join-Path $VPDir "bin"
+    $vpCompilerPath = Join-Path $vpBinDir "ppcx64.exe"
+
+    if (-not (Test-Path $vpCompilerPath)) {
+        $vpCompilerPath = $VPCompiler
+    }
+
+    if (Test-Path $envOptsFile) {
+        Log-Info "Patching existing environmentoptions.xml"
+        $xml = [xml](Get-Content $envOptsFile -Raw)
+        $envOpts = $xml.CONFIG.EnvironmentOptions
+
+        $compilerNode = $envOpts.SelectSingleNode("CompilerFilename")
+        if ($compilerNode) {
+            $oldVal = $compilerNode.GetAttribute("Value")
+            $compilerNode.SetAttribute("Value", $vpCompilerPath)
+            Log-Info "CompilerFilename: $oldVal -> $vpCompilerPath"
+        }
+
+        $fpcSrcNode = $envOpts.SelectSingleNode("FPCSourceDirectory")
+        if ($fpcSrcNode) {
+            $oldVal = $fpcSrcNode.GetAttribute("Value")
+            $fpcSrcNode.SetAttribute("Value", $VPDir)
+            Log-Info "FPCSourceDirectory: $oldVal -> $VPDir"
+        }
+
+        $xml.Save($envOptsFile)
+        Log-Ok "Updated $envOptsFile"
+    } else {
+        Log-Info "Creating new environmentoptions.xml from template"
+        $templateFile = Join-Path $LazarusDir "tools\install\win\environmentoptions.xml"
+
+        if (Test-Path $templateFile) {
+            $xml = [xml](Get-Content $templateFile -Raw)
+            $envOpts = $xml.CONFIG.EnvironmentOptions
+
+            $lazDirNode = $envOpts.SelectSingleNode("LazarusDirectory")
+            if ($lazDirNode) { $lazDirNode.SetAttribute("Value", $LazarusDir) }
+
+            $compilerNode = $envOpts.SelectSingleNode("CompilerFilename")
+            if ($compilerNode) { $compilerNode.SetAttribute("Value", $vpCompilerPath) }
+
+            $fpcSrcNode = $envOpts.SelectSingleNode("FPCSourceDirectory")
+            if ($fpcSrcNode) { $fpcSrcNode.SetAttribute("Value", $VPDir) }
+
+            $makeNode = $envOpts.SelectSingleNode("MakeFilename")
+            if ($makeNode) {
+                $makePath = Find-Make
+                if ($makePath) { $makeNode.SetAttribute("Value", $makePath) }
+            }
+
+            $xml.Save($envOptsFile)
+            Log-Ok "Created $envOptsFile"
+        } else {
+            Log-Err "Template not found at $templateFile"
+            return
+        }
+    }
+
+    $vpCfgFile = Join-Path $vpBinDir "fpc.cfg"
+    if (Test-Path $vpCfgFile) {
+        $cfgContent = Get-Content $vpCfgFile -Raw
+        if ($cfgContent -notmatch [regex]::Escape($vpUnitsDir)) {
+            Add-Content -Path $vpCfgFile -Value "`n-Fu$vpUnitsDir"
+            Log-Info "Added VibePascal units path to fpc.cfg"
+        } else {
+            Log-Ok "VibePascal units path already in fpc.cfg"
+        }
+    } else {
+        Log-Info "Creating VibePascal fpc.cfg"
+        $cfgLines = @(
+            "# VibePascal compiler config (auto-generated by auto-update.ps1)",
+            "-Fu$vpUnitsDir",
+            "-Fu$VPDir\rtl\units\x86_64-win64",
+            "-Fu$VPDir\packages\*\units\x86_64-win64"
+        )
+        Set-Content -Path $vpCfgFile -Value ($cfgLines -join "`n") -Encoding UTF8
+        Log-Ok "Created $vpCfgFile"
+    }
+
+    Log-Ok "IDE configured to use VibePascal. Restart Lazarus to apply."
+}
+
 # --- Main ---
 
 Log-Header "Lazarus + VibePascal Auto-Updater (Windows)"
@@ -317,7 +414,12 @@ Write-Host "  VibePascal: $VPDir"
 Write-Host "  Compiler:   $VPCompiler"
 Write-Host ""
 
-Invoke-Git -WorkDir $LazarusDir -Args @("fetch", "upstream") | Out-Null
+if ($Setup) {
+    Configure-Environment
+    exit 0
+}
+
+Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
 
 if (-not $UpstreamOnly) {
     Check-VPUpdates

@@ -4,9 +4,9 @@
     <Version Value="110" Lazarus="4.99.0"/>
     <LazarusDirectory Value="%LazDir%">
     </LazarusDirectory>
-    <CompilerFilename Value="%FpcBinDir%\fpc.exe">
+    <CompilerFilename Value="C:\vibepascal\bin\ppcx64.exe">
     </CompilerFilename>
-    <FPCSourceDirectory Value="$(LazarusDir)\fpc\$(FPCVer)\source">
+    <FPCSourceDirectory Value="C:\vibepascal">
     </FPCSourceDirectory>
     <MakeFilename Value="%FpcBinDir%\make.exe">
     </MakeFilename>

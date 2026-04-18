@@ -28,6 +28,7 @@ usage() {
     echo "  --no-build      Pull updates but skip rebuild"
     echo "  --release        Also rebuild release tarballs after updating"
     echo "  --upstream-only  Only sync upstream Lazarus (skip VibePascal)"
+    echo "  --setup          Configure Lazarus IDE to use VibePascal compiler"
     echo "  --help           Show this help"
     echo ""
     echo "Default: pull updates and rebuild lazbuild if anything changed."
@@ -38,6 +39,7 @@ CHECK_ONLY=0
 NO_BUILD=0
 BUILD_RELEASE=0
 UPSTREAM_ONLY=0
+SETUP_ONLY=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -45,6 +47,7 @@ while [[ $# -gt 0 ]]; do
         --no-build)    NO_BUILD=1; shift ;;
         --release)     BUILD_RELEASE=1; shift ;;
         --upstream-only) UPSTREAM_ONLY=1; shift ;;
+        --setup)       SETUP_ONLY=1; shift ;;
         --help|-h)     usage ;;
         *)             echo "Unknown option: $1"; usage ;;
     esac
@@ -232,6 +235,50 @@ print_summary() {
     echo "Lazarus HEAD: $(git -C "$LAZARUS_DIR" log --oneline -1)"
     echo "VibePascal HEAD: $(git -C "$VP_DIR" log --oneline -1)"
 }
+
+configure_environment() {
+    log_header "Configuring Lazarus IDE for VibePascal"
+
+    local env_dir="$HOME/.lazarus"
+    local env_file="$env_dir/environmentoptions.xml"
+
+    mkdir -p "$env_dir"
+
+    if [ -f "$env_file" ]; then
+        log_info "Patching existing environmentoptions.xml"
+        if command -v xmlstarlet &>/dev/null; then
+            xmlstarlet ed -L \
+                -u '//CompilerFilename/@Value' -v "$VP_COMPILER" \
+                -u '//FPCSourceDirectory/@Value' -v "$VP_DIR" \
+                "$env_file"
+            log_ok "Updated $env_file via xmlstarlet"
+        else
+            sed -i "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$VP_COMPILER\"|" "$env_file"
+            sed -i "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$VP_DIR\"|" "$env_file"
+            log_ok "Updated $env_file via sed"
+        fi
+    else
+        log_info "Creating new environmentoptions.xml"
+        local template="$LAZARUS_DIR/tools/install/linux/environmentoptions.xml"
+        if [ -f "$template" ]; then
+            cp "$template" "$env_file"
+            sed -i "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$VP_COMPILER\"|" "$env_file"
+            sed -i "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$VP_DIR\"|" "$env_file"
+            sed -i "s|LazarusDirectory Value=\"[^\"]*\"|LazarusDirectory Value=\"$LAZARUS_DIR\"|" "$env_file"
+            log_ok "Created $env_file from template"
+        else
+            log_err "Template not found at $template"
+            return 1
+        fi
+    fi
+
+    log_ok "IDE configured to use VibePascal. Restart Lazarus to apply."
+}
+
+if [ "$SETUP_ONLY" -eq 1 ]; then
+    configure_environment
+    exit 0
+fi
 
 log_header "Lazarus + VibePascal Auto-Updater"
 echo "  Lazarus:    $LAZARUS_DIR"
