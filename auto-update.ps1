@@ -6,6 +6,7 @@ param(
     [switch]$UpstreamOnly,
     [switch]$Setup,
     [switch]$FixLpi,
+    [switch]$ForceRebuild,
     [string]$VPDir,
     [switch]$Help
 )
@@ -27,10 +28,11 @@ if ($Help) {
     Write-Host "  -UpstreamOnly   Only sync upstream Lazarus (skip VibePascal)"
     Write-Host "  -Setup          Configure Lazarus IDE to use VibePascal compiler"
     Write-Host "  -FixLpi         Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
+    Write-Host "  -ForceRebuild   Force rebuild even if no updates are available"
     Write-Host "  -VPDir <path>   Path to VibePascal source (auto-detected if omitted)"
     Write-Host "  -Help           Show this help"
     Write-Host ""
-    Write-Host "Default: pull updates and rebuild lazbuild if anything changed."
+    Write-Host "Default: pull updates, rebuild lazbuild + IDE if anything changed."
     exit 0
 }
 
@@ -330,6 +332,55 @@ function Rebuild-Lazbuild {
     }
 }
 
+function Rebuild-IDE {
+    Log-Header "Rebuilding Lazarus IDE (lazarus.exe)"
+
+    $lazbuildExe = Join-Path $LazarusDir "lazbuild.exe"
+    if (-not (Test-Path $lazbuildExe)) {
+        Log-Err "lazbuild.exe not found -- cannot build IDE. Run rebuild first."
+        return
+    }
+
+    if (-not (Test-Path $VPCompiler)) {
+        Log-Err "VibePascal compiler not found at $VPCompiler"
+        return
+    }
+
+    $envDir = Join-Path $env:LOCALAPPDATA "lazarus"
+    if (-not (Test-Path $envDir)) {
+        New-Item -ItemType Directory -Path $envDir -Force | Out-Null
+    }
+
+    Log-Info "Using compiler: $VPCompiler"
+    Log-Info "Building IDE with win32 widgetset..."
+
+    & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 2>&1 |
+        Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
+
+    $lazarusExe = Join-Path $LazarusDir "lazarus.exe"
+    if (Test-Path $lazarusExe) {
+        $size = (Get-Item $lazarusExe).Length / 1MB
+        Log-Ok ("lazarus.exe rebuilt ({0:N1} MB)" -f $size)
+    } else {
+        Log-Err "lazarus.exe build failed!"
+    }
+
+    $starterExe = Join-Path $LazarusDir "startlazarus.exe"
+    if (-not (Test-Path $starterExe)) {
+        Log-Info "Building startlazarus..."
+        $make = Find-Make
+        if ($make) {
+            & $make -C $LazarusDir starter `
+                "PP=$VPCompiler" `
+                "FPCDIR=$VPDir" `
+                "OPT=-n @$VPCfgPath" 2>&1 | Where-Object { $_ -match "Linking|Fatal|Error" }
+            if (Test-Path $starterExe) {
+                Log-Ok "startlazarus.exe built"
+            }
+        }
+    }
+}
+
 function Print-Summary {
     Log-Header "Update Summary"
 
@@ -549,12 +600,18 @@ Pull-LazarusOrigin
 
 $anyUpdated = $script:VPUpdated -or $script:LazarusUpdated -or $script:UpstreamUpdated
 
+if ($ForceRebuild) {
+    Log-Info "Force rebuild requested"
+    $anyUpdated = $true
+}
+
 if ($anyUpdated) {
     if ($NoBuild) {
         Log-Info "Skipping rebuild (-NoBuild)"
     } else {
         Rebuild-Lazbuild
         Configure-Environment
+        Rebuild-IDE
         if ($Release) {
             Log-Header "Building release"
             Log-Info "Run build-release.sh via WSL or cross-compile from Linux for release tarballs."

@@ -30,6 +30,8 @@ usage() {
     echo "  --upstream-only  Only sync upstream Lazarus (skip VibePascal)"
     echo "  --setup          Configure Lazarus IDE to use VibePascal compiler"
     echo "  --fix-lpi        Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
+    echo "  --build-ide      Also rebuild the full Lazarus IDE (requires GTK2 or Qt5)"
+    echo "  --force-rebuild  Force rebuild even if no updates are available"
     echo "  --help           Show this help"
     echo ""
     echo "Default: pull updates and rebuild lazbuild if anything changed."
@@ -42,6 +44,8 @@ BUILD_RELEASE=0
 UPSTREAM_ONLY=0
 SETUP_ONLY=0
 FIX_LPI=0
+BUILD_IDE=0
+FORCE_REBUILD=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -51,6 +55,8 @@ while [[ $# -gt 0 ]]; do
         --upstream-only) UPSTREAM_ONLY=1; shift ;;
         --setup)       SETUP_ONLY=1; shift ;;
         --fix-lpi)     FIX_LPI=1; shift ;;
+        --build-ide)   BUILD_IDE=1; shift ;;
+        --force-rebuild) FORCE_REBUILD=1; shift ;;
         --help|-h)     usage ;;
         *)             echo "Unknown option: $1"; usage ;;
     esac
@@ -278,6 +284,38 @@ configure_environment() {
     log_ok "IDE configured to use VibePascal. Restart Lazarus to apply."
 }
 
+rebuild_ide() {
+    log_header "Rebuilding Lazarus IDE"
+
+    if [ ! -f "$LAZARUS_DIR/lazbuild" ]; then
+        log_err "lazbuild not found -- cannot build IDE. Run rebuild first."
+        return 1
+    fi
+
+    local ws=""
+    if pkg-config --exists gtk+-2.0 2>/dev/null; then
+        ws="gtk2"
+    elif pkg-config --exists Qt5Pas 2>/dev/null; then
+        ws="qt5"
+    else
+        log_err "Neither GTK2 nor Qt5 dev packages found."
+        log_err "Install libgtk2.0-dev or libqt5pas-dev, then re-run with --build-ide."
+        return 1
+    fi
+
+    log_info "Building IDE with widgetset: $ws"
+    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
+        --compiler="$VP_COMPILER" --ws="$ws" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+
+    if [ -f "$LAZARUS_DIR/lazarus" ]; then
+        local size=$(du -sh "$LAZARUS_DIR/lazarus" | cut -f1)
+        log_ok "lazarus rebuilt ($size)"
+    else
+        log_err "lazarus build failed!"
+        return 1
+    fi
+}
+
 fix_lpi_files() {
     local search_dir="${1:-$LAZARUS_DIR}"
     log_header "Scanning .lpi files for UnitOutputDirectory fixes"
@@ -349,7 +387,17 @@ fi
 pull_lazarus_upstream
 pull_lazarus_origin
 
+ANY_UPDATED=0
 if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ] || [ "$UPSTREAM_UPDATED" -eq 1 ]; then
+    ANY_UPDATED=1
+fi
+
+if [ "$FORCE_REBUILD" -eq 1 ]; then
+    log_info "Force rebuild requested"
+    ANY_UPDATED=1
+fi
+
+if [ "$ANY_UPDATED" -eq 1 ]; then
     if [ "$NO_BUILD" -eq 1 ]; then
         log_info "Skipping rebuild (--no-build)"
     else
@@ -358,6 +406,9 @@ if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ] || [ "$UPSTREAM_UPDAT
         fi
         rebuild_lazbuild
         configure_environment
+        if [ "$BUILD_IDE" -eq 1 ]; then
+            rebuild_ide
+        fi
         if [ "$BUILD_RELEASE" -eq 1 ]; then
             log_header "Building release tarballs"
             "$LAZARUS_DIR/build-release.sh" all
