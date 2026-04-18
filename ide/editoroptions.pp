@@ -1976,6 +1976,7 @@ type
     fUserMouseSettings: TEditorMouseOptions;
     fTempMouseSettings: TEditorMouseOptions;
     // Color options
+    fAutoDetectColorScheme: Boolean;
     fUserColorSchemeGroup: TColorSchemeFactory;
     fUserDefinedColors: TEditorUserDefinedWordsList;
     // Markup Current Word
@@ -2112,6 +2113,7 @@ type
     // Used by the 2 Mouse-option pages, so they share data (un-saved)
     property TempMouseSettings: TEditorMouseOptions read FTempMouseSettings;
     // Color options
+    property AutoDetectColorScheme: Boolean read fAutoDetectColorScheme write fAutoDetectColorScheme default True;
     property HighlighterList: TEditOptLangList read GetHighlighterList;
     property UserColorSchemeGroup: TColorSchemeFactory read fUserColorSchemeGroup;
     property UserDefinedColors: TEditorUserDefinedWordsList read fUserDefinedColors;
@@ -2177,6 +2179,11 @@ function UserSchemeDirectory(CreateIfNotExists: Boolean = False): String;
 procedure InitLocale;
 
 implementation
+
+{$IFDEF Windows}
+uses
+  Registry;
+{$ENDIF}
 
 {$R editoroptions.res}
 
@@ -2994,6 +3001,35 @@ begin
   end;
 end;
 
+function IsWindowsDarkModeActive: Boolean;
+{$IFDEF Windows}
+var
+  Reg: TRegistry;
+begin
+  Result := False;
+  try
+    Reg := TRegistry.Create(KEY_READ);
+    try
+      Reg.RootKey := HKEY_CURRENT_USER;
+      if Reg.OpenKeyReadOnly('Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') then
+      begin
+        if Reg.ValueExists('AppsUseLightTheme') then
+          Result := Reg.ReadInteger('AppsUseLightTheme') = 0;
+        Reg.CloseKey;
+      end;
+    finally
+      Reg.Free;
+    end;
+  except
+    Result := False;
+  end;
+end;
+{$ELSE}
+begin
+  Result := False;
+end;
+{$ENDIF}
+
 // The lazy-man color scheme factory
 var
   TheColorSchemeFactorSingleton: TColorSchemeFactory = nil;
@@ -3016,7 +3052,10 @@ begin
     TheColorSchemeFactorSingleton.RegisterScheme(TColorSchemeFromResource.CreateFrom('ColorSchemePascalClassic', 'Pascal Classic', TColorSchemeFactory.XML_COL_PATH));
     TheColorSchemeFactorSingleton.RegisterScheme(TColorSchemeFromResource.CreateFrom('ColorSchemeOcean',         'Ocean',    TColorSchemeFactory.XML_COL_PATH));
     TheColorSchemeFactorSingleton.RegisterScheme(TColorSchemeFromResource.CreateFrom('ColorSchemeDelphi',        'Delphi',   TColorSchemeFactory.XML_COL_PATH));
-    DefaultColorSchemeName := 'Default';
+    if IsWindowsDarkModeActive then
+      DefaultColorSchemeName := 'Twilight'
+    else
+      DefaultColorSchemeName := 'Default';
 
     if DirectoryExistsUTF8(UserSchemeDirectory(False)) then begin
       FileList := FindAllFiles(UserSchemeDirectory(False), '*.xml', False);
@@ -5908,6 +5947,7 @@ begin
   fTempMouseSettings := TEditorMouseOptions.Create;
   fUserMouseSettings.LoadUserSchemes;
   // Color options
+  fAutoDetectColorScheme := True;
   FUserColorSchemeGroup := TColorSchemeFactory.Create;
   FUserColorSchemeGroup.Assign(ColorSchemeFactory); // Copy from global singleton.
   ColorSchemeFactory.AddAttribAddedEvent(@DoColorAttribAdded);
@@ -6190,6 +6230,9 @@ begin
     FUserMouseSettings.LoadFromXml(XMLConfig, 'EditorOptions/Mouse/',
                                   'EditorOptions/General/Editor/', FileVersion);
 
+    fAutoDetectColorScheme :=
+      XMLConfig.GetValue('EditorOptions/Color/AutoDetectColorScheme', True);
+
     FMultiWinEditAccessOrder.LoadFromXMLConfig(XMLConfig, 'EditorOptions/MultiWin/');
     UserColorSchemeGroup.LoadFromXml(XMLConfig, 'EditorOptions/Color/',
       ColorSchemeFactory, 'EditorOptions/Display/');
@@ -6401,6 +6444,9 @@ begin
 
     FUserMouseSettings.SaveToXml(XMLConfig, 'EditorOptions/Mouse/');
 
+    XMLConfig.SetDeleteValue('EditorOptions/Color/AutoDetectColorScheme',
+      fAutoDetectColorScheme, True);
+
     FMultiWinEditAccessOrder.SaveToXMLConfig(XMLConfig, 'EditorOptions/MultiWin/');
     UserColorSchemeGroup.SaveToXml(XMLConfig, 'EditorOptions/Color/', ColorSchemeFactory);
 
@@ -6591,6 +6637,14 @@ end;
 function TEditorOptions.ReadColorScheme(const LanguageName: String): String;
 (* The name of the currently chosen color-scheme for that language *)
 begin
+  if fAutoDetectColorScheme then begin
+    if IsWindowsDarkModeActive then
+      Result := 'Twilight'
+    else
+      Result := 'Default';
+    if ColorSchemeFactory.ColorSchemeGroup[Result] <> nil then
+      Exit;
+  end;
   if LanguageName = '' then
     Exit(ColorSchemeFactory.ColorSchemeGroupAtPos[0].Name);
   if LanguageName <> TPreviewPasSyn.GetLanguageName then
@@ -6609,6 +6663,14 @@ function TEditorOptions.ReadPascalColorScheme: String;
 var
   FormatVersion: Integer;
 begin
+  if fAutoDetectColorScheme then begin
+    if IsWindowsDarkModeActive then
+      Result := 'Twilight'
+    else
+      Result := 'Default';
+    if ColorSchemeFactory.ColorSchemeGroup[Result] <> nil then
+      Exit;
+  end;
   FormatVersion := XMLConfig.GetValue('EditorOptions/Color/Version', EditorOptsFormatVersion);
   if FormatVersion > 1 then
     Result := XMLConfig.GetValue('EditorOptions/Color/Lang' +
