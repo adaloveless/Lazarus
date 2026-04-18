@@ -5,6 +5,7 @@ param(
     [switch]$Release,
     [switch]$UpstreamOnly,
     [switch]$Setup,
+    [switch]$FixLpi,
     [string]$VPDir,
     [switch]$Help
 )
@@ -25,6 +26,7 @@ if ($Help) {
     Write-Host "  -Release        Also rebuild release tarballs after updating"
     Write-Host "  -UpstreamOnly   Only sync upstream Lazarus (skip VibePascal)"
     Write-Host "  -Setup          Configure Lazarus IDE to use VibePascal compiler"
+    Write-Host "  -FixLpi         Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
     Write-Host "  -VPDir <path>   Path to VibePascal source (auto-detected if omitted)"
     Write-Host "  -Help           Show this help"
     Write-Host ""
@@ -66,6 +68,56 @@ if (-not $VPDir) {
 $VPCompiler = Join-Path $VPDir "compiler\ppcx64.exe"
 if (-not (Test-Path $VPCompiler)) {
     $VPCompiler = Join-Path $VPDir "compiler\ppcx64"
+}
+
+function Extract-VPBinaries {
+    $compilerExe = Join-Path $VPDir "compiler\ppcx64.exe"
+    if (Test-Path $compilerExe) { return }
+
+    Log-Info "VibePascal compiler binary not found, checking dist/ for prebuilt..."
+    $distDir = Join-Path $VPDir "dist\win64"
+    if (-not (Test-Path $distDir)) {
+        $distDir = Join-Path $VPDir "dist"
+    }
+
+    $tarballs = @()
+    if (Test-Path $distDir) {
+        $tarballs = Get-ChildItem -Path $distDir -Filter "*.tar.gz" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending
+    }
+
+    if ($tarballs.Count -eq 0) {
+        $tarballs = Get-ChildItem -Path $distDir -Filter "*.zip" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending
+    }
+
+    if ($tarballs.Count -gt 0) {
+        $archive = $tarballs[0].FullName
+        Log-Info "Extracting VibePascal binaries from $archive"
+        $tempDir = Join-Path $env:TEMP "vp-extract-$(Get-Random)"
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+        try {
+            if ($archive.EndsWith(".zip")) {
+                Expand-Archive -Path $archive -DestinationPath $tempDir -Force
+            } else {
+                tar -xzf $archive -C $tempDir 2>&1 | Out-Null
+            }
+            $found = Get-ChildItem -Path $tempDir -Filter "ppcx64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+                $compilerDir = Join-Path $VPDir "compiler"
+                if (-not (Test-Path $compilerDir)) { New-Item -ItemType Directory -Path $compilerDir -Force | Out-Null }
+                Copy-Item $found.FullName $compilerExe -Force
+                Log-Ok "Extracted ppcx64.exe to $compilerExe"
+                $script:VPCompiler = $compilerExe
+            } else {
+                Log-Warn "ppcx64.exe not found in archive"
+            }
+        } finally {
+            Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+        }
+    } else {
+        Log-Warn "No VibePascal dist archives found at $distDir"
+    }
 }
 
 $VPCfgPath = Join-Path $VPDir "vibepascal-win64-native.cfg"
@@ -406,6 +458,55 @@ function Configure-Environment {
     Log-Ok "IDE configured to use VibePascal. Restart Lazarus to apply."
 }
 
+function Fix-LpiFiles {
+    param([string]$SearchDir)
+
+    if (-not $SearchDir) { $SearchDir = $LazarusDir }
+
+    Log-Header "Scanning .lpi files for UnitOutputDirectory fixes"
+
+    $lpiFiles = Get-ChildItem -Path $SearchDir -Filter "*.lpi" -Recurse -ErrorAction SilentlyContinue
+    $fixCount = 0
+
+    foreach ($lpi in $lpiFiles) {
+        try {
+            $xml = [xml](Get-Content $lpi.FullName -Raw)
+
+            $compOpts = $xml.SelectSingleNode("//CompilerOptions")
+            if (-not $compOpts) { continue }
+
+            $searchPaths = $compOpts.SelectSingleNode("SearchPaths")
+            if (-not $searchPaths) {
+                $searchPaths = $xml.CreateElement("SearchPaths")
+                $compOpts.PrependChild($searchPaths) | Out-Null
+            }
+
+            $unitOutDir = $searchPaths.SelectSingleNode("UnitOutputDirectory")
+            if (-not $unitOutDir) {
+                $unitOutDir = $xml.CreateElement("UnitOutputDirectory")
+                $searchPaths.AppendChild($unitOutDir) | Out-Null
+            }
+
+            $currentVal = $unitOutDir.GetAttribute("Value")
+            if ($currentVal -ne "lib") {
+                $oldVal = if ($currentVal) { $currentVal } else { "(empty)" }
+                $unitOutDir.SetAttribute("Value", "lib")
+                $xml.Save($lpi.FullName)
+                Log-Info "$($lpi.Name): UnitOutputDirectory $oldVal -> lib"
+                $fixCount++
+            }
+        } catch {
+            Log-Warn "Could not process $($lpi.Name): $_"
+        }
+    }
+
+    if ($fixCount -eq 0) {
+        Log-Ok "All .lpi files already have UnitOutputDirectory = lib"
+    } else {
+        Log-Ok "Fixed $fixCount .lpi file(s)"
+    }
+}
+
 # --- Main ---
 
 Log-Header "Lazarus + VibePascal Auto-Updater (Windows)"
@@ -415,9 +516,17 @@ Write-Host "  Compiler:   $VPCompiler"
 Write-Host ""
 
 if ($Setup) {
+    Extract-VPBinaries
     Configure-Environment
     exit 0
 }
+
+if ($FixLpi) {
+    Fix-LpiFiles
+    exit 0
+}
+
+Extract-VPBinaries
 
 Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
 
@@ -445,6 +554,7 @@ if ($anyUpdated) {
         Log-Info "Skipping rebuild (-NoBuild)"
     } else {
         Rebuild-Lazbuild
+        Configure-Environment
         if ($Release) {
             Log-Header "Building release"
             Log-Info "Run build-release.sh via WSL or cross-compile from Linux for release tarballs."

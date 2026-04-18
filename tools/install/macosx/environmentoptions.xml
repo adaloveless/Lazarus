@@ -7,16 +7,16 @@
         <Item1 Value="/Developer/lazarus/"/>
       </History>
     </LazarusDirectory>
-    <CompilerFilename Value="/usr/local/bin/_PPCARCH_">
+    <CompilerFilename Value="/usr/local/vibepascal/compiler/ppc_PPCARCH_">
       <History Count="3">
-        <Item1 Value="/usr/local/bin/_PPCARCH_"/>
-        <Item2 Value="/usr/bin/_PPCARCH_"/>
-        <Item3 Value="/opt/fpc/_PPCARCH_"/>
+        <Item1 Value="/usr/local/vibepascal/compiler/ppc_PPCARCH_"/>
+        <Item2 Value="/usr/local/bin/_PPCARCH_"/>
+        <Item3 Value="/usr/bin/_PPCARCH_"/>
       </History>
     </CompilerFilename>
-    <FPCSourceDirectory Value="$(LazarusDir)/fpc/$(FPCVer)/sources/">
+    <FPCSourceDirectory Value="/usr/local/vibepascal">
       <History Count="2">
-        <Item1 Value="/usr/local/share/fpcsrc/"/>
+        <Item1 Value="/usr/local/vibepascal"/>
         <Item2 Value="$(LazarusDir)/fpc/$(FPCVer)/sources/"/>
       </History>
     </FPCSourceDirectory>

@@ -29,6 +29,7 @@ usage() {
     echo "  --release        Also rebuild release tarballs after updating"
     echo "  --upstream-only  Only sync upstream Lazarus (skip VibePascal)"
     echo "  --setup          Configure Lazarus IDE to use VibePascal compiler"
+    echo "  --fix-lpi        Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
     echo "  --help           Show this help"
     echo ""
     echo "Default: pull updates and rebuild lazbuild if anything changed."
@@ -40,6 +41,7 @@ NO_BUILD=0
 BUILD_RELEASE=0
 UPSTREAM_ONLY=0
 SETUP_ONLY=0
+FIX_LPI=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
         --release)     BUILD_RELEASE=1; shift ;;
         --upstream-only) UPSTREAM_ONLY=1; shift ;;
         --setup)       SETUP_ONLY=1; shift ;;
+        --fix-lpi)     FIX_LPI=1; shift ;;
         --help|-h)     usage ;;
         *)             echo "Unknown option: $1"; usage ;;
     esac
@@ -275,6 +278,47 @@ configure_environment() {
     log_ok "IDE configured to use VibePascal. Restart Lazarus to apply."
 }
 
+fix_lpi_files() {
+    local search_dir="${1:-$LAZARUS_DIR}"
+    log_header "Scanning .lpi files for UnitOutputDirectory fixes"
+
+    local fix_count=0
+    while IFS= read -r -d '' lpi; do
+        if command -v xmlstarlet &>/dev/null; then
+            local current
+            current=$(xmlstarlet sel -t -v '//CompilerOptions/SearchPaths/UnitOutputDirectory/@Value' "$lpi" 2>/dev/null || echo "")
+            if [ "$current" != "lib" ]; then
+                xmlstarlet ed -L \
+                    -s '//CompilerOptions/SearchPaths[not(UnitOutputDirectory)]' -t elem -n UnitOutputDirectory -v "" \
+                    -i '//CompilerOptions/SearchPaths/UnitOutputDirectory[not(@Value)]' -t attr -n Value -v "lib" \
+                    -u '//CompilerOptions/SearchPaths/UnitOutputDirectory/@Value' -v "lib" \
+                    "$lpi" 2>/dev/null
+                log_info "$(basename "$lpi"): UnitOutputDirectory ${current:-(empty)} -> lib"
+                fix_count=$((fix_count + 1))
+            fi
+        else
+            if grep -q 'UnitOutputDirectory' "$lpi"; then
+                if ! grep -q 'UnitOutputDirectory Value="lib"' "$lpi"; then
+                    sed -i 's|UnitOutputDirectory Value="[^"]*"|UnitOutputDirectory Value="lib"|g' "$lpi"
+                    log_info "$(basename "$lpi"): fixed UnitOutputDirectory -> lib"
+                    fix_count=$((fix_count + 1))
+                fi
+            fi
+        fi
+    done < <(find "$search_dir" -name "*.lpi" -print0 2>/dev/null)
+
+    if [ "$fix_count" -eq 0 ]; then
+        log_ok "All .lpi files already have UnitOutputDirectory = lib"
+    else
+        log_ok "Fixed $fix_count .lpi file(s)"
+    fi
+}
+
+if [ "$FIX_LPI" -eq 1 ]; then
+    fix_lpi_files
+    exit 0
+fi
+
 if [ "$SETUP_ONLY" -eq 1 ]; then
     configure_environment
     exit 0
@@ -313,6 +357,7 @@ if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ] || [ "$UPSTREAM_UPDAT
             rebuild_vp_packages
         fi
         rebuild_lazbuild
+        configure_environment
         if [ "$BUILD_RELEASE" -eq 1 ]; then
             log_header "Building release tarballs"
             "$LAZARUS_DIR/build-release.sh" all
