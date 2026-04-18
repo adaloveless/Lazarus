@@ -102,7 +102,7 @@ function Extract-VPBinaries {
             if ($archive.EndsWith(".zip")) {
                 Expand-Archive -Path $archive -DestinationPath $tempDir -Force
             } else {
-                tar -xzf $archive -C $tempDir 2>&1 | Out-Null
+                & "$env:SystemRoot\System32\tar.exe" -xzf $archive -C $tempDir 2>&1 | Out-Null
             }
             $found = Get-ChildItem -Path $tempDir -Filter "ppcx64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($found) {
@@ -148,8 +148,9 @@ function Invoke-Git {
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     $proc = [System.Diagnostics.Process]::Start($psi)
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
     $stdout = $proc.StandardOutput.ReadToEnd()
-    $stderr = $proc.StandardError.ReadToEnd()
+    $stderr = $stderrTask.GetAwaiter().GetResult()
     $proc.WaitForExit()
     return @{ Output = $stdout.Trim(); Error = $stderr.Trim(); ExitCode = $proc.ExitCode }
 }
