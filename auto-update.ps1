@@ -8,6 +8,7 @@ param(
     [switch]$FixLpi,
     [switch]$ForceRebuild,
     [string]$VPDir,
+    [switch]$SelfUpdated,
     [switch]$Help
 )
 
@@ -135,6 +136,44 @@ function Ensure-VPConfig {
 "@
     [IO.File]::WriteAllText($VPCfgPath, $cfgContent, (New-Object System.Text.UTF8Encoding $false))
     Log-Info "Generated VibePascal config: $VPCfgPath"
+}
+
+function Ensure-SelfClean {
+    param([string]$RepoDir)
+    $scriptName = "auto-update.ps1"
+    $result = Invoke-Git -WorkDir $RepoDir -GitArgs @("status", "--porcelain", "--", $scriptName)
+    if ($result.Output -and $result.Output.Trim().Length -gt 0) {
+        Log-Warn "auto-update.ps1 has local modifications -- restoring upstream version"
+        $restore = Invoke-Git -WorkDir $RepoDir -GitArgs @("checkout", "--", $scriptName)
+        if ($restore.ExitCode -eq 0) {
+            Log-Ok "Restored clean auto-update.ps1 from git"
+        } else {
+            Log-Err "Failed to restore auto-update.ps1: $($restore.Error)"
+        }
+    }
+}
+
+function Relaunch-IfUpdated {
+    param([string]$PreHash)
+    if ($SelfUpdated) { return }
+    $scriptPath = $MyInvocation.PSCommandPath
+    if (-not $scriptPath) { $scriptPath = $PSCommandPath }
+    if (-not $scriptPath) { return }
+    $postHash = (Get-FileHash -Path $scriptPath -Algorithm SHA256).Hash
+    if ($PreHash -ne $postHash) {
+        Log-Info "auto-update.ps1 was updated by pull -- relaunching with new version"
+        $relaunchArgs = @("-SelfUpdated")
+        if ($Check) { $relaunchArgs += "-Check" }
+        if ($NoBuild) { $relaunchArgs += "-NoBuild" }
+        if ($Release) { $relaunchArgs += "-Release" }
+        if ($UpstreamOnly) { $relaunchArgs += "-UpstreamOnly" }
+        if ($Setup) { $relaunchArgs += "-Setup" }
+        if ($FixLpi) { $relaunchArgs += "-FixLpi" }
+        if ($ForceRebuild) { $relaunchArgs += "-ForceRebuild" }
+        if ($VPDir) { $relaunchArgs += "-VPDir"; $relaunchArgs += $VPDir }
+        & $scriptPath @relaunchArgs
+        exit $LASTEXITCODE
+    }
 }
 
 function Invoke-Git {
@@ -605,6 +644,9 @@ if ($FixLpi) {
 
 Extract-VPBinaries
 
+Ensure-SelfClean -RepoDir $LazarusDir
+$scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
+
 Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
 
 if (-not $UpstreamOnly) {
@@ -623,6 +665,8 @@ if (-not $UpstreamOnly) {
 }
 Pull-LazarusUpstream
 Pull-LazarusOrigin
+
+Relaunch-IfUpdated -PreHash $scriptPreHash
 
 $anyUpdated = $script:VPUpdated -or $script:LazarusUpdated -or $script:UpstreamUpdated
 

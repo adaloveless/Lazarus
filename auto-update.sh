@@ -46,6 +46,7 @@ SETUP_ONLY=0
 FIX_LPI=0
 BUILD_IDE=0
 FORCE_REBUILD=0
+SELF_UPDATED=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -57,6 +58,7 @@ while [[ $# -gt 0 ]]; do
         --fix-lpi)     FIX_LPI=1; shift ;;
         --build-ide)   BUILD_IDE=1; shift ;;
         --force-rebuild) FORCE_REBUILD=1; shift ;;
+        --self-updated) SELF_UPDATED=1; shift ;;
         --help|-h)     usage ;;
         *)             echo "Unknown option: $1"; usage ;;
     esac
@@ -67,6 +69,39 @@ log_ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 log_header(){ echo -e "\n${CYAN}=== $1 ===${NC}"; }
+
+ensure_self_clean() {
+    local script_name="auto-update.sh"
+    local status
+    status=$(git -C "$LAZARUS_DIR" status --porcelain -- "$script_name" 2>/dev/null || true)
+    if [ -n "$status" ]; then
+        log_warn "auto-update.sh has local modifications -- restoring upstream version"
+        git -C "$LAZARUS_DIR" checkout -- "$script_name" 2>/dev/null && \
+            log_ok "Restored clean auto-update.sh from git" || \
+            log_err "Failed to restore auto-update.sh"
+    fi
+}
+
+relaunch_if_updated() {
+    local pre_hash="$1"
+    if [ "$SELF_UPDATED" -eq 1 ]; then return; fi
+    local script_path="$LAZARUS_DIR/auto-update.sh"
+    local post_hash
+    post_hash=$(sha256sum "$script_path" 2>/dev/null | cut -d' ' -f1)
+    if [ "$pre_hash" != "$post_hash" ]; then
+        log_info "auto-update.sh was updated by pull -- relaunching with new version"
+        local args=("--self-updated")
+        [ "$CHECK_ONLY" -eq 1 ] && args+=("--check")
+        [ "$NO_BUILD" -eq 1 ] && args+=("--no-build")
+        [ "$BUILD_RELEASE" -eq 1 ] && args+=("--release")
+        [ "$UPSTREAM_ONLY" -eq 1 ] && args+=("--upstream-only")
+        [ "$SETUP_ONLY" -eq 1 ] && args+=("--setup")
+        [ "$FIX_LPI" -eq 1 ] && args+=("--fix-lpi")
+        [ "$BUILD_IDE" -eq 1 ] && args+=("--build-ide")
+        [ "$FORCE_REBUILD" -eq 1 ] && args+=("--force-rebuild")
+        exec "$script_path" "${args[@]}"
+    fi
+}
 
 check_vp_updates() {
     log_header "Checking VibePascal (adaloveless/vibepascal)"
@@ -368,6 +403,9 @@ echo "  VibePascal: $VP_DIR"
 echo "  Compiler:   $VP_COMPILER"
 echo ""
 
+ensure_self_clean
+SCRIPT_PRE_HASH=$(sha256sum "$LAZARUS_DIR/auto-update.sh" 2>/dev/null | cut -d' ' -f1)
+
 git -C "$LAZARUS_DIR" fetch upstream 2>/dev/null
 
 if [ "$UPSTREAM_ONLY" -eq 0 ]; then
@@ -386,6 +424,8 @@ if [ "$UPSTREAM_ONLY" -eq 0 ]; then
 fi
 pull_lazarus_upstream
 pull_lazarus_origin
+
+relaunch_if_updated "$SCRIPT_PRE_HASH"
 
 ANY_UPDATED=0
 if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ] || [ "$UPSTREAM_UPDATED" -eq 1 ]; then
