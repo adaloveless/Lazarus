@@ -128,12 +128,16 @@ $VPCfgPath = Join-Path $VPDir "vibepascal-win64-native.cfg"
 function Ensure-VPConfig {
     $rtlUnits = Join-Path $VPDir "rtl\units\x86_64-win64"
     $pkgUnits = Join-Path $VPDir "packages\*\units\x86_64-win64"
+    $flatUnits = Join-Path $VPDir "units"
 
     $cfgContent = @"
 # VibePascal configuration for native x86_64-win64 builds (auto-generated)
 -Fu$rtlUnits
 -Fu$pkgUnits
 "@
+    if (Test-Path $flatUnits) {
+        $cfgContent += "`n-Fu$flatUnits"
+    }
     [IO.File]::WriteAllText($VPCfgPath, $cfgContent, (New-Object System.Text.UTF8Encoding $false))
     Log-Info "Generated VibePascal config: $VPCfgPath"
 }
@@ -367,6 +371,9 @@ function Rebuild-Lazbuild {
     Log-Info "Using make: $make"
     Log-Info "Using compiler: $VPCompiler"
 
+    $lazbuildExe = Join-Path $LazarusDir "lazbuild.exe"
+    $preBuildTime = if (Test-Path $lazbuildExe) { (Get-Item $lazbuildExe).LastWriteTime } else { $null }
+
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & $make -C $LazarusDir clean 2>&1 | Select-Object -Last 1
@@ -375,15 +382,27 @@ function Rebuild-Lazbuild {
         "PP=$VPCompiler" `
         "FPCDIR=$VPDir" `
         "OPT=-n @$VPCfgPath" 2>&1 | Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
+    $buildExit = $LASTEXITCODE
     $ErrorActionPreference = $prevEAP
 
-    $lazbuildExe = Join-Path $LazarusDir "lazbuild.exe"
-    if (Test-Path $lazbuildExe) {
-        $size = (Get-Item $lazbuildExe).Length / 1MB
-        Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
-    } else {
-        Log-Err "lazbuild.exe build failed!"
+    if ($buildExit -ne 0) {
+        Log-Err "lazbuild build failed with exit code $buildExit"
+        return
     }
+
+    if (-not (Test-Path $lazbuildExe)) {
+        Log-Err "lazbuild.exe build failed -- binary not found!"
+        return
+    }
+
+    $postBuildTime = (Get-Item $lazbuildExe).LastWriteTime
+    if ($preBuildTime -and $postBuildTime -le $preBuildTime) {
+        Log-Err "lazbuild.exe build failed silently -- binary was not updated (stale file from previous build)"
+        return
+    }
+
+    $size = (Get-Item $lazbuildExe).Length / 1MB
+    Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
 }
 
 function Rebuild-IDE {
@@ -408,19 +427,34 @@ function Rebuild-IDE {
     Log-Info "Using compiler: $VPCompiler"
     Log-Info "Building IDE with win32 widgetset..."
 
+    $lazarusExe = Join-Path $LazarusDir "lazarus.exe"
+    $preBuildTime = if (Test-Path $lazarusExe) { (Get-Item $lazarusExe).LastWriteTime } else { $null }
+
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 2>&1 |
         Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
+    $buildExit = $LASTEXITCODE
     $ErrorActionPreference = $prevEAP
 
-    $lazarusExe = Join-Path $LazarusDir "lazarus.exe"
-    if (Test-Path $lazarusExe) {
-        $size = (Get-Item $lazarusExe).Length / 1MB
-        Log-Ok ("lazarus.exe rebuilt ({0:N1} MB)" -f $size)
-    } else {
-        Log-Err "lazarus.exe build failed!"
+    if ($buildExit -ne 0) {
+        Log-Err "lazarus.exe build failed with exit code $buildExit"
+        return
     }
+
+    if (-not (Test-Path $lazarusExe)) {
+        Log-Err "lazarus.exe build failed -- binary not found!"
+        return
+    }
+
+    $postBuildTime = (Get-Item $lazarusExe).LastWriteTime
+    if ($preBuildTime -and $postBuildTime -le $preBuildTime) {
+        Log-Err "lazarus.exe build failed silently -- binary was not updated (stale file from previous build)"
+        return
+    }
+
+    $size = (Get-Item $lazarusExe).Length / 1MB
+    Log-Ok ("lazarus.exe rebuilt ({0:N1} MB)" -f $size)
 
     $starterExe = Join-Path $LazarusDir "startlazarus.exe"
     if (-not (Test-Path $starterExe)) {

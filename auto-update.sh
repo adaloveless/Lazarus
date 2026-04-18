@@ -228,20 +228,39 @@ rebuild_vp_packages() {
 rebuild_lazbuild() {
     log_header "Rebuilding lazbuild"
 
+    local pre_mtime=""
+    if [ -f "$LAZARUS_DIR/lazbuild" ]; then
+        pre_mtime=$(stat -c %Y "$LAZARUS_DIR/lazbuild" 2>/dev/null || stat -f %m "$LAZARUS_DIR/lazbuild" 2>/dev/null)
+    fi
+
     make -C "$LAZARUS_DIR" clean 2>&1 | tail -1
 
     make -C "$LAZARUS_DIR" lazbuild \
         PP="$VP_COMPILER" \
         FPCDIR="$VP_DIR" \
         OPT="-n @$LINUX_CFG" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+    local build_exit=${PIPESTATUS[0]}
 
-    if [ -f "$LAZARUS_DIR/lazbuild" ]; then
-        local size=$(du -sh "$LAZARUS_DIR/lazbuild" | cut -f1)
-        log_ok "lazbuild rebuilt ($size)"
-    else
-        log_err "lazbuild build failed!"
+    if [ "$build_exit" -ne 0 ]; then
+        log_err "lazbuild build failed with exit code $build_exit"
         return 1
     fi
+
+    if [ ! -f "$LAZARUS_DIR/lazbuild" ]; then
+        log_err "lazbuild build failed -- binary not found!"
+        return 1
+    fi
+
+    if [ -n "$pre_mtime" ]; then
+        local post_mtime=$(stat -c %Y "$LAZARUS_DIR/lazbuild" 2>/dev/null || stat -f %m "$LAZARUS_DIR/lazbuild" 2>/dev/null)
+        if [ "$post_mtime" -le "$pre_mtime" ]; then
+            log_err "lazbuild build failed silently -- binary was not updated (stale file from previous build)"
+            return 1
+        fi
+    fi
+
+    local size=$(du -sh "$LAZARUS_DIR/lazbuild" | cut -f1)
+    log_ok "lazbuild rebuilt ($size)"
 }
 
 print_summary() {
@@ -339,16 +358,36 @@ rebuild_ide() {
     fi
 
     log_info "Building IDE with widgetset: $ws"
+
+    local pre_mtime=""
+    if [ -f "$LAZARUS_DIR/lazarus" ]; then
+        pre_mtime=$(stat -c %Y "$LAZARUS_DIR/lazarus" 2>/dev/null || stat -f %m "$LAZARUS_DIR/lazarus" 2>/dev/null)
+    fi
+
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
         --compiler="$VP_COMPILER" --ws="$ws" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+    local build_exit=${PIPESTATUS[0]}
 
-    if [ -f "$LAZARUS_DIR/lazarus" ]; then
-        local size=$(du -sh "$LAZARUS_DIR/lazarus" | cut -f1)
-        log_ok "lazarus rebuilt ($size)"
-    else
-        log_err "lazarus build failed!"
+    if [ "$build_exit" -ne 0 ]; then
+        log_err "lazarus build failed with exit code $build_exit"
         return 1
     fi
+
+    if [ ! -f "$LAZARUS_DIR/lazarus" ]; then
+        log_err "lazarus build failed -- binary not found!"
+        return 1
+    fi
+
+    if [ -n "$pre_mtime" ]; then
+        local post_mtime=$(stat -c %Y "$LAZARUS_DIR/lazarus" 2>/dev/null || stat -f %m "$LAZARUS_DIR/lazarus" 2>/dev/null)
+        if [ "$post_mtime" -le "$pre_mtime" ]; then
+            log_err "lazarus build failed silently -- binary was not updated (stale file from previous build)"
+            return 1
+        fi
+    fi
+
+    local size=$(du -sh "$LAZARUS_DIR/lazarus" | cut -f1)
+    log_ok "lazarus rebuilt ($size)"
 }
 
 fix_lpi_files() {
