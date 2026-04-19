@@ -145,11 +145,15 @@ function Extract-VPBinaries {
             return
         }
 
-        # Blow away stale units before re-extracting to avoid v24-compiler+v22-PPU CRC mismatches
-        $staleUnits = Join-Path $VPDir "units\x86_64-win64"
-        if (Test-Path $staleUnits) {
-            Log-Info "Removing stale PPU units at $staleUnits"
-            Remove-Item -Recurse -Force $staleUnits -ErrorAction SilentlyContinue
+        # Blow away stale units before re-extracting to avoid v24-compiler+v22-PPU CRC mismatches.
+        # Both dirs matter: units\x86_64-win64 holds tarball PPUs, rtl\units\x86_64-win64 may hold
+        # PPUs from a prior source build that collide with tarball PPUs (different system.ppu CRC).
+        foreach ($stale in @("units\x86_64-win64", "rtl\units\x86_64-win64")) {
+            $stalePath = Join-Path $VPDir $stale
+            if (Test-Path $stalePath) {
+                Log-Info "Removing stale PPU units at $stalePath"
+                Remove-Item -Recurse -Force $stalePath -ErrorAction SilentlyContinue
+            }
         }
 
         # Copy ALL top-level entries (bin/, units/, compiler/, fpc.cfg, etc.) into $VPDir
@@ -197,18 +201,21 @@ function Ensure-VPConfig {
     $flatUnits = Join-Path $VPDir "units"
     $tarballUnits = Join-Path $VPDir "units\x86_64-win64"
 
-    $cfgContent = @"
-# VibePascal configuration for native x86_64-win64 builds (auto-generated)
--Fu$rtlUnits
--Fu$pkgUnits
-"@
+    # Prefer the tarball PPUs (complete set). When they exist, put them FIRST and skip rtl\units
+    # entirely -- leftover source-built PPUs in rtl\units have a different system.ppu CRC and cause
+    # "Can't find unit Classes used by DB" at link time when mixed with tarball PPUs.
+    $lines = @("# VibePascal configuration for native x86_64-win64 builds (auto-generated)")
     if (Test-Path $tarballUnits) {
-        $cfgContent += "`n-Fu$tarballUnits"
+        $lines += "-Fu$tarballUnits"
+        $lines += "-Fu$pkgUnits"
+    } else {
+        $lines += "-Fu$rtlUnits"
+        $lines += "-Fu$pkgUnits"
     }
     if (Test-Path $flatUnits) {
-        $cfgContent += "`n-Fu$flatUnits"
+        $lines += "-Fu$flatUnits"
     }
-    [IO.File]::WriteAllText($VPCfgPath, $cfgContent, (New-Object System.Text.UTF8Encoding $false))
+    [IO.File]::WriteAllText($VPCfgPath, ($lines -join "`n"), (New-Object System.Text.UTF8Encoding $false))
     Log-Info "Generated VibePascal config: $VPCfgPath"
 }
 
