@@ -5948,10 +5948,6 @@ msgstr "Création"
 msgid "Build Date"
 msgstr "Date de construction"
 
-#: lazarusidestrconsts.lisbuildide
-msgid "Build IDE"
-msgstr "Création de l'EDI"
-
 #: lazarusidestrconsts.lisbuildidewithpackages
 msgid "Build IDE with packages. Optional compiler options will be passed after the options from used build mode and can be specified here or with the --opt option."
 msgstr "Créez un EDI avec des paquets. Les options facultatives du compilateur seront transmises après les options du mode de construction utilisé et peuvent être spécifiées ici ou avec l'option --opt."
@@ -5959,10 +5955,6 @@ msgstr "Créez un EDI avec des paquets. Les options facultatives du compilateur 
 #: lazarusidestrconsts.lisbuilding
 msgid "Building"
 msgstr "Création"
-
-#: lazarusidestrconsts.lisbuildinglazarusfailed
-msgid "Building Lazarus failed"
-msgstr "La création de Lazarus a échoué"
 
 #: lazarusidestrconsts.lisbuildmode
 #, object-pascal-format
@@ -6802,10 +6794,6 @@ msgstr "Syntaxe simplifiée (par exemple * au lieu de .*)"
 #| msgid "Clean all"
 msgid "&Clean all"
 msgstr "Tout nettoyer"
-
-#: lazarusidestrconsts.liscleanlazarussource
-msgid "Clean Lazarus Source"
-msgstr "Nettoyer les codes sources de Lazarus"
 
 #: lazarusidestrconsts.liscleanonlyonce
 #, fuzzy
@@ -9328,11 +9316,6 @@ msgstr "Codes sources dupliqués. Supprimez-en un ou assurez-vous que les chemin
 msgid "Duplicate Unit"
 msgstr "Dupliquer l'unité"
 
-#: lazarusidestrconsts.lisduplicateunitin
-#, object-pascal-format
-msgid "Duplicate unit \"%s\" in \"%s\""
-msgstr "Dupliquer l'unité \"%s\" dans \"%s\""
-
 #: lazarusidestrconsts.lisdynpkgamounttoscrollin
 msgid "Amount to scroll in"
 msgstr "Quantité à faire défiler"
@@ -11762,10 +11745,6 @@ msgstr "Confirmer avant la création"
 msgid "Confirm deletion"
 msgstr "Confirmer la suppression"
 
-#: lazarusidestrconsts.lislazbuilddebugide
-msgid "Debug IDE"
-msgstr "Débogage de l'EDI"
-
 #: lazarusidestrconsts.lislazbuilddefines
 #, fuzzy
 #| msgid "Defines"
@@ -11784,11 +11763,6 @@ msgstr "Éditer les définitions"
 #: lazarusidestrconsts.lislazbuildeditlistofdefineswhichcanbeusedbyanyprofile
 msgid "Edit list of defines which can be used by any profile"
 msgstr "Modifier la liste des définitions qui peuvent être utilisées par n'importe quel profil"
-
-#: lazarusidestrconsts.lislazbuilderrorwritingfile
-msgctxt "lazarusidestrconsts.lislazbuilderrorwritingfile"
-msgid "Error writing file"
-msgstr "Erreur d'écriture de fichier"
 
 #: lazarusidestrconsts.lislazbuildisnoninteractiveabortingnow
 #, object-pascal-format
@@ -11814,14 +11788,6 @@ msgstr "Ajouter un nouveau profil"
 #: lazarusidestrconsts.lislazbuildnewprofinfo
 msgid "Current build options will be associated with:"
 msgstr "Les options courantes de création seront associées à :"
-
-#: lazarusidestrconsts.lislazbuildnormalide
-msgid "Normal IDE"
-msgstr "EDI normal"
-
-#: lazarusidestrconsts.lislazbuildoptimizedide
-msgid "Optimized IDE"
-msgstr "EDI optimisé"
 
 #: lazarusidestrconsts.lislazbuildoptions
 #, fuzzy
@@ -11887,11 +11853,6 @@ msgstr "Répertoire cible :"
 msgid "Target OS:"
 msgstr "Système d'exploitation cible :"
 
-#: lazarusidestrconsts.lislazbuildunabletowritefile
-#, object-pascal-format
-msgid "Unable to write file \"%s\":%s"
-msgstr "Impossible d'écrire le fichier \"%s\" : %s"
-
 #: lazarusidestrconsts.lislazbuildupdaterevinc
 msgctxt "lazarusidestrconsts.lislazbuildupdaterevinc"
 msgid "Update revision.inc"
@@ -11900,11 +11861,6 @@ msgstr "Mise à jour de revision.inc"
 #: lazarusidestrconsts.lislazbuildupdaterevisioninfoinaboutlazarusdialog
 msgid "Update revision info in \"About Lazarus\" dialog"
 msgstr "Mettre à jour les informations de révision dans le dialogue \"À propos de Lazarus\""
-
-#: lazarusidestrconsts.lislazcleanupbuildall
-msgctxt "lazarusidestrconsts.lislazcleanupbuildall"
-msgid "Clean Up + Build all"
-msgstr "Nettoyer + Tout créer"
 
 #: lazarusidestrconsts.lislazpkg
 msgid "Package distributed with Lazarus"
@@ -12130,10 +12086,6 @@ msgstr "Changements majeurs détectés"
 msgctxt "lazarusidestrconsts.lismakecurrent"
 msgid "Current"
 msgstr "En cours"
-
-#: lazarusidestrconsts.lismakenotfound
-msgid "Make not found"
-msgstr "Make introuvable"
 
 #: lazarusidestrconsts.lismakeresourcestring
 msgid "Make ResourceString"
@@ -17913,11 +17865,6 @@ msgstr "Le paquet \"%s\" est utilisé par"
 msgid "The path of \"make\" is not correct: \"%s\""
 msgstr "Le chemin de Make n'est pas correct : \"%s\""
 
-#: lazarusidestrconsts.listheprogrammakewasnotfoundthistoolisneededtobuildla
-#, object-pascal-format
-msgid "The program \"make\" was not found.%sThis tool is needed to build Lazarus."
-msgstr "Le programme Make est introuvable.%sCet outil est nécessaire pour créer Lazarus."
-
 #: lazarusidestrconsts.listheprojectcompileroptionsandthedirectivesinthemain
 msgid "The project compiler options and the directives in the main source differ. For the new unit the mode and string type of the project options are used:"
 msgstr "Les options de compilation du projet et les directives du code source principal diffèrent. Pour la nouvelle unité, le mode et le type de chaîne de caractères des options du projet sont utilisés :"
@@ -18211,11 +18158,6 @@ msgstr "Le projet na pas de fichier de code source principal"
 #: lazarusidestrconsts.listhisprojecthasonlythedefaultbuildmode
 msgid "This project has only the default build mode."
 msgstr "Seul le mode de construction par défaut existe pour ce projet."
-
-#: lazarusidestrconsts.listhissetofoptionstobuildlazarusisnotsupportedbythis
-#, object-pascal-format
-msgid "This set of options to build Lazarus is not supported by this installation.%sThe directory \"%s\" is not writable.%sSee the Lazarus website for other ways to install Lazarus."
-msgstr "Ce jeu d'options pour construire Lazarus n'est pas pris en charge par cette installation.%sLe répertoire \"%s\" est en lecture seule.%sVoir le site Lazarus pour d'autres façons d'installer Lazarus."
 
 #: lazarusidestrconsts.listhisstatementcannotbeextractedpleaseselectsomecode
 #, object-pascal-format

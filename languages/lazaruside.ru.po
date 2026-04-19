@@ -5906,10 +5906,6 @@ msgstr "Сборка"
 msgid "Build Date"
 msgstr "Дата сборки"
 
-#: lazarusidestrconsts.lisbuildide
-msgid "Build IDE"
-msgstr "Сборка IDE"
-
 #: lazarusidestrconsts.lisbuildidewithpackages
 msgid "Build IDE with packages. Optional compiler options will be passed after the options from used build mode and can be specified here or with the --opt option."
 msgstr "Собрать IDE с пакетами. Необязательные дополнительные параметры компиляции будут переданы после параметров используемого режима сборки и могут быть указаны здесь либо в --opt."
@@ -5917,10 +5913,6 @@ msgstr "Собрать IDE с пакетами. Необязательные д�
 #: lazarusidestrconsts.lisbuilding
 msgid "Building"
 msgstr "Сборка"
-
-#: lazarusidestrconsts.lisbuildinglazarusfailed
-msgid "Building Lazarus failed"
-msgstr "Сборка Lazarus не удалась"
 
 #: lazarusidestrconsts.lisbuildmode
 #, object-pascal-format
@@ -6757,10 +6749,6 @@ msgstr "Простой синтаксис (например, * вместо .*)"
 #: lazarusidestrconsts.liscleanall
 msgid "&Clean all"
 msgstr "Очищать &всё"
-
-#: lazarusidestrconsts.liscleanlazarussource
-msgid "Clean Lazarus Source"
-msgstr "Очистка каталога исходного кода Lazarus"
 
 #: lazarusidestrconsts.liscleanonlyonce
 msgid "Switch to \"automatic\" mode after building"
@@ -9273,11 +9261,6 @@ msgstr "Файлы исходного кода дублируются. Удал�
 msgid "Duplicate Unit"
 msgstr "Дублирующийся модуль"
 
-#: lazarusidestrconsts.lisduplicateunitin
-#, object-pascal-format
-msgid "Duplicate unit \"%s\" in \"%s\""
-msgstr "Дублирующийся модуль \"%s\" в \"%s\""
-
 #: lazarusidestrconsts.lisdynpkgamounttoscrollin
 msgid "Amount to scroll in"
 msgstr "Шаг прокрутки"
@@ -11693,10 +11676,6 @@ msgstr "Спрашивать перед пересборкой"
 msgid "Confirm deletion"
 msgstr "Подтвердите удаление"
 
-#: lazarusidestrconsts.lislazbuilddebugide
-msgid "Debug IDE"
-msgstr "IDE в режиме отладки"
-
 #: lazarusidestrconsts.lislazbuilddefines
 msgid "&Defines"
 msgstr "О&пределения"
@@ -11713,11 +11692,6 @@ msgstr "Редактировать определения"
 #: lazarusidestrconsts.lislazbuildeditlistofdefineswhichcanbeusedbyanyprofile
 msgid "Edit list of defines which can be used by any profile"
 msgstr "Редактировать список определений для использования любым профилем"
-
-#: lazarusidestrconsts.lislazbuilderrorwritingfile
-msgctxt "lazarusidestrconsts.lislazbuilderrorwritingfile"
-msgid "Error writing file"
-msgstr "Ошибка записи файла"
 
 #: lazarusidestrconsts.lislazbuildisnoninteractiveabortingnow
 #, object-pascal-format
@@ -11743,14 +11717,6 @@ msgstr "Добавление нового профиля"
 #: lazarusidestrconsts.lislazbuildnewprofinfo
 msgid "Current build options will be associated with:"
 msgstr "Текущие параметры сборки будут сохранены в профиле:"
-
-#: lazarusidestrconsts.lislazbuildnormalide
-msgid "Normal IDE"
-msgstr "Обычная IDE"
-
-#: lazarusidestrconsts.lislazbuildoptimizedide
-msgid "Optimized IDE"
-msgstr "IDE с оптимизацией"
 
 #: lazarusidestrconsts.lislazbuildoptions
 msgid "&Options:"
@@ -11810,11 +11776,6 @@ msgstr "Каталог назначения:"
 msgid "Target OS:"
 msgstr "Целевая ОС:"
 
-#: lazarusidestrconsts.lislazbuildunabletowritefile
-#, object-pascal-format
-msgid "Unable to write file \"%s\":%s"
-msgstr "Невозможно записать файл \"%s\":%s"
-
 #: lazarusidestrconsts.lislazbuildupdaterevinc
 msgctxt "lazarusidestrconsts.lislazbuildupdaterevinc"
 msgid "Update revision.inc"
@@ -11823,11 +11784,6 @@ msgstr "Обновить revision.inc"
 #: lazarusidestrconsts.lislazbuildupdaterevisioninfoinaboutlazarusdialog
 msgid "Update revision info in \"About Lazarus\" dialog"
 msgstr "Обновить сведения о ревизии в диалоге \"О проекте Lazarus\""
-
-#: lazarusidestrconsts.lislazcleanupbuildall
-msgctxt "lazarusidestrconsts.lislazcleanupbuildall"
-msgid "Clean Up + Build all"
-msgstr "Очистить + Собрать все"
 
 #: lazarusidestrconsts.lislazpkg
 msgid "Package distributed with Lazarus"
@@ -12052,10 +12008,6 @@ msgstr "Обнаружены значительные изменения"
 msgctxt "lazarusidestrconsts.lismakecurrent"
 msgid "Current"
 msgstr "Текущий"
-
-#: lazarusidestrconsts.lismakenotfound
-msgid "Make not found"
-msgstr "Не найден Make"
 
 #: lazarusidestrconsts.lismakeresourcestring
 msgid "Make ResourceString"
@@ -17836,11 +17788,6 @@ msgstr "Пакет \"%s\" используется в"
 msgid "The path of \"make\" is not correct: \"%s\""
 msgstr "Путь к \"Make\" некорректен: \"%s\""
 
-#: lazarusidestrconsts.listheprogrammakewasnotfoundthistoolisneededtobuildla
-#, object-pascal-format
-msgid "The program \"make\" was not found.%sThis tool is needed to build Lazarus."
-msgstr "Программа \"make\" не найдена.%sОна требуется для сборки Lazarus."
-
 #: lazarusidestrconsts.listheprojectcompileroptionsandthedirectivesinthemain
 msgid "The project compiler options and the directives in the main source differ. For the new unit the mode and string type of the project options are used:"
 msgstr "Параметры компилятора для проекта не соответствуют директивам в главном файле исходного кода. В новом модуле будут использованы режим синтаксиса и тип строк в соответствии с параметрами проекта:"
@@ -18134,11 +18081,6 @@ msgstr "Этот проект не имеет главного файла исх
 #: lazarusidestrconsts.listhisprojecthasonlythedefaultbuildmode
 msgid "This project has only the default build mode."
 msgstr "Этот проект имеет только режим сборки по умолчанию."
-
-#: lazarusidestrconsts.listhissetofoptionstobuildlazarusisnotsupportedbythis
-#, object-pascal-format
-msgid "This set of options to build Lazarus is not supported by this installation.%sThe directory \"%s\" is not writable.%sSee the Lazarus website for other ways to install Lazarus."
-msgstr "Этот набор параметров сборки Lazarus не поддерживается установленным экземпляром.%sКаталог \"%s\" недоступен для записи.%sДругие методы установки смотрите на сайте Lazarus."
 
 #: lazarusidestrconsts.listhisstatementcannotbeextractedpleaseselectsomecode
 #, object-pascal-format

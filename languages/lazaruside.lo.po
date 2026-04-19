@@ -5914,10 +5914,6 @@ msgstr "ສ້າງ (Build)"
 msgid "Build Date"
 msgstr "ວັນທີ Build"
 
-#: lazarusidestrconsts.lisbuildide
-msgid "Build IDE"
-msgstr "ສ້າງ IDE"
-
 #: lazarusidestrconsts.lisbuildidewithpackages
 msgid "Build IDE with packages. Optional compiler options will be passed after the options from used build mode and can be specified here or with the --opt option."
 msgstr "ສ້າງ IDE ພ້ອມແພັກເກັດ. ຕົວເລືອກ compiler ເພີ່ມເຕີມຈະຖືກສົ່ງຕໍ່ຫຼັງຈາກຕົວເລືອກຈາກ build mode ທີ່ໃຊ້ ແລະ ສາມາດລະບຸໄດ້ທີ່ນີ້ ຫຼື ດ້ວຍຕົວເລືອກ --opt."
@@ -5925,10 +5921,6 @@ msgstr "ສ້າງ IDE ພ້ອມແພັກເກັດ. ຕົວເລ�
 #: lazarusidestrconsts.lisbuilding
 msgid "Building"
 msgstr "ກຳລັງສ້າງ"
-
-#: lazarusidestrconsts.lisbuildinglazarusfailed
-msgid "Building Lazarus failed"
-msgstr "ການສ້າງ Lazarus ລົ້ມເຫຼວ"
 
 #: lazarusidestrconsts.lisbuildmode
 #, object-pascal-format
@@ -6765,10 +6757,6 @@ msgstr "Syntax ແບບງ່າຍ (ເຊັ່ນ: * ແທນ .*)"
 #: lazarusidestrconsts.liscleanall
 msgid "&Clean all"
 msgstr "&ລ້າງທັງໝົດ"
-
-#: lazarusidestrconsts.liscleanlazarussource
-msgid "Clean Lazarus Source"
-msgstr "ລ້າງຊອດໂຄດ Lazarus"
 
 #: lazarusidestrconsts.liscleanonlyonce
 msgid "Switch to \"automatic\" mode after building"
@@ -9284,11 +9272,6 @@ msgstr "Source ຊ້ຳກັນ. ລົບອັນໜຶ່ງອອກ ຫ�
 msgid "Duplicate Unit"
 msgstr "Unit ຊ້ຳກັນ"
 
-#: lazarusidestrconsts.lisduplicateunitin
-#, object-pascal-format
-msgid "Duplicate unit \"%s\" in \"%s\""
-msgstr "Unit ຊ້ຳກັນ \"%s\" ໃນ \"%s\""
-
 #: lazarusidestrconsts.lisdynpkgamounttoscrollin
 msgid "Amount to scroll in"
 msgstr "ຈຳນວນທີ່ຈະເລື່ອນເຂົ້າ"
@@ -11701,10 +11684,6 @@ msgstr "ຢືນຢັນກ່ອນສ້າງ"
 msgid "Confirm deletion"
 msgstr "ຢືນຢັນການລຶບ"
 
-#: lazarusidestrconsts.lislazbuilddebugide
-msgid "Debug IDE"
-msgstr "ດີບັກ IDE"
-
 #: lazarusidestrconsts.lislazbuilddefines
 msgid "&Defines"
 msgstr "&Defines"
@@ -11721,11 +11700,6 @@ msgstr "ແກ້ໄຂ Defines"
 #: lazarusidestrconsts.lislazbuildeditlistofdefineswhichcanbeusedbyanyprofile
 msgid "Edit list of defines which can be used by any profile"
 msgstr "ແກ້ໄຂລາຍຊື່ Defines ທີ່ສາມາດໃຊ້ໄດ້ກັບທຸກໂປຣໄຟລ໌"
-
-#: lazarusidestrconsts.lislazbuilderrorwritingfile
-msgctxt "lazarusidestrconsts.lislazbuilderrorwritingfile"
-msgid "Error writing file"
-msgstr "ເກີດຂໍ້ຜິດພາດໃນການຂຽນໄຟລ໌"
 
 #: lazarusidestrconsts.lislazbuildisnoninteractiveabortingnow
 #, object-pascal-format
@@ -11751,14 +11725,6 @@ msgstr "ເພີ່ມໂປຣໄຟລ໌ໃໝ່"
 #: lazarusidestrconsts.lislazbuildnewprofinfo
 msgid "Current build options will be associated with:"
 msgstr "ຕົວເລືອກການສ້າງປັດຈຸບັນຈະຖືກເຊື່ອມໂຍງກັບ:"
-
-#: lazarusidestrconsts.lislazbuildnormalide
-msgid "Normal IDE"
-msgstr "IDE ປົກກະຕິ"
-
-#: lazarusidestrconsts.lislazbuildoptimizedide
-msgid "Optimized IDE"
-msgstr "IDE ທີ່ປັບແຕ່ງແລ້ວ"
 
 #: lazarusidestrconsts.lislazbuildoptions
 msgid "&Options:"
@@ -11818,11 +11784,6 @@ msgstr "ໄດເຣັກທໍຣີເປົ້າໝາຍ:"
 msgid "Target OS:"
 msgstr "OS ເປົ້າໝາຍ:"
 
-#: lazarusidestrconsts.lislazbuildunabletowritefile
-#, object-pascal-format
-msgid "Unable to write file \"%s\":%s"
-msgstr "ບໍ່ສາມາດຂຽນໄຟລ໌ \"%s\":%s"
-
 #: lazarusidestrconsts.lislazbuildupdaterevinc
 msgctxt "lazarusidestrconsts.lislazbuildupdaterevinc"
 msgid "Update revision.inc"
@@ -11831,11 +11792,6 @@ msgstr "ອັບເດດ revision.inc"
 #: lazarusidestrconsts.lislazbuildupdaterevisioninfoinaboutlazarusdialog
 msgid "Update revision info in \"About Lazarus\" dialog"
 msgstr "ອັບເດດຂໍ້ມູນ revision ໃນກ່ອງໂຕ້ຕອບ \"ກ່ຽວກັບ Lazarus\""
-
-#: lazarusidestrconsts.lislazcleanupbuildall
-msgctxt "lazarusidestrconsts.lislazcleanupbuildall"
-msgid "Clean Up + Build all"
-msgstr "ລ້າງຂໍ້ມູນ + ສ້າງທັງໝົດ"
 
 #: lazarusidestrconsts.lislazpkg
 msgid "Package distributed with Lazarus"
@@ -12060,10 +12016,6 @@ msgstr "ກວດພົບການປ່ຽນແປງທີ່ສຳຄັນ
 msgctxt "lazarusidestrconsts.lismakecurrent"
 msgid "Current"
 msgstr "ປັດຈຸບັນ"
-
-#: lazarusidestrconsts.lismakenotfound
-msgid "Make not found"
-msgstr "ບໍ່ພົບ Make"
 
 #: lazarusidestrconsts.lismakeresourcestring
 msgid "Make ResourceString"
@@ -17844,11 +17796,6 @@ msgstr "ແພັກເກັດ \"%s\" ຖືກນຳໃຊ້ໂດຍ"
 msgid "The path of \"make\" is not correct: \"%s\""
 msgstr "ເສັ້ນທາງຂອງ \"make\" ບໍ່ຖືກຕ້ອງ: \"%s\""
 
-#: lazarusidestrconsts.listheprogrammakewasnotfoundthistoolisneededtobuildla
-#, object-pascal-format
-msgid "The program \"make\" was not found.%sThis tool is needed to build Lazarus."
-msgstr "ບໍ່ພົບໂປຣແກຣມ \"make\".%sເຄື່ອງມືນີ້ຈຳເປັນສຳລັບການ build Lazarus."
-
 #: lazarusidestrconsts.listheprojectcompileroptionsandthedirectivesinthemain
 msgid "The project compiler options and the directives in the main source differ. For the new unit the mode and string type of the project options are used:"
 msgstr "ຕົວເລືອກຄອມໄພເລີຂອງໂປຣເຈັກ ແລະ directives ໃນ source ຫຼັກແຕກຕ່າງກັນ. ສຳລັບ unit ໃໝ່ ໂໝດ ແລະ ປະເພດ string ຂອງຕົວເລືອກໂປຣເຈັກຈະຖືກໃຊ້:"
@@ -18142,11 +18089,6 @@ msgstr "ໂປຣເຈັກນີ້ບໍ່ມີໄຟລ໌ source ຫຼ�
 #: lazarusidestrconsts.listhisprojecthasonlythedefaultbuildmode
 msgid "This project has only the default build mode."
 msgstr "ໂປຣເຈັກນີ້ມີພຽງແຕ່ build mode ເລີ່ມຕົ້ນເທົ່ານັ້ນ."
-
-#: lazarusidestrconsts.listhissetofoptionstobuildlazarusisnotsupportedbythis
-#, object-pascal-format
-msgid "This set of options to build Lazarus is not supported by this installation.%sThe directory \"%s\" is not writable.%sSee the Lazarus website for other ways to install Lazarus."
-msgstr "ຊຸດຕົວເລືອກນີ້ໃນການ build Lazarus ແມ່ນບໍ່ຮອງຮັບໂດຍການຕິດຕັ້ງນີ້.%sໄດເຣັກທໍຣີ \"%s\" ບໍ່ສາມາດຂຽນໄດ້.%sເບິ່ງເວັບໄຊ Lazarus ສຳລັບວິທີອື່ນໃນການຕິດຕັ້ງ Lazarus."
 
 #: lazarusidestrconsts.listhisstatementcannotbeextractedpleaseselectsomecode
 #, object-pascal-format

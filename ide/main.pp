@@ -61,7 +61,7 @@ uses
   // fpc packages
   Math, Classes, SysUtils, TypInfo, Types, StrUtils, Contnrs, process, AVL_Tree, System.UITypes,
   // LCL
-  LCLProc, LCLType, LCLIntf, LMessages, LResources, HelpIntfs, InterfaceBase, LCLPlatformDef,
+  LCLProc, LCLType, LCLIntf, LMessages, LResources, HelpIntfs, InterfaceBase,
   ComCtrls, Forms, Buttons, Menus, Controls, Graphics, ExtCtrls, Dialogs, LclStrConsts, StdCtrls,
   // CodeTools
   FileProcs, FindDeclarationTool, LinkScanner, BasicCodeTools, CodeToolsStructs,
@@ -71,7 +71,7 @@ uses
   // use lazutf8, lazfileutils and lazfilecache after FileProcs and FileUtil
   FileUtil, LazFileUtils, LazUtilities, LazUTF8, UTF8Process,
   LConvEncoding, Laz2_XMLCfg, LazLoggerBase, LazLogger, LazFileCache, AvgLvlTree,
-  GraphType, LazStringUtils, LazTracer,
+  GraphType, LazStringUtils, LazVersion, LazTracer,
   LCLExceptionStacktrace,
   {$IFDEF LCLWin} Win32Proc, {$ENDIF}
   {$IFDEF LCLCocoa} CocoaConfig, CocoaIDEFormConfig,{$ENDIF}
@@ -123,7 +123,8 @@ uses
   InputHistory, IdeUtilsPkg, IdeUtilsPkgStrConsts,
   // IdeConfig
   LazConf, EnvironmentOpts, TransferMacros, IDECmdLine, IDEGuiCmdLine,
-  IDEProcs, ApplicationBundle, InitialSetupProc, IdeConfStrConsts,
+  IDEProcs, ApplicationBundle, InitialSetupProc, MiscOptions, IdeBuilder,
+  IdeConfStrConsts,
   // IdePackager,
   IdePackager, IdePackagerStrConsts, PackageSystem, BasePkgManager, LPKCache,
   // IdeProject,
@@ -166,7 +167,7 @@ uses
   IdeOptionsDlg, EditDefineTree, KeyMapping,
   IDETranslations, ExtToolDialog, ExtToolEditDlg, JumpHistoryView,
   DesktopManager, DiskDiffsDialog, BuildLazDialog, BuildProfileManager,
-  BuildManager, IdeBuildManager, CheckCompOptsForNewUnitDlg, MiscOptions,
+  BuildManager, IdeBuildManager, CheckCompOptsForNewUnitDlg,
   InputhistoryWithSearchOpt, UnitDependencies, IDEFPCInfo, IDEInfoDlg,
   IDEInfoNeedBuild, ProcessList, IdeDebuggerOpts, IdeDebuggerWatchResPrinter,
   IdeDebuggerWatchResult, InitialSetupDlgs, NewDialog,
@@ -204,6 +205,7 @@ type
     procedure HandleSelectFrame(Sender: TObject; var AComponentClass: TComponentClass);
     function FindHelpButton(lParent: TWinControl; out aHelpButton: TControl): boolean;
     procedure ForwardKeyToObjectInspector(Sender: TObject; Key: TUTF8Char);
+    function MainTitleChanged(const ATitle: string): boolean;
     procedure OIChangedTimerTimer(Sender: TObject);
     procedure LazInstancesStartNewInstance(const aFiles: TStrings;
       var Result: TStartNewInstanceResult; var outSourceWindowHandle: HWND);
@@ -2245,6 +2247,7 @@ begin
   LazMessageWorker:=@IDEMessageDialogHandler;
   LazQuestionWorker:=@IDEQuestionDialogHandler;
   LazMsgWorker.OnShowMessage:=@ShowMessageHandler;
+  LazMsgWorker.OnMainTitleChange:=@MainTitleChanged;
   TestCompilerOptions:=@CompilerOptionsDialogTest;
   CheckCompOptsAndMainSrcForNewUnitEvent:=@CheckForNewUnit;
 end;
@@ -4997,8 +5000,8 @@ begin
     fBuilder:=TLazarusBuilder.Create;    // Will be freed in the very end.
   MainBuildBoss.SetBuildTargetIDE;
   try
-    DlgResult:=fBuilder.ShowConfigBuildLazDlg(MiscellaneousOptions.BuildLazProfiles,
-                                              ToolStatus in [itDebugger,itBuilder]);
+    DlgResult:=ShowConfigBuildLazDlg(fBuilder, MiscellaneousOptions.BuildLazProfiles,
+                                     ToolStatus in [itDebugger,itBuilder]);
   finally
     MainBuildBoss.SetBuildTargetProject1(true);
   end;
@@ -12778,6 +12781,11 @@ begin
     dsForm: DisplayState := dsInspector2;
   else
   end;
+end;
+
+function TMainIDE.MainTitleChanged(const ATitle: string): boolean;
+begin
+  LazarusIDE.MainBarSubTitle:=ATitle;
 end;
 
 procedure TMainIDE.OIChangedTimerTimer(Sender: TObject);

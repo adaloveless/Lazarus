@@ -6100,10 +6100,6 @@ msgstr "Daryti"
 msgid "Build Date"
 msgstr ""
 
-#: lazarusidestrconsts.lisbuildide
-msgid "Build IDE"
-msgstr "Daryti IKA"
-
 #: lazarusidestrconsts.lisbuildidewithpackages
 #, fuzzy
 #| msgid "build IDE with packages"
@@ -6113,10 +6109,6 @@ msgstr "kartu su IKA daryti ir paketus"
 #: lazarusidestrconsts.lisbuilding
 msgid "Building"
 msgstr "Daroma"
-
-#: lazarusidestrconsts.lisbuildinglazarusfailed
-msgid "Building Lazarus failed"
-msgstr "Lazarus darymas nepavyko"
 
 #: lazarusidestrconsts.lisbuildmode
 #, object-pascal-format
@@ -6958,10 +6950,6 @@ msgstr "Paprasta sintaksė (pvz.: * vietoje .*)"
 #| msgid "Clean all"
 msgid "&Clean all"
 msgstr "Visiškas apvalymas"
-
-#: lazarusidestrconsts.liscleanlazarussource
-msgid "Clean Lazarus Source"
-msgstr "Apvalyti Lazarus aplankus"
 
 #: lazarusidestrconsts.liscleanonlyonce
 #, fuzzy
@@ -9511,11 +9499,6 @@ msgstr "Dubliuojasi pirminiai kodai. Kažkurį reikia pašalinti arba užtikrint
 msgid "Duplicate Unit"
 msgstr "Modulis dubliuojais"
 
-#: lazarusidestrconsts.lisduplicateunitin
-#, object-pascal-format, fuzzy, badformat
-msgid "Duplicate unit \"%s\" in \"%s\""
-msgstr "„%1:s“ rastas modulio „%0:s“ dublikatas"
-
 #: lazarusidestrconsts.lisdynpkgamounttoscrollin
 msgid "Amount to scroll in"
 msgstr ""
@@ -11998,10 +11981,6 @@ msgstr "Prieš darant reikalauti patvirtinimo"
 msgid "Confirm deletion"
 msgstr "Trynimo patvirtinimas"
 
-#: lazarusidestrconsts.lislazbuilddebugide
-msgid "Debug IDE"
-msgstr "Derinama IKA"
-
 #: lazarusidestrconsts.lislazbuilddefines
 #, fuzzy
 #| msgid "Defines"
@@ -12020,11 +11999,6 @@ msgstr "Keisti apibrėžtis"
 #: lazarusidestrconsts.lislazbuildeditlistofdefineswhichcanbeusedbyanyprofile
 msgid "Edit list of defines which can be used by any profile"
 msgstr "Keisti apibrėžčių sąrašą. Jas galima naudoti bet kokiame profilyje"
-
-#: lazarusidestrconsts.lislazbuilderrorwritingfile
-msgctxt "lazarusidestrconsts.lislazbuilderrorwritingfile"
-msgid "Error writing file"
-msgstr "Klaida rašant į failą"
 
 #: lazarusidestrconsts.lislazbuildisnoninteractiveabortingnow
 #, object-pascal-format
@@ -12050,14 +12024,6 @@ msgstr "Įdėti naują profilį"
 #: lazarusidestrconsts.lislazbuildnewprofinfo
 msgid "Current build options will be associated with:"
 msgstr "Veikiamosios darymo parinktys bus susietos su:"
-
-#: lazarusidestrconsts.lislazbuildnormalide
-msgid "Normal IDE"
-msgstr "Įprasta IKA"
-
-#: lazarusidestrconsts.lislazbuildoptimizedide
-msgid "Optimized IDE"
-msgstr "Optimizuota IKA"
 
 #: lazarusidestrconsts.lislazbuildoptions
 #, fuzzy
@@ -12123,11 +12089,6 @@ msgstr "Daryti aplanke:"
 msgid "Target OS:"
 msgstr "Skirtas OS:"
 
-#: lazarusidestrconsts.lislazbuildunabletowritefile
-#, object-pascal-format
-msgid "Unable to write file \"%s\":%s"
-msgstr "Nepavyko rašyti į failą „%s“:%s"
-
 #: lazarusidestrconsts.lislazbuildupdaterevinc
 msgctxt "lazarusidestrconsts.lislazbuildupdaterevinc"
 msgid "Update revision.inc"
@@ -12136,11 +12097,6 @@ msgstr "Naujinti „revision.inc“"
 #: lazarusidestrconsts.lislazbuildupdaterevisioninfoinaboutlazarusdialog
 msgid "Update revision info in \"About Lazarus\" dialog"
 msgstr "Naujinti dialoge „Apie Lazarus“ pateikiamą informaciją apie laidą"
-
-#: lazarusidestrconsts.lislazcleanupbuildall
-msgctxt "lazarusidestrconsts.lislazcleanupbuildall"
-msgid "Clean Up + Build all"
-msgstr "Išvalyti + Daryti viską"
 
 #: lazarusidestrconsts.lislazpkg
 msgid "Package distributed with Lazarus"
@@ -12382,10 +12338,6 @@ msgstr ""
 msgctxt "lazarusidestrconsts.lismakecurrent"
 msgid "Current"
 msgstr "Veikiamasis"
-
-#: lazarusidestrconsts.lismakenotfound
-msgid "Make not found"
-msgstr "Nerastas Make"
 
 #: lazarusidestrconsts.lismakeresourcestring
 msgid "Make ResourceString"
@@ -18280,11 +18232,6 @@ msgstr ""
 msgid "The path of \"make\" is not correct: \"%s\""
 msgstr "„make“ adresas nėra tinkamas: „%s“"
 
-#: lazarusidestrconsts.listheprogrammakewasnotfoundthistoolisneededtobuildla
-#, object-pascal-format
-msgid "The program \"make\" was not found.%sThis tool is needed to build Lazarus."
-msgstr "Nerasta programa „make“.%sŠi programa reikalinga Lazarus darymui."
-
 #: lazarusidestrconsts.listheprojectcompileroptionsandthedirectivesinthemain
 msgid "The project compiler options and the directives in the main source differ. For the new unit the mode and string type of the project options are used:"
 msgstr "Skiriasi projekto kompiliatoriaus parinktys ir direktyvos pagrindiniame pirminiame kode. Naujame projekte bus naudojami projekto parinkčių veiksena ir eilutės tipas:"
@@ -18582,11 +18529,6 @@ msgstr "Projekte nėra pagrindinio pirminio kodo"
 #: lazarusidestrconsts.listhisprojecthasonlythedefaultbuildmode
 msgid "This project has only the default build mode."
 msgstr "Projekte yra tik numatytoji darymo veiksena."
-
-#: lazarusidestrconsts.listhissetofoptionstobuildlazarusisnotsupportedbythis
-#, object-pascal-format
-msgid "This set of options to build Lazarus is not supported by this installation.%sThe directory \"%s\" is not writable.%sSee the Lazarus website for other ways to install Lazarus."
-msgstr "Šis „Lazarus“ nepalaiko šių „Lazarus“ darymo parinkčių grupės.%sĮ aplanką „%s“ rašyti draudžiama.%sKitų būdų kaip įdiegti „Lazarus“ sužinosite „Lazarus“ tinklapyje."
 
 #: lazarusidestrconsts.listhisstatementcannotbeextractedpleaseselectsomecode
 #, object-pascal-format

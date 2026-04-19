@@ -5925,10 +5925,6 @@ msgstr "构建"
 msgid "Build Date"
 msgstr "构建日期"
 
-#: lazarusidestrconsts.lisbuildide
-msgid "Build IDE"
-msgstr "构建 IDE"
-
 #: lazarusidestrconsts.lisbuildidewithpackages
 msgid "Build IDE with packages. Optional compiler options will be passed after the options from used build mode and can be specified here or with the --opt option."
 msgstr "使用包构建 IDE。可选的编译器选项将在使用构建模式的选项之后传递，并可以在这里或使用 --opt 选项指定。"
@@ -5936,10 +5932,6 @@ msgstr "使用包构建 IDE。可选的编译器选项将在使用构建模式�
 #: lazarusidestrconsts.lisbuilding
 msgid "Building"
 msgstr "构建"
-
-#: lazarusidestrconsts.lisbuildinglazarusfailed
-msgid "Building Lazarus failed"
-msgstr "构建 Lazarus 失败"
 
 #: lazarusidestrconsts.lisbuildmode
 #, object-pascal-format
@@ -6776,10 +6768,6 @@ msgstr "简单语法 (例如 * 取代 .*)"
 #: lazarusidestrconsts.liscleanall
 msgid "&Clean all"
 msgstr "清理所有(&C)"
-
-#: lazarusidestrconsts.liscleanlazarussource
-msgid "Clean Lazarus Source"
-msgstr "清理 Lazarus 源代码"
 
 #: lazarusidestrconsts.liscleanonlyonce
 #, fuzzy
@@ -9301,11 +9289,6 @@ msgstr "重复的源文件.删除一个或确保所有搜索的路径有正确�
 msgid "Duplicate Unit"
 msgstr "重复单元"
 
-#: lazarusidestrconsts.lisduplicateunitin
-#, object-pascal-format
-msgid "Duplicate unit \"%s\" in \"%s\""
-msgstr "重复单元 \"%s\" 在 \"%s\""
-
 #: lazarusidestrconsts.lisdynpkgamounttoscrollin
 msgid "Amount to scroll in"
 msgstr "滚动量"
@@ -11726,10 +11709,6 @@ msgstr "构建前确认"
 msgid "Confirm deletion"
 msgstr "确认删除"
 
-#: lazarusidestrconsts.lislazbuilddebugide
-msgid "Debug IDE"
-msgstr "调试的 IDE"
-
 #: lazarusidestrconsts.lislazbuilddefines
 msgid "&Defines"
 msgstr "&定义"
@@ -11746,11 +11725,6 @@ msgstr "编辑定义"
 #: lazarusidestrconsts.lislazbuildeditlistofdefineswhichcanbeusedbyanyprofile
 msgid "Edit list of defines which can be used by any profile"
 msgstr "编辑定义列表，这些定义可以被任何配置文件使用"
-
-#: lazarusidestrconsts.lislazbuilderrorwritingfile
-msgctxt "lazarusidestrconsts.lislazbuilderrorwritingfile"
-msgid "Error writing file"
-msgstr "写文件错误"
 
 #: lazarusidestrconsts.lislazbuildisnoninteractiveabortingnow
 #, object-pascal-format
@@ -11776,14 +11750,6 @@ msgstr "添加新配置文件"
 #: lazarusidestrconsts.lislazbuildnewprofinfo
 msgid "Current build options will be associated with:"
 msgstr "当前构建选项将被关联于:"
-
-#: lazarusidestrconsts.lislazbuildnormalide
-msgid "Normal IDE"
-msgstr "常规的 IDE"
-
-#: lazarusidestrconsts.lislazbuildoptimizedide
-msgid "Optimized IDE"
-msgstr "优化的 IDE"
 
 #: lazarusidestrconsts.lislazbuildoptions
 msgid "&Options:"
@@ -11843,11 +11809,6 @@ msgstr "目标目录："
 msgid "Target OS:"
 msgstr "目标操作系统："
 
-#: lazarusidestrconsts.lislazbuildunabletowritefile
-#, object-pascal-format
-msgid "Unable to write file \"%s\":%s"
-msgstr "不能写入文件\"%s\":%s"
-
 #: lazarusidestrconsts.lislazbuildupdaterevinc
 msgctxt "lazarusidestrconsts.lislazbuildupdaterevinc"
 msgid "Update revision.inc"
@@ -11856,11 +11817,6 @@ msgstr "更新 revision.inc"
 #: lazarusidestrconsts.lislazbuildupdaterevisioninfoinaboutlazarusdialog
 msgid "Update revision info in \"About Lazarus\" dialog"
 msgstr "更新在\"关于 Lazarus\"对话框中的修订信息"
-
-#: lazarusidestrconsts.lislazcleanupbuildall
-msgctxt "lazarusidestrconsts.lislazcleanupbuildall"
-msgid "Clean Up + Build all"
-msgstr "清除+构建所有"
 
 #: lazarusidestrconsts.lislazpkg
 msgid "Package distributed with Lazarus"
@@ -12085,10 +12041,6 @@ msgstr "检测到重大变更"
 msgctxt "lazarusidestrconsts.lismakecurrent"
 msgid "Current"
 msgstr "当前"
-
-#: lazarusidestrconsts.lismakenotfound
-msgid "Make not found"
-msgstr "Make未找到"
 
 #: lazarusidestrconsts.lismakeresourcestring
 msgid "Make ResourceString"
@@ -17867,11 +17819,6 @@ msgstr "软件包 “%s” 被使用于"
 msgid "The path of \"make\" is not correct: \"%s\""
 msgstr "\"make\"的路径不正确:\"%s\""
 
-#: lazarusidestrconsts.listheprogrammakewasnotfoundthistoolisneededtobuildla
-#, object-pascal-format
-msgid "The program \"make\" was not found.%sThis tool is needed to build Lazarus."
-msgstr "程序\"make\"未找到%s这个工具被需要用来构建Lazarus."
-
 #: lazarusidestrconsts.listheprojectcompileroptionsandthedirectivesinthemain
 msgid "The project compiler options and the directives in the main source differ. For the new unit the mode and string type of the project options are used:"
 msgstr "项目编译器选项和主源文件中的指令不同。对于新单元，使用项目选项的模式和字符串类型："
@@ -18165,11 +18112,6 @@ msgstr "项目没有main源代码文件"
 #: lazarusidestrconsts.listhisprojecthasonlythedefaultbuildmode
 msgid "This project has only the default build mode."
 msgstr "这个项目仅有默认构建模式."
-
-#: lazarusidestrconsts.listhissetofoptionstobuildlazarusisnotsupportedbythis
-#, object-pascal-format
-msgid "This set of options to build Lazarus is not supported by this installation.%sThe directory \"%s\" is not writable.%sSee the Lazarus website for other ways to install Lazarus."
-msgstr "此安装不支持用于构建Lazarus的此组选项。%s目录“%s”不可写。%s请参阅Lazarus网站以了解其他安装Lazarus的方法。"
 
 #: lazarusidestrconsts.listhisstatementcannotbeextractedpleaseselectsomecode
 #, object-pascal-format

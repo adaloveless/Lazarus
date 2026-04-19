@@ -6234,10 +6234,6 @@ msgstr "בנה"
 msgid "Build Date"
 msgstr ""
 
-#: lazarusidestrconsts.lisbuildide
-msgid "Build IDE"
-msgstr ""
-
 #: lazarusidestrconsts.lisbuildidewithpackages
 #, fuzzy
 #| msgid "build IDE with packages"
@@ -6247,10 +6243,6 @@ msgstr "בנה את ה IDE עם חבילות"
 #: lazarusidestrconsts.lisbuilding
 msgid "Building"
 msgstr ""
-
-#: lazarusidestrconsts.lisbuildinglazarusfailed
-msgid "Building Lazarus failed"
-msgstr "בניית לזארוס נכשלה"
 
 #: lazarusidestrconsts.lisbuildmode
 #, object-pascal-format
@@ -7127,10 +7119,6 @@ msgstr "תחביר פשוט (כלומר * במקום .*)"
 #: lazarusidestrconsts.liscleanall
 msgid "&Clean all"
 msgstr ""
-
-#: lazarusidestrconsts.liscleanlazarussource
-msgid "Clean Lazarus Source"
-msgstr "נקה את קוד המקור של לזרוס"
 
 #: lazarusidestrconsts.liscleanonlyonce
 msgid "Switch to \"automatic\" mode after building"
@@ -9733,11 +9721,6 @@ msgstr "מקורות כפולים.מחק אחד או שתבדוק שכל נתי�
 msgid "Duplicate Unit"
 msgstr ""
 
-#: lazarusidestrconsts.lisduplicateunitin
-#, object-pascal-format
-msgid "Duplicate unit \"%s\" in \"%s\""
-msgstr ""
-
 #: lazarusidestrconsts.lisdynpkgamounttoscrollin
 msgid "Amount to scroll in"
 msgstr ""
@@ -12248,10 +12231,6 @@ msgstr "אשר לפני בנייה מחודשת של לזרוס"
 msgid "Confirm deletion"
 msgstr "אשר מחיקה"
 
-#: lazarusidestrconsts.lislazbuilddebugide
-msgid "Debug IDE"
-msgstr "נפה שגיאות IDE"
-
 #: lazarusidestrconsts.lislazbuilddefines
 msgid "&Defines"
 msgstr ""
@@ -12268,11 +12247,6 @@ msgstr ""
 #: lazarusidestrconsts.lislazbuildeditlistofdefineswhichcanbeusedbyanyprofile
 msgid "Edit list of defines which can be used by any profile"
 msgstr "קפל תיקייה"
-
-#: lazarusidestrconsts.lislazbuilderrorwritingfile
-msgctxt "lazarusidestrconsts.lislazbuilderrorwritingfile"
-msgid "Error writing file"
-msgstr "שגיאה בכתיבת קובץ"
 
 #: lazarusidestrconsts.lislazbuildisnoninteractiveabortingnow
 #, object-pascal-format, fuzzy, badformat
@@ -12298,14 +12272,6 @@ msgstr "הוסף פרופיל חדש"
 #: lazarusidestrconsts.lislazbuildnewprofinfo
 msgid "Current build options will be associated with:"
 msgstr "אפשרויות הבנייה הנוכחיות יקושרו עם:"
-
-#: lazarusidestrconsts.lislazbuildnormalide
-msgid "Normal IDE"
-msgstr ""
-
-#: lazarusidestrconsts.lislazbuildoptimizedide
-msgid "Optimized IDE"
-msgstr "במצב מיטבי  IDE"
 
 #: lazarusidestrconsts.lislazbuildoptions
 #, fuzzy
@@ -12371,11 +12337,6 @@ msgstr "תיקיית היעד:"
 msgid "Target OS:"
 msgstr "מערכת ההפעלה המיועדת"
 
-#: lazarusidestrconsts.lislazbuildunabletowritefile
-#, object-pascal-format, fuzzy, badformat
-msgid "Unable to write file \"%s\":%s"
-msgstr "לא יכול לכתוב את הקובץ s%:%s"
-
 #: lazarusidestrconsts.lislazbuildupdaterevinc
 msgctxt "lazarusidestrconsts.lislazbuildupdaterevinc"
 msgid "Update revision.inc"
@@ -12384,11 +12345,6 @@ msgstr "עדכן את revision.inc"
 #: lazarusidestrconsts.lislazbuildupdaterevisioninfoinaboutlazarusdialog
 msgid "Update revision info in \"About Lazarus\" dialog"
 msgstr "עדכן את מידע התיקון בדיאלוג \"About Lazarus\""
-
-#: lazarusidestrconsts.lislazcleanupbuildall
-msgctxt "lazarusidestrconsts.lislazcleanupbuildall"
-msgid "Clean Up + Build all"
-msgstr "נקה ובנה הכל"
 
 #: lazarusidestrconsts.lislazpkg
 msgid "Package distributed with Lazarus"
@@ -12627,10 +12583,6 @@ msgstr ""
 msgctxt "lazarusidestrconsts.lismakecurrent"
 msgid "Current"
 msgstr "נוכחי"
-
-#: lazarusidestrconsts.lismakenotfound
-msgid "Make not found"
-msgstr "קובץ Make לא נמצא"
 
 #: lazarusidestrconsts.lismakeresourcestring
 msgid "Make ResourceString"
@@ -18796,12 +18748,6 @@ msgstr ""
 msgid "The path of \"make\" is not correct: \"%s\""
 msgstr ""
 
-#: lazarusidestrconsts.listheprogrammakewasnotfoundthistoolisneededtobuildla
-#, object-pascal-format, fuzzy, badformat
-#| msgid "The program %smake%s was not found.%sThis tool is needed to build Lazarus.%s"
-msgid "The program \"make\" was not found.%sThis tool is needed to build Lazarus."
-msgstr "התוכנית make לא נמצאה. כלי זה דרוש לבניית לזארוס."
-
 #: lazarusidestrconsts.listheprojectcompileroptionsandthedirectivesinthemain
 msgid "The project compiler options and the directives in the main source differ. For the new unit the mode and string type of the project options are used:"
 msgstr "אפשרויות המהדר לפרוייקט, וההוראות בקובץ הקוד הראשי שונות. עבור היחידה החדשה משתמש באפשרויות האופן וסוג המחרוזות של הפרוייקט."
@@ -19114,12 +19060,6 @@ msgstr "לפרוייקט זה אין קובץ קוד ראשי"
 #: lazarusidestrconsts.listhisprojecthasonlythedefaultbuildmode
 msgid "This project has only the default build mode."
 msgstr ""
-
-#: lazarusidestrconsts.listhissetofoptionstobuildlazarusisnotsupportedbythis
-#, object-pascal-format, fuzzy
-#| msgid "This set of options to build Lazarus is not supported by this installation.%sThe directory %s%s%s is not writable.%sSee the Lazarus website for other ways to install Lazarus."
-msgid "This set of options to build Lazarus is not supported by this installation.%sThe directory \"%s\" is not writable.%sSee the Lazarus website for other ways to install Lazarus."
-msgstr "סט זה של אפשרויות הבניה של לזארוס לא נתמך ע\"י התקנה זאת. לא ניתן לכתוב לתיקייה %s%s%s. ראה באתר לזארוס על דרכים אחרות להתקין את לזארוס."
 
 #: lazarusidestrconsts.listhisstatementcannotbeextractedpleaseselectsomecode
 #, object-pascal-format, fuzzy, badformat

@@ -3490,11 +3490,6 @@ resourcestring
     +'%s%s';
   lisConfirmBuildAllProfiles = 'Lazarus will be rebuilt with the following profiles:%sContinue?';
   lisNoBuildProfilesSelected = 'No profiles are selected to be built.';
-  lisCleanLazarusSource = 'Clean Lazarus Source';
-  lisBuildIDE = 'Build IDE';
-  lisMakeNotFound = 'Make not found';
-  lisTheProgramMakeWasNotFoundThisToolIsNeededToBuildLa = 'The program "make" '
-    +'was not found.%sThis tool is needed to build Lazarus.';
   lisIDE = 'IDE';
   lisConfigureBuildLazarus = 'Configure "Build Lazarus"';
   lisLazBuildOptions = '&Options:';
@@ -3526,13 +3521,6 @@ resourcestring
     +'"automatic" clean up mode';
   lisLazBuildManageProfiles ='Manage Build Profiles';
   lisLazBuildProfile ='&Profile to build';
-  lisLazBuildErrorWritingFile = 'Error writing file';
-  lisLazBuildUnableToWriteFile = 'Unable to write file "%s":%s';
-  lisLazBuildNormalIDE = 'Normal IDE';
-  lisLazBuildDebugIDE = 'Debug IDE';
-  lisLazBuildOptimizedIDE = 'Optimized IDE';
-  lisLazCleanUpBuildAll = 'Clean Up + Build all';
-
   lisLazBuildABOChooseOutputDir = 'Choose output directory of the IDE executable ';
   lisLazBuildDefines = '&Defines';
   lisLazBuildEditDefines = 'Edit Defines';
@@ -5642,11 +5630,6 @@ resourcestring
     +'identifiers=%s/%s lines=%s bytes=%s';
   lisScanning2 = '%s. Scanning ...';
   lisShowGlyphsFor = 'Show Glyphs for';
-  lisBuildingLazarusFailed = 'Building Lazarus failed';
-  lisThisSetOfOptionsToBuildLazarusIsNotSupportedByThis = 'This set of '
-    +'options to build Lazarus is not supported by this installation.%sThe '
-    +'directory "%s" is not writable.%sSee the Lazarus website for other '
-    +'ways to install Lazarus.';
   lisSelected = 'Selected';
   lisSelectedAndChildControls = 'Selected and child controls';
 
@@ -6094,7 +6077,6 @@ resourcestring
   synfMatchActionButtonOfMouseDown = 'Match action button of mouse down';
   synfMatchActionModifiersOfMouseDown = 'Match action modifiers of mouse down';
   synfContinueWithNextMouseUpAction = 'Continue with next mouse up action';
-  lisDuplicateUnitIn = 'Duplicate unit "%s" in "%s"';
 
   lismpMultiPaste = 'MultiPaste';
   lismpPasteOptions = 'Paste &options';
