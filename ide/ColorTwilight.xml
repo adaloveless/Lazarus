@@ -7,256 +7,256 @@
       </Names>
       <Globals Version="6">
         <SchemeTwilight>
-          <ahaDefault Background="1973790" Foreground="13948116"/>
-          <ahaExecutionPoint Background="7884582" Foreground="13948116" ForePriority="500" BackPriority="500" FramePriority="500"/>
-          <ahaEnabledBreakpoint Background="4671476" Foreground="13948116" ForePriority="500" BackPriority="500" FramePriority="500"/>
-          <ahaDisabledBreakpoint Background="3026218" Foreground="8484462" ForePriority="500" BackPriority="500" FramePriority="500"/>
-          <ahaInvalidBreakpoint Background="42956" Foreground="13948116" ForePriority="500" BackPriority="500" FramePriority="500"/>
-          <ahaUnknownBreakpoint Background="4275514" Foreground="13948116" ForePriority="500" BackPriority="500" FramePriority="500"/>
-          <ahaErrorLine Background="1908058" Foreground="13948116" ForePriority="500" BackPriority="500" FramePriority="500"/>
-          <ahaLineHighlight Background="3026218" ForePriority="500" BackPriority="500" FramePriority="500"/>
-          <ahaWordGroup FrameColor="12617413" ForePriority="3000" BackPriority="3000" FramePriority="3000"/>
-          <ahaBracketMatch Background="4275514" Style="fsBold" ForePriority="3000" BackPriority="3000" FramePriority="3000"/>
-          <ahaHighlightWord Background="4275514" FrameColor="8484462" ForePriority="3000" BackPriority="3000" FramePriority="3000" MarkupAllOverviewColor="14064726"/>
-          <ahaIncrementalSearch Background="6969809" Foreground="13948116" ForePriority="4000" BackPriority="4000" FramePriority="4000"/>
-          <ahaHighlightAll Background="42956" Foreground="1973790" ForePriority="4000" BackPriority="4000" FramePriority="4000"/>
-          <ahaTemplateEditCur FrameColor="14064726" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
-          <ahaTemplateEditSync FrameColor="12617413" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
-          <ahaTemplateEditOther FrameColor="7901646" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
-          <ahaSyncroEditCur FrameColor="12617413" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
-          <ahaSyncroEditSync FrameColor="4671476" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
-          <ahaSyncroEditOther FrameColor="5609834" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
-          <ahaSyncroEditArea Background="3026218" ForePriority="2000" BackPriority="2000" FramePriority="2000"/>
-          <ahaTextBlock Background="7884582" Foreground="13948116" ForePriority="7000" BackPriority="7000" FramePriority="7000"/>
-          <ahaMouseLink Foreground="14064726" ForePriority="1500" BackPriority="2500" FramePriority="7500"/>
-          <ahaFoldedCode Foreground="8484462" FrameColor="4539213" ForePriority="8000" BackPriority="8000" FramePriority="8000"/>
-          <ahaSpecialVisibleChars Foreground="8484462" ForePriority="8100" BackPriority="8100" FramePriority="8100"/>
-          <ahaTopInfoHint Background="2499877" Foreground="13948116" FrameColor="4275514" FrameStyle="slsDashed" ForePriority="8500" BackPriority="8500" FramePriority="8500"/>
-          <ahaIfDefBlockInactive Foreground="8484462" ForeAlpha="150" ForePriority="9050" BackPriority="9050" FramePriority="9050"/>
+          <ahaDefault Background="1710618" Foreground="12239559"/>
+          <ahaExecutionPoint Background="4680284" Foreground="12239559" ForePriority="500" BackPriority="500" FramePriority="500"/>
+          <ahaEnabledBreakpoint Background="2570657" Foreground="12239559" ForePriority="500" BackPriority="500" FramePriority="500"/>
+          <ahaDisabledBreakpoint Background="2105380" Foreground="6314591" ForePriority="500" BackPriority="500" FramePriority="500"/>
+          <ahaInvalidBreakpoint Background="2631738" Foreground="12239559" ForePriority="500" BackPriority="500" FramePriority="500"/>
+          <ahaUnknownBreakpoint Background="3816522" Foreground="12239559" ForePriority="500" BackPriority="500" FramePriority="500"/>
+          <ahaErrorLine Background="2631738" Foreground="12239559" ForePriority="500" BackPriority="500" FramePriority="500"/>
+          <ahaLineHighlight Background="1973790" ForePriority="500" BackPriority="500" FramePriority="500"/>
+          <ahaWordGroup FrameColor="6924493" ForePriority="3000" BackPriority="3000" FramePriority="3000"/>
+          <ahaBracketMatch Background="3816522" Style="fsBold" ForePriority="3000" BackPriority="3000" FramePriority="3000"/>
+          <ahaHighlightWord Background="2960685" FrameColor="6314591" ForePriority="3000" BackPriority="3000" FramePriority="3000" MarkupAllOverviewColor="10743770"/>
+          <ahaIncrementalSearch Background="4680284" Foreground="12239559" ForePriority="4000" BackPriority="4000" FramePriority="4000"/>
+          <ahaHighlightAll Background="6987151" Foreground="1710618" ForePriority="4000" BackPriority="4000" FramePriority="4000"/>
+          <ahaTemplateEditCur FrameColor="10743770" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
+          <ahaTemplateEditSync FrameColor="6924493" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
+          <ahaTemplateEditOther FrameColor="4157595" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
+          <ahaSyncroEditCur FrameColor="6924493" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
+          <ahaSyncroEditSync FrameColor="6987151" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
+          <ahaSyncroEditOther FrameColor="10913653" ForePriority="6000" BackPriority="6000" FramePriority="6000"/>
+          <ahaSyncroEditArea Background="2960685" ForePriority="2000" BackPriority="2000" FramePriority="2000"/>
+          <ahaTextBlock Background="3815994" Foreground="12239559" ForePriority="7000" BackPriority="7000" FramePriority="7000"/>
+          <ahaMouseLink Foreground="10743770" ForePriority="1500" BackPriority="2500" FramePriority="7500"/>
+          <ahaFoldedCode Foreground="6314591" FrameColor="3816522" ForePriority="8000" BackPriority="8000" FramePriority="8000"/>
+          <ahaSpecialVisibleChars Foreground="6314591" ForePriority="8100" BackPriority="8100" FramePriority="8100"/>
+          <ahaTopInfoHint Background="1973790" Foreground="12239559" FrameColor="3816522" FrameStyle="slsDashed" ForePriority="8500" BackPriority="8500" FramePriority="8500"/>
+          <ahaIfDefBlockInactive Foreground="6314591" ForeAlpha="150" ForePriority="9050" BackPriority="9050" FramePriority="9050"/>
           <ahaIfDefBlockActive ForePriority="9000" BackPriority="9000" FramePriority="9000"/>
           <ahaIfDefBlockTmpActive ForePriority="9000" BackPriority="9000" FramePriority="9000"/>
           <ahaIfDefNodeActive ForePriority="9050" BackPriority="9050" FramePriority="9050"/>
           <ahaIfDefNodeInactive ForePriority="9150" BackPriority="9150" FramePriority="9150"/>
           <ahaIfDefNodeTmpActive ForePriority="9050" BackPriority="9050" FramePriority="9050"/>
-          <ahaModifiedLine Foreground="11585870" FrameColor="11585870"/>
-          <ahaCodeFoldingTree Foreground="8484462"/>
-          <ahaGutterSeparator Background="2499877" Foreground="4539213"/>
-          <ahaGutter Background="2499877"/>
-          <ahaRightMargin Foreground="4275514"/>
-          <ahaOverviewGutter Foreground="4275514" Background="2499877" FrameColor="4539213"/>
-          <ahaIdentComplWindow Background="3026218"/>
-          <ahaIdentComplRecent Foreground="11585870"/>
-          <ahaIdentComplWindowEntryConst Foreground="11197660"/>
-          <ahaIdentComplWindowEntryFunc Foreground="11197660"/>
-          <ahaIdentComplWindowEntryIdent Foreground="13948116"/>
-          <ahaIdentComplWindowEntryKeyword Foreground="14064726"/>
-          <ahaIdentComplWindowEntryEnum Foreground="6724305"/>
-          <ahaIdentComplWindowEntryLabel Foreground="6724305"/>
-          <ahaIdentComplWindowEntryMethAbstract Foreground="4671476"/>
-          <ahaIdentComplWindowEntryMethodLowVis Foreground="8484462"/>
-          <ahaIdentComplWindowEntryNameSpace Foreground="13948116"/>
-          <ahaIdentComplWindowEntryProc Foreground="11197660"/>
-          <ahaIdentComplWindowEntryProp Foreground="12617413"/>
-          <ahaIdentComplWindowEntryTempl Foreground="8484462"/>
-          <ahaIdentComplWindowEntryText Foreground="13948116"/>
-          <ahaIdentComplWindowEntryType Foreground="11585870"/>
-          <ahaIdentComplWindowEntryUnit Foreground="12617413"/>
-          <ahaIdentComplWindowEntryUnknown Foreground="8484462"/>
-          <ahaIdentComplWindowEntryVar Foreground="6724305"/>
-          <ahaIdentComplWindowBorder Foreground="4539213"/>
-          <ahaIdentComplWindowHighlight Foreground="14064726"/>
-          <ahaOutlineLevel1Color Foreground="55295"/>
-          <ahaOutlineLevel2Color Foreground="14053594"/>
-          <ahaOutlineLevel3Color Foreground="16752407"/>
-          <ahaOutlineLevel4Color Foreground="11585870"/>
-          <ahaOutlineLevel5Color Foreground="14064726"/>
-          <ahaOutlineLevel6Color Foreground="12617413"/>
-          <ahaExternalLink FrameColor="12617413" FrameEdges="sfeBottom"/>
+          <ahaModifiedLine Foreground="6987151" FrameColor="6987151"/>
+          <ahaCodeFoldingTree Foreground="6314591"/>
+          <ahaGutterSeparator Background="1973790" Foreground="3816522"/>
+          <ahaGutter Background="1973790"/>
+          <ahaRightMargin Foreground="2960685"/>
+          <ahaOverviewGutter Foreground="6314591" Background="1973790" FrameColor="3816522"/>
+          <ahaIdentComplWindow Background="2105380"/>
+          <ahaIdentComplRecent Foreground="6987151"/>
+          <ahaIdentComplWindowEntryConst Foreground="5008079"/>
+          <ahaIdentComplWindowEntryFunc Foreground="10743770"/>
+          <ahaIdentComplWindowEntryIdent Foreground="12239559"/>
+          <ahaIdentComplWindowEntryKeyword Foreground="6924493"/>
+          <ahaIdentComplWindowEntryEnum Foreground="5008079"/>
+          <ahaIdentComplWindowEntryLabel Foreground="5008079"/>
+          <ahaIdentComplWindowEntryMethAbstract Foreground="2570657"/>
+          <ahaIdentComplWindowEntryMethodLowVis Foreground="6314591"/>
+          <ahaIdentComplWindowEntryNameSpace Foreground="12239559"/>
+          <ahaIdentComplWindowEntryProc Foreground="10743770"/>
+          <ahaIdentComplWindowEntryProp Foreground="10323355"/>
+          <ahaIdentComplWindowEntryTempl Foreground="6314591"/>
+          <ahaIdentComplWindowEntryText Foreground="12239559"/>
+          <ahaIdentComplWindowEntryType Foreground="10323355"/>
+          <ahaIdentComplWindowEntryUnit Foreground="10913653"/>
+          <ahaIdentComplWindowEntryUnknown Foreground="6314591"/>
+          <ahaIdentComplWindowEntryVar Foreground="10913653"/>
+          <ahaIdentComplWindowBorder Foreground="3816522"/>
+          <ahaIdentComplWindowHighlight Foreground="10743770"/>
+          <ahaOutlineLevel1Color Foreground="12428943"/>
+          <ahaOutlineLevel2Color Foreground="12361139"/>
+          <ahaOutlineLevel3Color Foreground="7907007"/>
+          <ahaOutlineLevel4Color Foreground="6987151"/>
+          <ahaOutlineLevel5Color Foreground="8293798"/>
+          <ahaOutlineLevel6Color Foreground="10921599"/>
+          <ahaExternalLink FrameColor="10323355" FrameEdges="sfeBottom"/>
         </SchemeTwilight>
       </Globals>
       <LangObjectPascal Version="6">
         <SchemeTwilight>
-          <Assembler Foreground="11585870"/>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Directive Foreground="12617413"/>
-          <Number Foreground="11062965"/>
-          <Modifier Foreground="14064726" Style="fsBold"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
-          <NestedRoundBracket_1 Foreground="55295"/>
-          <NestedRoundBracket_2 Foreground="14053594"/>
-          <NestedRoundBracket_3 Foreground="16752407"/>
+          <Assembler Foreground="5008079"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Directive Foreground="10323355" Style="fsItalic"/>
+          <Number Foreground="5008079"/>
+          <Modifier Foreground="6924493" Style="fsBold"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
+          <NestedRoundBracket_1 Foreground="12428943"/>
+          <NestedRoundBracket_2 Foreground="12361139"/>
+          <NestedRoundBracket_3 Foreground="7907007"/>
         </SchemeTwilight>
       </LangObjectPascal>
       <LangLazarus_Form_definition Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Key Foreground="14064726" Style="fsBold"/>
-          <Number Foreground="11062965"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Key Foreground="6924493" Style="fsBold"/>
+          <Number Foreground="5008079"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
         </SchemeTwilight>
       </LangLazarus_Form_definition>
       <LangXML_document Version="6">
         <SchemeTwilight>
-          <Attribute_Name Foreground="11197660"/>
-          <Attribute_Value Foreground="7901646"/>
-          <CDATA_Section Foreground="6724305" Style="fsItalic"/>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <DOCTYPE_Section Foreground="12617413" Style="fsItalic"/>
-          <Element_Name Foreground="14064726" Style="fsBold"/>
-          <Entity_Reference Foreground="6724305" Style="fsBold"/>
-          <Namespace_Attribute_Name Foreground="11585870"/>
-          <Namespace_Attribute_Value Foreground="11585870" Style="fsBold"/>
-          <Processing_Instruction Foreground="12617413"/>
-          <Symbol Foreground="13948116"/>
-          <Text Foreground="13948116"/>
+          <Attribute_Name Foreground="10743770"/>
+          <Attribute_Value Foreground="6987151"/>
+          <CDATA_Section Foreground="10913653" Style="fsItalic"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <DOCTYPE_Section Foreground="10323355" Style="fsItalic"/>
+          <Element_Name Foreground="6924493" Style="fsBold"/>
+          <Entity_Reference Foreground="5008079" Style="fsBold"/>
+          <Namespace_Attribute_Name Foreground="10743770"/>
+          <Namespace_Attribute_Value Foreground="10743770" Style="fsBold"/>
+          <Processing_Instruction Foreground="10323355"/>
+          <Symbol Foreground="12239559"/>
+          <Text Foreground="12239559"/>
         </SchemeTwilight>
       </LangXML_document>
       <LangHTML_document Version="6">
         <SchemeTwilight>
-          <Asp Background="3026218" Foreground="12617413"/>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Escape_ampersand Foreground="11585870" Style="fsBold"/>
-          <Identifier Foreground="11197660" Style="fsBold"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <Symbol Foreground="13948116"/>
-          <Unknown_word Foreground="4671476" Style="fsBold"/>
-          <Value Foreground="7901646"/>
+          <Asp Background="2105380" Foreground="10323355"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Escape_ampersand Foreground="5008079" Style="fsBold"/>
+          <Identifier Foreground="10743770" Style="fsBold"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <Symbol Foreground="12239559"/>
+          <Unknown_word Foreground="2570657" Style="fsBold"/>
+          <Value Foreground="6987151"/>
         </SchemeTwilight>
       </LangHTML_document>
       <LangC__ Version="6">
         <SchemeTwilight>
-          <Assembler Foreground="11585870"/>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Number Foreground="11062965"/>
-          <Preprocessor Foreground="12617413"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <Space Foreground="13948116"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
+          <Assembler Foreground="5008079"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Number Foreground="5008079"/>
+          <Preprocessor Foreground="10323355" Style="fsItalic"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <Space Foreground="12239559"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
         </SchemeTwilight>
       </LangC__>
       <LangPerl Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Number Foreground="11062965"/>
-          <Pragma Foreground="12617413" Style="fsBold"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <Space Foreground="13948116"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
-          <Variable Foreground="6724305" Style="fsBold"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Number Foreground="5008079"/>
+          <Pragma Foreground="10323355" Style="fsBold"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <Space Foreground="12239559"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
+          <Variable Foreground="10913653" Style="fsBold"/>
         </SchemeTwilight>
       </LangPerl>
       <LangJava Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Documentation Foreground="8484462" Style="fsItalic"/>
-          <Number Foreground="11062965"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <Space Foreground="13948116"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Documentation Foreground="6314591" Style="fsItalic"/>
+          <Number Foreground="5008079"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <Space Foreground="12239559"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
         </SchemeTwilight>
       </LangJava>
       <LangUNIX_Shell_Script Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Number Foreground="11062965"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
-          <Variable Foreground="6724305"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Number Foreground="5008079"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
+          <Variable Foreground="10913653"/>
         </SchemeTwilight>
       </LangUNIX_Shell_Script>
       <LangPython Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Documentation Foreground="8484462" Style="fsItalic"/>
-          <Float Foreground="11062965"/>
-          <Hexadecimal Foreground="11062965"/>
-          <Non_reserved_keyword Foreground="11585870" Style="fsBold"/>
-          <Number Foreground="11062965"/>
-          <Octal Foreground="11062965"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
-          <SyntaxError Foreground="4671476"/>
-          <System_functions_and_variables Foreground="11197660" Style="fsBold"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Documentation Foreground="6314591" Style="fsItalic"/>
+          <Float Foreground="5008079"/>
+          <Hexadecimal Foreground="5008079"/>
+          <Non_reserved_keyword Foreground="6987151" Style="fsBold"/>
+          <Number Foreground="5008079"/>
+          <Octal Foreground="5008079"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
+          <SyntaxError Foreground="2570657"/>
+          <System_functions_and_variables Foreground="10743770" Style="fsBold"/>
         </SchemeTwilight>
       </LangPython>
       <LangPHP Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Number Foreground="11062965"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Number Foreground="5008079"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
         </SchemeTwilight>
       </LangPHP>
       <LangSQL Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Data_type Foreground="11585870" Style="fsBold"/>
-          <Default_packages Foreground="12617413" Style="fsBold"/>
-          <Exception Foreground="4671476" Style="fsItalic"/>
-          <Function Foreground="11197660" Style="fsBold"/>
-          <Number Foreground="11062965"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <Reserved_word__PL_SQL_ Foreground="14064726" Style="fsBold"/>
-          <SQL_Plus_command Foreground="12617413" Style="fsBold"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Data_type Foreground="10323355" Style="fsBold"/>
+          <Default_packages Foreground="10323355" Style="fsBold"/>
+          <Exception Foreground="2570657" Style="fsItalic"/>
+          <Function Foreground="10743770" Style="fsBold"/>
+          <Number Foreground="5008079"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <Reserved_word__PL_SQL_ Foreground="6924493" Style="fsBold"/>
+          <SQL_Plus_command Foreground="10323355" Style="fsBold"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
         </SchemeTwilight>
       </LangSQL>
       <LangJavascript Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Number Foreground="11062965"/>
-          <Reserved_word Foreground="14064726" Style="fsBold"/>
-          <String Foreground="7901646"/>
-          <Symbol Foreground="13948116"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Number Foreground="5008079"/>
+          <Reserved_word Foreground="6924493" Style="fsBold"/>
+          <String Foreground="6987151"/>
+          <Symbol Foreground="12239559"/>
         </SchemeTwilight>
       </LangJavascript>
       <LangDiff_File Version="6">
         <SchemeTwilight>
-          <Diff_Added_line Foreground="3967544"/>
-          <Diff_Changed_Line Foreground="12617413"/>
-          <Diff_Chunk_Line_Counts Foreground="12617413" Style="fsBold"/>
-          <Diff_Chunk_Marker Foreground="14064726" Style="fsBold"/>
-          <Diff_Chunk_New_Line_Count Foreground="3967544" Style="fsBold"/>
-          <Diff_Chunk_Original_Line_Count Foreground="3158213" Style="fsBold"/>
-          <Diff_New_File Foreground="3967544" Style="fsBold"/>
-          <Diff_Original_File Foreground="3158213" Style="fsBold"/>
-          <Diff_Removed_Line Foreground="3158213"/>
-          <Unknown_word Foreground="8484462" Style="fsItalic"/>
+          <Diff_Added_line Foreground="6987151"/>
+          <Diff_Changed_Line Foreground="6924493"/>
+          <Diff_Chunk_Line_Counts Foreground="10323355" Style="fsBold"/>
+          <Diff_Chunk_Marker Foreground="6924493" Style="fsBold"/>
+          <Diff_Chunk_New_Line_Count Foreground="6987151" Style="fsBold"/>
+          <Diff_Chunk_Original_Line_Count Foreground="5008079" Style="fsBold"/>
+          <Diff_New_File Foreground="6987151" Style="fsBold"/>
+          <Diff_Original_File Foreground="5008079" Style="fsBold"/>
+          <Diff_Removed_Line Foreground="5008079"/>
+          <Unknown_word Foreground="6314591" Style="fsItalic"/>
         </SchemeTwilight>
       </LangDiff_File>
       <LangMS_DOS_batch_language Version="6">
         <SchemeTwilight>
-          <Key Foreground="14064726" Style="fsBold"/>
-          <Number Foreground="11062965"/>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Variable Foreground="6724305"/>
+          <Key Foreground="6924493" Style="fsBold"/>
+          <Number Foreground="5008079"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Variable Foreground="10913653"/>
         </SchemeTwilight>
       </LangMS_DOS_batch_language>
       <LangINI_file Version="6">
         <SchemeTwilight>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Section Foreground="14064726" Style="fsBold"/>
-          <Number Foreground="11062965"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Section Foreground="6924493" Style="fsBold"/>
+          <Number Foreground="5008079"/>
         </SchemeTwilight>
       </LangINI_file>
       <Langpo_language_files Version="8">
         <SchemeTwilight>
-          <Key Foreground="14064726" Style="fsBold"/>
-          <Flags Foreground="11585870"/>
-          <String Foreground="7901646"/>
-          <Comment Foreground="5609834" Style="fsItalic"/>
-          <Identifier Foreground="11197660" Style="fsBold"/>
-          <Previous_value Foreground="8484462" Style="fsItalic"/>
+          <Key Foreground="6924493" Style="fsBold"/>
+          <Flags Foreground="10323355"/>
+          <String Foreground="6987151"/>
+          <Comment Foreground="6646384" Style="fsItalic"/>
+          <Identifier Foreground="10743770" Style="fsBold"/>
+          <Previous_value Foreground="6314591" Style="fsItalic"/>
         </SchemeTwilight>
       </Langpo_language_files>
     </ColorSchemes>
