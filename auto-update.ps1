@@ -193,7 +193,16 @@ function Extract-VPBinaries {
 
         [IO.File]::WriteAllText($markerFile, $archiveKey, (New-Object System.Text.UTF8Encoding $false))
 
-        $script:VPCompiler = $compilerExe
+        # Prefer bin\ppcx64.exe -- fpcres.exe and friends live in bin\ alongside it, and the
+        # tarball's fpc.cfg is authored for $FPCBINDIR=bin/. compiler\ppcx64.exe is kept for
+        # legacy callers but has no resource compiler next to it, so running lazbuild from
+        # compiler\ fails with "fpcres.exe not found".
+        $binCompiler = Join-Path $VPDir "bin\ppcx64.exe"
+        if (Test-Path $binCompiler) {
+            $script:VPCompiler = $binCompiler
+        } else {
+            $script:VPCompiler = $compilerExe
+        }
     } finally {
         Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
     }
