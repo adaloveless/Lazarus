@@ -68,7 +68,13 @@ if (-not $VPDir) {
     }
 }
 
-$VPCompiler = Join-Path $VPDir "compiler\ppcx64.exe"
+# Prefer bin\ppcx64.exe (tarball layout) over compiler\ppcx64.exe (legacy). When fpc reads its
+# default config, $FPCBINDIR is derived from the running binary's directory -- the tarball's
+# fpc.cfg expects $FPCBINDIR=bin/, so running from bin is the supported path.
+$VPCompiler = Join-Path $VPDir "bin\ppcx64.exe"
+if (-not (Test-Path $VPCompiler)) {
+    $VPCompiler = Join-Path $VPDir "compiler\ppcx64.exe"
+}
 if (-not (Test-Path $VPCompiler)) {
     $VPCompiler = Join-Path $VPDir "compiler\ppcx64"
 }
@@ -195,28 +201,53 @@ function Extract-VPBinaries {
 
 $VPCfgPath = Join-Path $VPDir "vibepascal-win64-native.cfg"
 
-function Ensure-VPConfig {
-    $rtlUnits = Join-Path $VPDir "rtl\units\x86_64-win64"
-    $pkgUnits = Join-Path $VPDir "packages\*\units\x86_64-win64"
-    $flatUnits = Join-Path $VPDir "units"
+function Get-VPUnitPaths {
+    # Return only -Fu candidate paths that (a) exist as directories and (b) contain at least one .ppu
+    # file. Wildcards like packages\*\units\x86_64-win64 do not reliably expand on Windows fpc.cfg,
+    # and a path with no .ppu contributes nothing but noise. Parent "units" (no target subfolder)
+    # never contains ppus and must not be included.
     $tarballUnits = Join-Path $VPDir "units\x86_64-win64"
+    $rtlUnits = Join-Path $VPDir "rtl\units\x86_64-win64"
+    $pkgRoot = Join-Path $VPDir "packages"
 
-    # Prefer the tarball PPUs (complete set). When they exist, put them FIRST and skip rtl\units
-    # entirely -- leftover source-built PPUs in rtl\units have a different system.ppu CRC and cause
-    # "Can't find unit Classes used by DB" at link time when mixed with tarball PPUs.
+    $paths = @()
+
+    # Tarball (flat) layout: units\x86_64-win64 holds the complete consistent PPU set.
+    if ((Test-Path $tarballUnits) -and (Get-ChildItem -Path $tarballUnits -Filter *.ppu -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        $paths += $tarballUnits
+    }
+
+    # Source-tree layout: expand packages/*/units/x86_64-win64 to explicit dirs that actually have ppus.
+    if (Test-Path $pkgRoot) {
+        foreach ($pkg in (Get-ChildItem -Path $pkgRoot -Directory -ErrorAction SilentlyContinue)) {
+            $pkgUnitDir = Join-Path $pkg.FullName "units\x86_64-win64"
+            if ((Test-Path $pkgUnitDir) -and (Get-ChildItem -Path $pkgUnitDir -Filter *.ppu -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+                $paths += $pkgUnitDir
+            }
+        }
+    }
+
+    # Source-tree layout: rtl/units/x86_64-win64 (skipped when tarball already covers it -- tarball
+    # PPUs are internally consistent and mixing them with source-built rtl PPUs causes CRC mismatch).
+    if ((Test-Path $rtlUnits) -and ($paths.Count -eq 0) -and (Get-ChildItem -Path $rtlUnits -Filter *.ppu -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        $paths += $rtlUnits
+    }
+
+    return $paths
+}
+
+function Ensure-VPConfig {
+    $unitPaths = Get-VPUnitPaths
+    if ($unitPaths.Count -eq 0) {
+        Log-Err "No VibePascal PPU directories found under $VPDir -- cannot generate config"
+        return
+    }
+
     $lines = @("# VibePascal configuration for native x86_64-win64 builds (auto-generated)")
-    if (Test-Path $tarballUnits) {
-        $lines += "-Fu$tarballUnits"
-        $lines += "-Fu$pkgUnits"
-    } else {
-        $lines += "-Fu$rtlUnits"
-        $lines += "-Fu$pkgUnits"
-    }
-    if (Test-Path $flatUnits) {
-        $lines += "-Fu$flatUnits"
-    }
+    foreach ($p in $unitPaths) { $lines += "-Fu$p" }
+
     [IO.File]::WriteAllText($VPCfgPath, ($lines -join "`n"), (New-Object System.Text.UTF8Encoding $false))
-    Log-Info "Generated VibePascal config: $VPCfgPath"
+    Log-Info "Generated VibePascal config: $VPCfgPath ($($unitPaths.Count) unit path$(if ($unitPaths.Count -ne 1) { 's' }))"
 }
 
 function Ensure-SelfClean {
@@ -662,38 +693,37 @@ function Configure-Environment {
     }
 
     $vpCfgFile = Join-Path $vpBinDir "fpc.cfg"
-    $vpTargetUnits = Join-Path $VPDir "units\x86_64-win64"
-    if (Test-Path $vpCfgFile) {
-        # Preserve tarball-shipped fpc.cfg; only append missing search paths
-        $cfgContent = Get-Content $vpCfgFile -Raw
-        $appended = $false
-        if ((Test-Path $vpTargetUnits) -and ($cfgContent -notmatch [regex]::Escape($vpTargetUnits))) {
-            Add-Content -Path $vpCfgFile -Value "`n-Fu$vpTargetUnits"
-            Log-Info "Added -Fu$vpTargetUnits to fpc.cfg"
-            $appended = $true
-        }
-        if ($cfgContent -notmatch [regex]::Escape($vpUnitsDir)) {
-            Add-Content -Path $vpCfgFile -Value "`n-Fu$vpUnitsDir"
-            Log-Info "Added -Fu$vpUnitsDir to fpc.cfg"
-            $appended = $true
-        }
-        if (-not $appended) {
-            Log-Ok "VibePascal units paths already in fpc.cfg"
-        }
-    } else {
-        Log-Info "Creating VibePascal fpc.cfg"
-        $cfgLines = @(
-            "# VibePascal compiler config (auto-generated by auto-update.ps1)",
-            "-Fu$vpUnitsDir",
-            "-Fu$VPDir\rtl\units\x86_64-win64",
-            "-Fu$VPDir\packages\*\units\x86_64-win64"
-        )
-        if (Test-Path $vpTargetUnits) {
-            $cfgLines += "-Fu$vpTargetUnits"
-        }
-        [IO.File]::WriteAllText($vpCfgFile, ($cfgLines -join "`n"), (New-Object System.Text.UTF8Encoding $false))
-        Log-Ok "Created $vpCfgFile"
+
+    # Always regenerate bin\fpc.cfg with explicit literal paths. The tarball-shipped cfg uses
+    # "-Fu$FPCBINDIR../units/$FPCTARGET" which only resolves correctly when ppcx64.exe is run from
+    # $VPDir\bin; running from $VPDir\compiler produces an invalid path (compiler../). Explicit
+    # paths are robust regardless of where the compiler is launched from.
+    $unitPaths = Get-VPUnitPaths
+    if ($unitPaths.Count -eq 0) {
+        Log-Err "No VibePascal PPU directories found under $VPDir -- cannot configure fpc.cfg"
+        return
     }
+
+    $cfgLines = @(
+        "# VibePascal compiler config (regenerated by auto-update.ps1)",
+        "# Do not hand-edit; this file is overwritten on every update.",
+        "",
+        "# Unit search paths"
+    )
+    foreach ($p in $unitPaths) { $cfgLines += "-Fu$p" }
+    $cfgLines += @(
+        "",
+        "# Parsing: allow goto, inline, C-operators",
+        "-Sgic",
+        "",
+        "# Verbosity: info, warnings, notes",
+        "-viwn",
+        "",
+        "# Logo",
+        "-l"
+    )
+    [IO.File]::WriteAllText($vpCfgFile, ($cfgLines -join "`n"), (New-Object System.Text.UTF8Encoding $false))
+    Log-Ok "Wrote $vpCfgFile ($($unitPaths.Count) unit path$(if ($unitPaths.Count -ne 1) { 's' }))"
 
     Log-Ok "IDE configured to use VibePascal. Restart Lazarus to apply."
 }
