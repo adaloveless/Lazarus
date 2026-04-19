@@ -268,24 +268,28 @@ function Ensure-SelfClean {
 function Relaunch-IfUpdated {
     param([string]$PreHash)
     if ($SelfUpdated) { return }
-    $scriptPath = $MyInvocation.PSCommandPath
-    if (-not $scriptPath) { $scriptPath = $PSCommandPath }
+    $scriptPath = $PSCommandPath
+    if (-not $scriptPath) { $scriptPath = $MyInvocation.PSCommandPath }
     if (-not $scriptPath) { return }
     $postHash = (Get-FileHash -Path $scriptPath -Algorithm SHA256).Hash
-    if ($PreHash -ne $postHash) {
-        Log-Info "auto-update.ps1 was updated by pull -- relaunching with new version"
-        $relaunchArgs = @("-SelfUpdated")
-        if ($Check) { $relaunchArgs += "-Check" }
-        if ($NoBuild) { $relaunchArgs += "-NoBuild" }
-        if ($Release) { $relaunchArgs += "-Release" }
-        if ($UpstreamOnly) { $relaunchArgs += "-UpstreamOnly" }
-        if ($Setup) { $relaunchArgs += "-Setup" }
-        if ($FixLpi) { $relaunchArgs += "-FixLpi" }
-        if ($ForceRebuild) { $relaunchArgs += "-ForceRebuild" }
-        if ($VPDir) { $relaunchArgs += "-VPDir"; $relaunchArgs += $VPDir }
-        & $scriptPath @relaunchArgs
-        exit $LASTEXITCODE
-    }
+    if ($PreHash -eq $postHash) { return }
+
+    Log-Info "auto-update.ps1 was updated by pull -- relaunching with new version"
+    $relaunchParams = @{ SelfUpdated = $true }
+    if ($Check)        { $relaunchParams['Check']        = $true }
+    if ($NoBuild)      { $relaunchParams['NoBuild']      = $true }
+    if ($Release)      { $relaunchParams['Release']      = $true }
+    if ($UpstreamOnly) { $relaunchParams['UpstreamOnly'] = $true }
+    if ($Setup)        { $relaunchParams['Setup']        = $true }
+    if ($FixLpi)       { $relaunchParams['FixLpi']       = $true }
+    if ($ForceRebuild) { $relaunchParams['ForceRebuild'] = $true }
+    if ($VPDir)        { $relaunchParams['VPDir']        = $VPDir }
+
+    $paramSummary = ($relaunchParams.GetEnumerator() | ForEach-Object { "-$($_.Key) $($_.Value)" }) -join ' '
+    Log-Info "Relaunch: & `"$scriptPath`" $paramSummary"
+
+    & $scriptPath @relaunchParams
+    exit $LASTEXITCODE
 }
 
 function Invoke-Git {
