@@ -2084,7 +2084,7 @@ type
     property TrimSpaceType: TSynEditStringTrimmingType
       read fTrimSpaceType write fTrimSpaceType default settLeaveLine;
     property UndoLimit: Integer read fUndoLimit write fUndoLimit default 32767;
-    property TabWidth: Integer read fTabWidth write fTabWidth default 8;
+    property TabWidth: Integer read fTabWidth write fTabWidth default 2;
     property BracketHighlightStyle: TSynEditBracketHighlightStyle
       read fBracketHighlightStyle write fBracketHighlightStyle default sbhsBoth;
     // Display options
@@ -5932,7 +5932,7 @@ begin
   fBlockIndentType := sbitSpace;
   fTrimSpaceType := settEditLine;
   fUndoLimit := 32767;
-  fTabWidth := 8;
+  fTabWidth := 2;
   fElasticTabsMinWidth := 1;
   fBracketHighlightStyle := sbhsBoth;
   // Display options
@@ -6079,7 +6079,7 @@ begin
     fUndoLimit :=
       XMLConfig.GetValue('EditorOptions/General/Editor/UndoLimit', 32767);
     fTabWidth :=
-      XMLConfig.GetValue('EditorOptions/General/Editor/TabWidth', 8);
+      XMLConfig.GetValue('EditorOptions/General/Editor/TabWidth', 2);
     FBracketHighlightStyle :=
       TSynEditBracketHighlightStyle(XMLConfig.GetValue('EditorOptions/General/Editor/BracketHighlightStyle', 2));
 
@@ -6341,7 +6341,7 @@ begin
     XMLConfig.SetDeleteValue('EditorOptions/General/Editor/UndoLimit'
       , fUndoLimit, 32767);
     XMLConfig.SetDeleteValue('EditorOptions/General/Editor/TabWidth'
-      , fTabWidth, 8);
+      , fTabWidth, 2);
     XMLConfig.SetDeleteValue('EditorOptions/General/Editor/BracketHighlightStyle'
       , Ord(FBracketHighlightStyle), 2);
 
