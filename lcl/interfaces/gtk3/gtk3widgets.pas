@@ -2172,6 +2172,7 @@ function TGtk3Widget.SetCapture: HWND;
 begin
   Result := HWND(GetCapture);
   gtk_grab_add(GetContainerWidget);
+  Gtk3WidgetSet.FLCLCaptureWidget := GetContainerWidget;
 end;
 
 function TGtk3Widget.GtkEventKey(Sender: PGtkWidget; Event: PGdkEvent; AKeyPress: Boolean): Boolean;
@@ -2328,6 +2329,8 @@ begin
       {$IFDEF GTK3DEBUGKEYPRESS}
       writeln('<==== CN_KeyDownMsgs handled ... exiting');
       {$ENDIF}
+      if Gtk3WidgetFromGtkWidget(Sender) <> Self then
+        exit(True);
       if IsEditableWidget and (Self.getText <> TextBeforeKey) then
         exit(True)
       else if [wtEntry,wtMemo] * WidgetType <> [] then
@@ -3028,6 +3031,9 @@ begin
 
   if HasCaret and IsValidHandle then
     GTK3WidgetSet.DestroyCaret(HWND(Self));
+
+  if IsValidHandle then
+    g_object_set_data(PGObject(FWidget), 'lclwidget', nil);
 
   if IsValidHandle and FOwnWidget then
   begin
@@ -8226,7 +8232,7 @@ var
   HSize, VSize: integer;
   uWidth, uHeight: guint;
   aCtl: TGtk3Widget;
-  ViewportChanged: boolean;
+  ViewportChanged, ClientRectMismatch: boolean;
 begin
 
   if not AWidget^.get_mapped then Exit;
@@ -8271,7 +8277,11 @@ begin
   if (uWidth <> HSize) or (uHeight <> VSize) then
     PGtkLayout(aWidget)^.set_size(HSize, VSize);
 
-  if not aCtl.InUpdate and ViewportChanged then
+  ClientRectMismatch := (AGdkRect^.width > 1) and (AGdkRect^.height > 1) and
+    ((aCtl.LCLObject.ClientWidth <> AGdkRect^.width) or
+     (aCtl.LCLObject.ClientHeight <> AGdkRect^.height));
+
+  if not aCtl.InUpdate and (ViewportChanged or ClientRectMismatch) then
     aCtl.LCLObject.DoAdjustClientRectChange(True);
 end;
 
@@ -12582,6 +12592,9 @@ begin
 end;
 
 class function TGtk3Window.WindowFocusOut(AWidget: PGtkWidget; AEvent: PGdkEventFocus; AData: gpointer): gboolean; cdecl;
+var
+  I: Integer;
+  AForm: TCustomForm;
 begin
   Result := gtk_false;
   Gtk3WidgetSet.LastFocusOut := AWidget;
@@ -12590,6 +12603,15 @@ begin
     ' LastFocusIn=', PtrUInt(Gtk3WidgetSet.LastFocusIn),
     ' LastFocusOut=', PtrUInt(Gtk3WidgetSet.LastFocusOut)]);
   {$ENDIF}
+  if Assigned(Application) then
+    Application.CancelHint;
+  if Assigned(Screen) then
+    for I := Screen.CustomFormCount - 1 downto 0 do
+    begin
+      AForm := Screen.CustomForms[I];
+      if AForm.Visible and (AForm is THintWindow) then
+        AForm.Hide;
+    end;
   if Gtk3WidgetSet.LastFocusOut = Gtk3WidgetSet.LastFocusIn then
     Gtk3StartAppFocusTimer;
 end;
