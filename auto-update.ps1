@@ -79,6 +79,19 @@ if (-not (Test-Path $VPCompiler)) {
     $VPCompiler = Join-Path $VPDir "compiler\ppcx64"
 }
 
+function Sort-VPArchives {
+    param([object[]]$Items)
+    # Parse -v## suffix (e.g., vibepascal-win64-<sha>-v28.tar.gz) and sort numerically
+    # descending; unversioned archives fall behind and sort by LastWriteTime.
+    # Fresh git clones give all archives nearly identical mtimes, so LastWriteTime
+    # alone is non-deterministic -- version number is the authoritative ordering.
+    return $Items | Sort-Object `
+        @{Expression = {
+            if ($_.Name -match '-v(\d+)\.(tar\.gz|zip)$') { [int]$Matches[1] } else { -1 }
+          }; Descending = $true}, `
+        @{Expression = {$_.LastWriteTime}; Descending = $true}
+}
+
 function Extract-VPBinaries {
     $compilerExe = Join-Path $VPDir "compiler\ppcx64.exe"
     $markerFile = Join-Path $VPDir ".auto-update-extracted.txt"
@@ -90,12 +103,10 @@ function Extract-VPBinaries {
 
     $tarballs = @()
     if (Test-Path $distDir) {
-        $tarballs = Get-ChildItem -Path $distDir -Filter "*.tar.gz" -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending
+        $tarballs = @(Sort-VPArchives (Get-ChildItem -Path $distDir -Filter "*.tar.gz" -ErrorAction SilentlyContinue))
     }
     if ($tarballs.Count -eq 0 -and (Test-Path $distDir)) {
-        $tarballs = Get-ChildItem -Path $distDir -Filter "*.zip" -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending
+        $tarballs = @(Sort-VPArchives (Get-ChildItem -Path $distDir -Filter "*.zip" -ErrorAction SilentlyContinue))
     }
 
     if ($tarballs.Count -eq 0) {
