@@ -766,7 +766,8 @@ const
 begin
   // Calendar form size for Cocoa cannot be fixed on WS level
   // see issue 35336
-  if WidgetSet.LCLPlatform = lpCocoa then begin
+  // Cast bridges TLCLPlatform alias: see note at wincontrol.inc CreateWnd.
+  if TLCLPlatform(WidgetSet.LCLPlatform) = lpCocoa then begin
     frm := TForm(Sender);
 
     okButton.Constraints.MinWidth := 0;

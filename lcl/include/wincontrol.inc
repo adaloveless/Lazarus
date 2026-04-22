@@ -7661,7 +7661,11 @@ begin
       FHandle := TWSWinControlClass(WidgetSetClass).CreateHandle(Self, Params);
       if not HandleAllocated then
       begin
-        if WidgetSet.LCLPlatform=lpNoGUI then
+        // Cast bridges TLCLPlatform alias: WidgetSet.LCLPlatform returns
+        // LazVersion.TLCLPlatform (interfacebase uses LazVersion); lpNoGUI is
+        // an LCLPlatformDef.TLCLPlatform typed const. FPC treats these alias
+        // names as distinct for comparisons, so cast to local TLCLPlatform.
+        if TLCLPlatform(WidgetSet.LCLPlatform)=lpNoGUI then
           RaiseGDBException('TWinControl.CreateWnd: The nogui widgetset does not support visual controls.')
         else
           RaiseGDBException('TWinControl.CreateWnd: Handle creation failed creating '+DbgSName(Self));
