@@ -994,6 +994,7 @@ type
     procedure InitializeWidget; override;
     function IsWidgetOk: Boolean; override;
     procedure SetDefault(const ADefault: Boolean);
+    procedure preferredSize(var PreferredWidth, PreferredHeight: integer; {%H-}WithThemeSpace: Boolean); override;
     property Layout: Integer read getLayout write SetLayout;
     property Margin: Integer read getMargin write SetMargin;
     property Spacing: Integer read FSpacing write SetSpacing;
@@ -2256,6 +2257,11 @@ begin
   // this is just for testing purposes.
   ACharCode := GdkKeyToLCLKey(KeyValue);
 
+  if (KeyValue >= GDK_KEY_exclam) and (KeyValue <= GDK_KEY_parenleft) and
+     (ACharCode >= VK_0) and (ACharCode <= VK_9) and
+     ((LCLModifiers and MK_SHIFT) = 0) then
+    LCLModifiers := LCLModifiers or MK_SHIFT;
+
   if (ACharCode >= VK_F1) and (ACharCode <= VK_F24) and
      (gdk_keyval_to_unicode(AEvent.keyval) > 0) then
     ACharCode := VK_UNKNOWN;
@@ -2670,28 +2676,28 @@ begin
     if AValue = clDefault then
       RemoveColorProvider(GetContainerWidget)
     else
-      ApplyCSS(GetContainerWidget, Format('treeview.view { color: %s; }', [CSSColor]));
+      ApplyCSS(GetContainerWidget, Format('treeview.view:not(:disabled) { color: %s; }', [CSSColor]));
   end else
   if wtSpinEdit in WidgetType then
   begin
     if AValue = clDefault then
       RemoveColorProvider(FWidget)
     else
-      ApplyCSS(FWidget, Format('spinbutton { color: %s; }', [CSSColor]));
+      ApplyCSS(FWidget, Format('spinbutton:not(:disabled) { color: %s; }', [CSSColor]));
   end else
   if wtEntry in WidgetType then
   begin
     if AValue = clDefault then
       RemoveColorProvider(FWidget)
     else
-      ApplyCSS(FWidget, Format('entry { color: %s; }', [CSSColor]));
+      ApplyCSS(FWidget, Format('entry:not(:disabled) { color: %s; }', [CSSColor]));
   end else
   if wtMemo in WidgetType then
   begin
     if AValue = clDefault then
       RemoveColorProvider(GetContainerWidget)
     else
-      ApplyCSS(GetContainerWidget, Format('text { color: %s; }', [CSSColor]));
+      ApplyCSS(GetContainerWidget, Format('text:not(:disabled) { color: %s; }', [CSSColor]));
   end else
   if wtComboBox in WidgetType then
   begin
@@ -2701,9 +2707,9 @@ begin
     else
     begin
       if PGtkComboBox(FWidget)^.has_entry then
-        CSSData := Format('entry { color: %s; }', [CSSColor])
+        CSSData := Format('entry:not(:disabled) { color: %s; }', [CSSColor])
       else
-        CSSData := Format('combobox button.combo cellview { color: %s; }', [CSSColor]);
+        CSSData := Format('combobox:not(:disabled) button.combo cellview { color: %s; }', [CSSColor]);
       ApplyCSS(ATargetWidget, CSSData);
     end;
   end else
@@ -2715,7 +2721,7 @@ begin
       if AValue = clDefault then
         RemoveColorProvider(ATargetWidget)
       else
-        ApplyCSS(ATargetWidget, Format('* { color: %s; }', [CSSColor]));
+        ApplyCSS(ATargetWidget, Format('*:not(:disabled) { color: %s; }', [CSSColor]));
     end;
   end else
   if wtStaticText in WidgetType then
@@ -2723,7 +2729,7 @@ begin
     if AValue = clDefault then
       RemoveColorProvider(GetContainerWidget)
     else
-      ApplyCSS(GetContainerWidget, Format('* { color: %s; }', [CSSColor]));
+      ApplyCSS(GetContainerWidget, Format('*:not(:disabled) { color: %s; }', [CSSColor]));
   end else
   begin
     if AValue = clDefault then
@@ -2733,7 +2739,7 @@ begin
         RemoveColorProvider(FWidget);
     end else
     begin
-      CSSData := Format('* { color: %s; }', [CSSColor]);
+      CSSData := Format('*:not(:disabled) { color: %s; }', [CSSColor]);
       if FWidget <> GetContainerWidget then
         ApplyCSS(FWidget, CSSData);
       ApplyCSS(GetContainerWidget, CSSData);
@@ -8905,12 +8911,36 @@ begin
 end;
 
 procedure TGtk3Memo.InitializeWidget;
+const
+  CDisabledCss: PChar = 'textview text:disabled, textview:disabled text { color: mix(@theme_fg_color, @theme_bg_color, 0.55); }';
 var
   ATextView: PGtkTextView;
+  AContext: PGtkStyleContext;
+  NormalColor, DisabledColor: TGdkRGBA;
+  ACssProvider: PGtkCssProvider;
+  ThemeHasDisabledColor: Boolean;
 begin
   inherited InitializeWidget;
   ATextView := PGtkTextView(getContainerWidget);
   g_signal_connect_data(ATextView^.get_buffer,'changed', TGCallBack(@MemoTextChanged), Self, nil, G_CONNECT_DEFAULT);
+
+  AContext := gtk_widget_get_style_context(PGtkWidget(ATextView));
+  gtk_style_context_get_color(AContext, GTK_STATE_FLAG_NORMAL, @NormalColor);
+  gtk_style_context_get_color(AContext, [GTK_STATE_FLAG_INSENSITIVE], @DisabledColor);
+
+  ThemeHasDisabledColor := (Abs(NormalColor.red   - DisabledColor.red)   > 0.01) or
+                           (Abs(NormalColor.green - DisabledColor.green) > 0.01) or
+                           (Abs(NormalColor.blue  - DisabledColor.blue)  > 0.01) or
+                           (Abs(NormalColor.alpha - DisabledColor.alpha) > 0.01);
+
+  if not ThemeHasDisabledColor then
+  begin
+    ACssProvider := gtk_css_provider_new();
+    gtk_css_provider_load_from_data(ACssProvider, CDisabledCss, -1, nil);
+    gtk_style_context_add_provider(AContext,
+      PGtkStyleProvider(ACssProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(ACssProvider);
+  end;
 end;
 
 
@@ -11387,13 +11417,38 @@ begin
 end;
 
 procedure TGtk3Button.setText(const AValue: String);
+
+  procedure SetLabelJustifyRecursive(AWidget: PGtkWidget);
+  var
+    AChildList: PGList;
+    AItem: PGList;
+  begin
+    if not Gtk3IsWidget(AWidget) then
+      Exit;
+    if Gtk3WidgetIsA(AWidget, gtk_label_get_type) then
+      PGtkLabel(AWidget)^.set_justify(GTK_JUSTIFY_CENTER);
+    if Gtk3WidgetIsA(AWidget, gtk_container_get_type) then
+    begin
+      AChildList := PGtkContainer(AWidget)^.get_children;
+      AItem := AChildList;
+      while AItem <> nil do
+      begin
+        SetLabelJustifyRecursive(PGtkWidget(AItem^.data));
+        AItem := AItem^.next;
+      end;
+      g_list_free(AChildList);
+    end;
+  end;
+
 begin
   if IsWidgetOk then
   begin
     {%H-}PGtkButton(FWidget)^.set_label(PgChar({%H-}ReplaceAmpersandsWithUnderscores(AValue)));
+    SetLabelJustifyRecursive(FWidget);
     if LCLObject.AutoSize then
     begin
-      FWidget^.set_size_request(-1, -1);
+      LCLWidth := 0;
+      LCLHeight := 0;
       FWidget^.queue_resize;
     end;
   end;
@@ -11451,6 +11506,28 @@ procedure TGtk3Button.SetDefault(const ADefault: Boolean);
 begin
   if IsWidgetOk then
     GetContainerWidget^.set_can_default(ADefault);
+end;
+
+procedure TGtk3Button.preferredSize(var PreferredWidth,
+  PreferredHeight: integer; WithThemeSpace: Boolean);
+var
+  AWidgetClass: PGtkWidgetClass;
+  AMinW, AMinH: gint;
+  SavedW, SavedH: gint;
+begin
+  if not IsWidgetOk then
+    exit;
+  FWidget^.get_size_request(@SavedW, @SavedH);
+  FWidget^.set_size_request(-1, -1);
+  try
+    AWidgetClass := PGtkWidgetClass(FWidget^.g_type_instance.g_class);
+    if Assigned(AWidgetClass) and Assigned(AWidgetClass^.get_preferred_width) then
+      AWidgetClass^.get_preferred_width(FWidget, @AMinW, @PreferredWidth);
+    if Assigned(AWidgetClass) and Assigned(AWidgetClass^.get_preferred_height) then
+      AWidgetClass^.get_preferred_height(FWidget, @AMinH, @PreferredHeight);
+  finally
+    FWidget^.set_size_request(SavedW, SavedH);
+  end;
 end;
 
 { TGtk3ToggleButton }

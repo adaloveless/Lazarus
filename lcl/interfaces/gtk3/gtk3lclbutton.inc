@@ -24,9 +24,6 @@ begin
     Exit;
   end;
 
-  // Call parent class implementation
-  ParentClass^.get_preferred_width(widget, min_width, nat_width);
-
   AControl := TGtk3Widget(HwndFromGtkWidget(widget));
   if not Assigned(AControl) then
   begin
@@ -34,23 +31,7 @@ begin
     Exit;
   end;
 
-  if AControl.LCLObject.AutoSize then
-  begin
-    gtk_widget_set_size_request(widget, -1, -1);
-    ParentClass^.get_preferred_width(widget, min_width, nat_width);
-    exit;
-  end;
-  // Custom width handling
-  if AControl.LCLWidth = 0 then
-  begin
-    min_width^ := Max(min_width^ div 2, AControl.LCLObject.Width);
-    nat_width^ := Max(min_width^, AControl.LCLObject.Width);
-  end else
-  begin
-    min_width^ := Max(min_width^ div 2, AControl.LCLWidth);
-    nat_width^ := Max(min_width^, AControl.LCLWidth);
-  end;
-
+  ParentClass^.get_preferred_width(widget, min_width, nat_width);
 end;
 
 procedure LCLGtkButtonGetPreferredHeight(widget: PGtkWidget; min_height, nat_height: Pgint); cdecl;
@@ -77,9 +58,6 @@ begin
     Exit;
   end;
 
-  // Call parent class implementation
-  ParentClass^.get_preferred_height(widget, min_height, nat_height);
-
   AControl := TGtk3Widget(HwndFromGtkWidget(widget));
   if not Assigned(AControl) then
   begin
@@ -87,24 +65,7 @@ begin
     Exit;
   end;
 
-  if AControl.LCLObject.AutoSize then
-  begin
-    gtk_widget_set_size_request(widget, -1, -1);
-    ParentClass^.get_preferred_height(widget, min_height, nat_height);
-    exit;
-  end;
-
-  // Custom height handling
-  if AControl.LCLHeight = 0 then
-  begin
-    min_height^ := Max(min_height^ div 2, AControl.LCLObject.Height);
-    nat_height^ := Max(min_height^, AControl.LCLObject.Height);
-  end else
-  begin
-    min_height^ := Max(min_height^ div 2, AControl.LCLHeight);
-    nat_height^ := Max(min_height^, AControl.LCLHeight);
-  end;
-
+  ParentClass^.get_preferred_height(widget, min_height, nat_height);
 end;
 
 procedure LCLGtkButtonClassInit(klass: PGTypeClass; {%H-}data: Pointer); cdecl;
