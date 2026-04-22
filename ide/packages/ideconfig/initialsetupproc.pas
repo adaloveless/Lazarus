@@ -106,6 +106,8 @@ function SearchFPCExeCandidates(StopIfFits: boolean;
 procedure SetupFPCExeFilename;
 function FindDefaultCompilerPath: string; // full path of GetDefaultCompilerFilename
 procedure GetDefaultCompilerFilenames(List: TStrings); // list of standard paths of compiler on various distributions
+function FindVibePascalCompiler: string; // preferred compiler (VibePascal ppcx64) for new Lazarus installs
+procedure GetVibePascalCompilerFilenames(List: TStrings); // VibePascal candidate paths, ordered by preference
 
 // Pas2js compiler
 function CheckPas2jsQuality(AFilename: string; out Note: string;
@@ -502,6 +504,11 @@ begin
     AFileName := GetEnvironmentVariableUTF8('PP');
     if CheckFile(AFilename,Result) then exit;
 
+    // VibePascal is preferred for new installs (God directive mo96l7oy, 2026-04-22).
+    // Tried here before generic PATH search so installing Lazarus next to an existing
+    // system FPC still defaults to VibePascal when present.
+    if CheckFile(FindVibePascalCompiler,Result) then exit;
+
     // search fpc(.exe) in PATH
     if CheckFile('fpc'+ExeExt,Result) then exit;
 
@@ -589,11 +596,76 @@ begin
   end;
 end;
 
+procedure GetVibePascalCompilerFilenames(List: TStrings);
+// Candidate paths for VibePascal's ppcx64 compiler, ordered by preference.
+// VIBEPASCAL_DIR env var wins; then sibling/standard install locations.
+var
+  VPDir, Home: string;
+begin
+  VPDir := GetEnvironmentVariableUTF8('VIBEPASCAL_DIR');
+  if VPDir <> '' then begin
+    VPDir := AppendPathDelim(VPDir);
+    {$IFDEF MSWindows}
+    AddFilenameToList(List, VPDir + 'bin\ppcx64.exe');
+    AddFilenameToList(List, VPDir + 'compiler\ppcx64.exe');
+    {$ELSE}
+    AddFilenameToList(List, VPDir + 'bin/ppcx64');
+    AddFilenameToList(List, VPDir + 'compiler/ppcx64');
+    {$ENDIF}
+  end;
+
+  {$IFDEF MSWindows}
+  AddFilenameToList(List, AppendPathDelim(ProgramDirectory) + '..\vibepascal\bin\ppcx64.exe');
+  AddFilenameToList(List, AppendPathDelim(ProgramDirectory) + '..\VibePascal\bin\ppcx64.exe');
+  AddFilenameToList(List, AppendPathDelim(ProgramDirectory) + '..\vibepascal\compiler\ppcx64.exe');
+  AddFilenameToList(List, DefaultDrive + '\vibepascal\bin\ppcx64.exe');
+  AddFilenameToList(List, DefaultDrive + '\VibePascal\bin\ppcx64.exe');
+  AddFilenameToList(List, DefaultDrive + '\vibepascal\compiler\ppcx64.exe');
+  {$ELSE}
+  Home := GetEnvironmentVariableUTF8('HOME');
+  if Home <> '' then begin
+    AddFilenameToList(List, AppendPathDelim(Home) + 'src/vibepascal/compiler/ppcx64');
+    AddFilenameToList(List, AppendPathDelim(Home) + 'src/vibepascal/bin/ppcx64');
+    AddFilenameToList(List, AppendPathDelim(Home) + 'vibepascal/compiler/ppcx64');
+    AddFilenameToList(List, AppendPathDelim(Home) + 'vibepascal/bin/ppcx64');
+  end;
+  AddFilenameToList(List, '/opt/vibepascal/compiler/ppcx64');
+  AddFilenameToList(List, '/opt/vibepascal/bin/ppcx64');
+  AddFilenameToList(List, '/usr/local/vibepascal/compiler/ppcx64');
+  AddFilenameToList(List, '/usr/local/vibepascal/bin/ppcx64');
+  {$ENDIF}
+end;
+
+function FindVibePascalCompiler: string;
+// Return the first existing VibePascal ppcx64 on this machine, or '' if none found.
+// This is the preferred compiler per God directive (mo96l7oy, 2026-04-22).
+var
+  Candidates: TStringList;
+  i: Integer;
+begin
+  Result := '';
+  Candidates := TStringList.Create;
+  try
+    GetVibePascalCompilerFilenames(Candidates);
+    for i := 0 to Candidates.Count - 1 do
+      if FileExistsUTF8(Candidates[i]) then begin
+        Result := Candidates[i];
+        exit;
+      end;
+  finally
+    Candidates.Free;
+  end;
+end;
+
 function FindDefaultCompilerPath: string;
 var
   FileNames: TStringList;
   i: Integer;
 begin
+  // Prefer VibePascal if installed (God directive mo96l7oy, 2026-04-22).
+  Result := FindVibePascalCompiler;
+  if Result <> '' then exit;
+
   {$IFDEF MSWindows}
   Result := SearchFileInPath(GetDefaultCompilerFilename,
              format('%sfpc\%s\bin\%s',
@@ -624,6 +696,9 @@ end;
 
 procedure GetDefaultCompilerFilenames(List: TStrings);
 begin
+  // VibePascal candidates first -- preferred for new Lazarus installs (God directive mo96l7oy).
+  GetVibePascalCompilerFilenames(List);
+
   {$IFDEF MSWindows}
   List.Add(DefaultDrive + format('\fpc\%s\bin\%s\%s',
     [DefaultFPCVersion, DefaultFPCTarget, GetDefaultCompilerFilename]));
