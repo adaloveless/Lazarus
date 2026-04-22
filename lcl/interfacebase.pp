@@ -155,7 +155,13 @@ type
     function  BeginMessageProcess: TLCLHandle; virtual;
     procedure EndMessageProcess(context: TLCLHandle); virtual;
 
-    function  LCLPlatform: TLCLPlatform; virtual; abstract;
+    // Qualify return type with LCLPlatformDef (alias-equivalent to LazVersion.TLCLPlatform).
+    // FPC override-signature matching compares type-name symbols, not alias chains. The 14
+    // widgetset *int.pp files have LCLPlatformDef in uses but not LazVersion, so their bare
+    // TLCLPlatform overrides resolve to LCLPlatformDef.TLCLPlatform. Without the qualifier
+    // here, this abstract resolves via last-wins to LazVersion.TLCLPlatform and overrides
+    // are rejected with FPC error 3058 (no method to override).
+    function  LCLPlatform: LCLPlatformDef.TLCLPlatform; virtual; abstract;
     function  GetLCLCapability(ACapability: TLCLCapability): PtrUInt; virtual;
 
     function  DCGetPixel(CanvasHandle: HDC; X, Y: integer): TGraphicsColor; virtual; abstract;
