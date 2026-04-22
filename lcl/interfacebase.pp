@@ -239,7 +239,11 @@ begin
   if (WidgetSet<>nil) and (WidgetSet.LCLPlatform<>lpNoGUI) then
     Result:=WidgetSet.LCLPlatform
   else
-    Result:=BuildLCLWidgetType;
+    // Cast bridges TLCLPlatform name resolution: BuildLCLWidgetType is typed as
+    // LCLPlatformDef.TLCLPlatform (alias of LazVersion.TLCLPlatform), but Result
+    // here resolves to LazVersion.TLCLPlatform via last-wins uses order. FPC
+    // treats those alias names as distinct identities for typed constants.
+    Result:=TLCLPlatform(BuildLCLWidgetType);
 end;
 
 function GetLCLWidgetTypeName: string;
