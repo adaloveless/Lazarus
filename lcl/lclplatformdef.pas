@@ -21,7 +21,11 @@ uses
 
 type
   TLCLPlatform = LazVersion.TLCLPlatform;
-  TLCLPlatforms = set of TLCLPlatform;
+  // Element type explicitly qualified with LazVersion so set-membership checks
+  // work cleanly in downstream units that resolve bare TLCLPlatform to the
+  // canonical LazVersion.TLCLPlatform via last-wins uses order. See
+  // InterfaceBase.GetDefaultLCLWidgetType for the alias-strictness rationale.
+  TLCLPlatforms = set of LazVersion.TLCLPlatform;
 
 const
   lpGtk    = LazVersion.lpGtk;

@@ -16,12 +16,15 @@ uses
   // LCL
   LCLPlatformDef,
   // LazUtils
-  LazUtilities, LazConfigStorage, LazLoggerBase,
+  LazUtilities, LazConfigStorage, LazLoggerBase, LazVersion,
   // IdeIntf
   PropEdits;
 
 type
-  TWidgetSetRestrictionsArray = array [TLCLPlatform] of Integer;
+  // Index type explicitly qualified with LazVersion so array-indexing in
+  // downstream units that resolve bare TLCLPlatform to LazVersion.TLCLPlatform
+  // does not hit FPC alias-name-symbol strictness. See InterfaceBase for notes.
+  TWidgetSetRestrictionsArray = array [LazVersion.TLCLPlatform] of Integer;
 
   { TOIFavoriteProperty
     BaseClassName }

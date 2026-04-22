@@ -242,13 +242,14 @@ implementation
 
 function GetDefaultLCLWidgetType: TLCLPlatform;
 begin
-  if (WidgetSet<>nil) and (WidgetSet.LCLPlatform<>lpNoGUI) then
-    Result:=WidgetSet.LCLPlatform
+  // Casts bridge TLCLPlatform name resolution: WidgetSet.LCLPlatform now returns
+  // LCLPlatformDef.TLCLPlatform (per the abstract-decl qualifier in TWidgetSet),
+  // but bare TLCLPlatform in this function scope + bare lpNoGUI both resolve to
+  // LazVersion.TLCLPlatform via last-wins uses order. FPC treats the two alias
+  // names as distinct type identities, so explicit qualifiers/casts are required.
+  if (WidgetSet<>nil) and (WidgetSet.LCLPlatform<>LCLPlatformDef.lpNoGUI) then
+    Result:=TLCLPlatform(WidgetSet.LCLPlatform)
   else
-    // Cast bridges TLCLPlatform name resolution: BuildLCLWidgetType is typed as
-    // LCLPlatformDef.TLCLPlatform (alias of LazVersion.TLCLPlatform), but Result
-    // here resolves to LazVersion.TLCLPlatform via last-wins uses order. FPC
-    // treats those alias names as distinct identities for typed constants.
     Result:=TLCLPlatform(BuildLCLWidgetType);
 end;
 
