@@ -779,7 +779,7 @@ begin
 
   // build full class name
   if ([phpAddClassname,phpWithoutClassName]*Attr=[phpAddClassName]) then
-    PrependName(ExtractClassName(ProcNode,phpInUpperCase in Attr,true,Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]),TheClassName);
+    PrependName(ExtractClassName(ProcNode,phpInUpperCase in Attr,true,(Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)),TheClassName);
 
   // parse the clean source
   InitExtraction;
@@ -793,7 +793,7 @@ begin
     IsGeneric:=true;
   end else
     IsGeneric:=false;
-  CanGeneric:=IsGeneric or (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]);
+  CanGeneric:=IsGeneric or ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches));
   if (UpAtomIs('CLASS') or UpAtomIs('STATIC')) then
     ExtractNextAtom((phpWithStart in Attr)
                     and not (phpWithoutClassKeyword in Attr),Attr);
@@ -1034,7 +1034,7 @@ begin
           Result:=GetIdentifier(@Src[Node.StartPos])+Result
         else if Node.FirstChild<>nil then
         begin
-          if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and (Node.Desc = ctnGenericType) then
+          if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and (Node.Desc = ctnGenericType) then
             Result := Result + ExtractNode(Node.FirstChild.NextBrother, []);
           Result:=GetIdentifier(@Src[Node.FirstChild.StartPos])+Result;
         end;
@@ -1100,7 +1100,7 @@ begin
     if not AtomIsIdentifier then break;
     Part:=GetAtom;
     ReadNextAtom;
-    if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and AtomIsChar('<') then
+    if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then
     begin { delphi generics }
       if KeepGeneric then
         Part := Part + GetAtom;
@@ -3142,7 +3142,7 @@ begin
   ReadNextAtom;
   if not AtomIsIdentifier then exit;
   ReadNextAtom;
-  if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and AtomIsChar('<') then begin
+  if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then begin
     if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then
       exit;
   end;

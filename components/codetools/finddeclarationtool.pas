@@ -8533,7 +8533,7 @@ begin
   if not AtomIsIdentifier then exit; // ignore operator procs
   NameAtom:=CurPos;
   ReadNextAtom;
-  if (Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]) and AtomIsChar('<') then begin
+  if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then begin
     // coulde be generic param of a class: TFoo<T>.Method
     // or of a generic procedure: procedure Foo<T>(a: T);
     ReadGenericParamList(False, False, [ppDontCreateNodes,ppDontRaiseExceptionOnError]);
@@ -8583,7 +8583,7 @@ begin
   ReadNextAtom; // read classname
   ClassNameAtom:=CurPos;
   ReadNextAtom;
-  if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and AtomIsChar('<') then begin
+  if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then begin
     if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then
       exit;
   end;
@@ -8709,7 +8709,7 @@ begin
   end;
   CurClassName:=@Src[ClassNameAtom.StartPos];
   ReadNextAtom;
-  if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and AtomIsChar('<') then begin
+  if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then begin
     if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then begin
       if not ExceptionOnNotFound then exit;
       RaiseNotAClass;
@@ -8970,7 +8970,7 @@ begin
     Params.Flags:=fdfDefaultForExpressions;
     Params.ContextNode:=IdentifierNode;
     if (CurPos.Flag=cafPoint) or
-       ( (IdentifierNode.Desc=ctnSpecialize) and (Scanner.CompilerMode<>cmDelphi))
+       ( (IdentifierNode.Desc=ctnSpecialize) and not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)))
     then begin
       // complex identifier
       {$IFDEF ShowTriedContexts}
@@ -10319,7 +10319,7 @@ var
 
   procedure AdjustNextExpressionAtomForDelphiSpecialize;
   begin
-    if (Scanner.CompilerMode<>cmDELPHI) or (CurAtomType <> vatIdentifier) then
+    if not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) or (CurAtomType <> vatIdentifier) then
       exit;
 
     // TGen<x>.abc
@@ -10353,7 +10353,7 @@ var
     // in mode Delphi there is no keyword
     MaybeSpecialize := False;
     p := CurPos.StartPos;
-    if (Scanner.CompilerMode=cmDELPHI) and (CurAtomType = vatIdentifier) then begin
+    if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and (CurAtomType = vatIdentifier) then begin
       ReadNextAtom;
       MaybeSpecialize := AtomIsChar('<');
       // if it is specialize, keep the atom read
@@ -11213,7 +11213,7 @@ var
           else
           if (Params.NewNode.Desc = ctnGenericType) and (NextAtomType = vatNone)
              and (src[NextAtom.StartPos] = '<') and (NextAtom.EndPos-NextAtom.StartPos=1)
-             and (Scanner.CompilerMode=cmDELPHI)
+             and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches))
           then begin
             // delphi generic
             AdjustNextExpressionAtomForDelphiSpecialize;
@@ -13373,7 +13373,7 @@ begin
       else
         exit(vatIdentifier);
     end else
-    if UpAtomIs('SPECIALIZE') and ((Scanner.CompilerMode<>cmDELPHI)) then begin
+    if UpAtomIs('SPECIALIZE') and not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) then begin
       Node:=FindDeepestNodeAtPos(CurPos.StartPos,false);
       //if (Node<>nil) and (Node.Desc in [ctnSpecialize,ctnSpecializeParams,ctnSpecializeParam,ctnSpecializeType]) then
       if (Node<>nil) and (Node.Desc in [ctnSpecialize, ctnBeginBlock]) then // no nodes in begin...end code

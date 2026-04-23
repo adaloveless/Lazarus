@@ -7678,7 +7678,7 @@ var
             begin
               ProcBody:=
                 'procedure '
-                +ExtractClassName(PropNode.Parent.Parent,false,true,Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE])+'.'+AccessParam
+                +ExtractClassName(PropNode.Parent.Parent,false,true,(Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches))+'.'+AccessParam
                 +'('+AccessVariableNameParam+':'+PropType+');'
                 +BeautifyCodeOpts.LineEnd
                 +'begin'+BeautifyCodeOpts.LineEnd
@@ -9292,7 +9292,7 @@ begin
     {$IF defined(CTDEBUG) or defined(VerboseCreateMissingClassProcBodies)}
     DebugLn('TCodeCompletionCodeTool.CreateMissingClassProcBodies Gather existing method declarations ... ');
     {$ENDIF}
-    TheClassName:=ExtractClassName(CodeCompleteClassNode,false,true,Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]);
+    TheClassName:=ExtractClassName(CodeCompleteClassNode,false,true,(Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches));
 
     // check for double defined methods in ClassProcs
     CheckForDoubleDefinedMethods;
