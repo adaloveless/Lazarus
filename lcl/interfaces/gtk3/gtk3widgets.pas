@@ -1124,6 +1124,9 @@ type
     class function WindowMapEvent(awidget:PGtkWindow;AEvent: PGdkEventAny; adata: gpointer): gboolean; cdecl; static; //uses lcl-window-first-map data.
     class function WindowMoveEvent(awidget: PGtkWindow; AEvent: PGdkEventConfigure; adata: gpointer): gboolean; cdecl; static;
     class procedure WindowSizeAllocate(AWidget: PGtkWidget; AGdkRect: PGdkRectangle; Data: gpointer); cdecl; static;
+    {$IFDEF GTK3USEDEFERREDRESIZING}
+    class procedure WindowSizeAllocateAfter(AWidget: PGtkWidget; AGdkRect: PGdkRectangle; Data: gpointer); cdecl; static;
+    {$ENDIF}
     class function WindowStateSignal(AWidget: PGtkWidget; AEvent: PGdkEvent; AData: gPointer): gboolean; cdecl; static;
     class procedure WaylandPopupSetFocus(AWindow: PGtkWindow; AWidget: PGtkWidget;
       AData: gpointer); cdecl; static;
@@ -1778,7 +1781,15 @@ begin
     end;
   end;
 
+  {$IFDEF GTK3USEDEFERREDRESIZING}
+  if Assigned(ACtl.LCLObject) then
+  begin
+    Gtk3StorePendingOuterSize(ACtl.LCLObject, Msg.Width, Msg.Height);
+    Gtk3SaveSizeNotification(ACtl.LCLObject);
+  end;
+  {$ELSE}
   ACtl.DeliverMessage(Msg);
+  {$ENDIF}
 
 end;
 
@@ -2996,6 +3007,10 @@ var
   ATemp: PGtkWidget;
   I: Integer;
 begin
+  {$IFDEF GTK3USEDEFERREDRESIZING}
+  if Assigned(LCLObject) then
+    Gtk3RemoveFromResizeQueue(LCLObject);
+  {$ENDIF}
   if FPostMessages <> nil then
   try
     AList := FPostMessages.LockList;
@@ -4702,10 +4717,14 @@ begin
     begin
       if not ACtl.LCLObject.ClientRectNeedsInterfaceUpdate then
         ACtl.LCLObject.InvalidateClientRectCache(False);
+      {$IFDEF GTK3USEDEFERREDRESIZING}
+      Gtk3SaveClientSizeNotification(ACtl.LCLObject);
+      {$ELSE}
       {$IFDEF GTK3DEBUGRESIZE}
       writeln('===> PanelLayoutSizeAllocate is calling DoAdjustClientRectChange !!!! Visible=', ACtl.Visible);
       {$ENDIF}
       ACtl.LCLObject.DoAdjustClientRectChange;
+      {$ENDIF GTK3USEDEFERREDRESIZING}
     end;
   end;
 end;
@@ -4841,10 +4860,14 @@ begin
 
   if not TGtk3Widget(Data).InUpdate and TGtk3Widget(Data).LCLObject.ClientRectNeedsInterfaceUpdate then
   begin
+    {$IFDEF GTK3USEDEFERREDRESIZING}
+    Gtk3SaveClientSizeNotification(TGtk3Widget(Data).LCLObject);
+    {$ELSE}
     {$IFDEF GTK3DEBUGRESIZE}
     writeln('===> GroupBoxLayoutSizeAllocate is calling  TGtk3Widget(Data).LCLObject.DoAdjustClientRectChange !!!! Visible=',TGtk3Widget(Data).Visible);
     {$ENDIF}
     TGtk3Widget(Data).LCLObject.DoAdjustClientRectChange;
+    {$ENDIF GTK3USEDEFERREDRESIZING}
   end;
 end;
 
@@ -4980,6 +5003,16 @@ begin
   end;
   {$ENDIF}
 
+  {$IFDEF GTK3USEDEFERREDRESIZING}
+  if ACtl.LCLObject.ClientRectNeedsInterfaceUpdate then
+    Gtk3SaveClientSizeNotification(ACtl.LCLObject);
+  if (Word(NewSize.cx) <> Word(ACtl.LCLObject.Width)) or
+     (Word(NewSize.cy) <> Word(ACtl.LCLObject.Height)) then
+  begin
+    Gtk3StorePendingOuterSize(ACtl.LCLObject, NewSize.cx, NewSize.cy);
+    Gtk3SaveSizeNotification(ACtl.LCLObject);
+  end;
+  {$ELSE}
   if ACtl.LCLObject.ClientRectNeedsInterfaceUpdate then
   begin
     {$IFDEF GTK3DEBUGRESIZE}
@@ -5003,6 +5036,7 @@ begin
     exit;
 
   ACtl.DeliverMessage(Msg);
+  {$ENDIF GTK3USEDEFERREDRESIZING}
 end;
 
 {This routine is used as long as gtk3 is beta and getClientRect needs debugging}
@@ -5369,6 +5403,17 @@ begin
       exit;
   end;
 
+  {$IFDEF GTK3USEDEFERREDRESIZING}
+  if ((NewSize.cx <> ACtl.LCLObject.Width) or (NewSize.cy <> ACtl.LCLObject.Height) or
+     ACtl.LCLObject.ClientRectNeedsInterfaceUpdate) then
+    Gtk3SaveClientSizeNotification(ACtl.LCLObject);
+  if (Word(NewSize.cx) <> Word(ACtl.LCLObject.Width)) or
+     (Word(NewSize.cy) <> Word(ACtl.LCLObject.Height)) then
+  begin
+    Gtk3StorePendingOuterSize(ACtl.LCLObject, NewSize.cx, NewSize.cy);
+    Gtk3SaveSizeNotification(ACtl.LCLObject);
+  end;
+  {$ELSE}
   if ((NewSize.cx <> ACtl.LCLObject.Width) or (NewSize.cy <> ACtl.LCLObject.Height) or
      ACtl.LCLObject.ClientRectNeedsInterfaceUpdate) then
   begin
@@ -5393,6 +5438,7 @@ begin
     exit;
 
   ACtl.DeliverMessage(Msg);
+  {$ENDIF GTK3USEDEFERREDRESIZING}
 end;
 
 procedure TGtk3Entry.ConnectSizeAllocateSignal(ToWidget:PGtkWidget);
@@ -6652,9 +6698,15 @@ begin
     // .DoAdjustClientRectChange instead, because GtkLayout size IS actually changed.
     if not ACtl.InUpdate and Assigned(ACtl.LCLObject.Parent) then
     begin
+      {$IFDEF GTK3USEDEFERREDRESIZING}
+      if Gtk3WidgetSet.IsWayland then
+        ACtl.LCLObject.InvalidateClientRectCache(True);
+      Gtk3SaveClientSizeNotification(ACtl.LCLObject.Parent);
+      {$ELSE}
       if Gtk3WidgetSet.IsWayland then
         ACtl.LCLObject.InvalidateClientRectCache(True);
       ACtl.LCLObject.Parent.DoAdjustClientRectChange(True);
+      {$ENDIF GTK3USEDEFERREDRESIZING}
     end;
   end;
 end;
@@ -8329,7 +8381,13 @@ begin
      (aCtl.LCLObject.ClientHeight <> AGdkRect^.height));
 
   if not aCtl.InUpdate and (ViewportChanged or ClientRectMismatch) then
+  begin
+    {$IFDEF GTK3USEDEFERREDRESIZING}
+    Gtk3SaveClientSizeNotification(aCtl.LCLObject);
+    {$ELSE}
     aCtl.LCLObject.DoAdjustClientRectChange(True);
+    {$ENDIF GTK3USEDEFERREDRESIZING}
+  end;
 end;
 
 class function TGtk3ScrollableWin.CheckIfScrollbarPressed(scrollbar: PGtkWidget; out AMouseOver: boolean;
@@ -8927,7 +8985,7 @@ begin
   else
     PGtkTextView(FCentralWidget)^.set_wrap_mode(GTK_WRAP_NONE);
 
-  ABuffer := PGtkTextBuffer^.new(PGtkTextTagTable^.new);
+  ABuffer := TGtkTextBuffer.new(TGtkTextTagTable.new);
   {%H-}ABuffer^.set_text(PgChar(AMemo.Text), -1);
   PGtkTextView(FCentralWidget)^.set_buffer(ABuffer);
 
@@ -11010,14 +11068,9 @@ begin
   try
     if not Widget^.get_realized and Gtk3IsGtkWindow(Widget^.get_toplevel) then
       Widget^.realize;
-
-    if Assigned(LCLObject) and not LCLObject.AutoSize then
-    begin
-      Widget^.get_size_request(@CurW, @CurH);
-      if (CurW <> AWidth) or (CurH <> AHeight) then
-        Widget^.set_size_request(AWidth, AHeight);
-    end;
-
+    Widget^.get_size_request(@CurW, @CurH);
+    if (CurW <> AWidth) or (CurH <> AHeight) then
+      Widget^.set_size_request(AWidth, AHeight);
     Move(ALeft, ATop);
   finally
     EndUpdate;
@@ -11319,6 +11372,18 @@ begin
       exit;
   end;
 
+  {$IFDEF GTK3USEDEFERREDRESIZING}
+  if ((NewSize.cx <> ACtl.LCLObject.Width) or
+     (Abs(NewSize.cy - ACtl.LCLObject.Height) > 1) or
+     ACtl.LCLObject.ClientRectNeedsInterfaceUpdate) then
+    Gtk3SaveClientSizeNotification(ACtl.LCLObject);
+  if (Word(NewSize.cx) <> Word(ACtl.LCLObject.Width)) or
+     (Word(NewSize.cy) <> Word(ACtl.LCLObject.Height)) then
+  begin
+    Gtk3StorePendingOuterSize(ACtl.LCLObject, NewSize.cx, NewSize.cy);
+    Gtk3SaveSizeNotification(ACtl.LCLObject);
+  end;
+  {$ELSE}
   if ((NewSize.cx <> ACtl.LCLObject.Width) or
      {Ignore a 1px height difference: GtkComboBox CSS minimum height often
       causes a persistent +-1px mismatch vs the LCL anchor computed height,
@@ -11348,6 +11413,7 @@ begin
     exit;
 
   ACtl.DeliverMessage(Msg);
+  {$ENDIF GTK3USEDEFERREDRESIZING}
 end;
 
 procedure TGtk3ComboBox.ConnectSizeAllocateSignal(ToWidget:PGtkWidget);
@@ -12097,10 +12163,14 @@ begin
 
   if TGtk3ScrollableWin(Data).LCLObject.ClientRectNeedsInterfaceUpdate then
   begin
+    {$IFDEF GTK3USEDEFERREDRESIZING}
+    Gtk3SaveClientSizeNotification(TGtk3ScrollableWin(Data).LCLObject);
+    {$ELSE}
     {$IFDEF GTK3DEBUGRESIZE}
     writeln('===> ScrollingWinControlFixedSizeAllocate is calling  TGtk3Widget(Data).LCLObject.DoAdjustClientRectChange !!!! Visible=',TGtk3Widget(Data).Visible);
     {$ENDIF}
     TGtk3ScrollableWin(Data).LCLObject.DoAdjustClientRectChange;
+    {$ENDIF GTK3USEDEFERREDRESIZING}
   end;
 
 end;
@@ -12475,6 +12545,14 @@ begin
   end;
   TGtk3Window(ACtl).FResizeState.PrevWSATime := TGtk3Window(ACtl).FResizeState.LastWSATime;
   TGtk3Window(ACtl).FResizeState.LastWSATime := GetTickCount64;
+  {$IFDEF GTK3USEDEFERREDRESIZING}
+  Gtk3StorePendingOuterSize(ACtl.LCLObject, Msg.Width, Msg.Height);
+  Gtk3SaveSizeNotification(ACtl.LCLObject);
+  {$IFDEF GTK3DEBUGSCROLLEDWIN}
+  writeln(Format('[%d] WindowSizeAllocate %s DEFERRED w=%d h=%d',
+    [GetTickCount64, dbgsName(ACtl.LCLObject), Msg.Width, Msg.Height]));
+  {$ENDIF}
+  {$ELSE}
   TGtk3Window(ACtl).FResizeState.InWindowSizeAllocate := True;
   try
     ACtl.DeliverMessage(Msg);
@@ -12485,6 +12563,7 @@ begin
   writeln(Format('[%d] WindowSizeAllocate %s DeliverMessage DONE',
     [GetTickCount64, dbgsName(ACtl.LCLObject)]));
   {$ENDIF}
+  {$ENDIF GTK3USEDEFERREDRESIZING}
 end;
 
 class function TGtk3Window.WindowMapEvent(awidget: PGtkWindow; AEvent: PGdkEventAny; adata: gpointer): gboolean; cdecl;
@@ -12538,6 +12617,18 @@ begin
     Result := gtk_false;
 end;
 
+{$IFDEF GTK3USEDEFERREDRESIZING}
+class procedure TGtk3Window.WindowSizeAllocateAfter(AWidget: PGtkWidget;
+  AGdkRect: PGdkRectangle; Data: gpointer); cdecl;
+begin
+  //match gtk2 size queue
+  if AWidget = nil then ;
+  if AGdkRect = nil then ;
+  if Data = nil then ;
+  Gtk3DrainResizeQueue;
+end;
+{$ENDIF}
+
 procedure TGtk3Window.ConnectSizeAllocateSignal(ToWidget:PGtkWidget);
 begin
   g_signal_connect_data(ToWidget,'size-allocate',TGCallback(@WindowSizeAllocate), Self, nil, G_CONNECT_DEFAULT);
@@ -12545,6 +12636,9 @@ begin
   g_signal_connect_data(ToWidget,'configure-event',TGCallback(@WindowMoveEvent), Self, nil, G_CONNECT_DEFAULT);
   if Assigned(FCentralWidget) then
     g_signal_connect_data(FCentralWidget,'size-allocate',TGCallback(@ScrolledLayoutSizeAllocate), Self, nil, G_CONNECT_DEFAULT);
+  {$IFDEF GTK3USEDEFERREDRESIZING}
+  g_signal_connect_data(ToWidget,'size-allocate',TGCallback(@WindowSizeAllocateAfter), Self, nil, [G_CONNECT_AFTER]);
+  {$ENDIF}
 end;
 
 class function TGtk3Window.decoration_flags(Aform: TCustomForm): TGdkWMDecoration;
