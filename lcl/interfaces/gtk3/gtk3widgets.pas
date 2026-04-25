@@ -10902,22 +10902,23 @@ begin
     // catch all mouse events on gtkentry.
     if IsDesigning then
     begin
-      // maybe set disabled
-      {$note this does not work, must make search via children list}
-      (*
-      g_signal_connect_data(PGtkComboBox(Result)^.priv3^.button, 'button-press-event', TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
-      g_signal_connect_data(PGtkComboBox(Result)^.priv3^.button, 'button-release-event', TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
-
-      g_signal_connect_data(PGtkComboBox(Result)^.priv3^.arrow, 'button-press-event', TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
-      g_signal_connect_data(PGtkComboBox(Result)^.priv3^.arrow, 'button-release-event', TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
-      *)
-      PGtkComboBox(Result)^.priv3^.button^.set_sensitive(gtk_false);
-      PGtkComboBox(Result)^.priv3^.arrow^.set_sensitive(gtk_false);
+      if Assigned(PGtkComboBox(Result)^.priv3^.button) then
+      begin
+        g_signal_connect_data(PGtkComboBox(Result)^.priv3^.button, 'button-press-event',
+          TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
+        g_signal_connect_data(PGtkComboBox(Result)^.priv3^.button, 'button-release-event',
+          TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
+      end;
+      if Assigned(PGtkComboBox(Result)^.priv3^.arrow) then
+      begin
+        g_signal_connect_data(PGtkComboBox(Result)^.priv3^.arrow, 'button-press-event',
+          TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
+        g_signal_connect_data(PGtkComboBox(Result)^.priv3^.arrow, 'button-release-event',
+          TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
+      end;
 
       g_signal_connect_data(PGtkEntry(PGtkComboBox(Result)^.get_child), 'button-press-event', TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
       g_signal_connect_data(PGtkEntry(PGtkComboBox(Result)^.get_child), 'button-release-event', TGCallback(@disableMouseButtonEvent), Self, Nil, G_CONNECT_DEFAULT);
-
-      // g_signal_connect_data(PGtkEntry(PGtkComboBox(Result)^.get_child), 'motion-notify-event', TGCallback(@motionNotifyEvent), Self, nil, G_CONNECT_DEFAULT);
       PGtkEntry(PGtkComboBox(Result)^.get_child)^.set_can_focus(False);
     end else
       PGtkEntry(PGtkComboBox(Result)^.get_child)^.set_events(GDK_DEFAULT_EVENTS_MASK);
@@ -11658,7 +11659,7 @@ end;
 procedure TGtk3Button.preferredSize(var PreferredWidth,
   PreferredHeight: integer; WithThemeSpace: Boolean);
 var
-  AWidgetClass: PGtkWidgetClass;
+  AWidgetClass, AQueryClass: PGtkWidgetClass;
   AMinW, AMinH: gint;
   SavedW, SavedH: gint;
 begin
@@ -11668,10 +11669,16 @@ begin
   FWidget^.set_size_request(-1, -1);
   try
     AWidgetClass := PGtkWidgetClass(FWidget^.g_type_instance.g_class);
-    if Assigned(AWidgetClass) and Assigned(AWidgetClass^.get_preferred_width) then
-      AWidgetClass^.get_preferred_width(FWidget, @AMinW, @PreferredWidth);
-    if Assigned(AWidgetClass) and Assigned(AWidgetClass^.get_preferred_height) then
-      AWidgetClass^.get_preferred_height(FWidget, @AMinH, @PreferredHeight);
+    if g_type_check_instance_is_a(PGTypeInstance(FWidget), LCLGtkButtonGetType()) then
+      AQueryClass := PGtkWidgetClass(g_type_class_peek_parent(PGTypeClass(AWidgetClass)))
+    else
+      AQueryClass := AWidgetClass;
+    if not Assigned(AQueryClass) then
+      AQueryClass := AWidgetClass;
+    if Assigned(AQueryClass^.get_preferred_width) then
+      AQueryClass^.get_preferred_width(FWidget, @AMinW, @PreferredWidth);
+    if Assigned(AQueryClass^.get_preferred_height) then
+      AQueryClass^.get_preferred_height(FWidget, @AMinH, @PreferredHeight);
   finally
     FWidget^.set_size_request(SavedW, SavedH);
   end;
