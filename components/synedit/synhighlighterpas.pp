@@ -60,7 +60,7 @@ uses
 
 type
   TSynPasStringMode = (spsmDefault, spsmStringOnly, spsmNone);
-  TSynPasMultilineStringMode  = (spmsmDoubleQuote);
+  TSynPasMultilineStringMode  = (spmsmDoubleQuote, spmsmTripleQuote);
   TSynPasMultilineStringModes = set of TSynPasMultilineStringMode;
 
   TtkTokenKindEx = (
@@ -76,7 +76,8 @@ type
   TtkTokenKinds= set of TtkTokenKind;
 
   TRangeState = (
-    rsAnsiMultiDQ,  // Multi line double quoted string
+    rsAnsiMultiDQ,  // Multi line double-quoted OR triple-single-quoted (Delphi 12 raw string).
+                    // Discriminated by TSynPasSynRange.MultilineStringKind.
 
     // rsAnsi, rsBor, rsDirective are exclusive to each other
     rsAnsi,         // *) comment
@@ -609,6 +610,7 @@ type
     FPasFoldFixLevel: Smallint;
     FSpecializeBracketNestLevel: integer;
     FTokenState: TTokenState;
+    FMultilineStringKind: TSynPasMultilineStringMode;
     procedure SetBracketNestLevel(AValue: integer); inline;
   public
     procedure Clear; override;
@@ -645,6 +647,8 @@ type
       read FLastLineCodeFoldLevelFix write FLastLineCodeFoldLevelFix;
     property PasFoldFixLevel: Smallint read FPasFoldFixLevel write FPasFoldFixLevel;
     property TokenState: TTokenState read FTokenState write FTokenState;
+    property MultilineStringKind: TSynPasMultilineStringMode
+      read FMultilineStringKind write FMultilineStringKind;
   end;
 
   TProcTableProc = procedure of object;
@@ -1008,6 +1012,7 @@ type
     procedure StringProc;
     procedure DoubleQuoteProc;
     procedure StringProc_MultiLineDQ;
+    procedure StringProc_MultiLineTQ;
     procedure SymbolProc;
     procedure UnknownProc;
     procedure SetD4syntax(const Value: boolean);
@@ -1730,7 +1735,7 @@ begin
   if FStringMultilineMode=AValue then Exit;
   FStringMultilineMode:=AValue;
 
-  if spmsmDoubleQuote in FStringMultilineMode then
+  if FStringMultilineMode * [spmsmDoubleQuote, spmsmTripleQuote] <> [] then
     FPasAttributes[attribString].UpdateSupportedFeatures([lafPastEOL], [])
   else
     FPasAttributes[attribString].UpdateSupportedFeatures([], [lafPastEOL]);
@@ -5757,6 +5762,16 @@ begin
   if reStringSingle in FRequiredStates then
     FCustomCommentTokenMarkup := FPasAttributesMod[attribStringSingle];
 
+  if (not FInString) and
+     (spmsmTripleQuote in FStringMultilineMode) and
+     (LinePtr[Run] = '''') and (LinePtr[Run+1] = '''') and (LinePtr[Run+2] = '''') then
+  begin
+    Inc(Run, 3);
+    PasCodeFoldRange.MultilineStringKind := spmsmTripleQuote;
+    StringProc_MultiLineTQ();
+    exit;
+  end;
+
   if FInString then begin
     if not (IsInNextToEOL or IsScanning) then begin
       if (LinePtr[Run] = '''') and (LinePtr[Run+1] = '''') and
@@ -5857,6 +5872,7 @@ procedure TSynPasSyn.DoubleQuoteProc;
 begin
   if (spmsmDoubleQuote in FStringMultilineMode) then begin
     Inc(Run);
+    PasCodeFoldRange.MultilineStringKind := spmsmDoubleQuote;
     StringProc_MultiLineDQ();
   end
   else
@@ -5878,6 +5894,23 @@ begin
         fRange := fRange - [rsAnsiMultiDQ];
         Break;
       end;
+    end;
+    Inc(Run);
+  end;
+end;
+
+procedure TSynPasSyn.StringProc_MultiLineTQ;
+begin
+  fTokenID := tkString;
+  fRange := fRange + [rsAnsiMultiDQ];
+
+  while (LinePtr[Run] <> #0) do
+  begin
+    if (LinePtr[Run] = '''') and (LinePtr[Run+1] = '''') and (LinePtr[Run+2] = '''') then
+    begin
+      Inc(Run, 3);
+      fRange := fRange - [rsAnsiMultiDQ];
+      Break;
     end;
     Inc(Run);
   end;
@@ -6224,8 +6257,12 @@ begin
     NullProc;
     exit;
   end;
-  if rsAnsiMultiDQ in fRange then
-    StringProc_MultiLineDQ()
+  if rsAnsiMultiDQ in fRange then begin
+    if PasCodeFoldRange.MultilineStringKind = spmsmTripleQuote then
+      StringProc_MultiLineTQ()
+    else
+      StringProc_MultiLineDQ();
+  end
   else if (rsBacktickString in fRange) then
     BacktickContinueProc
   else
@@ -8451,6 +8488,7 @@ begin
   FLastLineCodeFoldLevelFix := 0;
   FPasFoldFixLevel := 0;
   FTokenState := tsNone;
+  FMultilineStringKind := spmsmDoubleQuote;
 end;
 
 function TSynPasSynRange.Compare(Range: TLazHighlighterRange): integer;
@@ -8470,6 +8508,7 @@ begin
     FSpecializeBracketNestLevel:=TSynPasSynRange(Src).FSpecializeBracketNestLevel;
     FLastLineCodeFoldLevelFix := TSynPasSynRange(Src).FLastLineCodeFoldLevelFix;
     FPasFoldFixLevel := TSynPasSynRange(Src).FPasFoldFixLevel;
+    FMultilineStringKind := TSynPasSynRange(Src).FMultilineStringKind;
   end;
 end;
 
