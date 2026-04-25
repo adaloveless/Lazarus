@@ -592,6 +592,18 @@ function Rebuild-IDE {
     $size = (Get-Item $lazarusExe).Length / 1MB
     Log-Ok ("lazarus.exe rebuilt ({0:N1} MB)" -f $size)
 
+    # GOD directive moehki0x (2026-04-25): MetaDarkStyle dark-mode IDE skin is
+    # a flagship feature. Fail loud if Rebuild-IDE produced a binary missing it.
+    $mds = Test-MetaDarkStyleInstalled -Dir $LazarusDir
+    if ($mds.Ok) {
+        Log-Ok "MetaDarkStyle dark mode installed"
+        foreach ($n in $mds.Notes) { Log-Info "  $n" }
+    } else {
+        Log-Err "MetaDarkStyle dark mode NOT installed -- this is a regression GOD will notice."
+        foreach ($n in $mds.Notes) { Log-Err "  $n" }
+        Log-Err "Fix: re-pull origin/main, then run -ResetConfig -ForceRebuild."
+    }
+
     $starterExe = Join-Path $LazarusDir "startlazarus.exe"
     if (-not (Test-Path $starterExe)) {
         Log-Info "Building startlazarus..."
@@ -712,6 +724,53 @@ function Reset-LazarusConfig {
     }
 }
 
+function Test-MetaDarkStyleInstalled {
+    # GOD directive moehki0x (2026-04-25): MetaDarkStyle is a flagship feature.
+    # Verify the design-time package vendored at components\metadarkstyle was
+    # built and linked into lazarus.exe. Returns @{ Ok = $bool; Notes = @() }.
+    param([string]$Dir = $LazarusDir, [string]$Cpu = "x86_64", [string]$Os = "win64")
+
+    $result = @{ Ok = $true; Notes = @() }
+
+    $rtLpk = Join-Path $Dir "components\metadarkstyle\metadarkstyle.lpk"
+    $dsLpk = Join-Path $Dir "components\metadarkstyle\dsgn\metadarkstyledsgn.lpk"
+    foreach ($lpk in @($rtLpk, $dsLpk)) {
+        if (-not (Test-Path $lpk)) {
+            $result.Ok = $false
+            $result.Notes += "Source missing: $lpk (re-pull from upstream fork)"
+        }
+    }
+    if (-not $result.Ok) { return $result }
+
+    $rtPpu = Join-Path $Dir "components\metadarkstyle\lib\$Cpu-$Os\metadarkstyle.ppu"
+    $dsPpu = Join-Path $Dir "components\metadarkstyle\dsgn\lib\$Cpu-$Os\metadarkstyledsgn.ppu"
+    foreach ($ppu in @($rtPpu, $dsPpu)) {
+        if (-not (Test-Path $ppu)) {
+            $result.Ok = $false
+            $result.Notes += "Build artifact missing: $ppu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
+        }
+    }
+    if (-not $result.Ok) { return $result }
+
+    $lazExe = Join-Path $Dir "lazarus.exe"
+    if (Test-Path $lazExe) {
+        try {
+            $bytes = [System.IO.File]::ReadAllBytes($lazExe)
+            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+            if ($text -notmatch "(?i)metadarkstyle") {
+                $result.Ok = $false
+                $result.Notes += "lazarus.exe does NOT contain MetaDarkStyle symbols -- design-time package was not linked. Run -ForceRebuild."
+            } else {
+                $result.Notes += "lazarus.exe contains MetaDarkStyle symbols"
+            }
+        } catch {
+            $result.Notes += "Could not scan lazarus.exe: $_"
+        }
+    }
+
+    return $result
+}
+
 function Invoke-Doctor {
     Log-Header "Lazarus + VibePascal Doctor"
 
@@ -805,6 +864,16 @@ function Invoke-Doctor {
         Log-Ok "lazbuild.exe: $lazbuildExe"
     } else {
         Log-Warn "lazbuild.exe not built yet"
+    }
+
+    $mds = Test-MetaDarkStyleInstalled -Dir $LazarusDir
+    if ($mds.Ok) {
+        Log-Ok "MetaDarkStyle (dark mode IDE skin): installed"
+        foreach ($n in $mds.Notes) { Log-Info "  $n" }
+    } else {
+        Log-Err "MetaDarkStyle (dark mode IDE skin): NOT installed"
+        foreach ($n in $mds.Notes) { Log-Err "  $n" }
+        $problems++
     }
 
     Write-Host ""

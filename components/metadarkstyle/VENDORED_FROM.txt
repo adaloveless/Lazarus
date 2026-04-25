@@ -1,0 +1,3 @@
+Source: https://github.com/zamtmn/metadarkstyle
+Pinned commit: 5f460c3 (2026-04-25)
+License: LGPL 2.1 with linking exception (see UPSTREAM_README.md)

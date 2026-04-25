@@ -84,6 +84,7 @@ uses
     OnlinePackageManager,
     SimpleWebServerGUI, LazProjectGroups, Pas2jsDsgn, charactermap_ide_pkg,
     AnchorDockingDsgn, DockedFormEditor,
+    metadarkstyledsgn,
   {$ENDIF}
   MainBase;
 
