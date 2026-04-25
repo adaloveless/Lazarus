@@ -7,6 +7,8 @@ param(
     [switch]$Setup,
     [switch]$FixLpi,
     [switch]$ForceRebuild,
+    [switch]$ResetConfig,
+    [switch]$Doctor,
     [string]$VPDir,
     [switch]$SelfUpdated,
     [switch]$Help
@@ -30,6 +32,8 @@ if ($Help) {
     Write-Host "  -Setup          Configure Lazarus IDE to use VibePascal compiler"
     Write-Host "  -FixLpi         Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
     Write-Host "  -ForceRebuild   Force rebuild even if no updates are available"
+    Write-Host "  -ResetConfig    Wipe %LOCALAPPDATA%\lazarus and re-run -Setup with a clean slate"
+    Write-Host "  -Doctor         Diagnose toolchain + IDE config; report problems without changing state"
     Write-Host "  -VPDir <path>   Path to VibePascal source (auto-detected if omitted)"
     Write-Host "  -Help           Show this help"
     Write-Host ""
@@ -640,6 +644,182 @@ function Print-Summary {
     Write-Host "VibePascal HEAD: $vpHead"
 }
 
+function Test-LazarusDirectoryQuality {
+    # PowerShell port of CheckLazarusDirectoryQuality from
+    # ide/packages/ideconfig/initialsetupproc.pas. Returns:
+    #   "Compatible"   = matches IDE version, all subdirs present
+    #   "WrongVersion" = structure ok but ide/packages/ideconfig/version.inc != lazversion.pas
+    #   "Incomplete"   = required subdir/file missing
+    #   "Invalid"      = directory does not exist
+    param([string]$Dir)
+
+    if (-not (Test-Path $Dir)) {
+        return @{ Quality = "Invalid"; Note = "Directory not found: $Dir" }
+    }
+
+    $required = @(
+        "lcl",
+        "packager\globallinks",
+        "ide",
+        "components",
+        "ide\lazarus.lpi",
+        "ide\packages\ideconfig\version.inc"
+    )
+    foreach ($sub in $required) {
+        $full = Join-Path $Dir $sub
+        if (-not (Test-Path $full)) {
+            return @{ Quality = "Incomplete"; Note = "Missing $sub" }
+        }
+    }
+
+    # Compare version.inc with lazversion.pas constant (laz_major.laz_minor)
+    $versionIncFile = Join-Path $Dir "ide\packages\ideconfig\version.inc"
+    $verLine = (Get-Content $versionIncFile -TotalCount 1).Trim()
+    if ($verLine -notmatch "^'(.+)'$") {
+        return @{ Quality = "Incomplete"; Note = "Malformed version.inc: $verLine" }
+    }
+    $incVersion = $Matches[1]
+
+    $lazVerFile = Join-Path $Dir "components\lazutils\lazversion.pas"
+    if (Test-Path $lazVerFile) {
+        $lazVerSrc = Get-Content $lazVerFile -Raw
+        if ($lazVerSrc -match "laz_major\s*=\s*(\d+)") {
+            $major = [int]$Matches[1]
+            if ($lazVerSrc -match "laz_minor\s*=\s*(\d+)") {
+                $minor = [int]$Matches[1]
+                $expected = "$major.$minor"
+                if ($incVersion -ne $expected) {
+                    return @{ Quality = "WrongVersion"; Note = "version.inc=$incVersion, lazversion.pas=$expected" }
+                }
+            }
+        }
+    }
+
+    return @{ Quality = "Compatible"; Note = "OK ($incVersion)" }
+}
+
+function Reset-LazarusConfig {
+    Log-Header "Resetting Lazarus user config"
+
+    $envOptsDir = Join-Path $env:LOCALAPPDATA "lazarus"
+    if (Test-Path $envOptsDir) {
+        $backupDir = "$envOptsDir.backup-$(Get-Date -Format 'yyyyMMddHHmmss')"
+        Log-Info "Moving $envOptsDir -> $backupDir"
+        Move-Item -Path $envOptsDir -Destination $backupDir -Force
+        Log-Ok "Old config preserved at $backupDir"
+    } else {
+        Log-Info "No existing config at $envOptsDir -- nothing to reset"
+    }
+}
+
+function Invoke-Doctor {
+    Log-Header "Lazarus + VibePascal Doctor"
+
+    $problems = 0
+
+    Log-Info "Lazarus directory: $LazarusDir"
+    $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
+    if ($quality.Quality -eq "Compatible") {
+        Log-Ok "Lazarus dir quality: $($quality.Quality) [$($quality.Note)]"
+    } else {
+        Log-Err "Lazarus dir quality: $($quality.Quality) [$($quality.Note)]"
+        $problems++
+    }
+
+    Log-Info "VibePascal directory: $VPDir"
+    if (Test-Path $VPCompiler) {
+        Log-Ok "VibePascal compiler: $VPCompiler"
+    } else {
+        Log-Err "VibePascal compiler not found at $VPCompiler"
+        $problems++
+    }
+
+    $vpCfg = Join-Path $VPDir "bin\fpc.cfg"
+    if (Test-Path $vpCfg) {
+        $cfgLines = (Get-Content $vpCfg | Where-Object { $_ -match "^-Fu" }).Count
+        Log-Ok "VibePascal fpc.cfg: $vpCfg ($cfgLines unit paths)"
+    } else {
+        Log-Warn "VibePascal fpc.cfg not found at $vpCfg (run -Setup or -ForceRebuild)"
+        $problems++
+    }
+
+    $envOptsFile = Join-Path $env:LOCALAPPDATA "lazarus\environmentoptions.xml"
+    if (Test-Path $envOptsFile) {
+        Log-Ok "User config: $envOptsFile"
+        try {
+            $xml = [xml](Get-Content $envOptsFile -Raw)
+            $envOpts = $xml.CONFIG.EnvironmentOptions
+            $lazDirNode = $envOpts.SelectSingleNode("LazarusDirectory")
+            $cfgLazDir = if ($lazDirNode) { $lazDirNode.GetAttribute("Value") } else { $null }
+            $compilerNode = $envOpts.SelectSingleNode("CompilerFilename")
+            $cfgCompiler = if ($compilerNode) { $compilerNode.GetAttribute("Value") } else { $null }
+            $fpcSrcNode = $envOpts.SelectSingleNode("FPCSourceDirectory")
+            $cfgFpcSrc = if ($fpcSrcNode) { $fpcSrcNode.GetAttribute("Value") } else { $null }
+
+            if ($cfgLazDir) {
+                $cfgLazDirNorm = $cfgLazDir.TrimEnd('\','/')
+                $expectedNorm = $LazarusDir.TrimEnd('\','/')
+                if ($cfgLazDirNorm -eq $expectedNorm) {
+                    Log-Ok "  LazarusDirectory: $cfgLazDir"
+                } else {
+                    Log-Err "  LazarusDirectory: $cfgLazDir (expected $LazarusDir)"
+                    $problems++
+                }
+            } else {
+                Log-Err "  LazarusDirectory: <missing>"
+                $problems++
+            }
+
+            if ($cfgCompiler -and (Test-Path $cfgCompiler)) {
+                Log-Ok "  CompilerFilename: $cfgCompiler"
+            } else {
+                Log-Err "  CompilerFilename: $cfgCompiler (not found)"
+                $problems++
+            }
+
+            if ($cfgFpcSrc -and (Test-Path $cfgFpcSrc)) {
+                Log-Ok "  FPCSourceDirectory: $cfgFpcSrc"
+            } else {
+                Log-Err "  FPCSourceDirectory: $cfgFpcSrc (not found)"
+                $problems++
+            }
+        } catch {
+            Log-Err "Could not parse $envOptsFile : $_"
+            $problems++
+        }
+    } else {
+        Log-Warn "User config not found at $envOptsFile (run -Setup)"
+        $problems++
+    }
+
+    $lazExe = Join-Path $LazarusDir "lazarus.exe"
+    if (Test-Path $lazExe) {
+        $exeMtime = (Get-Item $lazExe).LastWriteTime
+        Log-Ok "lazarus.exe: $lazExe ($($exeMtime.ToString('yyyy-MM-dd HH:mm')))"
+    } else {
+        Log-Warn "lazarus.exe not built yet (run -ForceRebuild)"
+    }
+
+    $lazbuildExe = Join-Path $LazarusDir "lazbuild.exe"
+    if (Test-Path $lazbuildExe) {
+        Log-Ok "lazbuild.exe: $lazbuildExe"
+    } else {
+        Log-Warn "lazbuild.exe not built yet"
+    }
+
+    Write-Host ""
+    if ($problems -eq 0) {
+        Log-Ok "No problems found. Toolchain looks healthy."
+    } else {
+        Log-Err "$problems problem(s) found."
+        Log-Info "Suggested fixes:"
+        Log-Info "  1. Run: .\auto-update.ps1 -ResetConfig -ForceRebuild"
+        Log-Info "  2. If problems persist, check that VibePascal tarball is present in dist\\win64\\"
+        Log-Info "  3. Verify Lazarus repo is clean: git status -- inside $LazarusDir"
+    }
+    return $problems
+}
+
 function Configure-Environment {
     Log-Header "Configuring Lazarus IDE for VibePascal"
 
@@ -664,18 +844,54 @@ function Configure-Environment {
         $xml = [xml](Get-Content $envOptsFile -Raw)
         $envOpts = $xml.CONFIG.EnvironmentOptions
 
+        # Always update LazarusDirectory: stale path here is the #1 cause of
+        # "Without a proper Lazarus directory you will get a lot of warnings"
+        # at IDE startup. It must point at the source tree the user is actually using.
+        $lazDirNode = $envOpts.SelectSingleNode("LazarusDirectory")
+        if (-not $lazDirNode) {
+            $lazDirNode = $xml.CreateElement("LazarusDirectory")
+            $envOpts.AppendChild($lazDirNode) | Out-Null
+        }
+        $oldVal = $lazDirNode.GetAttribute("Value")
+        if ($oldVal -ne $LazarusDir) {
+            $lazDirNode.SetAttribute("Value", $LazarusDir)
+            Log-Info "LazarusDirectory: $oldVal -> $LazarusDir"
+        }
+
         $compilerNode = $envOpts.SelectSingleNode("CompilerFilename")
-        if ($compilerNode) {
-            $oldVal = $compilerNode.GetAttribute("Value")
+        if (-not $compilerNode) {
+            $compilerNode = $xml.CreateElement("CompilerFilename")
+            $envOpts.AppendChild($compilerNode) | Out-Null
+        }
+        $oldVal = $compilerNode.GetAttribute("Value")
+        if ($oldVal -ne $vpCompilerPath) {
             $compilerNode.SetAttribute("Value", $vpCompilerPath)
             Log-Info "CompilerFilename: $oldVal -> $vpCompilerPath"
         }
 
         $fpcSrcNode = $envOpts.SelectSingleNode("FPCSourceDirectory")
-        if ($fpcSrcNode) {
-            $oldVal = $fpcSrcNode.GetAttribute("Value")
+        if (-not $fpcSrcNode) {
+            $fpcSrcNode = $xml.CreateElement("FPCSourceDirectory")
+            $envOpts.AppendChild($fpcSrcNode) | Out-Null
+        }
+        $oldVal = $fpcSrcNode.GetAttribute("Value")
+        if ($oldVal -ne $VPDir) {
             $fpcSrcNode.SetAttribute("Value", $VPDir)
             Log-Info "FPCSourceDirectory: $oldVal -> $VPDir"
+        }
+
+        $makeNode = $envOpts.SelectSingleNode("MakeFilename")
+        $makePath = Find-Make
+        if ($makePath) {
+            if (-not $makeNode) {
+                $makeNode = $xml.CreateElement("MakeFilename")
+                $envOpts.AppendChild($makeNode) | Out-Null
+            }
+            $oldVal = $makeNode.GetAttribute("Value")
+            if ($oldVal -ne $makePath) {
+                $makeNode.SetAttribute("Value", $makePath)
+                Log-Info "MakeFilename: $oldVal -> $makePath"
+            }
         }
 
         $xml.Save($envOptsFile)
@@ -809,9 +1025,30 @@ Write-Host "  VibePascal: $VPDir"
 Write-Host "  Compiler:   $VPCompiler"
 Write-Host ""
 
+if ($Doctor) {
+    $problems = Invoke-Doctor
+    exit $(if ($problems -gt 0) { 1 } else { 0 })
+}
+
+if ($ResetConfig) {
+    Reset-LazarusConfig
+    Extract-VPBinaries
+    Configure-Environment
+    $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
+    if ($quality.Quality -ne "Compatible") {
+        Log-Warn "Lazarus directory still flagged $($quality.Quality): $($quality.Note)"
+        Log-Warn "IDE may show 'Without a proper Lazarus directory' on startup. Run -ForceRebuild to rebuild lazarus.exe."
+    }
+    exit 0
+}
+
 if ($Setup) {
     Extract-VPBinaries
     Configure-Environment
+    $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
+    if ($quality.Quality -ne "Compatible") {
+        Log-Warn "Lazarus directory flagged $($quality.Quality): $($quality.Note)"
+    }
     exit 0
 }
 
@@ -866,6 +1103,15 @@ if ($anyUpdated) {
             Log-Info "Native Windows release packaging not yet implemented."
         }
     }
+}
+
+# Post-rebuild sanity check: fail loudly if the IDE will warn at startup.
+$quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
+if ($quality.Quality -ne "Compatible") {
+    Write-Host ""
+    Log-Err "Lazarus directory check FAILED: $($quality.Quality) [$($quality.Note)]"
+    Log-Err "IDE will show 'Without a proper Lazarus directory you will get a lot of warnings' on startup."
+    Log-Info "Run: .\auto-update.ps1 -Doctor for a full diagnosis."
 }
 
 Print-Summary
