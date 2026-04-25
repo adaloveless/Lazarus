@@ -69,7 +69,7 @@ uses
   StdCodeTools, EventCodeTool, CodeCreationDlg, IdentCompletionTool,
   // LazUtils
   // use lazutf8, lazfileutils and lazfilecache after FileProcs and FileUtil
-  FileUtil, LazFileUtils, LazUtilities, LazUTF8, UTF8Process,
+  FileUtil, LazFileUtils, LazUtilities, LazUTF8, UTF8Process, ProjResProc,
   LConvEncoding, Laz2_XMLCfg, LazLoggerBase, LazLogger, LazFileCache, AvgLvlTree,
   GraphType, LazStringUtils, LazVersion, LazTracer,
   LCLExceptionStacktrace,
@@ -124,7 +124,7 @@ uses
   // IdeConfig
   LazConf, EnvironmentOpts, TransferMacros, IDECmdLine, IDEGuiCmdLine,
   IDEProcs, ApplicationBundle, InitialSetupProc, MiscOptions, IdeBuilder,
-  IdeConfStrConsts,
+  FindProjPackUnit, IdeConfStrConsts,
   // IdePackager,
   IdePackager, IdePackagerStrConsts, PackageSystem, BasePkgManager, LPKCache,
   // IdeProject,
@@ -166,7 +166,7 @@ uses
   CodeTemplatesDlg, CodeBrowser, FindUnitDlg, InspectChksumChangedDlg,
   IdeOptionsDlg, EditDefineTree, KeyMapping,
   IDETranslations, ExtToolDialog, ExtToolEditDlg, JumpHistoryView,
-  DesktopManager, DiskDiffsDialog, BuildLazDialog, BuildProfileManager,
+  DesktopManager, DiskDiffsDialog, BuildLazDialog,
   BuildManager, IdeBuildManager, CheckCompOptsForNewUnitDlg,
   InputhistoryWithSearchOpt, UnitDependencies, IDEFPCInfo, IDEInfoDlg,
   IDEInfoNeedBuild, ProcessList, IdeDebuggerOpts, IdeDebuggerWatchResPrinter,
@@ -205,7 +205,7 @@ type
     procedure HandleSelectFrame(Sender: TObject; var AComponentClass: TComponentClass);
     function FindHelpButton(lParent: TWinControl; out aHelpButton: TControl): boolean;
     procedure ForwardKeyToObjectInspector(Sender: TObject; Key: TUTF8Char);
-    function MainTitleChanged(const ATitle: string): boolean;
+    procedure MainTitleChanged(const ATitle: string);
     procedure OIChangedTimerTimer(Sender: TObject);
     procedure LazInstancesStartNewInstance(const aFiles: TStrings;
       var Result: TStartNewInstanceResult; var outSourceWindowHandle: HWND);
@@ -912,7 +912,7 @@ type
 
     // useful file methods
     function FindUnitFile(const AFilename: string; TheOwner: TObject = nil;
-                          Flags: TFindUnitFileFlags = []): string; override;
+                          IgnoreUninstallPkgs: boolean = false): string; override;
     function FindSourceFile(const AFilename, BaseDirectory: string;
                             Flags: TFindSourceFlags): string; override;
     function DoCheckFilesOnDisk(Instantaneous: boolean = false): TModalResult; override;
@@ -2249,6 +2249,7 @@ begin
   LazQuestionWorker:=@IDEQuestionDialogHandler;
   LazMsgWorker.OnShowMessage:=@ShowMessageHandler;
   LazMsgWorker.OnMainTitleChange:=@MainTitleChanged;
+  LazMsgWorker.OnSaveAllEditorChanges:=@SaveAllEditorChanges;
   TestCompilerOptions:=@CompilerOptionsDialogTest;
   CheckCompOptsAndMainSrcForNewUnitEvent:=@CheckForNewUnit;
 end;
@@ -9379,7 +9380,7 @@ begin
     SearchedFilename := ExtractFileName(Filename);
     Include(OpenFlags,ofVirtualFile);
   end else begin
-    SearchedFilename := FindUnitFile(Filename);
+    SearchedFilename := FindUnitFile(Filename, Project1);
     if not FilenameIsAbsolute(SearchedFilename) then
       Include(OpenFlags,ofVirtualFile);
   end;
@@ -9466,7 +9467,7 @@ begin
       SearchedFilename := ExtractFileName(AFilename);
       Include(OpenFlags,ofVirtualFile);
     end else begin
-      SearchedFilename := FindUnitFile(AFilename);
+      SearchedFilename := FindUnitFile(AFilename, Project1);
     end;
     if SearchedFilename<>'' then begin
       JumpPointEditor := SourceEditorManager.ActiveEditor;
@@ -9575,9 +9576,9 @@ begin
 end;
 
 function TMainIDE.FindUnitFile(const AFilename: string; TheOwner: TObject;
-  Flags: TFindUnitFileFlags): string;
+  IgnoreUninstallPkgs: boolean): string;
 begin
-  Result:=FindUnitFileImpl(AFilename, TheOwner, Flags);
+  Result:=FindProjPackUnitFile(AFilename, TheOwner, IgnoreUninstallPkgs);
 end;
 
 {------------------------------------------------------------------------------
@@ -12784,7 +12785,7 @@ begin
   end;
 end;
 
-function TMainIDE.MainTitleChanged(const ATitle: string): boolean;
+procedure TMainIDE.MainTitleChanged(const ATitle: string);
 begin
   LazarusIDE.MainBarSubTitle:=ATitle;
 end;

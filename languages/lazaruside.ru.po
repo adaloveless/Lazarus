@@ -2325,11 +2325,6 @@ msgstr "Отладчик"
 msgid "Editor"
 msgstr "Редактор"
 
-#: lazarusidestrconsts.dlggroupenvironment
-msgctxt "lazarusidestrconsts.dlggroupenvironment"
-msgid "Environment"
-msgstr "Окружение"
-
 #: lazarusidestrconsts.dlggroupundo
 msgid "Group Undo"
 msgstr "Групповая отмена"
@@ -5523,15 +5518,6 @@ msgstr "Всегда открывать целевой файл"
 msgid "A macro with this name already exists."
 msgstr "Макрос с таким именем уже имеется."
 
-#: lazarusidestrconsts.lisambiguousfilefound
-msgid "Ambiguous file found"
-msgstr "Найден файл с дублирующимся именем"
-
-#: lazarusidestrconsts.lisambiguousfilefoundthisfilecanbemistakenwithdelete
-#, object-pascal-format
-msgid "Ambiguous file found: \"%s\"%sThis file can be mistaken with \"%s\"%sDelete the ambiguous file?"
-msgstr "Найден файл с дублирующимся именем: \"%s\"%sОн может быть перепутан с \"%s\"%sУдалить этот файл?"
-
 #: lazarusidestrconsts.lisanchorbottomtobottomside
 msgid "Anchor bottom side to bottom side of sibling. Use BorderSpacing to set a distance. BorderSpacing of sibling is ignored."
 msgstr "Привязать низ компонента к низу соседа. Используйте зазор для задания расстояния. Зазор соседа игнорируется."
@@ -5749,10 +5735,6 @@ msgstr "Доступные режимы сборки проекта"
 #: lazarusidestrconsts.lisbackupchangedfiles
 msgid "Make backup of changed files"
 msgstr "Делать резервные копии изменённых файлов"
-
-#: lazarusidestrconsts.lisbackupfilefailed
-msgid "Backup file failed"
-msgstr "Не удалось создать резервную копию"
 
 #: lazarusidestrconsts.lisbackuphint
 msgid "Creates a Backup directory under project directory"
@@ -5990,11 +5972,6 @@ msgstr "Невозможно создать файл \"%s\""
 msgid "Cannot delete last mode."
 msgstr "Невозможно удалить последний режим."
 
-#: lazarusidestrconsts.liscannotfind
-#, object-pascal-format
-msgid "Cannot find %s"
-msgstr "Невозможно найти %s"
-
 #: lazarusidestrconsts.liscannotfindlazarusstarter
 #, object-pascal-format
 msgid "Cannot find Lazarus starter:%s%s"
@@ -6022,11 +5999,6 @@ msgstr "Проверка компилятора невозможна во вре
 #: lazarusidestrconsts.liscanonlychangetheclassoftcomponents
 msgid "Can only change the class of TComponents."
 msgstr "Возможно только изменить класс TComponents."
-
-#: lazarusidestrconsts.liscantfindavalidppu
-#, object-pascal-format
-msgid "Can't find a valid %s.ppu"
-msgstr "Невозможно найти корректный %s.ppu"
 
 #: lazarusidestrconsts.liscaptioncomparefiles
 msgid "Compare files (not for creating patches)"
@@ -6526,17 +6498,6 @@ msgctxt "lazarusidestrconsts.lischeckfordiskfilechangesviacontent"
 msgid "Check for disk file changes via content rather than timestamp"
 msgstr "Проверять изменения в файлах на диске по содержимому, а не по времени"
 
-#: lazarusidestrconsts.lischeckifpackagecreatesppuchecknothingdeletesthisfil
-#, object-pascal-format
-msgid ". Check if package %s creates %s.ppu, check nothing deletes this file and check that no two packages have access to the unit source."
-msgstr ". Проверьте, что пакет %s создаёт %s.ppu и этот файл ничем не удаляется. Также убедитесь, что два пакета одновременно не имеют доступа к исходному коду модуля."
-
-#: lazarusidestrconsts.lischeckifpackageisinthedependencies
-#, object-pascal-format
-msgctxt "lazarusidestrconsts.lischeckifpackageisinthedependencies"
-msgid ". Check if package %s is in the dependencies"
-msgstr ". Проверьте, что пакет %s имеется в списке зависимостей"
-
 #: lazarusidestrconsts.lischeckifthenexttokeninsourceisanendandifnotreturnsl
 msgid "Check if the next token in source is an \"end\" and if not return \"LineEnding + end; + LineEnding\"."
 msgstr "Проверить, что следующий элемент исходного кода - слово \"end\", и, если нет, возвратить \"<символы конца строки> + end; + <символы конца строки>\"."
@@ -6544,12 +6505,6 @@ msgstr "Проверить, что следующий элемент исход�
 #: lazarusidestrconsts.lischeckoptions
 msgid "Check options"
 msgstr "Проверка параметров"
-
-#: lazarusidestrconsts.lischecksearchpathpackagetryacleanrebuildcheckimpleme
-#, object-pascal-format
-msgctxt "lazarusidestrconsts.lischecksearchpathpackagetryacleanrebuildcheckimpleme"
-msgid ". Check search path of package %s, try a clean rebuild, check implementation uses sections."
-msgstr ". Проверьте список путей поиска пакета %s, попробуйте пересобрать с очисткой, проверьте выражения Uses в секциях Implementation."
 
 #: lazarusidestrconsts.lischeckthenexttokeninsourceandaddasemicolonifneeded
 msgid "Check the next token in source and add a semicolon if needed."
@@ -6770,11 +6725,6 @@ msgstr "Очистить и собрать с lazbuild"
 #: lazarusidestrconsts.liscleanupmode
 msgid "Clean up mode"
 msgstr "Режим очистки"
-
-#: lazarusidestrconsts.liscleanuppackage
-#, object-pascal-format
-msgid "Clean up package \"%s\"."
-msgstr "Удалите пакет \"%s\"."
 
 #: lazarusidestrconsts.liscleanupunitpath
 msgid "Clean up unit path?"
@@ -7548,11 +7498,6 @@ msgstr "Собрать пакет дважды и проверить, компи
 msgid "Compiler"
 msgstr "Компилятор"
 
-#: lazarusidestrconsts.liscompilerdoesnotsupporttarget
-#, object-pascal-format
-msgid "Compiler \"%s\" does not support target %s-%s"
-msgstr "Компилятор \"%s\" не поддерживает целевую платформу %s-%s"
-
 #: lazarusidestrconsts.liscompilermessagesfilenotfound
 #, object-pascal-format
 msgid "Compiler messages file not found:%s%s"
@@ -7574,10 +7519,6 @@ msgstr "компиляции"
 #: lazarusidestrconsts.liscompilewithprojectsettings
 msgid "Compile with project settings"
 msgstr "Компилировать с параметрами проекта"
-
-#: lazarusidestrconsts.liscompilewithvdformoredetailscheckforduplicates
-msgid "Compile with -vd for more details. Check for duplicates."
-msgstr "Соберите с параметром -vd для получения подробностей. Убедитесь в отсутствии дубликатов."
 
 #: lazarusidestrconsts.liscompiling
 #, object-pascal-format
@@ -8842,10 +8783,6 @@ msgstr "&Удалить все"
 msgid "Delete all these files?"
 msgstr "Удалить все эти файлы?"
 
-#: lazarusidestrconsts.lisdeleteambiguousfile
-msgid "Delete ambiguous file?"
-msgstr "Удалить файл с дублирующимся именем?"
-
 #: lazarusidestrconsts.lisdeletemacro
 #, object-pascal-format
 msgid "Delete macro \"%s\"?"
@@ -9441,11 +9378,6 @@ msgstr "Путь к каталогу назначения для опублик�
 msgid "Enabled only for packages."
 msgstr "Параметр активен только для пакетов"
 
-#: lazarusidestrconsts.lisenableflaguseunitofunitinpackage
-#, object-pascal-format
-msgid ". Enable flag \"Use Unit\" of unit %s in package %s"
-msgstr ". Включите флаг \"Использовать модуль\" для модуля %s в пакете %s"
-
 #: lazarusidestrconsts.lisenablei18nforlfm
 msgid "Enable I18N for LFM"
 msgstr "Включить i18n для LFM"
@@ -9534,10 +9466,6 @@ msgstr "Ошибка: "
 #: lazarusidestrconsts.liserrorcreatingfile
 msgid "Error creating file"
 msgstr "Ошибка создания файла"
-
-#: lazarusidestrconsts.liserrordeletingfile
-msgid "Error deleting file"
-msgstr "Ошибка удаления файла"
 
 #: lazarusidestrconsts.liserrorin
 #, object-pascal-format
@@ -9636,10 +9564,6 @@ msgstr "Ошибка чтения XML"
 #, object-pascal-format
 msgid "Error reading xml file \"%s\"%s%s"
 msgstr "Ошибка чтения файла XML \"%s\"%s%s"
-
-#: lazarusidestrconsts.liserrorrenamingfile
-msgid "Error renaming file"
-msgstr "Ошибка переименования файла"
 
 #: lazarusidestrconsts.liserrors
 msgctxt "lazarusidestrconsts.liserrors"
@@ -10553,10 +10477,6 @@ msgstr "Подсказка: значение по умолчанию может 
 msgid "A hint at property's name shows its description."
 msgstr "В подсказке, всплывающей над именем свойства, выводится его описание"
 
-#: lazarusidestrconsts.lishintcheckiftwopackagescontainaunitwiththesamename
-msgid "Hint: Check if two packages contain a unit with the same name."
-msgstr "Подсказка: проверьте, содержат ли два пакета модули с одинаковым именем."
-
 #: lazarusidestrconsts.lishintclickonshowoptionstofindoutwhereinheritedpaths
 msgid "Hint: Click on \"Show Options\" to find out where inherited paths are coming from."
 msgstr "Подсказка: нажмите \"Показать параметры\", чтобы выяснить, откуда были взяты унаследованные пути."
@@ -10856,11 +10776,6 @@ msgstr "Пути к включаемым файлам"
 #: lazarusidestrconsts.lisincluderecursive
 msgid "Include, recursive"
 msgstr "Добавить, рекурсивно"
-
-#: lazarusidestrconsts.lisincompatibleppu
-#, object-pascal-format
-msgid ", incompatible ppu=%s"
-msgstr ", несовместимый PPU=%s"
 
 #: lazarusidestrconsts.lisincorrectconfigurationdirectoryfound
 msgid "Incorrect configuration directory found"
@@ -12078,10 +11993,6 @@ msgstr "Строковая константа в исходном коде"
 #: lazarusidestrconsts.lismakeresstrstringswithsamevalue
 msgid "Strings with same value:"
 msgstr "Строки с тем же значением:"
-
-#: lazarusidestrconsts.lismakesureallppufilesofapackageareinitsoutputdirecto
-msgid "Make sure all ppu files of a package are in its output directory."
-msgstr "Убедитесь, что все файлы PPU пакета находятся в его каталоге вывода."
 
 #: lazarusidestrconsts.lismanagesourceeditors
 msgid "Manage Source Editors ..."
@@ -13910,10 +13821,6 @@ msgstr "Цвета сообщений"
 msgid "Multiple directories are separated with semicolons"
 msgstr "Разделителем каталогов является точка с запятой"
 
-#: lazarusidestrconsts.lismultiplepack
-msgid ", multiple packages: "
-msgstr ", несколько пакетов: "
-
 #: lazarusidestrconsts.lismvsavemessagestofiletxt
 msgid "Save messages to file (*.txt)"
 msgstr "Сохранить сообщения в файл (*.txt)"
@@ -14146,14 +14053,6 @@ msgctxt "lazarusidestrconsts.lisnotebooktabpostop"
 msgid "Top"
 msgstr "Сверху"
 
-#: lazarusidestrconsts.lisnotecouldnotcreatedefinetemplateforfreepascal
-msgid "NOTE: Could not create Define Template for Free Pascal Sources"
-msgstr "ЗАМЕТКА: Невозможно создать шаблон определений из исходного кода Free Pascal"
-
-#: lazarusidestrconsts.lisnotecouldnotcreatedefinetemplateforlazarussources
-msgid "NOTE: Could not create Define Template for Lazarus Sources"
-msgstr "ЗАМЕТКА: Невозможно создать шаблон определений из исходного кода Lazarus"
-
 #: lazarusidestrconsts.lisnotemplateselected
 msgid "no template selected"
 msgstr "шаблон не выбран"
@@ -14202,15 +14101,6 @@ msgstr "пути к объектным файлам"
 #: lazarusidestrconsts.lisofeswitchtoobjectinspectorfavoritestab
 msgid "Switch to Object Inspector Favorites tab"
 msgstr "Переключаться на вкладку 'Избранное' инспектора объектов"
-
-#: lazarusidestrconsts.lisofpackage
-#, object-pascal-format
-msgid " of package %s"
-msgstr " пакета %s"
-
-#: lazarusidestrconsts.lisoftheprojectinspector
-msgid " of the Project Inspector"
-msgstr " в инспекторе проекта"
 
 #: lazarusidestrconsts.lisoifaddtofavoriteproperties
 msgid "Add to favorite properties"
@@ -14542,11 +14432,6 @@ msgstr "Пакет"
 msgid "package %s"
 msgstr "пакет %s"
 
-#: lazarusidestrconsts.lispackage3
-#, object-pascal-format
-msgid ", package %s"
-msgstr ", пакет %s"
-
 #: lazarusidestrconsts.lispackageinfo
 msgid "Package info"
 msgstr "Сведения о пакете"
@@ -14563,10 +14448,6 @@ msgstr "Имя пакета начинается с ..."
 #: lazarusidestrconsts.lispackagenamecontains
 msgid "Package name contains ..."
 msgstr "Имя пакета содержит ..."
-
-#: lazarusidestrconsts.lispackageneedsanoutputdirectory
-msgid "Package needs an output directory."
-msgstr "Пакету требуется каталог вывода."
 
 #: lazarusidestrconsts.lispackageneedsinstallation
 msgid "Package needs installation"
@@ -15796,11 +15677,6 @@ msgstr "Положение"
 msgid "%s (position outside of source)"
 msgstr "%s (положение вне границ исходного кода)"
 
-#: lazarusidestrconsts.lisppuinwrongdirectory
-#, object-pascal-format
-msgid "ppu in wrong directory=%s."
-msgstr "PPU в неверном каталоге=%s."
-
 #: lazarusidestrconsts.lisprecedingword
 msgid "Preceding word"
 msgstr "Предыдущее слово"
@@ -16355,10 +16231,6 @@ msgstr "Переименовать ..."
 #: lazarusidestrconsts.lisrenamefile
 msgid "Rename file?"
 msgstr "Переименовать файл?"
-
-#: lazarusidestrconsts.lisrenamefilefailed
-msgid "Rename file failed"
-msgstr "Не удалось переименовать файл"
 
 #: lazarusidestrconsts.lisrenameshowresult
 msgid "Show list of renamed Identifiers"
@@ -17846,11 +17718,6 @@ msgstr "Проект требуется сохранить перед компи
 msgid "The project uses FPC resources which require at least FPC 2.4"
 msgstr "Проект использует ресурсы FPC, требующие компилятор версии не ниже 2.4"
 
-#: lazarusidestrconsts.listheprojectusestargetosandcputhesystemppuforthistar
-#, object-pascal-format
-msgid "The project uses target OS=%s and CPU=%s.%sThe system.ppu for this target was not found in the FPC binary directories.%sMake sure fpc is installed correctly for this target and the fpc.cfg contains the right directories."
-msgstr "Проект использует целевую ОС %s и процессор %s.%sSystem.ppu для этой цели не был найден в каталогах двоичных файлов FPC.%sУбедитесь в том, что FPC установлен корректно для данной цели, и что файл fpc.cfg содержит верные каталоги."
-
 #: lazarusidestrconsts.listheprojectwritesthedebugsymbolstoanexternalfilethe
 #, object-pascal-format
 msgid "The project writes the debug symbols to an external file. The \"%s\" supports only symbols within the executable."
@@ -17870,11 +17737,6 @@ msgstr "%sДля данного сообщения найдены дополни
 #, object-pascal-format
 msgid "There are other files in the directory with the same name,%swhich only differ in case:%s%s%sDelete them?"
 msgstr "В каталоге есть и другие файлы с таким же именем,%sотличающиеся только регистром:%s%s%sУдалить их?"
-
-#: lazarusidestrconsts.listhereisafilewiththesamenameandasimilarextension
-#, object-pascal-format
-msgid "There is a file with the same name and a similar extension on disk%sFile: %s%sAmbiguous File: %s%sDelete ambiguous file?"
-msgstr "На диске есть файл с таким же именем и похожим расширением%sФайл: %s%sФайл с дублирующимся именем: %s%sУдалить второй файл?"
 
 #: lazarusidestrconsts.listhereisalreadyabuildmodewiththisname
 msgid "There is already a build mode with this name."
@@ -17933,11 +17795,6 @@ msgstr "Модуль с именем \"%s\" уже имеется. Иденти�
 #, object-pascal-format
 msgid "There is a unit with the name \"%s\" in the project.%sPlease choose a different name"
 msgstr "Модуль с именем \"%s\" уже имеется в проекте.%sВыберите другое имя"
-
-#: lazarusidestrconsts.listhereisnofreepascalcompileregfpcorppccpuconfigured
-#, object-pascal-format
-msgid "There is no Free Pascal Compiler (e. g. fpc%0:s or ppc<cpu>%0:s) configured in the project options. CodeTools will not work properly.%1:s%1:sError message:%1:s%2:s"
-msgstr "В параметрах проекта не настроен компилятор Free Pascal (например, fpc%0:s либо ppc<cpu>%0:s). Подсистема CodeTools не будет правильно работать.%1:s%1:sСообщение об ошибке:%1:s%2:s"
 
 #: lazarusidestrconsts.listheremustbeatleastonebuildmode
 msgid "There must be at least one build mode."
@@ -18012,11 +17869,6 @@ msgstr "Модуль \"%s\" уже существует."
 #, object-pascal-format
 msgid "The unit belongs to package %s."
 msgstr "Модуль принадлежит пакету %s."
-
-#: lazarusidestrconsts.listheunitexiststwiceintheunitpathofthe
-#, object-pascal-format
-msgid "The unit %s exists twice in the unit path of the %s:"
-msgstr "Модуль %s дублируется в путях к модулям %s:"
 
 #: lazarusidestrconsts.listheunithasthisname
 msgid "The unit has this name"
@@ -18456,11 +18308,6 @@ msgstr "Невозможно добавить зависимость %s, так 
 msgid "Unable to add %s to project because there is already a unit with the same name in the Project."
 msgstr "Невозможно добавить %s к проекту, так как в проекте уже есть модуль с таким именем."
 
-#: lazarusidestrconsts.lisunabletobackupfileto
-#, object-pascal-format
-msgid "Unable to backup file \"%s\" to \"%s\"!"
-msgstr "Для файла \"%s\" невозможно создать резервную копию \"%s\"!"
-
 #: lazarusidestrconsts.lisunabletochangeclassofto
 #, object-pascal-format
 msgid "%s%sUnable to change class of %s to %s"
@@ -18512,11 +18359,6 @@ msgstr "Невозможно создать новый файл, так как �
 #: lazarusidestrconsts.lisunabletocreatetemporarylfmbuffer
 msgid "Unable to create temporary lfm buffer."
 msgstr "Невозможно создать временный буфер LFM"
-
-#: lazarusidestrconsts.lisunabletodeleteambiguousfile
-#, object-pascal-format
-msgid "Unable to delete ambiguous file \"%s\""
-msgstr "Невозможно удалить файл с дублирующимся именем \"%s\""
 
 #: lazarusidestrconsts.lisunabletofindaresourcestringsectioninthisoranyofthe
 msgid "Unable to find a ResourceString section in this or any of the used units."
@@ -18593,11 +18435,6 @@ msgstr "Невозможно открыть редактор форм. %sКла�
 msgid "Unable to read %s"
 msgstr "Невозможно прочитать %s"
 
-#: lazarusidestrconsts.lisunabletoremoveoldbackupfile
-#, object-pascal-format
-msgid "Unable to remove old backup file \"%s\"!"
-msgstr "Невозможно удалить старый файл резервной копии \"%s\"!"
-
 #: lazarusidestrconsts.lisunabletoremoveprojectscaledfromsource
 #, object-pascal-format
 msgid "Unable to remove project scaled from source.%s%s"
@@ -18607,11 +18444,6 @@ msgstr "Невозможно удалить свойство Scaled проект
 #, object-pascal-format
 msgid "Unable to remove project title from source.%s%s"
 msgstr "Невозможно удалить заголовок проекта из исходного кода.%s%s"
-
-#: lazarusidestrconsts.lisunabletorenameambiguousfileto
-#, object-pascal-format
-msgid "Unable to rename ambiguous file \"%s\"%sto \"%s\""
-msgstr "Невозможно переименовать файл с дублирующимся именем \"%s\"%sв \"%s\""
 
 #: lazarusidestrconsts.lisunabletorenameforminsource
 msgid "Unable to rename form in source."
@@ -18846,11 +18678,6 @@ msgstr "Отображать флажок для логических значе
 #: lazarusidestrconsts.lisusecommentsincustomoptions
 msgid "Use comments in custom options"
 msgstr "Комментарии в параметрах пользователя"
-
-#: lazarusidestrconsts.lisusedby
-#, object-pascal-format
-msgid " used by %s"
-msgstr ", используемый в %s"
 
 #: lazarusidestrconsts.lisusedesigntimepackages
 msgid "Use design time packages"

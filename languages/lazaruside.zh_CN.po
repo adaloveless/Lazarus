@@ -2330,11 +2330,6 @@ msgstr "调试器"
 msgid "Editor"
 msgstr "编辑器"
 
-#: lazarusidestrconsts.dlggroupenvironment
-msgctxt "lazarusidestrconsts.dlggroupenvironment"
-msgid "Environment"
-msgstr "环境"
-
 #: lazarusidestrconsts.dlggroupundo
 msgid "Group Undo"
 msgstr "组撤销"
@@ -5538,15 +5533,6 @@ msgstr ""
 msgid "A macro with this name already exists."
 msgstr "带有这个名称的宏已经存在."
 
-#: lazarusidestrconsts.lisambiguousfilefound
-msgid "Ambiguous file found"
-msgstr "多义文件找到"
-
-#: lazarusidestrconsts.lisambiguousfilefoundthisfilecanbemistakenwithdelete
-#, object-pascal-format
-msgid "Ambiguous file found: \"%s\"%sThis file can be mistaken with \"%s\"%sDelete the ambiguous file?"
-msgstr "多义文件找到: \"%s\"%s这个文件可能被\"%s\"%s弄错 删除多义文件?"
-
 #: lazarusidestrconsts.lisanchorbottomtobottomside
 msgid "Anchor bottom side to bottom side of sibling. Use BorderSpacing to set a distance. BorderSpacing of sibling is ignored."
 msgstr "锚点底侧到同级控件的底侧.使用边界空格来设置一个距离.同级控件的边界空间被格忽略."
@@ -5768,10 +5754,6 @@ msgstr "可用的项目构建模式"
 #: lazarusidestrconsts.lisbackupchangedfiles
 msgid "Make backup of changed files"
 msgstr "制作更改文件的备份"
-
-#: lazarusidestrconsts.lisbackupfilefailed
-msgid "Backup file failed"
-msgstr "备份文件失败"
 
 #: lazarusidestrconsts.lisbackuphint
 msgid "Creates a Backup directory under project directory"
@@ -6009,11 +5991,6 @@ msgstr "不能创建文件\"%s\""
 msgid "Cannot delete last mode."
 msgstr "不能最后的模式."
 
-#: lazarusidestrconsts.liscannotfind
-#, object-pascal-format
-msgid "Cannot find %s"
-msgstr "不能找到%s"
-
 #: lazarusidestrconsts.liscannotfindlazarusstarter
 #, object-pascal-format
 msgid "Cannot find Lazarus starter:%s%s"
@@ -6041,11 +6018,6 @@ msgstr "不能测试编译器 当调试中或编译中."
 #: lazarusidestrconsts.liscanonlychangetheclassoftcomponents
 msgid "Can only change the class of TComponents."
 msgstr "仅能更改TComponents的类."
-
-#: lazarusidestrconsts.liscantfindavalidppu
-#, object-pascal-format
-msgid "Can't find a valid %s.ppu"
-msgstr "不能找到有效的%s.ppu"
 
 #: lazarusidestrconsts.liscaptioncomparefiles
 msgid "Compare files (not for creating patches)"
@@ -6545,17 +6517,6 @@ msgctxt "lazarusidestrconsts.lischeckfordiskfilechangesviacontent"
 msgid "Check for disk file changes via content rather than timestamp"
 msgstr "通过文件内容而不是时间戳来检查磁盘文件是否更改"
 
-#: lazarusidestrconsts.lischeckifpackagecreatesppuchecknothingdeletesthisfil
-#, object-pascal-format
-msgid ". Check if package %s creates %s.ppu, check nothing deletes this file and check that no two packages have access to the unit source."
-msgstr ". 检查包 %s 是否创建了 %s.ppu，检查没有任何操作会删除此文件，并检查没有两个包可以访问该单元源代码。"
-
-#: lazarusidestrconsts.lischeckifpackageisinthedependencies
-#, object-pascal-format
-msgctxt "lazarusidestrconsts.lischeckifpackageisinthedependencies"
-msgid ". Check if package %s is in the dependencies"
-msgstr ".检查是否软件包%s在依赖关系中"
-
 #: lazarusidestrconsts.lischeckifthenexttokeninsourceisanendandifnotreturnsl
 msgid "Check if the next token in source is an \"end\" and if not return \"LineEnding + end; + LineEnding\"."
 msgstr "检查源中的下一个标记是否为“end”，如果不是，则返回“LineEnding + end; + LineEnding”。"
@@ -6563,12 +6524,6 @@ msgstr "检查源中的下一个标记是否为“end”，如果不是，则返
 #: lazarusidestrconsts.lischeckoptions
 msgid "Check options"
 msgstr "检查选项"
-
-#: lazarusidestrconsts.lischecksearchpathpackagetryacleanrebuildcheckimpleme
-#, object-pascal-format
-msgctxt "lazarusidestrconsts.lischecksearchpathpackagetryacleanrebuildcheckimpleme"
-msgid ". Check search path of package %s, try a clean rebuild, check implementation uses sections."
-msgstr ". 核查软件包%s的搜索路径,尝试一次清理重新构建,核查implementation uses分句."
 
 #: lazarusidestrconsts.lischeckthenexttokeninsourceandaddasemicolonifneeded
 msgid "Check the next token in source and add a semicolon if needed."
@@ -6791,11 +6746,6 @@ msgstr "清理 + 编译构建"
 #: lazarusidestrconsts.liscleanupmode
 msgid "Clean up mode"
 msgstr ""
-
-#: lazarusidestrconsts.liscleanuppackage
-#, object-pascal-format
-msgid "Clean up package \"%s\"."
-msgstr "清理软件包\"%s\"."
 
 #: lazarusidestrconsts.liscleanupunitpath
 msgid "Clean up unit path?"
@@ -7574,11 +7524,6 @@ msgstr "编译包两次并检查是否有任何单元被再次编译。"
 msgid "Compiler"
 msgstr "编译器"
 
-#: lazarusidestrconsts.liscompilerdoesnotsupporttarget
-#, object-pascal-format
-msgid "Compiler \"%s\" does not support target %s-%s"
-msgstr "编译器\"%s\"不支持目标%s-%s"
-
 #: lazarusidestrconsts.liscompilermessagesfilenotfound
 #, object-pascal-format
 msgid "Compiler messages file not found:%s%s"
@@ -7600,10 +7545,6 @@ msgstr "编译"
 #: lazarusidestrconsts.liscompilewithprojectsettings
 msgid "Compile with project settings"
 msgstr "编译 带有项目设置"
-
-#: lazarusidestrconsts.liscompilewithvdformoredetailscheckforduplicates
-msgid "Compile with -vd for more details. Check for duplicates."
-msgstr "编译时使用-vd以获得更多详细信息.检查重复项."
 
 #: lazarusidestrconsts.liscompiling
 #, object-pascal-format
@@ -8870,10 +8811,6 @@ msgstr "删除所有(&D)"
 msgid "Delete all these files?"
 msgstr "删除所有这些文件？"
 
-#: lazarusidestrconsts.lisdeleteambiguousfile
-msgid "Delete ambiguous file?"
-msgstr "删除多义文件？"
-
 #: lazarusidestrconsts.lisdeletemacro
 #, object-pascal-format
 msgid "Delete macro \"%s\"?"
@@ -9469,11 +9406,6 @@ msgstr "发布的目标目录可以是相对路径或为空。"
 msgid "Enabled only for packages."
 msgstr "仅对软件包启用."
 
-#: lazarusidestrconsts.lisenableflaguseunitofunitinpackage
-#, object-pascal-format
-msgid ". Enable flag \"Use Unit\" of unit %s in package %s"
-msgstr ". 启用单元 %s （软件包 %s） 的 \"Use Unit\" 标志"
-
 #: lazarusidestrconsts.lisenablei18nforlfm
 msgid "Enable I18N for LFM"
 msgstr "禁用I18N(国际化)对于LFM"
@@ -9562,10 +9494,6 @@ msgstr "错误："
 #: lazarusidestrconsts.liserrorcreatingfile
 msgid "Error creating file"
 msgstr "创建文件错误"
-
-#: lazarusidestrconsts.liserrordeletingfile
-msgid "Error deleting file"
-msgstr "删除文件错误"
 
 #: lazarusidestrconsts.liserrorin
 #, object-pascal-format
@@ -9664,10 +9592,6 @@ msgstr "读取XML出错"
 #, object-pascal-format
 msgid "Error reading xml file \"%s\"%s%s"
 msgstr "读取XML文件\"%s\"%s%s错误"
-
-#: lazarusidestrconsts.liserrorrenamingfile
-msgid "Error renaming file"
-msgstr "重命名文件错误"
 
 #: lazarusidestrconsts.liserrors
 msgctxt "lazarusidestrconsts.liserrors"
@@ -10579,10 +10503,6 @@ msgstr "提示:一个默认值可以被定义在条件句(conditionals)."
 msgid "A hint at property's name shows its description."
 msgstr "一个在属性名称处的提示显示它的描述."
 
-#: lazarusidestrconsts.lishintcheckiftwopackagescontainaunitwiththesamename
-msgid "Hint: Check if two packages contain a unit with the same name."
-msgstr "提示:检查是否两个软件包软件包含了同名单元."
-
 #: lazarusidestrconsts.lishintclickonshowoptionstofindoutwhereinheritedpaths
 msgid "Hint: Click on \"Show Options\" to find out where inherited paths are coming from."
 msgstr "提示:单击\"显示选项\" 来找到来自通过继承得到的的路径."
@@ -10882,11 +10802,6 @@ msgstr "包含路径"
 #: lazarusidestrconsts.lisincluderecursive
 msgid "Include, recursive"
 msgstr "包括，递归"
-
-#: lazarusidestrconsts.lisincompatibleppu
-#, object-pascal-format
-msgid ", incompatible ppu=%s"
-msgstr ",不兼容ppu=%s"
 
 #: lazarusidestrconsts.lisincorrectconfigurationdirectoryfound
 msgid "Incorrect configuration directory found"
@@ -12111,10 +12026,6 @@ msgstr "字符串常量在源文件中"
 #: lazarusidestrconsts.lismakeresstrstringswithsamevalue
 msgid "Strings with same value:"
 msgstr "字符串带有相同的值:"
-
-#: lazarusidestrconsts.lismakesureallppufilesofapackageareinitsoutputdirecto
-msgid "Make sure all ppu files of a package are in its output directory."
-msgstr "确保员工软件包的所有ppu文件在它的输出目录中。"
 
 #: lazarusidestrconsts.lismanagesourceeditors
 msgid "Manage Source Editors ..."
@@ -13942,10 +13853,6 @@ msgstr "信息颜色"
 msgid "Multiple directories are separated with semicolons"
 msgstr "多个目录被使用分号分开"
 
-#: lazarusidestrconsts.lismultiplepack
-msgid ", multiple packages: "
-msgstr ",多个软件包: "
-
 #: lazarusidestrconsts.lismvsavemessagestofiletxt
 msgid "Save messages to file (*.txt)"
 msgstr "保存信息到文件 (*.txt)"
@@ -14178,14 +14085,6 @@ msgctxt "lazarusidestrconsts.lisnotebooktabpostop"
 msgid "Top"
 msgstr "上部"
 
-#: lazarusidestrconsts.lisnotecouldnotcreatedefinetemplateforfreepascal
-msgid "NOTE: Could not create Define Template for Free Pascal Sources"
-msgstr "注意: 不能为Free Pascal源代码创建自定义模板"
-
-#: lazarusidestrconsts.lisnotecouldnotcreatedefinetemplateforlazarussources
-msgid "NOTE: Could not create Define Template for Lazarus Sources"
-msgstr "注意:不能为Lazarus源代码创建自定义模板"
-
 #: lazarusidestrconsts.lisnotemplateselected
 msgid "no template selected"
 msgstr "没有模板选择"
@@ -14234,15 +14133,6 @@ msgstr "对象路径"
 #: lazarusidestrconsts.lisofeswitchtoobjectinspectorfavoritestab
 msgid "Switch to Object Inspector Favorites tab"
 msgstr "切换到 对象查看器 的收藏夹标签页"
-
-#: lazarusidestrconsts.lisofpackage
-#, object-pascal-format
-msgid " of package %s"
-msgstr " 属于软件包%s"
-
-#: lazarusidestrconsts.lisoftheprojectinspector
-msgid " of the Project Inspector"
-msgstr " 属于项目查看器"
 
 #: lazarusidestrconsts.lisoifaddtofavoriteproperties
 msgid "Add to favorite properties"
@@ -14574,11 +14464,6 @@ msgstr "软件包"
 msgid "package %s"
 msgstr "软件包%s"
 
-#: lazarusidestrconsts.lispackage3
-#, object-pascal-format
-msgid ", package %s"
-msgstr ",软件包%s"
-
 #: lazarusidestrconsts.lispackageinfo
 msgid "Package info"
 msgstr "软件包信息"
@@ -14595,10 +14480,6 @@ msgstr "软件包名称开头为 ..."
 #: lazarusidestrconsts.lispackagenamecontains
 msgid "Package name contains ..."
 msgstr "软件包名称包含 ..."
-
-#: lazarusidestrconsts.lispackageneedsanoutputdirectory
-msgid "Package needs an output directory."
-msgstr "软件包需要输出目录."
 
 #: lazarusidestrconsts.lispackageneedsinstallation
 msgid "Package needs installation"
@@ -15828,11 +15709,6 @@ msgstr "位置"
 msgid "%s (position outside of source)"
 msgstr "%s(位置在源代码外面)"
 
-#: lazarusidestrconsts.lisppuinwrongdirectory
-#, object-pascal-format
-msgid "ppu in wrong directory=%s."
-msgstr "ppu在错误目录=%s."
-
 #: lazarusidestrconsts.lisprecedingword
 msgid "Preceding word"
 msgstr "先前的(Preceding)单词"
@@ -16387,10 +16263,6 @@ msgstr "重命名 ..."
 #: lazarusidestrconsts.lisrenamefile
 msgid "Rename file?"
 msgstr "重命名文件?"
-
-#: lazarusidestrconsts.lisrenamefilefailed
-msgid "Rename file failed"
-msgstr "重命名文件失败"
 
 #: lazarusidestrconsts.lisrenameshowresult
 msgid "Show list of renamed Identifiers"
@@ -17877,11 +17749,6 @@ msgstr "在构建之前必须保存项目%s如果您在 IDE 选项中设置了�
 msgid "The project uses FPC resources which require at least FPC 2.4"
 msgstr "项目使用的 FPC 资源至少需要 FPC 2.4"
 
-#: lazarusidestrconsts.listheprojectusestargetosandcputhesystemppuforthistar
-#, object-pascal-format
-msgid "The project uses target OS=%s and CPU=%s.%sThe system.ppu for this target was not found in the FPC binary directories.%sMake sure fpc is installed correctly for this target and the fpc.cfg contains the right directories."
-msgstr "项目使用目标操作系统=%s 和 CPU=%s。%s未在 FPC 二进制目录中找到此目标的 system.ppu。%s请确保为此目标正确安装了 fpc，并且 fpc.cfg 包含正确的目录。"
-
 #: lazarusidestrconsts.listheprojectwritesthedebugsymbolstoanexternalfilethe
 #, object-pascal-format
 msgid "The project writes the debug symbols to an external file. The \"%s\" supports only symbols within the executable."
@@ -17901,11 +17768,6 @@ msgstr "%s此消息有附加说明%s"
 #, object-pascal-format
 msgid "There are other files in the directory with the same name,%swhich only differ in case:%s%s%sDelete them?"
 msgstr "在目录下有另外一个同名的文件,%s仅在实例:%s%s%s处不同,删除它们?"
-
-#: lazarusidestrconsts.listhereisafilewiththesamenameandasimilarextension
-#, object-pascal-format
-msgid "There is a file with the same name and a similar extension on disk%sFile: %s%sAmbiguous File: %s%sDelete ambiguous file?"
-msgstr "磁盘上有一个名称相同且扩展名相似的文件%s文件: %s%s不明确的文件: %s%s删除不明确的文件？"
 
 #: lazarusidestrconsts.listhereisalreadyabuildmodewiththisname
 msgid "There is already a build mode with this name."
@@ -17964,11 +17826,6 @@ msgstr "这里已经有一个单元带有名称\"%s\".Pascal标识符必须是�
 #, object-pascal-format
 msgid "There is a unit with the name \"%s\" in the project.%sPlease choose a different name"
 msgstr "这里有一个单元带有名称\"%s\"在项目.%s请选择一个不同的名称"
-
-#: lazarusidestrconsts.listhereisnofreepascalcompileregfpcorppccpuconfigured
-#, object-pascal-format
-msgid "There is no Free Pascal Compiler (e. g. fpc%0:s or ppc<cpu>%0:s) configured in the project options. CodeTools will not work properly.%1:s%1:sError message:%1:s%2:s"
-msgstr "在项目选项中没有配置 Free Pascal 编译器（例如 fpc%0:s 或 ppc<cpu>%0:s）。CodeTools 将无法正常工作。%1:s%1:s错误信息：%1:s%2:s"
 
 #: lazarusidestrconsts.listheremustbeatleastonebuildmode
 msgid "There must be at least one build mode."
@@ -18043,11 +17900,6 @@ msgstr "该单元\"%s\"已经存在."
 #, object-pascal-format
 msgid "The unit belongs to package %s."
 msgstr "该单元属于软件包%s."
-
-#: lazarusidestrconsts.listheunitexiststwiceintheunitpathofthe
-#, object-pascal-format
-msgid "The unit %s exists twice in the unit path of the %s:"
-msgstr "单元%s在%s的单元路径在存在两个:"
 
 #: lazarusidestrconsts.listheunithasthisname
 msgid "The unit has this name"
@@ -18487,11 +18339,6 @@ msgstr "无法添加依赖项 %s ，因为这会导致循环依赖。依赖项 %
 msgid "Unable to add %s to project because there is already a unit with the same name in the Project."
 msgstr "无法将 %s 添加到项目中，因为项目中已存在同名的单元。"
 
-#: lazarusidestrconsts.lisunabletobackupfileto
-#, object-pascal-format
-msgid "Unable to backup file \"%s\" to \"%s\"!"
-msgstr "不能备份文件\"%s\"到\"%s\"!"
-
 #: lazarusidestrconsts.lisunabletochangeclassofto
 #, object-pascal-format
 msgid "%s%sUnable to change class of %s to %s"
@@ -18543,11 +18390,6 @@ msgstr "无法创建新文件，因为已存在同名的目录。"
 #: lazarusidestrconsts.lisunabletocreatetemporarylfmbuffer
 msgid "Unable to create temporary lfm buffer."
 msgstr "无法创建临时的lfm缓冲区。"
-
-#: lazarusidestrconsts.lisunabletodeleteambiguousfile
-#, object-pascal-format
-msgid "Unable to delete ambiguous file \"%s\""
-msgstr "无法删除不明确的文件 \"%s\""
 
 #: lazarusidestrconsts.lisunabletofindaresourcestringsectioninthisoranyofthe
 msgid "Unable to find a ResourceString section in this or any of the used units."
@@ -18624,11 +18466,6 @@ msgstr "无法打开设计器，%s 类 %s 没有从一个可设计的类（如TF
 msgid "Unable to read %s"
 msgstr "无法读取 %s"
 
-#: lazarusidestrconsts.lisunabletoremoveoldbackupfile
-#, object-pascal-format
-msgid "Unable to remove old backup file \"%s\"!"
-msgstr "无法删除旧的备份文件 \"%s\"！"
-
 #: lazarusidestrconsts.lisunabletoremoveprojectscaledfromsource
 #, object-pascal-format
 msgid "Unable to remove project scaled from source.%s%s"
@@ -18638,11 +18475,6 @@ msgstr "无法从源码中删除项目的比例，%s%s"
 #, object-pascal-format
 msgid "Unable to remove project title from source.%s%s"
 msgstr "无法从源码中删除项目的标题，%s%s"
-
-#: lazarusidestrconsts.lisunabletorenameambiguousfileto
-#, object-pascal-format
-msgid "Unable to rename ambiguous file \"%s\"%sto \"%s\""
-msgstr "无法将不明确的文件 \"%s\"%s 重命名为 \"%s\""
 
 #: lazarusidestrconsts.lisunabletorenameforminsource
 msgid "Unable to rename form in source."
@@ -18877,11 +18709,6 @@ msgstr "为布尔值使用复选框"
 #: lazarusidestrconsts.lisusecommentsincustomoptions
 msgid "Use comments in custom options"
 msgstr "在自定义选项中使用注释"
-
-#: lazarusidestrconsts.lisusedby
-#, object-pascal-format
-msgid " used by %s"
-msgstr " 由 %s 使用"
 
 #: lazarusidestrconsts.lisusedesigntimepackages
 msgid "Use design time packages"

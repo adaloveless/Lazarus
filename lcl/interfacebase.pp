@@ -250,7 +250,10 @@ begin
   if (WidgetSet<>nil) and (WidgetSet.LCLPlatform<>LCLPlatformDef.lpNoGUI) then
     Result:=TLCLPlatform(WidgetSet.LCLPlatform)
   else
-    Result:=TLCLPlatform(BuildLCLWidgetType);
+    // Upstream moved BuildLCLWidgetType into LazVersion and exposed it via
+    // GetBuildLCLWidgetType. Both Result and the wrapper return
+    // LazVersion.TLCLPlatform, so no cast is needed here.
+    Result:=GetBuildLCLWidgetType;
 end;
 
 function GetLCLWidgetTypeName: string;

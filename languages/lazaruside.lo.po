@@ -2326,11 +2326,6 @@ msgstr "Debugger"
 msgid "Editor"
 msgstr "ບັນນາທິການ"
 
-#: lazarusidestrconsts.dlggroupenvironment
-msgctxt "lazarusidestrconsts.dlggroupenvironment"
-msgid "Environment"
-msgstr "ສະພາບແວດລ້ອມ"
-
 #: lazarusidestrconsts.dlggroupundo
 msgid "Group Undo"
 msgstr "Group Undo"
@@ -5529,15 +5524,6 @@ msgstr ""
 msgid "A macro with this name already exists."
 msgstr "macro ທີ່ມີຊື່ນີ້ມີຢູ່ແລ້ວ."
 
-#: lazarusidestrconsts.lisambiguousfilefound
-msgid "Ambiguous file found"
-msgstr "ພົບໄຟລ໌ທີ່ບໍ່ຊັດເຈນ"
-
-#: lazarusidestrconsts.lisambiguousfilefoundthisfilecanbemistakenwithdelete
-#, object-pascal-format
-msgid "Ambiguous file found: \"%s\"%sThis file can be mistaken with \"%s\"%sDelete the ambiguous file?"
-msgstr "ພົບໄຟລ໌ທີ່ບໍ່ຊັດເຈນ: \"%s\"%sໄຟລ໌ນີ້ອາດຈະເຂົ້າໃຈຜິດກັບ \"%s\"%sລຶບໄຟລ໌ທີ່ບໍ່ຊັດເຈນນີ້ບໍ່?"
-
 #: lazarusidestrconsts.lisanchorbottomtobottomside
 msgid "Anchor bottom side to bottom side of sibling. Use BorderSpacing to set a distance. BorderSpacing of sibling is ignored."
 msgstr "ຍຶດດ້ານລຸ່ມໃສ່ດ້ານລຸ່ມຂອງ sibling. ໃຊ້ BorderSpacing ເພື່ອກຳນົດໄລຍະຫ່າງ. BorderSpacing ຂອງ sibling ຈະຖືກລະເລີຍ."
@@ -5757,10 +5743,6 @@ msgstr "Build modes ຂອງໂປຣເຈັກທີ່ມີຢູ່"
 #: lazarusidestrconsts.lisbackupchangedfiles
 msgid "Make backup of changed files"
 msgstr "ສ້າງສຳຮອງຂອງໄຟລ໌ທີ່ປ່ຽນແປງ"
-
-#: lazarusidestrconsts.lisbackupfilefailed
-msgid "Backup file failed"
-msgstr "ການສຳຮອງໄຟລ໌ລົ້ມເຫຼວ"
 
 #: lazarusidestrconsts.lisbackuphint
 msgid "Creates a Backup directory under project directory"
@@ -5998,11 +5980,6 @@ msgstr "ບໍ່ສາມາດສ້າງຟາຍລ໌ \"%s\""
 msgid "Cannot delete last mode."
 msgstr "ບໍ່ສາມາດລຶບໂໝດສຸດທ້າຍໄດ້."
 
-#: lazarusidestrconsts.liscannotfind
-#, object-pascal-format
-msgid "Cannot find %s"
-msgstr "ບໍ່ສາມາດຊອກຫາ %s"
-
 #: lazarusidestrconsts.liscannotfindlazarusstarter
 #, object-pascal-format
 msgid "Cannot find Lazarus starter:%s%s"
@@ -6030,11 +6007,6 @@ msgstr "ບໍ່ສາມາດທົດສອບຄອມໄພເລີໃນ
 #: lazarusidestrconsts.liscanonlychangetheclassoftcomponents
 msgid "Can only change the class of TComponents."
 msgstr "ສາມາດປ່ຽນຄລາສຂອງ TComponents ໄດ້ເທົ່ານັ້ນ."
-
-#: lazarusidestrconsts.liscantfindavalidppu
-#, object-pascal-format
-msgid "Can't find a valid %s.ppu"
-msgstr "ບໍ່ສາມາດຊອກຫາ %s.ppu ທີ່ຖືກຕ້ອງ"
 
 #: lazarusidestrconsts.liscaptioncomparefiles
 msgid "Compare files (not for creating patches)"
@@ -6534,17 +6506,6 @@ msgctxt "lazarusidestrconsts.lischeckfordiskfilechangesviacontent"
 msgid "Check for disk file changes via content rather than timestamp"
 msgstr "ກວດສອບການປ່ຽນແປງຟາຍລ໌ໃນດິດຜ່ານເນື້ອຫາແທນທີ່ຈະເປັນເວລາ (timestamp)"
 
-#: lazarusidestrconsts.lischeckifpackagecreatesppuchecknothingdeletesthisfil
-#, object-pascal-format
-msgid ". Check if package %s creates %s.ppu, check nothing deletes this file and check that no two packages have access to the unit source."
-msgstr ". ກວດສອບວ່າແພັກເກດ %s ສ້າງ %s.ppu ຫຼື ບໍ່, ກວດສອບວ່າບໍ່ມີຫຍັງລຶບຟາຍລ໌ນີ້ ແລະ ກວດສອບວ່າບໍ່ມີສອງແພັກເກດເຂົ້າເຖິງຊອດໂຄດຂອງຢູນິດ."
-
-#: lazarusidestrconsts.lischeckifpackageisinthedependencies
-#, object-pascal-format
-msgctxt "lazarusidestrconsts.lischeckifpackageisinthedependencies"
-msgid ". Check if package %s is in the dependencies"
-msgstr ". ກວດສອບວ່າແພັກເກດ %s ຢູ່ໃນ dependencies ຫຼື ບໍ່"
-
 #: lazarusidestrconsts.lischeckifthenexttokeninsourceisanendandifnotreturnsl
 msgid "Check if the next token in source is an \"end\" and if not return \"LineEnding + end; + LineEnding\"."
 msgstr "ກວດສອບວ່າ token ຕໍ່ໄປໃນຊອດໂຄດແມ່ນ \"end\" ຫຼື ບໍ່ ແລະ ຖ້າບໍ່ແມ່ນ ໃຫ້ສົ່ງຄ່າ \"LineEnding + end; + LineEnding\"."
@@ -6552,12 +6513,6 @@ msgstr "ກວດສອບວ່າ token ຕໍ່ໄປໃນຊອດໂຄ�
 #: lazarusidestrconsts.lischeckoptions
 msgid "Check options"
 msgstr "ຕົວເລືອກການກວດສອບ"
-
-#: lazarusidestrconsts.lischecksearchpathpackagetryacleanrebuildcheckimpleme
-#, object-pascal-format
-msgctxt "lazarusidestrconsts.lischecksearchpathpackagetryacleanrebuildcheckimpleme"
-msgid ". Check search path of package %s, try a clean rebuild, check implementation uses sections."
-msgstr ". ກວດສອບ path ຄົ້ນຫາຂອງແພັກເກດ %s, ລອງ clean rebuild, ກວດສອບພາກສ່ວນ implementation uses."
 
 #: lazarusidestrconsts.lischeckthenexttokeninsourceandaddasemicolonifneeded
 msgid "Check the next token in source and add a semicolon if needed."
@@ -6778,11 +6733,6 @@ msgstr "ລ້າງ + lazbuild"
 #: lazarusidestrconsts.liscleanupmode
 msgid "Clean up mode"
 msgstr "ໂໝດການລ້າງ"
-
-#: lazarusidestrconsts.liscleanuppackage
-#, object-pascal-format
-msgid "Clean up package \"%s\"."
-msgstr "ລ້າງແພັກເກດ \"%s\"."
 
 #: lazarusidestrconsts.liscleanupunitpath
 msgid "Clean up unit path?"
@@ -7559,11 +7509,6 @@ msgstr "ຄອມໄພລ໌ແພັກເກດສອງເທື່ອ ແ�
 msgid "Compiler"
 msgstr "ຄອມໄພເລີ"
 
-#: lazarusidestrconsts.liscompilerdoesnotsupporttarget
-#, object-pascal-format
-msgid "Compiler \"%s\" does not support target %s-%s"
-msgstr "ຄອມໄພເລີ \"%s\" ບໍ່ຮອງຮັບເປົ້າໝາຍ %s-%s"
-
 #: lazarusidestrconsts.liscompilermessagesfilenotfound
 #, object-pascal-format
 msgid "Compiler messages file not found:%s%s"
@@ -7585,10 +7530,6 @@ msgstr "ຄອມໄພລ໌"
 #: lazarusidestrconsts.liscompilewithprojectsettings
 msgid "Compile with project settings"
 msgstr "ຄອມໄພລ໌ດ້ວຍການຕັ້ງຄ່າໂຄງການ"
-
-#: lazarusidestrconsts.liscompilewithvdformoredetailscheckforduplicates
-msgid "Compile with -vd for more details. Check for duplicates."
-msgstr "ຄອມໄພລ໌ດ້ວຍ -vd ສຳລັບລາຍລະອຽດເພີ່ມເຕີມ. ກວດສອບຄວາມຊ້ຳຊ້ອນ."
 
 #: lazarusidestrconsts.liscompiling
 #, object-pascal-format
@@ -8853,10 +8794,6 @@ msgstr "&ລົບທັງໝົດ"
 msgid "Delete all these files?"
 msgstr "ລົບໄຟລ໌ທັງໝົດເຫຼົ່ານີ້ບໍ່?"
 
-#: lazarusidestrconsts.lisdeleteambiguousfile
-msgid "Delete ambiguous file?"
-msgstr "ລົບໄຟລ໌ທີ່ບໍ່ຊັດເຈນບໍ່?"
-
 #: lazarusidestrconsts.lisdeletemacro
 #, object-pascal-format
 msgid "Delete macro \"%s\"?"
@@ -9452,11 +9389,6 @@ msgstr "ໄດເຣັກທໍຣີປາຍທາງສຳລັບການ
 msgid "Enabled only for packages."
 msgstr "ເປີດໃຊ້ງານສະເພາະແພັກເກັດເທົ່ານັ້ນ."
 
-#: lazarusidestrconsts.lisenableflaguseunitofunitinpackage
-#, object-pascal-format
-msgid ". Enable flag \"Use Unit\" of unit %s in package %s"
-msgstr ". ເປີດໃຊ້ງານທຸງ \"Use Unit\" ຂອງ unit %s ໃນແພັກເກັດ %s"
-
 #: lazarusidestrconsts.lisenablei18nforlfm
 msgid "Enable I18N for LFM"
 msgstr "ເປີດໃຊ້ງານ I18N ສຳລັບ LFM"
@@ -9545,10 +9477,6 @@ msgstr "ຜິດພາດ: "
 #: lazarusidestrconsts.liserrorcreatingfile
 msgid "Error creating file"
 msgstr "ເກີດຂໍ້ຜິດພາດໃນການສ້າງໄຟລ໌"
-
-#: lazarusidestrconsts.liserrordeletingfile
-msgid "Error deleting file"
-msgstr "ເກີດຂໍ້ຜິດພາດໃນການລົບໄຟລ໌"
 
 #: lazarusidestrconsts.liserrorin
 #, object-pascal-format
@@ -9647,10 +9575,6 @@ msgstr "ເກີດຂໍ້ຜິດພາດໃນການອ່ານ XML"
 #, object-pascal-format
 msgid "Error reading xml file \"%s\"%s%s"
 msgstr "ເກີດຂໍ້ຜິດພາດໃນການອ່ານໄຟລ໌ xml \"%s\"%s%s"
-
-#: lazarusidestrconsts.liserrorrenamingfile
-msgid "Error renaming file"
-msgstr "ເກີດຂໍ້ຜິດພາດໃນການປ່ຽນຊື່ໄຟລ໌"
 
 #: lazarusidestrconsts.liserrors
 msgctxt "lazarusidestrconsts.liserrors"
@@ -10562,10 +10486,6 @@ msgstr "Hint: ຄ່າເລີ່ມຕົ້ນສາມາດກຳນົດ
 msgid "A hint at property's name shows its description."
 msgstr "hint ທີ່ຊື່ property ສະແດງຄຳອະທິບາຍຂອງມັນ."
 
-#: lazarusidestrconsts.lishintcheckiftwopackagescontainaunitwiththesamename
-msgid "Hint: Check if two packages contain a unit with the same name."
-msgstr "Hint: ກວດສອບວ່າສອງແພັກເກັດມີ unit ທີ່ມີຊື່ດຽວກັນບໍ່."
-
 #: lazarusidestrconsts.lishintclickonshowoptionstofindoutwhereinheritedpaths
 msgid "Hint: Click on \"Show Options\" to find out where inherited paths are coming from."
 msgstr "Hint: ຄລິກທີ່ \"Show Options\" ເພື່ອຊອກຫາວ່າ inherited paths ມາຈາກໃສ."
@@ -10865,11 +10785,6 @@ msgstr "Include paths"
 #: lazarusidestrconsts.lisincluderecursive
 msgid "Include, recursive"
 msgstr "Include, recursive"
-
-#: lazarusidestrconsts.lisincompatibleppu
-#, object-pascal-format
-msgid ", incompatible ppu=%s"
-msgstr ", ບໍ່ເຂົ້າກັນ ppu=%s"
 
 #: lazarusidestrconsts.lisincorrectconfigurationdirectoryfound
 msgid "Incorrect configuration directory found"
@@ -12086,10 +12001,6 @@ msgstr "ຄ່າຄົງທີ່ String ໃນຊອດໂຄດ"
 #: lazarusidestrconsts.lismakeresstrstringswithsamevalue
 msgid "Strings with same value:"
 msgstr "Strings ທີ່ມີຄ່າດຽວກັນ:"
-
-#: lazarusidestrconsts.lismakesureallppufilesofapackageareinitsoutputdirecto
-msgid "Make sure all ppu files of a package are in its output directory."
-msgstr "ໃຫ້ແນ່ໃຈວ່າໄຟລ໌ ppu ທັງໝົດຂອງແພັກເກັດຢູ່ໃນໄດເຣັກທໍຣີ output ຂອງມັນ."
 
 #: lazarusidestrconsts.lismanagesourceeditors
 msgid "Manage Source Editors ..."
@@ -13918,10 +13829,6 @@ msgstr "ສີຂໍ້ຄວາມ"
 msgid "Multiple directories are separated with semicolons"
 msgstr "ຫຼາຍໄດເຣັກທໍຣີຖືກແຍກດ້ວຍ semicolon"
 
-#: lazarusidestrconsts.lismultiplepack
-msgid ", multiple packages: "
-msgstr ", ຫຼາຍແພັກເກັດ: "
-
 #: lazarusidestrconsts.lismvsavemessagestofiletxt
 msgid "Save messages to file (*.txt)"
 msgstr "ບັນທຶກຂໍ້ຄວາມລົງໄຟລ໌ (*.txt)"
@@ -14154,14 +14061,6 @@ msgctxt "lazarusidestrconsts.lisnotebooktabpostop"
 msgid "Top"
 msgstr "ເທິງ"
 
-#: lazarusidestrconsts.lisnotecouldnotcreatedefinetemplateforfreepascal
-msgid "NOTE: Could not create Define Template for Free Pascal Sources"
-msgstr "ໝາຍເຫດ: ບໍ່ສາມາດສ້າງ Define Template ສຳລັບ Free Pascal Sources"
-
-#: lazarusidestrconsts.lisnotecouldnotcreatedefinetemplateforlazarussources
-msgid "NOTE: Could not create Define Template for Lazarus Sources"
-msgstr "ໝາຍເຫດ: ບໍ່ສາມາດສ້າງ Define Template ສຳລັບ Lazarus Sources"
-
 #: lazarusidestrconsts.lisnotemplateselected
 msgid "no template selected"
 msgstr "ບໍ່ມີແມ່ແບບຖືກເລືອກ"
@@ -14210,15 +14109,6 @@ msgstr "object path"
 #: lazarusidestrconsts.lisofeswitchtoobjectinspectorfavoritestab
 msgid "Switch to Object Inspector Favorites tab"
 msgstr "ສະລັບໄປແຖບ Favorites ຂອງ Object Inspector"
-
-#: lazarusidestrconsts.lisofpackage
-#, object-pascal-format
-msgid " of package %s"
-msgstr " ຂອງແພັກເກັດ %s"
-
-#: lazarusidestrconsts.lisoftheprojectinspector
-msgid " of the Project Inspector"
-msgstr " ຂອງ ຜູ້ກວດສອບໂຄງການ"
 
 #: lazarusidestrconsts.lisoifaddtofavoriteproperties
 msgid "Add to favorite properties"
@@ -14550,11 +14440,6 @@ msgstr "ແພັກເກັດ"
 msgid "package %s"
 msgstr "ແພັກເກັດ %s"
 
-#: lazarusidestrconsts.lispackage3
-#, object-pascal-format
-msgid ", package %s"
-msgstr ", ແພັກເກັດ %s"
-
 #: lazarusidestrconsts.lispackageinfo
 msgid "Package info"
 msgstr "ຂໍ້ມູນແພັກເກັດ"
@@ -14571,10 +14456,6 @@ msgstr "ຊື່ແພັກເກັດຂຶ້ນຕົ້ນດ້ວຍ ..
 #: lazarusidestrconsts.lispackagenamecontains
 msgid "Package name contains ..."
 msgstr "ຊື່ແພັກເກັດປະກອບມີ ..."
-
-#: lazarusidestrconsts.lispackageneedsanoutputdirectory
-msgid "Package needs an output directory."
-msgstr "ແພັກເກັດຕ້ອງການໂຟນເດີຜົນລັບ."
 
 #: lazarusidestrconsts.lispackageneedsinstallation
 msgid "Package needs installation"
@@ -15804,11 +15685,6 @@ msgstr "ຕຳແໜ່ງ"
 msgid "%s (position outside of source)"
 msgstr "%s (ຕຳແໜ່ງຢູ່ນອກຊອດໂຄດ)"
 
-#: lazarusidestrconsts.lisppuinwrongdirectory
-#, object-pascal-format
-msgid "ppu in wrong directory=%s."
-msgstr "ppu ຢູ່ໃນໂຟນເດີຜິດ=%s."
-
 #: lazarusidestrconsts.lisprecedingword
 msgid "Preceding word"
 msgstr "ຄຳກ່ອນໜ້າ"
@@ -16363,10 +16239,6 @@ msgstr "ປ່ຽນຊື່ ..."
 #: lazarusidestrconsts.lisrenamefile
 msgid "Rename file?"
 msgstr "ປ່ຽນຊື່ໄຟລ໌ບໍ່?"
-
-#: lazarusidestrconsts.lisrenamefilefailed
-msgid "Rename file failed"
-msgstr "ການປ່ຽນຊື່ໄຟລ໌ລົ້ມເຫຼວ"
 
 #: lazarusidestrconsts.lisrenameshowresult
 msgid "Show list of renamed Identifiers"
@@ -17854,11 +17726,6 @@ msgstr "ໂປຣເຈັກຕ້ອງຖືກບັນທຶກກ່ອນ
 msgid "The project uses FPC resources which require at least FPC 2.4"
 msgstr "ໂປຣເຈັກໃຊ້ FPC resources ເຊິ່ງຕ້ອງການຢ່າງໜ້ອຍ FPC 2.4"
 
-#: lazarusidestrconsts.listheprojectusestargetosandcputhesystemppuforthistar
-#, object-pascal-format
-msgid "The project uses target OS=%s and CPU=%s.%sThe system.ppu for this target was not found in the FPC binary directories.%sMake sure fpc is installed correctly for this target and the fpc.cfg contains the right directories."
-msgstr "ໂປຣເຈັກໃຊ້ເປົ້າໝາຍ OS=%s ແລະ CPU=%s.%sບໍ່ພົບ system.ppu ສຳລັບເປົ້າໝາຍນີ້ໃນໄດເຣັກທໍຣີ binary ຂອງ FPC.%sກະລຸນາກວດສອບວ່າ fpc ຖືກຕິດຕັ້ງຢ່າງຖືກຕ້ອງສຳລັບເປົ້າໝາຍນີ້ ແລະ fpc.cfg ປະກອບມີໄດເຣັກທໍຣີທີ່ຖືກຕ້ອງ."
-
 #: lazarusidestrconsts.listheprojectwritesthedebugsymbolstoanexternalfilethe
 #, object-pascal-format
 msgid "The project writes the debug symbols to an external file. The \"%s\" supports only symbols within the executable."
@@ -17878,11 +17745,6 @@ msgstr "%sມີບັນທຶກເພີ່ມເຕີມສຳລັບຂ�
 #, object-pascal-format
 msgid "There are other files in the directory with the same name,%swhich only differ in case:%s%s%sDelete them?"
 msgstr "ມີໄຟລ໌ອື່ນໃນໄດເຣັກທໍຣີທີ່ມີຊື່ດຽວກັນ,%sເຊິ່ງແຕກຕ່າງກັນພຽງແຕ່ຕົວພິມ:%s%s%sລຶບພວກມັນບໍ່?"
-
-#: lazarusidestrconsts.listhereisafilewiththesamenameandasimilarextension
-#, object-pascal-format
-msgid "There is a file with the same name and a similar extension on disk%sFile: %s%sAmbiguous File: %s%sDelete ambiguous file?"
-msgstr "ມີໄຟລ໌ທີ່ມີຊື່ດຽວກັນ ແລະ ນາມສະກຸນຄ້າຍຄືກັນໃນດິດສ໌%sໄຟລ໌: %s%sໄຟລ໌ທີ່ກຳກວມ: %s%sລຶບໄຟລ໌ທີ່ກຳກວມບໍ່?"
 
 #: lazarusidestrconsts.listhereisalreadyabuildmodewiththisname
 msgid "There is already a build mode with this name."
@@ -17941,11 +17803,6 @@ msgstr "ມີ unit ທີ່ມີຊື່ \"%s\" ຢູ່ແລ້ວ. Pasca
 #, object-pascal-format
 msgid "There is a unit with the name \"%s\" in the project.%sPlease choose a different name"
 msgstr "ມີ unit ທີ່ມີຊື່ \"%s\" ໃນໂປຣເຈັກ.%sກະລຸນາເລືອກຊື່ອື່ນ."
-
-#: lazarusidestrconsts.listhereisnofreepascalcompileregfpcorppccpuconfigured
-#, object-pascal-format
-msgid "There is no Free Pascal Compiler (e. g. fpc%0:s or ppc<cpu>%0:s) configured in the project options. CodeTools will not work properly.%1:s%1:sError message:%1:s%2:s"
-msgstr "ບໍ່ມີ Free Pascal Compiler (ເຊັ່ນ fpc%0:s ຫຼື ppc<cpu>%0:s) ຖືກກຳນົດຄ່າໃນຕົວເລືອກໂປຣເຈັກ. CodeTools ຈະບໍ່ເຮັດວຽກຢ່າງຖືກຕ້ອງ.%1:s%1:sຂໍ້ຄວາມຜິດພາດ:%1:s%2:s"
 
 #: lazarusidestrconsts.listheremustbeatleastonebuildmode
 msgid "There must be at least one build mode."
@@ -18020,11 +17877,6 @@ msgstr "Unit \"%s\" ມີຢູ່ແລ້ວ."
 #, object-pascal-format
 msgid "The unit belongs to package %s."
 msgstr "Unit ເປັນຂອງແພັກເກັດ %s."
-
-#: lazarusidestrconsts.listheunitexiststwiceintheunitpathofthe
-#, object-pascal-format
-msgid "The unit %s exists twice in the unit path of the %s:"
-msgstr "Unit %s ມີຢູ່ສອງຄັ້ງໃນເສັ້ນທາງ unit ຂອງ %s:"
 
 #: lazarusidestrconsts.listheunithasthisname
 msgid "The unit has this name"
@@ -18464,11 +18316,6 @@ msgstr "ບໍ່ສາມາດເພີ່ມ dependency %s ໄດ້ ເນ�
 msgid "Unable to add %s to project because there is already a unit with the same name in the Project."
 msgstr "ບໍ່ສາມາດເພີ່ມ %s ໃສ່ໂປຣເຈັກໄດ້ ເນື່ອງຈາກມີ unit ທີ່ມີຊື່ດຽວກັນໃນໂປຣເຈັກແລ້ວ."
 
-#: lazarusidestrconsts.lisunabletobackupfileto
-#, object-pascal-format
-msgid "Unable to backup file \"%s\" to \"%s\"!"
-msgstr "ບໍ່ສາມາດສຳຮອງໄຟລ໌ \"%s\" ໄປຍັງ \"%s\" ໄດ້!"
-
 #: lazarusidestrconsts.lisunabletochangeclassofto
 #, object-pascal-format
 msgid "%s%sUnable to change class of %s to %s"
@@ -18520,11 +18367,6 @@ msgstr "ບໍ່ສາມາດສ້າງໄຟລ໌ໃໝ່ໄດ້ ເ�
 #: lazarusidestrconsts.lisunabletocreatetemporarylfmbuffer
 msgid "Unable to create temporary lfm buffer."
 msgstr "ບໍ່ສາມາດສ້າງ lfm buffer ຊົ່ວຄາວໄດ້."
-
-#: lazarusidestrconsts.lisunabletodeleteambiguousfile
-#, object-pascal-format
-msgid "Unable to delete ambiguous file \"%s\""
-msgstr "ບໍ່ສາມາດລຶບໄຟລ໌ທີ່ກຳກວມ \"%s\""
 
 #: lazarusidestrconsts.lisunabletofindaresourcestringsectioninthisoranyofthe
 msgid "Unable to find a ResourceString section in this or any of the used units."
@@ -18601,11 +18443,6 @@ msgstr "ບໍ່ສາມາດເປີດ designer ໄດ້.%sຄລາສ %
 msgid "Unable to read %s"
 msgstr "ບໍ່ສາມາດອ່ານ %s"
 
-#: lazarusidestrconsts.lisunabletoremoveoldbackupfile
-#, object-pascal-format
-msgid "Unable to remove old backup file \"%s\"!"
-msgstr "ບໍ່ສາມາດລຶບໄຟລ໌ສຳຮອງເກົ່າ \"%s\" ໄດ້!"
-
 #: lazarusidestrconsts.lisunabletoremoveprojectscaledfromsource
 #, object-pascal-format
 msgid "Unable to remove project scaled from source.%s%s"
@@ -18615,11 +18452,6 @@ msgstr "ບໍ່ສາມາດລຶບ project scaled ອອກຈາກ sour
 #, object-pascal-format
 msgid "Unable to remove project title from source.%s%s"
 msgstr "ບໍ່ສາມາດລຶບຫົວຂໍ້ໂປຣເຈັກອອກຈາກ source ໄດ້.%s%s"
-
-#: lazarusidestrconsts.lisunabletorenameambiguousfileto
-#, object-pascal-format
-msgid "Unable to rename ambiguous file \"%s\"%sto \"%s\""
-msgstr "ບໍ່ສາມາດປ່ຽນຊື່ໄຟລ໌ທີ່ກຳກວມ \"%s\"%sເປັນ \"%s\""
 
 #: lazarusidestrconsts.lisunabletorenameforminsource
 msgid "Unable to rename form in source."
@@ -18854,11 +18686,6 @@ msgstr "ໃຊ້ CheckBox ສຳລັບຄ່າ Boolean"
 #: lazarusidestrconsts.lisusecommentsincustomoptions
 msgid "Use comments in custom options"
 msgstr "ໃຊ້ຄຳເຫັນໃນຕົວເລືອກກຳນົດເອງ"
-
-#: lazarusidestrconsts.lisusedby
-#, object-pascal-format
-msgid " used by %s"
-msgstr " ຖືກໃຊ້ໂດຍ %s"
 
 #: lazarusidestrconsts.lisusedesigntimepackages
 msgid "Use design time packages"

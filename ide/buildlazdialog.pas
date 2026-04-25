@@ -52,13 +52,13 @@ uses
   Forms, Controls, StdCtrls, ExtCtrls, Buttons, Dialogs,
   LCLPlatformDef, CheckLst, Menus, ComCtrls, LCLType,
   // LazUtils
-  LazFileUtils, LazUTF8, LazLoggerBase, LazVersion,
+  LazFileUtils, LazStringUtils, LazUTF8, LazLoggerBase, LazVersion,
   // LazControls
   DividerBevel,
   // BuildIntf
   PackageIntf,
   // IDEIntf
-  IdeIntfStrConsts, IDEImagesIntf, IDEWindowIntf, IDEUtils,
+  IdeIntfStrConsts, IDEImagesIntf, IDEWindowIntf, IDEIntfUtils,
   // IdeConfig
   EnvironmentOpts, LazConf, ParsedCompilerOpts, MiscOptions, IdeBuilder, IdeConfStrConsts,
   // IdePackager

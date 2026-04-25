@@ -72,8 +72,16 @@ Files in this package are for the main configuration of the IDE."/>
         <UnitName Value="etFPCMsgFilePool"/>
       </Item>
       <Item>
+        <Filename Value="etfpcmsgparser.pas"/>
+        <UnitName Value="etFPCMsgParser"/>
+      </Item>
+      <Item>
         <Filename Value="etmakemsgparser.pas"/>
         <UnitName Value="etMakeMsgParser"/>
+      </Item>
+      <Item>
+        <Filename Value="etpas2jsmsgparser.pas"/>
+        <UnitName Value="etPas2jsMsgParser"/>
       </Item>
       <Item>
         <Filename Value="exttools.pas"/>
@@ -82,6 +90,10 @@ Files in this package are for the main configuration of the IDE."/>
       <Item>
         <Filename Value="exttoolsconsole.pas"/>
         <UnitName Value="ExtToolsConsole"/>
+      </Item>
+      <Item>
+        <Filename Value="findprojpackunit.pas"/>
+        <UnitName Value="FindProjPackUnit"/>
       </Item>
       <Item>
         <Filename Value="fppkghelper.pas"/>
@@ -158,6 +170,10 @@ Files in this package are for the main configuration of the IDE."/>
       <Item>
         <Filename Value="recentlistprocs.pas"/>
         <UnitName Value="RecentListProcs"/>
+      </Item>
+      <Item>
+        <Filename Value="resourceconvertproc.pas"/>
+        <UnitName Value="resourceconvertproc"/>
       </Item>
       <Item>
         <Filename Value="searchpathprocs.pas"/>

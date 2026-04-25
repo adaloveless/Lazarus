@@ -1962,6 +1962,7 @@ function TGtk3Widget.GtkEventPaint(Sender: PGtkWidget; AContext: Pcairo_t
   ): Boolean; cdecl;
 var
   Msg: TLMPaint;
+  EraseMsg: TLMEraseBkgnd;
   AStruct: TPaintStruct;
   AClipRect: TGdkRectangle;
   localClip:TRect;
@@ -2039,6 +2040,13 @@ begin
         Msg.PaintStruct^.rcPaint := localClip;
       end;
       DoBeforeLCLPaint;
+      if LCLObject is TWinControl then
+      begin
+        FillChar(EraseMsg{%H-}, SizeOf(EraseMsg), 0);
+        EraseMsg.Msg := LM_ERASEBKGND;
+        EraseMsg.DC := Msg.DC;
+        LCLObject.WindowProc(TLMessage(EraseMsg));
+      end;
       LCLObject.WindowProc(TLMessage(Msg));
       if HasCaret and not (csDesigning in LCLObject.ComponentState) then
       begin
@@ -10505,6 +10513,7 @@ begin
   if not IsWidgetOK then
     exit;
 
+  FillChar(ItemRect, SizeOf(ItemRect), 0);
   if IsTreeView then
   begin
     Path := gtk_tree_path_new_from_indices(AIndex, [-1]);
@@ -10532,6 +10541,7 @@ begin
   if not IsWidgetOK then
     exit;
 
+  FillChar(ItemRect, SizeOf(ItemRect), 0);
   if IsTreeView then
   begin
     Path := gtk_tree_path_new_from_indices(AIndex, [-1]);
@@ -11057,6 +11067,7 @@ end;
 procedure TGtk3ComboBox.SetBounds(ALeft, ATop, AWidth, AHeight: integer);
 var
   CurW, CurH: gint;
+  SizeMsg: TLMSize;
 begin
   if (Widget=nil) then
     exit;
@@ -11072,6 +11083,32 @@ begin
     if (CurW <> AWidth) or (CurH <> AHeight) then
       Widget^.set_size_request(AWidth, AHeight);
     Move(ALeft, ATop);
+    if Assigned(LCLObject) and (csDesigning in LCLObject.ComponentState) and
+       Widget^.get_realized then
+    begin
+      Widget^.get_preferred_width(@CurW, @CurH);
+      if LCLWidth < CurW then
+      begin
+        LCLWidth := CurW;
+        FillChar(SizeMsg{%H-}, SizeOf(SizeMsg), 0);
+        SizeMsg.Msg := LM_SIZE;
+        SizeMsg.SizeType := SIZE_RESTORED;
+        SizeMsg.Width := LCLWidth;
+        SizeMsg.Height := LCLHeight;
+        DeliverMessage(TLMessage(SizeMsg));
+      end;
+      Widget^.get_preferred_height(@CurW, @CurH);
+      if LCLHeight < CurW then
+      begin
+        LCLHeight := CurW;
+        FillChar(SizeMsg{%H-}, SizeOf(SizeMsg), 0);
+        SizeMsg.Msg := LM_SIZE;
+        SizeMsg.SizeType := SIZE_RESTORED;
+        SizeMsg.Width := LCLWidth;
+        SizeMsg.Height := LCLHeight;
+        DeliverMessage(TLMessage(SizeMsg));
+      end;
+    end;
   finally
     EndUpdate;
   end;
@@ -13350,9 +13387,17 @@ begin
       if (AForm.BorderStyle = bsNone) and Widget^.get_realized then
       begin
         Widget^.size_allocate(@ARect);
-        if (AWidth > 0) and (AHeight > 0) and
-           (PGtkWindow(Widget)^.get_window_type = GTK_WINDOW_POPUP) then
+        if (AWidth > 0) and (AHeight > 0) then
+        begin
           Widget^.set_size_request(AWidth, AHeight);
+          FillChar(Geometry{%H-}, SizeOf(Geometry), 0);
+          Geometry.min_width := AWidth;
+          Geometry.max_width := AWidth;
+          Geometry.min_height := AHeight;
+          Geometry.max_height := AHeight;
+          PGtkWindow(Widget)^.set_geometry_hints(nil, @Geometry,
+            [GDK_HINT_MIN_SIZE, GDK_HINT_MAX_SIZE]);
+        end;
         Widget^.window^.move_resize(ALeft, ATop, AWidth, AHeight);
         gdk_display_flush(gdk_window_get_display(Widget^.window));
         Exit;
