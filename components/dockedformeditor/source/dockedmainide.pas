@@ -588,7 +588,13 @@ begin
 
   LDesigner := LSourceWindowIntf.ActiveEditor.GetDesigner(True);
   LDesignForm := DesignForms.Find(LDesigner);
-  if LDesignForm = nil then Exit;
+  if LDesignForm = nil then
+  begin
+    // LFM loading failed - don't leave user stuck on empty designer tab
+    if LPageCtrl.DesignerPageActive then
+      LPageCtrl.ShowCode;
+    Exit;
+  end;
   LSourceWindow := SourceWindows.SourceWindow[LSourceWindowIntf];
   if LSourceWindow = nil then Exit;
 
