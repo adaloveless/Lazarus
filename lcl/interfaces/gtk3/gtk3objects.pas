@@ -183,6 +183,8 @@ type
     function bits: PByte;
     function numBytes: LongWord;
     function bytesPerLine: Integer;
+    property Context: TGtk3DeviceContext read fContext;
+    property Data: PByte read FData;
     property Format: Tcairo_format_t read FFormat;
     procedure UpdatePixbufFromSurface;
     property Handle: PGdkPixbuf read FHandle;
@@ -538,10 +540,13 @@ begin
 end;
 
 procedure TColorToRGB(AColor: TColor; out R, G, B: double);
+var
+  ARGB: TColorRef;
 begin
-  R := (AColor and $FF) / 255;
-  G := ((AColor shr 8) and $FF) / 255;
-  B := ((AColor shr 16) and $FF) / 255;
+  ARGB := ColorToRGB(AColor);
+  R := (ARGB and $FF) / 255;
+  G := ((ARGB shr 8) and $FF) / 255;
+  B := ((ARGB shr 16) and $FF) / 255;
 end;
 
 {Map winapi ROP to Tcairo_operator_t}
@@ -1605,7 +1610,9 @@ var
   rgb:array[0..3] of byte absolute aColor;
   pat_sample,psrc,pdst:pdword;
 begin
-  if (LogBrush.lbStyle <> BS_HATCHED) and (LogBrush.lbStyle <> BS_PATTERN) then
+  if LogBrush.lbStyle = BS_PATTERN then
+    exit;
+  if LogBrush.lbStyle <> BS_HATCHED then
     exit;
 
   if Assigned(Self.brush_pattern) then
@@ -2605,7 +2612,6 @@ begin
 end;
 
 procedure TGtk3DeviceContext.drawPixel(x, y: Integer; AColor: TColor);
-// Seems that painting line from (a-1, b-1) to (a,b) gives one pixel
 var
   cx, cy: Integer;
 begin
@@ -2613,10 +2619,8 @@ begin
   cy := y - WindowOrg.Y;
   SetSourceColor(AColor);
   cairo_new_path(pcr);
-  cairo_set_line_width(pcr, 1);
-  cairo_move_to(pcr, cx - PixelOffset, cy - PixelOffset);
-  cairo_line_to(pcr, cx + PixelOffset, cy + PixelOffset);
-  cairo_stroke(pcr);
+  cairo_rectangle(pcr, cx, cy, 1, 1);
+  cairo_fill(pcr);
 end;
 
 function TGtk3DeviceContext.pcr: Pcairo_t;
@@ -3397,28 +3401,38 @@ end;
 
 function TGtk3DeviceContext.drawFocusRect(const aRect: TRect): boolean;
 var
-  Context: PGtkStyleContext;
-  UnRefContext: boolean;
+  X1, Y1, X2, Y2, i: Integer;
 begin
   Result := False;
-  UnRefContext := False;
-  if Parent <> nil then
-    Context := Parent^.get_style_context
-  else
+  if not Assigned(pcr) then
+    Exit;
+  X1 := aRect.Left - WindowOrg.X;
+  Y1 := aRect.Top - WindowOrg.Y;
+  X2 := aRect.Right - WindowOrg.X;
+  Y2 := aRect.Bottom - WindowOrg.Y;
+  if (X2 <= X1) or (Y2 <= Y1) then
+    Exit;
+  cairo_save(pcr);
+  cairo_set_antialias(pcr, CAIRO_ANTIALIAS_NONE);
+  cairo_set_operator(pcr, CAIRO_OPERATOR_DIFFERENCE);
+  cairo_set_source_rgb(pcr, 1, 1, 1);
+  cairo_new_path(pcr);
+  i := X1;
+  while i < X2 do
   begin
-    UnRefContext := True;
-    Context:=TGtkStyleContext.new();
-    Context^.add_class('button');
+    cairo_rectangle(pcr, i, Y1, 1, 1);
+    cairo_rectangle(pcr, i, Y2 - 1, 1, 1);
+    Inc(i, 2);
   end;
-  if Context = nil then
+  i := Y1 + 2;
+  while i < Y2 - 1 do
   begin
-    DebugLn('WARNING: TGtk3WidgetSet.DrawFocusRect drawing focus on non widget context isn''t implemented.');
-    exit;
+    cairo_rectangle(pcr, X1, i, 1, 1);
+    cairo_rectangle(pcr, X2 - 1, i, 1, 1);
+    Inc(i, 2);
   end;
-  with aRect do
-    gtk_render_focus(Context, pcr, Left - WindowOrg.X, Top - WindowOrg.Y, Right - Left, Bottom - Top);
-  if UnRefContext then
-    Context^.unref;
+  cairo_fill(pcr);
+  cairo_restore(pcr);
   Result := True;
 end;
 
@@ -3634,28 +3648,13 @@ begin
 end;
 
 function TGtk3DeviceContext.SetClipRegion(ARgn: TGtk3Region): Integer;
-var
-  DevRgn: Pcairo_region_t;
 begin
   Result := SimpleRegion;
   if Assigned(pcr) then
   begin
     cairo_reset_clip(pcr);
-    {Apply WindowOrg offset to clip region, same as drawing functions do,
-     so clip and drawing land at the same device position. eg issue #42162,
-     now gtk3 works even better than gtk2 since it does not need
-     gtk define in virtualtrees, so more winapi compatible. zeljan}
-    if (WindowOrg.X <> 0) or (WindowOrg.Y <> 0) then
-    begin
-      DevRgn := cairo_region_copy(ARgn.FHandle);
-      cairo_region_translate(DevRgn, -WindowOrg.X, -WindowOrg.Y);
-      gdk_cairo_region(pcr, DevRgn);
-      cairo_region_destroy(DevRgn);
-    end
-    else
-      gdk_cairo_region(pcr, ARgn.FHandle);
+    gdk_cairo_region(pcr, ARgn.FHandle);
     cairo_clip(pcr);
-    //Mirror the clip region so GetClipRGN can return the exact region
     if FClipRegion <> nil then
       cairo_region_destroy(FClipRegion);
     FClipRegion := cairo_region_copy(ARgn.FHandle);

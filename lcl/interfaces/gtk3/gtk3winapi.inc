@@ -605,31 +605,77 @@ end;
 function TGtk3WidgetSet.CreatePatternBrush(ABitmap: HBITMAP): HBRUSH;
 var
   Brush: TGtk3Brush;
+  Img: TGtk3Image;
   Pixbuf: PGdkPixbuf;
   Surface: Pcairo_surface_t;
   Pattern: Pcairo_pattern_t;
+  W, H, X, Y: Integer;
+  SrcStride, DstStride: Integer;
+  SrcByte: Byte;
+  SrcData, DstData: PByte;
+  SrcRow: PByte;
+  DstRow: PCardinal;
 begin
   Result := 0;
 
   if ABitmap = 0 then Exit;
 
-  Pixbuf := TGtk3Image(ABitmap).Handle;
-  if Pixbuf = nil then Exit;
+  Img := TGtk3Image(ABitmap);
 
-  Surface := gdk_cairo_surface_create_from_pixbuf(Pixbuf, 0, nil);
-  if Surface = nil then Exit;
+  if (Img.Format = CAIRO_FORMAT_A1) and (Img.Data <> nil) then
+  begin
+    W := Img.width;
+    H := Img.height;
+    if (W <= 0) or (H <= 0) then Exit;
+    Surface := cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+    if Surface = nil then Exit;
+    cairo_surface_flush(Surface);
+    DstData := PByte(cairo_image_surface_get_data(Surface));
+    DstStride := cairo_image_surface_get_stride(Surface);
+    SrcData := Img.Data;
+    SrcStride := GetBytesPerLine(W, 1, rileDWordBoundary);
+    for Y := 0 to H - 1 do
+    begin
+      SrcRow := SrcData + (H - 1 - Y) * SrcStride;
+      DstRow := PCardinal(DstData + Y * DstStride);
+      for X := 0 to W - 1 do
+      begin
+        SrcByte := SrcRow[X shr 3];
+        if (SrcByte and (1 shl (7 - (X and 7)))) <> 0 then
+          DstRow^ := $FF000000
+        else
+          DstRow^ := 0;
+        Inc(DstRow);
+      end;
+    end;
+    cairo_surface_mark_dirty(Surface);
+  end
+  else
+  begin
+    if Assigned(Img.Context) and Assigned(Img.Context.CairoSurface) and
+       (cairo_surface_get_type(Img.Context.CairoSurface) = CAIRO_SURFACE_TYPE_IMAGE) then
+    begin
+      cairo_surface_flush(Img.Context.CairoSurface);
+      Surface := cairo_surface_reference(Img.Context.CairoSurface);
+    end
+    else
+    begin
+      Pixbuf := Img.Handle;
+      if Pixbuf = nil then Exit;
+      Surface := gdk_cairo_surface_create_from_pixbuf(Pixbuf, 0, nil);
+      if Surface = nil then Exit;
+    end;
+  end;
 
   Pattern := cairo_pattern_create_for_surface(Surface);
   cairo_pattern_set_extend(Pattern, CAIRO_EXTEND_REPEAT);
-
   cairo_surface_destroy(Surface);
 
-
   Brush := TGtk3Brush.Create;
-
   Brush.LogBrush.lbStyle := BS_PATTERN;
+  Brush.LogBrush.lbHatch := ABitmap;
   Brush.brush_pattern := Pattern;
-  Brush.UpdatePattern(clNone);
+  Brush.Style := BS_PATTERN;
 
   Result := HBRUSH(Brush);
 end;
@@ -765,11 +811,29 @@ begin
 end;
 
 function TGtk3WidgetSet.DPtoLP(DC: HDC; var Points; Count: Integer): BOOL;
+var
+  cr: PCairo_t;
+  P: PPoint;
+  dx, dy: Double;
+  DevCtx: TGtk3DeviceContext absolute DC;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  DebugLn('WARNING: TGtk3WidgetSet.DPToLP not implemented ...');
-  {$ENDIF}
-  Result:=inherited DPtoLP(DC, Points, Count);
+  Result := False;
+  if not IsValidDC(DC) then
+    exit;
+  cr := DevCtx.pcr;
+
+  P := @Points;
+  while Count > 0 do
+  begin
+    Dec(Count);
+    DX := P^.X + DevCtx.fncOrigin.x;
+    DY := P^.Y + DevCtx.fncOrigin.y;
+    cairo_device_to_user(cr, @dx, @dy);
+    P^.X := Round(DX) + DevCtx.WindowOrg.X;
+    P^.Y := Round(DY) + DevCtx.WindowOrg.Y;
+    Inc(P);
+  end;
+  Result := True;
 end;
 
 function TGtk3WidgetSet.DrawFrameControl(DC: HDC; const aRect: TRect; uType,
@@ -789,11 +853,117 @@ end;
 
 function TGtk3WidgetSet.DrawEdge(DC: HDC; var ARect: TRect; Edge: Cardinal;
   grfFlags: Cardinal): Boolean;
+const
+  PixelOffset = 0.5;
+var
+  R: TRect;
+  cr: Pcairo_t;
+  InnerTL, OuterTL, InnerBR, OuterBR: TGdkRGBA;
+  BInner, BOuter: Boolean;
+  Mid: TGdkRGBA;
+
+  procedure SetSrc(const C: TGdkRGBA);
+  begin
+    cairo_set_source_rgb(cr, C.red, C.green, C.blue);
+  end;
+
+  procedure DrawSides(var R: TRect; const TL, BR: TGdkRGBA);
+  begin
+    SetSrc(TL);
+    if (grfFlags and BF_TOP) = BF_TOP then
+    begin
+      cairo_move_to(cr, R.Left + PixelOffset, R.Top + PixelOffset);
+      cairo_line_to(cr, R.Right + PixelOffset, R.Top + PixelOffset);
+      cairo_stroke(cr);
+      Inc(R.Top);
+    end;
+    if (grfFlags and BF_LEFT) = BF_LEFT then
+    begin
+      cairo_move_to(cr, R.Left + PixelOffset, R.Top + PixelOffset);
+      cairo_line_to(cr, R.Left + PixelOffset, R.Bottom + PixelOffset);
+      cairo_stroke(cr);
+      Inc(R.Left);
+    end;
+    SetSrc(BR);
+    if (grfFlags and BF_BOTTOM) = BF_BOTTOM then
+    begin
+      cairo_move_to(cr, R.Left + PixelOffset, R.Bottom - 1 + PixelOffset);
+      cairo_line_to(cr, R.Right + PixelOffset, R.Bottom - 1 + PixelOffset);
+      cairo_stroke(cr);
+      Dec(R.Bottom);
+    end;
+    if (grfFlags and BF_RIGHT) = BF_RIGHT then
+    begin
+      cairo_move_to(cr, R.Right - 1 + PixelOffset, R.Top + PixelOffset);
+      cairo_line_to(cr, R.Right - 1 + PixelOffset, R.Bottom + PixelOffset);
+      cairo_stroke(cr);
+      Dec(R.Right);
+    end;
+  end;
+
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  DebugLn('WARNING: TGtk3WidgetSet.DrawEdge not implemented ...');
-  {$ENDIF}
-  Result := False; // inherited DrawEdge(DC, ARect, Edge, grfFlags);
+  Result := False;
+  if not IsValidDC(DC) then
+    exit;
+  R := ARect;
+
+  OffsetRect(R, -TGtk3DeviceContext(DC).WindowOrg.X, -TGtk3DeviceContext(DC).WindowOrg.Y);
+  cr := TGtk3DeviceContext(DC).pcr;
+  cairo_save(cr);
+  try
+    cairo_set_line_width(cr, 1);
+    cairo_set_line_cap(cr, Tcairo_line_cap_t.CAIRO_LINE_CAP_BUTT);
+    cairo_set_operator(cr, Tcairo_operator_t.CAIRO_OPERATOR_OVER);
+
+    BInner := False;
+    BOuter := False;
+    if (Edge and BDR_RAISEDINNER) = BDR_RAISEDINNER then
+    begin
+      InnerTL := TColorToTGdkRGBA(ColorToRGB(clBtnHighlight));
+      InnerBR := TColorToTGdkRGBA(ColorToRGB(clBtnShadow));
+      BInner := True;
+    end;
+    if (Edge and BDR_SUNKENINNER) = BDR_SUNKENINNER then
+    begin
+      InnerTL := TColorToTGdkRGBA(ColorToRGB(clBtnShadow));
+      InnerBR := TColorToTGdkRGBA(ColorToRGB(clBtnHighlight));
+      BInner := True;
+    end;
+    if (Edge and BDR_RAISEDOUTER) = BDR_RAISEDOUTER then
+    begin
+      OuterTL := TColorToTGdkRGBA(ColorToRGB(clBtnHighlight));
+      OuterBR := TColorToTGdkRGBA(ColorToRGB(cl3DDkShadow));
+      BOuter := True;
+    end;
+    if (Edge and BDR_SUNKENOUTER) = BDR_SUNKENOUTER then
+    begin
+      OuterTL := TColorToTGdkRGBA(ColorToRGB(cl3DDkShadow));
+      OuterBR := TColorToTGdkRGBA(ColorToRGB(clBtnHighlight));
+      BOuter := True;
+    end;
+
+    if BOuter then
+      DrawSides(R, OuterTL, OuterBR);
+    if BInner then
+      DrawSides(R, InnerTL, InnerBR);
+
+    if (grfFlags and BF_MIDDLE) = BF_MIDDLE then
+    begin
+      Mid := TColorToTGdkRGBA(ColorToRGB(clBtnFace));
+      SetSrc(Mid);
+      cairo_rectangle(cr, R.Left, R.Top, R.Right - R.Left, R.Bottom - R.Top);
+      cairo_fill(cr);
+    end;
+
+    if (grfFlags and BF_ADJUST) = BF_ADJUST then
+    begin
+      OffsetRect(R, TGtk3DeviceContext(DC).WindowOrg.X, TGtk3DeviceContext(DC).WindowOrg.Y);
+      ARect := R;
+    end;
+    Result := True;
+  finally
+    cairo_restore(cr);
+  end;
 end;
 
 function TGtk3WidgetSet.DrawText(DC: HDC; Str: PChar; Count: Integer;
@@ -1607,9 +1777,6 @@ function TGtk3WidgetSet.ExtCreatePen(dwPenStyle, dwWidth: DWord;
 var
   APen: TGtk3Pen;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.ExtCreatePen not implemented ...');
-  {$ENDIF}
   APen := TGtk3Pen.Create;
   APen.IsExtPen := True;
   case dwPenStyle and PS_STYLE_MASK of
@@ -1669,9 +1836,6 @@ var
   Clip: HRGN;
   Tmp: HRGN;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.ExtSelectClipRGN not implemented ...');
-  {$ENDIF}
   if not IsValidDC(DC) then
   begin
     Result := ERROR;
@@ -2156,20 +2320,22 @@ end;
 
 function TGtk3WidgetSet.GetCmdLineParamDescForInterface: TStringList;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  DebugLn('WARNING: TGtk3WidgetSet.GetCmdLineParamDescForInterface not implemented ...');
-  {$ENDIF}
-  Result:=inherited GetCmdLineParamDescForInterface;
+  Result := TStringList.Create;
+  AddCmdLineParamDesc(Result, ['--gtk-module <module>'], rsgtkOptionModule);
+  AddCmdLineParamDesc(Result, ['--g-fatal-warnings'], rsgOptionFatalWarnings);
+  AddCmdLineParamDesc(Result, ['--gtk-debug <flags>'], rsgtkOptionDebug);
+  AddCmdLineParamDesc(Result, ['--gtk-no-debug <flags>'], rsgtkOptionNoDebug);
+  AddCmdLineParamDesc(Result, ['--gdk-debug <flags>'], rsgdkOptionDebug);
+  AddCmdLineParamDesc(Result, ['--gdk-no-debug <flags>'], rsgdkOptionNoDebug);
+  AddCmdLineParamDesc(Result, ['--display <h:s:d>'], rsgtkOptionDisplay);
+  AddCmdLineParamDesc(Result, ['--name <progname>'], rsgtkOptionName);
+  AddCmdLineParamDesc(Result, ['--class <classname>'], rsgtkOptionClass);
 end;
 
 function TGtk3WidgetSet.GetCurrentObject(DC: HDC; uObjectType: UINT): HGDIOBJ;
 var
   GtkDC: TGtk3DeviceContext absolute DC;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.GetCurrentObject not implemented ...');
-  {$ENDIF}
-  // Result:=inherited GetCurrentObject(DC, uObjectType);
   Result := 0;
   if not IsValidDC(DC) then
     Exit;
@@ -2272,11 +2438,7 @@ function TGtk3WidgetSet.GetDeviceCaps(DC: HDC; Index: Integer): Integer;
 var
   pscr: PGdkScreen;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  if (Index <> BITSPIXEL) and (Index <> LOGPIXELSX) and (Index <> LOGPIXELSY) then
-    DebugLn('WARNING: TGtk3WidgetSet.GetDeviceCaps not implemented ...Index=',dbgs(Index),' DC=',dbgs(DC));
-  {$ENDIF}
-  Result := 0; // inherited GetDeviceCaps(DC, Index);
+  Result := 0;
   case Index of
 
     HORZRES : { Horizontal width in pixels }
@@ -3264,9 +3426,6 @@ end;
 
 function TGtk3WidgetSet.GetWindowOrgEx(dc: hdc; P: PPoint): Integer;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.GetWindowOrgEx not implemented ...');
-  {$ENDIF}
   Result := 0;
   if not IsValidDC(DC) then
   begin
@@ -3446,11 +3605,16 @@ begin
 end;
 
 function TGtk3WidgetSet.IsZoomed(handle: HWND): boolean;
+var
+  W: TGtk3Widget;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  DebugLn('WARNING: TGtk3WidgetSet.IsZoomed not implemented ...');
-  {$ENDIF}
-  Result:=inherited IsZoomed(handle);
+  Result := False;
+  if not IsValidHandle(handle) then
+    Exit;
+  W := TGtk3Widget(handle);
+  if not Gtk3IsGtkWindow(W.Widget) then
+    Exit;
+  Result := gtk_window_is_maximized(PGtkWindow(W.Widget));
 end;
 
 procedure TGtk3WidgetSet.LeaveCriticalSection(var CritSection: TCriticalSection
@@ -3471,37 +3635,28 @@ end;
 
 function TGtk3WidgetSet.LPtoDP(DC: HDC; var Points; Count: Integer): BOOL;
 var
-  //Matrix: Tcairo_matrix_t;
   cr: PCairo_t;
   P: PPoint;
   dx, dy: Double;
-  //Pt: TPoint;
+  DevCtx: TGtk3DeviceContext absolute DC;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.LPtoDP not implemented ...');
-  {$ENDIF}
   Result := False;
-  // inherited LPtoDP(DC, Points, Count);
   if not IsValidDC(DC) then
     exit;
-  cr := TGtk3DeviceContext(DC).pcr;
+  cr := DevCtx.pcr;
 
   P := @Points;
   while Count > 0 do
   begin
     Dec(Count);
-    DX := P^.X;
-    DY := P^.Y;
-    // DebugLn('LPTODP INPUT ',Format('dx %2.2n dy %2.2n',[dx, dy]));
-    //cairo_matrix_translate(@Matrix, Dx, Dy);
-    //cairo_matrix_transform_point(@Matrix, @Dx, @Dy);
-    cairo_user_to_device(cr,@dx,@dy);
-    // DebugLn('LPTODP Output ',Format('dx %2.2n dy %2.2n',[dx, dy]));
-    P^.X := Round(DX)-TGtk3DeviceContext(DC).fncOrigin.x;
-    P^.Y := Round(DY)-TGtk3DeviceContext(DC).fncOrigin.y;
+    DX := P^.X - DevCtx.WindowOrg.X;
+    DY := P^.Y - DevCtx.WindowOrg.Y;
+    cairo_user_to_device(cr, @dx, @dy);
+    P^.X := Round(DX) - DevCtx.fncOrigin.x;
+    P^.Y := Round(DY) - DevCtx.fncOrigin.y;
     Inc(P);
   end;
-  Result:=true;
+  Result := True;
 end;
 
 function TGtk3WidgetSet.MessageBox(hWnd: HWND; lpText, lpCaption: PChar;
@@ -3803,9 +3958,6 @@ var
   ACairoRegion: Pcairo_region_t;
   ACairoRect: Tcairo_rectangle_int_t;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.RectVisible not implemented ...');
-  {$ENDIF}
   Result := False;
   if not IsValidDC(DC) then
     exit;
@@ -3902,9 +4054,6 @@ end;
 
 function TGtk3WidgetSet.RestoreDC(DC: HDC; SavedDC: Integer): Boolean;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.RestoreDC not implemented ...');
-  {$ENDIF}
   Result := False;
   if not IsValidDC(DC) then
     exit;
@@ -3926,9 +4075,6 @@ end;
 
 function TGtk3WidgetSet.SaveDC(DC: HDC): Integer;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.SaveDC not implemented ...');
-  {$ENDIF}
   Result := 0;
   if not IsValidDC(DC) then
     exit;
@@ -4133,9 +4279,6 @@ end;
 
 function TGtk3WidgetSet.SetBkColor(DC: HDC; Color: TColorRef): TColorRef;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.SetBkColor not implemented ...');
-  {$ENDIF}
   Result := clNone;
   if not IsValidDC(DC) then
     exit;
@@ -4273,9 +4416,6 @@ function TGtk3WidgetSet.SetForegroundWindow(hWnd: HWND): boolean;
 var
   AWindow: TGtk3Window;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.SetForegroundWindow not implemented ...');
-  {$ENDIF}
   if not IsValidHandle(HWnd) then
     exit(False);
   Result := wtWindow in TGtk3Widget(HWND).WidgetType;
@@ -4859,9 +4999,6 @@ end;
 
 function TGtk3WidgetSet.SetTextColor(DC: HDC; Color: TColorRef): TColorRef;
 begin
-  {$IFDEF GTK3DEBUGNOTIMPLEMENTED}
-  // DebugLn('WARNING: TGtk3WidgetSet.SetTextColor not implemented ...');
-  {$ENDIF}
   Result := CLR_INVALID;
   if IsValidDC(DC) then
   begin
