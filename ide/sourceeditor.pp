@@ -1326,6 +1326,7 @@ type
     procedure CloseOtherPagesClicked(Sender: TObject);
     procedure CloseOtherPagesClickedAsync(Sender: PtrInt);
     procedure CloseRightPagesClicked(Sender: TObject);
+    procedure ShowInExplorerClicked(Sender: TObject);
     procedure CloseRightPagesClickedAsync(Sender: PtrInt);
     procedure ReadOnlyClicked(Sender: TObject);
     procedure ToggleLineNumbersClicked(Sender: TObject);
@@ -1468,6 +1469,7 @@ var
   SrcEditMenuClosePage: TIDEMenuCommand;
   SrcEditMenuCloseOtherPages: TIDEMenuCommand;
   SrcEditMenuCloseOtherPagesToRight: TIDEMenuCommand;
+  SrcEditMenuShowInExplorer: TIDEMenuCommand;
     // bookmarks
     SrcEditMenuNextBookmark: TIDEMenuCommand;
     SrcEditMenuPrevBookmark: TIDEMenuCommand;
@@ -1678,6 +1680,8 @@ begin
         'Close All Other Pages',uemCloseOtherPages, nil, @ExecuteIdeMenuClick);
     SrcEditMenuCloseOtherPagesToRight := RegisterIDEMenuCommand(AParent,
         'Close Pages To the Right',uemCloseOtherPagesRight, nil, @ExecuteIdeMenuClick);
+    SrcEditMenuShowInExplorer := RegisterIDEMenuCommand(AParent,
+        'Show in Explorer', uemShowInExplorer, nil, @ExecuteIdeMenuClick);
 
     {$IFnDEF SingleSrcWindow}
     // Lock Editor
@@ -11700,6 +11704,7 @@ begin
     SrcEditMenuClosePage.Command       := GetIdeCmdRegToolBtn(ecClose);
     SrcEditMenuCloseOtherPages.OnClick := @SourceEditorManager.CloseOtherPagesClicked;
     SrcEditMenuCloseOtherPagesToRight.OnClick := @SourceEditorManager.CloseRightPagesClicked;
+    SrcEditMenuShowInExplorer.OnClick := @SourceEditorManager.ShowInExplorerClicked;
 
     {$IFnDEF SingleSrcWindow}
     SrcEditMenuEditorLock.Command           := GetIdeCmdRegToolBtn(ecLockEditor);
@@ -12268,6 +12273,16 @@ end;
 procedure TSourceEditorManager.CloseRightPagesClickedAsync(Sender: PtrInt);
 begin
   CloseRightPagesClicked(TObject(Sender));
+end;
+
+procedure TSourceEditorManager.ShowInExplorerClicked(Sender: TObject);
+var
+  ActEdit: TSourceEditor;
+begin
+  ActEdit := ActiveEditor;
+  if ActEdit = nil then exit;
+  if ActEdit.FileName = '' then exit;
+  SelectInFolder(ActEdit.FileName);
 end;
 
 procedure TSourceEditorManager.ReadOnlyClicked(Sender: TObject);

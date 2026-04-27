@@ -2853,6 +2853,7 @@ resourcestring
   uemClosePage = '&Close Page';
   uemCloseOtherPages = 'Close All &Other Pages';
   uemCloseOtherPagesRight = 'Close Pages on the &Right';
+  uemShowInExplorer = 'Show in &Explorer';
   uemCloseOtherPagesPlain = 'Close All Other Pages';
   uemCloseOtherPagesRightPlain = 'Close Pages on the Right';
   uemLockPage = '&Lock Page';
