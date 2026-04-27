@@ -11,7 +11,7 @@ param(
     [switch]$Doctor,
     [string]$VPDir,
     [switch]$SelfUpdated,
-    [switch]$Launch,
+    [switch]$NoLaunch,
     [switch]$Help
 )
 
@@ -36,7 +36,7 @@ if ($Help) {
     Write-Host "  -ResetConfig    Wipe %LOCALAPPDATA%\lazarus and re-run -Setup with a clean slate"
     Write-Host "  -Doctor         Diagnose toolchain + IDE config; report problems without changing state"
     Write-Host "  -VPDir <path>   Path to VibePascal source (auto-detected if omitted)"
-    Write-Host "  -Launch         Launch the IDE after a successful update/rebuild"
+    Write-Host "  -NoLaunch       Do not launch the IDE after a successful update/rebuild"
     Write-Host "  -Help           Show this help"
     Write-Host ""
     Write-Host "Default: pull updates, rebuild lazbuild + IDE if anything changed."
@@ -309,7 +309,7 @@ function Relaunch-IfUpdated {
     if ($Setup)        { $relaunchParams['Setup']        = $true }
     if ($FixLpi)       { $relaunchParams['FixLpi']       = $true }
     if ($ForceRebuild) { $relaunchParams['ForceRebuild'] = $true }
-    if ($Launch)       { $relaunchParams['Launch']       = $true }
+    if ($NoLaunch)     { $relaunchParams['NoLaunch']     = $true }
     if ($VPDir)        { $relaunchParams['VPDir']        = $VPDir }
 
     $paramSummary = ($relaunchParams.GetEnumerator() | ForEach-Object { "-$($_.Key) $($_.Value)" }) -join ' '
@@ -1186,7 +1186,7 @@ if ($quality.Quality -ne "Compatible") {
     Log-Info "Run: .\auto-update.ps1 -Doctor for a full diagnosis."
 }
 
-if ($Launch) {
+if (-not $NoLaunch) {
     $starter = Join-Path $LazarusDir "startlazarus.exe"
     $lazarus = Join-Path $LazarusDir "lazarus.exe"
     $exeToLaunch = $null
