@@ -327,6 +327,7 @@ var
   HintModifier: TPascalHintModifier;
   HelperForNode: TCodeTreeNode;
   ScaledImgList: TScaledImageListResolution;
+  InlineType: string;
 begin
 
   SetBkMode(ACanvas.Handle, TRANSPARENT);
@@ -721,7 +722,13 @@ begin
       ctnVarDefinition:
         begin
           ANode:=IdentItem.Tool.FindTypeNodeOfDefinition(ItemNode);
-          s:=' : '+IdentItem.Tool.ExtractNode(ANode,[]);
+          if ANode<>nil then
+            s:=' : '+IdentItem.Tool.ExtractNode(ANode,[])
+          else begin
+            InlineType:=IdentItem.Tool.ExtractInlineVarInitType(ItemNode);
+            if InlineType<>'' then
+              s:=' : '+InlineType;
+          end;
         end;
 
       ctnTypeDefinition:
@@ -798,6 +805,11 @@ begin
           if IdentItem.IsFunction then
             s := s + ':' + IdentItem.ResultType;
           s:=s+';'
+        end;
+      ctnVarDefinition:
+        begin
+          if IdentItem.ResultType<>'' then
+            s:=' : '+IdentItem.ResultType;
         end;
       ctnCodeTemplate:
         begin
@@ -900,7 +912,10 @@ begin
 
     ctnProcedure:
     begin
-      if (ilcfCanProcDeclaration in IdentList.ContextFlags) and (IdentItem.Node<>nil) then
+      if (ilcfCanProcDeclaration in IdentList.ContextFlags)
+         and (not (ilcfStartInStatement in IdentList.ContextFlags))
+         and (IdentList.StartAtomInFront.Flag<>cafAssignment)
+         and (IdentItem.Node<>nil) then
         ValueType:=icvCompleteProcDeclaration
       else if IdentItem.IsProcNodeWithParams then
         ValueType:=icvProcWithParams;

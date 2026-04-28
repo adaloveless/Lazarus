@@ -159,7 +159,8 @@ type
     cmOBJFPC,
     cmMacPas,
     cmISO,
-    cmExtPas
+    cmExtPas,
+    cmUnleashed
     );
 const
   // upper case
@@ -171,7 +172,8 @@ const
     'OBJFPC',
     'MACPAS',
     'ISO',
-    'EXTENDEDPASCAL'
+    'EXTENDEDPASCAL',
+    'UNLEASHED'
     );
 type
 
@@ -225,6 +227,11 @@ type
     cmsImplicitFunctionSpecialization, { infer types on calls of generic functions }
     cmsFunctionReferences, { allow "reference to" function types }
     cmsAnonymousFunctions, { allow anonymous functions }
+    cmsStatementExpressions, { allow statement expressions (e.g. s := try..except..) }
+    cmsArrayEquality,      { allow array equality comparison }
+    cmsInlineVars,         { allow inline variable declarations inside statement blocks }
+    cmsTuples,             { allow anonymous tuple types and related syntax }
+    cmsImplicitGenerics,   { Delphi-style generic syntax: 'generic'/'specialize' keywords optional, <T> allowed }
 
     // not yet in FPC, supported by pas2js:
     cmsExternalClass,      { pas2js: allow  class external [pkgname] name [symbol] }
@@ -245,7 +252,7 @@ const
      cmsOut,cmsDefault_para,cmsDuplicate_names,cmsHintdirective,
      cmsProperty,cmsDefault_inline,cmsExcept,cmsAdvancedRecords,
      cmsPrefixedAttributes,cmsArrayOperators,cmsUnderscoreIsSeparator,
-     cmsFunctionReferences,cmsAnonymousFunctions],
+     cmsFunctionReferences,cmsAnonymousFunctions,cmsImplicitGenerics],
     // cmDELPHIUNICODE
     [cmsClass,cmsObjpas,cmsResult,cmsString_pchar,
      cmsPointer_2_procedure,cmsAutoderef,cmsTp_procvar,cmsInitfinal,
@@ -253,7 +260,7 @@ const
      cmsProperty,cmsDefault_inline,cmsExcept,cmsAdvancedRecords,
      cmsSystemcodepage,cmsDefault_unicodestring,
      cmsPrefixedAttributes,cmsArrayOperators,cmsUnderscoreIsSeparator,
-     cmsFunctionReferences,cmsAnonymousFunctions],
+     cmsFunctionReferences,cmsAnonymousFunctions,cmsImplicitGenerics],
     // cmTP
     [cmsTp_procvar,cmsDuplicate_names],
     // cmOBJFPC
@@ -270,9 +277,17 @@ const
     [cmsTp_procvar,cmsDuplicate_names,cmsNestedProcVars,cmsNonLocalGoto,
      cmsISOLike_unary_minus,cmsISOlike_IO,
      cmsISOLike_Program_Para,
-     cmsISOLike_Mod]
+     cmsISOLike_Mod],
+    // cmUnleashed - superset of OBJFPC with all modern features
+    [cmsClass,cmsObjpas,cmsResult,cmsString_pchar,cmsNested_comment,
+     cmsRepeat_forward,cmsCvar_support,cmsInitfinal,cmsOut,cmsDefault_para,
+     cmsHintdirective,cmsProperty,cmsDefault_inline,cmsExcept,
+     cmsAdvancedRecords,cmsPrefixedAttributes,cmsMultiHelpers,
+     cmsFunctionReferences,cmsAnonymousFunctions,
+     cmsStatementExpressions,cmsArrayEquality,cmsInlineVars,cmsTuples,
+     cmsMultiLineStrings]
     );
-  cmAllModesWithGeneric = [cmDELPHI,cmDELPHIUNICODE,cmOBJFPC];
+  cmAllModesWithGeneric = [cmDELPHI,cmDELPHIUNICODE,cmOBJFPC,cmUnleashed];
   Pas2jsFixedModeswitches = [cmsArray2dynarray,cmsArrayOperators,
     cmsFunctionReferences,cmsAnonymousFunctions];
 
@@ -321,6 +336,11 @@ const
     'IMPLICITFUNCTIONSPECIALIZATION',
     'FUNCTIONREFERENCES',
     'ANONYMOUSFUNCTIONS',
+    'STATEMENTEXPRESSIONS',
+    'ARRAYEQUALITY',
+    'INLINEVARS',
+    'TUPLES',
+    'IMPLICITGENERICS',
     // not yet in FPC, supported by pas2js:
     'EXTERNALCLASS',
     'IGNOREATTRIBUTES',
@@ -1799,6 +1819,7 @@ var
   c1: char;
   c2: char;
   MacroID: LongInt;
+  StrLvl, StrI: integer; // for delphi multiline triple-quoted strings
   p: PChar;
 begin
   //DebugLn([' TLinkScanner.ReadNextToken SrcPos=',SrcPos,' SrcLen=',SrcLen,' "',dbgstr(Src,SrcPos,5),'"']);
@@ -1909,23 +1930,60 @@ begin
         '''':
           begin
             inc(p);
-            while true do begin
-              case p^ of
-              #0:
-                begin
-                  SrcPos:=p-PChar(Src)+1;
-                  if SrcPos>SrcLen then break;
-                  inc(p);
-                end;
-              '''':
-                begin
-                  inc(p);
-                  break;
-                end;
-              #10,#13:
-                break;
-              else
+            // Delphi-style multiline triple-quote string: '''<NL>...<NL>'''
+            // (also handles '''''<NL>...<NL>''''' with longer odd fences)
+            if (p^='''') and (p[1]='''') then begin
+              StrLvl:=3;
+              inc(p,2);
+              while p^='''' do begin
+                inc(StrLvl);
                 inc(p);
+              end;
+              if (StrLvl and 1)=1 then begin
+                if p^ in [#10,#13] then begin
+                  // multiline literal: read until matching StrLvl quotes
+                  while p^<>#0 do begin
+                    if (p^='''') and (p[1]='''') then begin
+                      StrI:=2;
+                      inc(p,2);
+                      while (p^='''') and (StrI<StrLvl) do begin
+                        inc(StrI);
+                        inc(p);
+                      end;
+                      if StrI=StrLvl then break;
+                    end else
+                      inc(p);
+                  end;
+                end else begin
+                  // odd quote count followed by inline content:
+                  // e.g. '''abc''' or '''''def'''''
+                  while not (p^ in ['''',#0,#10,#13]) do
+                    inc(p);
+                  if p^='''' then
+                    inc(p);
+                end;
+              end;
+              // even quote count (e.g. '''' or '''''') = empty literals,
+              // already consumed by the inc(p,2)+while loop above
+            end else begin
+              while true do begin
+                case p^ of
+                #0:
+                  begin
+                    SrcPos:=p-PChar(Src)+1;
+                    if SrcPos>SrcLen then break;
+                    inc(p);
+                  end;
+                '''':
+                  begin
+                    inc(p);
+                    break;
+                  end;
+                #10,#13:
+                  break;
+                else
+                  inc(p);
+                end;
               end;
             end;
           end;

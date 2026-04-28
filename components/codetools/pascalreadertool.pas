@@ -781,7 +781,7 @@ begin
 
   // build full class name
   if ([phpAddClassname,phpWithoutClassName]*Attr=[phpAddClassName]) then
-    PrependName(ExtractClassName(ProcNode,phpInUpperCase in Attr,true,Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]),TheClassName);
+    PrependName(ExtractClassName(ProcNode,phpInUpperCase in Attr,true,(Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)),TheClassName);
 
   // parse the clean source
   InitExtraction;
@@ -789,13 +789,13 @@ begin
   // parse procedure head = start + name (including genericparams) + parameterlist + result type ;
   ExtractNextAtom(false,Attr);
   // read procedure start keyword
-  if (Scanner.CompilerMode in [cmOBJFPC]) and UpAtomIs('GENERIC') then begin
+  if (Scanner.CompilerMode in [cmOBJFPC,cmUnleashed]) and UpAtomIs('GENERIC') then begin
     ExtractNextAtom((phpWithStart in Attr)
                     and not (phpWithoutGenericKeyword in Attr),Attr);
     IsGeneric:=true;
   end else
     IsGeneric:=false;
-  CanGeneric:=IsGeneric or (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]);
+  CanGeneric:=IsGeneric or ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches));
   if (UpAtomIs('CLASS') or UpAtomIs('STATIC')) then
     ExtractNextAtom((phpWithStart in Attr)
                     and not (phpWithoutClassKeyword in Attr),Attr);
@@ -1036,7 +1036,7 @@ begin
           Result:=GetIdentifier(@Src[Node.StartPos])+Result
         else if Node.FirstChild<>nil then
         begin
-          if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and (Node.Desc = ctnGenericType) then
+          if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and (Node.Desc = ctnGenericType) then
             Result := Result + ExtractNode(Node.FirstChild.NextBrother, []);
           Result:=GetIdentifier(@Src[Node.FirstChild.StartPos])+Result;
         end;
@@ -1102,7 +1102,7 @@ begin
     if not AtomIsIdentifier then break;
     Part:=GetAtom;
     ReadNextAtom;
-    if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and AtomIsChar('<') then
+    if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then
     begin { delphi generics }
       if KeepGeneric then
         Part := Part + GetAtom;
@@ -1844,11 +1844,34 @@ end;
 
 function TPascalReaderTool.ExtractNextTypeRef(Add: boolean;
   const Attr: TProcHeadAttributes): boolean;
+var
+  TupleDepth: integer;
 begin
   Result:=false;
   ExtractNextAtom(Add,Attr);
-  if (Scanner.CompilerMode in [cmOBJFPC]) and UpAtomIs('SPECIALIZE') then
+  if (Scanner.CompilerMode in [cmOBJFPC,cmUnleashed]) and UpAtomIs('SPECIALIZE') then
     ExtractNextAtom(Add,Attr);
+  // tuple type: extract entire (...) including content, handling nested tuples
+  if (cmsTuples in Scanner.CompilerModeSwitches) and
+     (CurPos.Flag=cafRoundBracketOpen) then begin
+    TupleDepth:=1;
+    ExtractNextAtom(Add,Attr);
+    while (CurPos.StartPos<=SrcLen) and (TupleDepth>0) do begin
+      case CurPos.Flag of
+        cafRoundBracketOpen: inc(TupleDepth);
+        cafRoundBracketClose:
+          begin
+            dec(TupleDepth);
+            if TupleDepth=0 then break;
+          end;
+      end;
+      ExtractNextAtom(Add,Attr);
+    end;
+    if CurPos.Flag=cafRoundBracketClose then
+      ExtractNextAtom(Add,Attr);
+    Result:=true;
+    exit;
+  end;
   if not AtomIsIdentifier then exit;
   ExtractNextAtom(Add,Attr);
   repeat
@@ -3120,7 +3143,7 @@ begin
   ReadNextAtom;
   if not AtomIsIdentifier then exit;
   ReadNextAtom;
-  if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and AtomIsChar('<') then begin
+  if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then begin
     if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then
       exit;
   end;

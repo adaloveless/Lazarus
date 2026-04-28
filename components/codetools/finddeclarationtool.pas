@@ -1024,6 +1024,8 @@ type
     function FindEnumerationTypeOfSetType(SetTypeNode: TCodeTreeNode;
       out Context: TFindContext): boolean;
 
+    function ExtractInlineVarInitType(VarDefNode: TCodeTreeNode): string;
+
     // uses and units
     function FindNameInUsesSection(UsesNode: TCodeTreeNode; const AUnitName: string): TCodeTreeNode;
     function FindUnitInUsesSection(UsesNode: TCodeTreeNode; const AnUnitName: string;
@@ -5375,11 +5377,13 @@ var
         ctnClassClassVar,
         ctnRecordVariant,
         ctnProcedureHead, ctnParameterList,
-        ctnClassInheritance,ctnHelperFor:
+        ctnClassInheritance,ctnHelperFor,
+        ctnBeginBlock:
           // these codetreenodes build a parent-child-relationship, but
           // for pascal it is only a range, hence after searching in the
           // children of the last node, search must continue in the children
           // of the prior node
+          // Note: ctnBeginBlock is transparent to support inline var declarations
           ;
 
         ctnClass, ctnClassInterface, ctnDispinterface, ctnObject,
@@ -5555,10 +5559,12 @@ begin
           ctnRecordType, ctnRecordVariant,
           ctnClassHelper, ctnRecordHelper, ctnTypeHelper,
           ctnEnumerationType,
-          ctnParameterList:
+          ctnParameterList,
+          ctnBeginBlock:
             // these nodes build a parent-child relationship. But in pascal
             // they just define a range and not a context.
             // -> search in all children
+            // Note: ctnBeginBlock is included to support inline var declarations
             MoveContextNodeToChildren;
 
           ctnTypeDefinition, ctnVarDefinition, ctnConstDefinition,
@@ -8811,7 +8817,7 @@ begin
   if not AtomIsIdentifier then exit; // ignore operator procs
   NameAtom:=CurPos;
   ReadNextAtom;
-  if (Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]) and AtomIsChar('<') then begin
+  if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then begin
     // coulde be generic param of a class: TFoo<T>.Method
     // or of a generic procedure: procedure Foo<T>(a: T);
     ReadGenericParamList(False, False, [ppDontCreateNodes,ppDontRaiseExceptionOnError]);
@@ -8861,7 +8867,7 @@ begin
   ReadNextAtom; // read classname
   ClassNameAtom:=CurPos;
   ReadNextAtom;
-  if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and AtomIsChar('<') then begin
+  if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then begin
     if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then
       exit;
   end;
@@ -8987,7 +8993,7 @@ begin
   end;
   CurClassName:=@Src[ClassNameAtom.StartPos];
   ReadNextAtom;
-  if (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) and AtomIsChar('<') then begin
+  if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and AtomIsChar('<') then begin
     if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then begin
       if not ExceptionOnNotFound then exit;
       RaiseNotAClass;
@@ -9248,8 +9254,7 @@ begin
     Params.Flags:=fdfDefaultForExpressions;
     Params.ContextNode:=IdentifierNode;
     if (CurPos.Flag=cafPoint) or
-       ( (IdentifierNode.Desc=ctnSpecialize) and
-       not (Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]))
+       ( (IdentifierNode.Desc=ctnSpecialize) and not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)))
     then begin
       // complex identifier
       {$IFDEF ShowTriedContexts}
@@ -10599,7 +10604,7 @@ var
 
   procedure AdjustNextExpressionAtomForDelphiSpecialize;
   begin
-    if not (Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]) or (CurAtomType <> vatIdentifier) then
+    if not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) or (CurAtomType <> vatIdentifier) then
       exit;
 
     // TGen<x>.abc
@@ -10633,7 +10638,7 @@ var
     // in mode Delphi there is no keyword
     MaybeSpecialize := False;
     p := CurPos.StartPos;
-    if (Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]) and (CurAtomType = vatIdentifier) then begin
+    if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and (CurAtomType = vatIdentifier) then begin
       ReadNextAtom;
       MaybeSpecialize := AtomIsChar('<');
       // if it is specialize, keep the atom read
@@ -10864,6 +10869,9 @@ var
   var
     ProcNode, FuncResultNode, FirstParamNode: TCodeTreeNode;
     AtEnd: Boolean;
+    InlineVarExprStartPos, InlineVarExprEndPos: integer;
+    InlineVarExprType: TExpressionType;
+    InlineVarOldInput: TFindDeclarationInput;
     CurAliasType: PFindContext;
     Context: TFindContext;
     FirstParamProcExpr: TExpressionType;
@@ -10901,6 +10909,75 @@ var
     {$IFDEF ShowExprEval}
     DebugLn(['  FindExpressionTypeOfTerm ResolveBaseTypeOfIdentifier AFTER ExprType=',ExprTypeToString(ExprType),' Alias=',FindContextToString(CurAliasType)]);
     {$ENDIF}
+    // inline var type inference: if still a VarSection or untyped
+    // VarDefinition, find the VarDefinition and evaluate := expr
+    if (ExprType.Desc=xtContext)
+    and (ExprType.Context.Node<>nil)
+    and (ExprType.Context.Node.Desc in [ctnVarDefinition,ctnVarSection])
+    and (ExprType.Context.Node.FirstChild=nil) then begin
+      // if VarSection, descend to the VarDefinition child
+      if ExprType.Context.Node.Desc=ctnVarSection then begin
+        if (ExprType.Context.Node.FirstChild<>nil)
+        and (ExprType.Context.Node.FirstChild.Desc=ctnVarDefinition) then
+          ExprType.Context.Node:=ExprType.Context.Node.FirstChild
+        else begin
+          // no VarDefinition child -> give up
+          ExprType.Context.Node:=nil;
+        end;
+      end;
+    end;
+    if (ExprType.Desc=xtContext)
+    and (ExprType.Context.Node<>nil)
+    and (ExprType.Context.Node.Desc=ctnVarDefinition)
+    and (ExprType.Context.Node.FirstChild=nil) then begin
+      // scan source for ':=' after var name without touching CurPos
+      InlineVarExprStartPos:=ExprType.Context.Node.StartPos;
+      // skip identifier
+      while (InlineVarExprStartPos<=ExprType.Context.Tool.SrcLen)
+      and (ExprType.Context.Tool.Src[InlineVarExprStartPos] in
+           ['a'..'z','A'..'Z','0'..'9','_']) do
+        inc(InlineVarExprStartPos);
+      // skip whitespace
+      while (InlineVarExprStartPos<=ExprType.Context.Tool.SrcLen)
+      and (ExprType.Context.Tool.Src[InlineVarExprStartPos] in [' ',#9,#10,#13]) do
+        inc(InlineVarExprStartPos);
+      // check for :=
+      if (InlineVarExprStartPos+1<=ExprType.Context.Tool.SrcLen)
+      and (ExprType.Context.Tool.Src[InlineVarExprStartPos]=':')
+      and (ExprType.Context.Tool.Src[InlineVarExprStartPos+1]='=') then
+      begin
+        InlineVarExprStartPos:=InlineVarExprStartPos+2;
+        InlineVarExprEndPos:=ExprType.Context.Node.EndPos;
+        // strip trailing ; from expression range
+        while (InlineVarExprEndPos>InlineVarExprStartPos)
+        and (ExprType.Context.Tool.Src[InlineVarExprEndPos-1] in [';',' ',#9,#10,#13]) do
+          dec(InlineVarExprEndPos);
+        if InlineVarExprEndPos<=InlineVarExprStartPos then begin
+          InlineVarExprEndPos:=InlineVarExprStartPos;
+          while (InlineVarExprEndPos<=ExprType.Context.Tool.SrcLen)
+          and (ExprType.Context.Tool.Src[InlineVarExprEndPos]<>';') do
+            inc(InlineVarExprEndPos);
+        end;
+        if InlineVarExprEndPos>InlineVarExprStartPos then begin
+          Params.Save(InlineVarOldInput);
+          try
+            Params.ContextNode:=ExprType.Context.Node.Parent;
+            if Params.ContextNode=nil then
+              Params.ContextNode:=ExprType.Context.Node;
+            Params.Flags:=[fdfSearchInParentNodes,fdfFunctionResult];
+            InlineVarExprType:=ExprType.Context.Tool.FindExpressionResultType(
+              Params,InlineVarExprStartPos,InlineVarExprEndPos);
+            { promote Char to ConstString so var s := 'x' gets string methods }
+            if InlineVarExprType.Desc in [xtChar,xtAnsiChar,xtWideChar] then
+              InlineVarExprType.Desc:=xtConstString;
+            if InlineVarExprType.Desc<>xtNone then
+              ExprType:=InlineVarExprType;
+          except
+          end;
+          Params.Load(InlineVarOldInput,true);
+        end;
+      end;
+    end;
     if (ExprType.Desc=xtContext)
     and (ExprType.Context.Node.Desc in [ctnProcedure,ctnProcedureHead]) then
     begin
@@ -11362,7 +11439,11 @@ var
         SearchForwardToo:=false;
         if Context.Node=StartNode then begin
           // there is no special context -> search in parent contexts too
-          Params.Flags:=Params.Flags+[fdfSearchInParentNodes,fdfIgnoreCurContextNode];
+          Params.Flags:=Params.Flags+[fdfSearchInParentNodes];
+          // ctnBeginBlock is transparent and may contain inline-var declarations,
+          // so do NOT skip it; MoveContextNodeToChildren will search its children.
+          if Context.Node.Desc<>ctnBeginBlock then
+            Include(Params.Flags,fdfIgnoreCurContextNode);
           // check if searching forward too
           if CanBeForwardDefined then begin
             SearchForwardToo:=true;
@@ -11407,7 +11488,7 @@ var
           else
           if (Params.NewNode.Desc = ctnGenericType) and (NextAtomType = vatNone)
              and (src[NextAtom.StartPos] = '<') and (NextAtom.EndPos-NextAtom.StartPos=1)
-             and (Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE])
+             and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches))
           then begin
             // delphi generic
             AdjustNextExpressionAtomForDelphiSpecialize;
@@ -13588,8 +13669,7 @@ begin
       else
         exit(vatIdentifier);
     end else
-    if UpAtomIs('SPECIALIZE') and (not (Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]))
-    then begin
+    if UpAtomIs('SPECIALIZE') and not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) then begin
       Node:=FindDeepestNodeAtPos(CurPos.StartPos,false);
       //if (Node<>nil) and (Node.Desc in [ctnSpecialize,ctnSpecializeParams,ctnSpecializeParam,ctnSpecializeType]) then
       if (Node<>nil) and (Node.Desc in [ctnSpecialize, ctnBeginBlock]) then // no nodes in begin...end code
@@ -15421,6 +15501,135 @@ begin
   end;
 end;
 
+function TFindDeclarationTool.ExtractInlineVarInitType(
+  VarDefNode: TCodeTreeNode): string;
+// Infer a display type string for `var x := expr` declarations without an
+// explicit type annotation. Handles simple literals (Integer, Double, String,
+// Char, Boolean, Pointer), tuple literals with scalar or nested elements,
+// and identifier/function-call expressions resolved via FindTermTypeAsString.
+// Returns '' when inference is not possible.
+
+  function ScanLiteralType: string;
+  begin
+    Result:='';
+    if CurPos.StartPos>SrcLen then exit;
+    if AtomIsRealNumber then
+      Result:='Double'
+    else if AtomIsNumber then
+      Result:='Integer'
+    else if AtomIsStringConstant then
+      // Char literals are promoted to String in inline vars.
+      Result:='String'
+    else if CurPos.Flag=cafWord then begin
+      if UpAtomIs('TRUE') or UpAtomIs('FALSE') then
+        Result:='Boolean'
+      else if UpAtomIs('NIL') then
+        Result:='Pointer';
+    end;
+  end;
+
+  function ScanTupleType: string;
+  var
+    ElemType, FieldName: string;
+    SavedPos: integer;
+  begin
+    Result:='';
+    if CurPos.Flag<>cafRoundBracketOpen then exit;
+    ReadNextAtom;
+    Result:='(';
+    repeat
+      if CurPos.StartPos>SrcLen then exit('');
+      if CurPos.Flag=cafRoundBracketClose then break;
+      if Result<>'(' then Result:=Result+', ';
+      FieldName:='';
+      if AtomIsIdentifier then begin
+        SavedPos:=CurPos.StartPos;
+        FieldName:=GetAtom;
+        ReadNextAtom;
+        if CurPos.Flag<>cafColon then begin
+          MoveCursorToCleanPos(SavedPos);
+          ReadNextAtom;
+          FieldName:='';
+        end else
+          ReadNextAtom;
+      end;
+      if CurPos.Flag=cafRoundBracketOpen then
+        ElemType:=ScanTupleType()
+      else
+        ElemType:=ScanLiteralType();
+      if ElemType='' then exit('');
+      if FieldName<>'' then
+        Result:=Result+FieldName+': '+ElemType
+      else
+        Result:=Result+ElemType;
+      ReadNextAtom;
+      if CurPos.Flag<>cafComma then break;
+      ReadNextAtom;
+    until false;
+    if CurPos.Flag=cafRoundBracketClose then
+      Result:=Result+')'
+    else
+      Result:='';
+  end;
+
+var
+  ExprStart, ExprEnd, BracketDepth: integer;
+  TermPos: TAtomPosition;
+  Params: TFindDeclarationParams;
+  ExprType: TExpressionType;
+begin
+  Result:='';
+  if (VarDefNode=nil) or (VarDefNode.Desc<>ctnVarDefinition) then exit;
+  if VarDefNode.FirstChild<>nil then exit;
+  if (VarDefNode.Parent=nil) or (VarDefNode.Parent.Desc<>ctnVarSection) then exit;
+  MoveCursorToCleanPos(VarDefNode.StartPos);
+  ReadNextAtom;
+  if not AtomIsIdentifier then exit;
+  ReadNextAtom;
+  if CurPos.Flag<>cafAssignment then exit;
+  ReadNextAtom;
+  if CurPos.StartPos>SrcLen then exit;
+  // literal paths first
+  if CurPos.Flag=cafRoundBracketOpen then
+    Result:=ScanTupleType()
+  else
+    Result:=ScanLiteralType();
+  if Result<>'' then exit;
+  // fallback: resolve the expression (identifier, function call, ...)
+  // scan from first atom to end of term (';', or matched brackets)
+  ExprStart:=CurPos.StartPos;
+  ExprEnd:=ExprStart;
+  BracketDepth:=0;
+  repeat
+    if CurPos.StartPos>SrcLen then break;
+    case CurPos.Flag of
+      cafRoundBracketOpen,cafEdgedBracketOpen: inc(BracketDepth);
+      cafRoundBracketClose,cafEdgedBracketClose:
+        begin
+          if BracketDepth=0 then break;
+          dec(BracketDepth);
+        end;
+      cafSemicolon:
+        if BracketDepth=0 then break;
+    end;
+    ExprEnd:=CurPos.EndPos;
+    ReadNextAtom;
+  until false;
+  if ExprEnd<=ExprStart then exit;
+  TermPos.StartPos:=ExprStart;
+  TermPos.EndPos:=ExprEnd;
+  Params:=TFindDeclarationParams.Create(Self, VarDefNode);
+  try
+    try
+      Result:=FindTermTypeAsString(TermPos, Params, ExprType);
+    except
+      Result:='';
+    end;
+  finally
+    Params.Free;
+  end;
+end;
+
 function TFindDeclarationTool.FindElementTypeOfArrayType(
   ArrayNode: TCodeTreeNode; out ExprType: TExpressionType;
   AliasType: PFindContext; ParentParams: TFindDeclarationParams): boolean;
@@ -15765,9 +15974,13 @@ begin
         ctnVarDefinition,ctnConstDefinition:
           begin
             ANode:=FindContext.Tool.FindTypeNodeOfDefinition(FindContext.Node);
-            if (ANode=nil) or (ANode.Desc<>ctnIdentifier) then
-              RaiseTermNotSimple(20170421204653);
-            Result:=GetIdentifier(@FindContext.Tool.Src[ANode.StartPos]);
+            if (ANode<>nil) and (ANode.Desc=ctnRecordType) then
+              // anonymous record/tuple type
+              Result:=FindContext.Tool.ExtractNode(ANode,[])
+            else if (ANode=nil) or (ANode.Desc<>ctnIdentifier) then
+              RaiseTermNotSimple(20170421204653)
+            else
+              Result:=GetIdentifier(@FindContext.Tool.Src[ANode.StartPos]);
           end;
 
         ctnClass, ctnClassInterface, ctnDispinterface, ctnObject, ctnRecordType,
@@ -15777,7 +15990,10 @@ begin
           and (FindContext.Node.Parent.Desc in [ctnTypeDefinition,ctnGenericType])
           then
             Result:=GetIdentifier(
-                       @FindContext.Tool.Src[FindContext.Node.Parent.StartPos]);
+                       @FindContext.Tool.Src[FindContext.Node.Parent.StartPos])
+          else if (FindContext.Node.Desc=ctnRecordType) then
+            // anonymous record/tuple type
+            Result:=FindContext.Tool.ExtractNode(FindContext.Node,[]);
 
         ctnEnumIdentifier:
           if (FindContext.Node.Parent<>nil)
