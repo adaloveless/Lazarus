@@ -9254,7 +9254,8 @@ begin
     Params.Flags:=fdfDefaultForExpressions;
     Params.ContextNode:=IdentifierNode;
     if (CurPos.Flag=cafPoint) or
-       ( (IdentifierNode.Desc=ctnSpecialize) and not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)))
+       ( (IdentifierNode.Desc=ctnSpecialize) and
+       not ((Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)))
     then begin
       // complex identifier
       {$IFDEF ShowTriedContexts}
@@ -10604,7 +10605,7 @@ var
 
   procedure AdjustNextExpressionAtomForDelphiSpecialize;
   begin
-    if not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) or (CurAtomType <> vatIdentifier) then
+    if not ((Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) or (CurAtomType <> vatIdentifier) then
       exit;
 
     // TGen<x>.abc
@@ -10638,7 +10639,7 @@ var
     // in mode Delphi there is no keyword
     MaybeSpecialize := False;
     p := CurPos.StartPos;
-    if ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and (CurAtomType = vatIdentifier) then begin
+    if ((Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) and (CurAtomType = vatIdentifier) then begin
       ReadNextAtom;
       MaybeSpecialize := AtomIsChar('<');
       // if it is specialize, keep the atom read
@@ -11488,7 +11489,7 @@ var
           else
           if (Params.NewNode.Desc = ctnGenericType) and (NextAtomType = vatNone)
              and (src[NextAtom.StartPos] = '<') and (NextAtom.EndPos-NextAtom.StartPos=1)
-             and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches))
+             and ((Scanner.CompilerMode in [cmDELPHI, cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches))
           then begin
             // delphi generic
             AdjustNextExpressionAtomForDelphiSpecialize;
@@ -13669,7 +13670,8 @@ begin
       else
         exit(vatIdentifier);
     end else
-    if UpAtomIs('SPECIALIZE') and not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) then begin
+    if UpAtomIs('SPECIALIZE') and (not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)))
+    then begin
       Node:=FindDeepestNodeAtPos(CurPos.StartPos,false);
       //if (Node<>nil) and (Node.Desc in [ctnSpecialize,ctnSpecializeParams,ctnSpecializeParam,ctnSpecializeType]) then
       if (Node<>nil) and (Node.Desc in [ctnSpecialize, ctnBeginBlock]) then // no nodes in begin...end code
