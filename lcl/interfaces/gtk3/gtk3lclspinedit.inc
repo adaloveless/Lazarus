@@ -95,21 +95,35 @@ begin
 end;
 
 function LCLSpinEditUpButtonPress(AWidget: PGtkWidget; AEvent: PGdkEventButton; AData: gpointer): gboolean; cdecl;
+var
+  Data: PLCLSpinEditData;
 begin
+  Result := False;
   if (AEvent <> nil) and
      (AEvent^.type_ in [GDK_BUTTON_PRESS, GDK_2BUTTON_PRESS, GDK_3BUTTON_PRESS]) and
      (AEvent^.button = 1) then
+  begin
     LCLSpinEditUpClicked(PGtkButton(AWidget), AData);
-  Result := False;
+    Data := PLCLSpinEditData(AData);
+    if Assigned(Data^.Entry) then
+      PGtkEditable(Data^.Entry)^.select_region(0, -1);
+  end;
 end;
 
 function LCLSpinEditDownButtonPress(AWidget: PGtkWidget; AEvent: PGdkEventButton; AData: gpointer): gboolean; cdecl;
+var
+  Data: PLCLSpinEditData;
 begin
+  Result := False;
   if (AEvent <> nil) and
      (AEvent^.type_ in [GDK_BUTTON_PRESS, GDK_2BUTTON_PRESS, GDK_3BUTTON_PRESS]) and
      (AEvent^.button = 1) then
+  begin
     LCLSpinEditDownClicked(PGtkButton(AWidget), AData);
-  Result := False;
+    Data := PLCLSpinEditData(AData);
+    if Assigned(Data^.Entry) then
+      PGtkEditable(Data^.Entry)^.select_region(0, -1);
+  end;
 end;
 
 procedure LCLSpinEditEntryChanged(AEditable: PGtkEditable; AData: gpointer); cdecl;
@@ -532,6 +546,7 @@ var
   Adj: PGtkAdjustment;
   AStyleCtx: PGtkStyleContext;
   ACSSProvider: PGtkCssProvider;
+  AFocusChain: PGList;
 begin
   //HBox container is our FWidget, not focusable, works as focusProxy, but it is our ClientRect etc
   HBox := PGtkBox(g_object_new(LCLSpinEditGetType, 'orientation', [GTK_ORIENTATION_HORIZONTAL, 'spacing', 0, nil]));
@@ -628,7 +643,9 @@ begin
   g_signal_connect_data(PGObject(BtnDown), 'scroll-event',
     TGCallback(@LCLSpinEditEntryScroll), Data, nil, G_CONNECT_DEFAULT);
 
-  gtk_container_set_focus_chain(PGtkContainer(HBox), g_list_append(nil, Entry));
+  AFocusChain := g_list_append(nil, Entry);
+  gtk_container_set_focus_chain(PGtkContainer(HBox), AFocusChain);
+  g_list_free(AFocusChain);
 
   LCLSpinUpdateEntryFromAdj(Data);
 

@@ -1653,8 +1653,10 @@ lazbuildpackages:
 	$(MAKE) -C buildintf
 	$(MAKE) -C lazdebuggers/lazdebuggerintf
 	$(MAKE) -C debuggerintf
+lclpackages:
+	$(MAKE) -C lazutils
 	$(MAKE) -C freetype
-lazbuildlclpackages:
+idepackages:
 	$(MAKE) -C fpdebug
 	$(MAKE) -C lazcontrols
 	$(MAKE) -C lazedit
@@ -1664,7 +1666,6 @@ lazbuildlclpackages:
 	$(MAKE) -C lazdebuggers/lazdebuggerfplldb
 	$(MAKE) -C lazdebuggers/lazdebuggerfp
 	$(MAKE) -C synedit
-idepackages: lazbuildlclpackages
 	$(MAKE) -C lazdebuggergdbmi
 	$(MAKE) -C lazcontrols/design
 	$(MAKE) -C lclextensions

@@ -453,6 +453,7 @@ type
     function SrcBasePackagesNeedLazbuild: string; // check if compiled-in and source base pkg list differ that a built using make is needed
     procedure LoadStaticBasePackages;
     procedure LoadAutoInstallPackages(PkgList: TStringList);
+    procedure LoadReleasePackages;
     procedure SortAutoInstallDependencies;
     function GetIDEInstallPackageOptions(
                  var InheritedOptionStrings: TInheritedCompOptsStrings): string;
@@ -559,8 +560,7 @@ function FPCParamNeedsBuildAll(const Param: String): boolean;
 function FPCParamForBuildAllHasChanged(OldParams, NewParams: TStrings): boolean;
 function RemoveFPCVerbosityParams(CompParams: TStrings): TStrings;
 function WriteCompilerCfgFile(CfgFilename: string; CompilerParams: TStrings;
-                              out CmdLineParams: TStrings): TCodeBuffer;
-
+                              out CmdLineParams: TStrings): TCodeBuffer; // Result=nil means read error, caller must call Result.Save
 
 implementation
 
@@ -2466,7 +2466,10 @@ var
 begin
   for i:=0 to PkgList.Count-1 do begin
     PackageName:=PkgList[i];
-    if not IsValidPkgName(PackageName) then continue;
+    if not IsValidPkgName(PackageName) then begin
+      debugln(['Error: (lazarus) TLazPackageGraph.LoadAutoInstallPackages invalid name "',PackageName,'"']);
+      continue;
+    end;
     Dependency:=FindDependencyByNameInList(FirstInstallDependency,
                                            pddRequires,PackageName);
     //DebugLn('TLazPackageGraph.LoadAutoInstallPackages ',dbgs(Dependency),' ',PackageName);
@@ -2486,6 +2489,21 @@ begin
       Dependency.RequiredPackage.AutoInstall:=pitStatic;
   end;
   SortAutoInstallDependencies;
+end;
+
+procedure TLazPackageGraph.LoadReleasePackages;
+var
+  sl: TStringList;
+  i: Integer;
+begin
+  sl:=TStringList.Create;
+  try
+    for i:=0 to High(LazarusIDEReleasePkgNames) do
+      sl.Add(LazarusIDEReleasePkgNames[i]);
+    LoadAutoInstallPackages(sl);
+  finally
+    sl.Free;
+  end;
 end;
 
 procedure TLazPackageGraph.SortAutoInstallDependencies;
@@ -3429,16 +3447,23 @@ begin
     Stats.CompilerFileDate:=CompilerFileDate;
     Stats.Params.Assign(CompilerParams);
     Stats.Complete:=Complete;
+    Stats.MainPPUExists:=MainPPUExists;
     Stats.ViaMakefile:=false;
+
+    if APackage.CompilerOptions.OutputDirectoryOverride='' then
+    begin
+      // make all paths relative in state file, so it can be copied to other hosts
+      MakeFPCParamsPathsRelative(Stats.Params,APackage.DirectoryExpanded);
+    end;
 
     XMLConfig:=TXMLConfig.CreateClean(StateFile);
     try
       XMLConfig.SetValue('Lazarus/Version',Stats.LazarusVersion);
-      XMLConfig.SetValue('Compiler/Value',CompilerFilename);
-      XMLConfig.SetValue('Compiler/Date',CompilerFileDate);
-      XMLConfig.SetValue('Params/Value',MergeCmdLineParams(CompilerParams));
-      XMLConfig.SetDeleteValue('Complete/Value',Complete,true);
-      XMLConfig.SetDeleteValue('Complete/MainPPUExists',MainPPUExists,true);
+      XMLConfig.SetValue('Compiler/Value',Stats.CompilerFilename);
+      XMLConfig.SetValue('Compiler/Date',Stats.CompilerFileDate);
+      XMLConfig.SetValue('Params/Value',MergeCmdLineParams(Stats.Params));
+      XMLConfig.SetDeleteValue('Complete/Value',Stats.Complete,true);
+      XMLConfig.SetDeleteValue('Complete/MainPPUExists',Stats.MainPPUExists,true);
       InvalidateFileStateCache;
       XMLConfig.Flush;
     finally
@@ -3789,9 +3814,14 @@ begin
 
   SrcFilename:=APackage.GetSrcFilename;
   CompilerFilename:=APackage.GetCompilerFilename;
-  // Note: use absolute paths, because some external tools resolve symlinked directories and some do not
   CompilerParams:=GetPackageCompilerParams(APackage);
   try
+    // Note: The actual call of fpc needs absolute paths, because some external tools resolve
+    //       symlinked directories and some do not.
+    //       The state file (*.compiled) uses relative paths, so it can be copied to other hosts.
+    if APackage.CompilerOptions.OutputDirectoryOverride='' then
+      MakeFPCParamsPathsRelative(CompilerParams,APackage.Directory);
+
     o:=APackage.GetOutputDirType;
     Stats:=APackage.LastCompile[o];
     //debugln(['TLazPackageGraph.CheckIfCurPkgOutDirNeedsCompile  Last="',ExtractCompilerParamsForBuildAll(APackage.LastCompilerParams),'" Now="',ExtractCompilerParamsForBuildAll(CompilerParams),'"']);
