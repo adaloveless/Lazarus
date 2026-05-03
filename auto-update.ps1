@@ -53,23 +53,79 @@ $script:LazarusUpdated = $false
 $script:VPUpdated = $false
 $script:UpstreamUpdated = $false
 
+if (-not $VPDir -and $env:VPDIR -and (Test-Path (Join-Path $env:VPDIR ".git"))) {
+    $VPDir = $env:VPDIR
+    Log-Info "VibePascal: using `$env:VPDIR = $VPDir"
+}
+
 if (-not $VPDir) {
     $parent = Split-Path -Parent $LazarusDir
+    $grandparent = if ($parent) { Split-Path -Parent $parent } else { $null }
+
+    # Per Policy #22: canonical Pascal/FPC code location is {rootdir}\Pascal\FPC\.
+    # Search sibling-of-Lazarus, Policy #22 layout, and common Windows roots.
     $candidates = @(
+        # Sibling of Lazarus (simple/legacy layout)
         (Join-Path $parent "vibepascal"),
         (Join-Path $parent "VibePascal"),
         (Join-Path $parent "fpc"),
         (Join-Path $parent "fpcsrc")
     )
+    # Policy #22 canonical: <parent>\Pascal\FPC\vibepascal
+    $candidates += (Join-Path $parent "Pascal\FPC\vibepascal")
+    $candidates += (Join-Path $parent "Pascal\FPC\VibePascal")
+    $candidates += (Join-Path $parent "Pascal\FPC")
+    if ($grandparent) {
+        $candidates += (Join-Path $grandparent "Pascal\FPC\vibepascal")
+        $candidates += (Join-Path $grandparent "Pascal\FPC\VibePascal")
+        $candidates += (Join-Path $grandparent "Pascal\FPC")
+    }
+    # Common Windows roots
+    $candidates += @(
+        "C:\vibepascal",
+        "C:\VibePascal",
+        "C:\Pascal\FPC\vibepascal",
+        "C:\Pascal\FPC\VibePascal",
+        "C:\Pascal\FPC",
+        "C:\source\vibepascal",
+        "C:\source\VibePascal",
+        "C:\source\Pascal\FPC\vibepascal",
+        "C:\source\Pascal\FPC\VibePascal",
+        "C:\source\Pascal\FPC",
+        "C:\dev\vibepascal",
+        "C:\dev\Pascal\FPC\vibepascal"
+    )
+    if ($env:USERPROFILE) {
+        $candidates += @(
+            (Join-Path $env:USERPROFILE "source\vibepascal"),
+            (Join-Path $env:USERPROFILE "source\VibePascal"),
+            (Join-Path $env:USERPROFILE "source\Pascal\FPC\vibepascal"),
+            (Join-Path $env:USERPROFILE "source\Pascal\FPC")
+        )
+    }
+
     foreach ($c in $candidates) {
-        if (Test-Path (Join-Path $c ".git")) {
+        if (-not (Test-Path (Join-Path $c ".git"))) { continue }
+        # Sanity-check it actually looks like a vibepascal/FPC source tree
+        # (must have at least one of: Makefile.fpc, compiler\, rtl\, vibepascal-*.cfg).
+        $isVP = (Test-Path (Join-Path $c "Makefile.fpc")) -or `
+                (Test-Path (Join-Path $c "compiler")) -or `
+                (Test-Path (Join-Path $c "rtl")) -or `
+                ((Get-ChildItem -Path $c -Filter "vibepascal-*.cfg" -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null)
+        if ($isVP) {
             $VPDir = $c
+            Log-Info "VibePascal auto-detected at: $VPDir"
             break
         }
     }
     if (-not $VPDir) {
         Log-Err "VibePascal directory not found. Use -VPDir to specify its location."
         Log-Err "Searched: $($candidates -join ', ')"
+        Log-Err ""
+        Log-Err "How to fix:"
+        Log-Err "  1. Clone next to Lazarus: git clone git@github.com:adaloveless/vibepascal.git ""$parent\vibepascal"""
+        Log-Err "  2. Or pass the path:      .\auto-update.bat -VPDir C:\path\to\vibepascal"
+        Log-Err "  3. Or set the env var:    setx VPDIR ""C:\path\to\vibepascal"" (then open a new shell)"
         exit 1
     }
 }
