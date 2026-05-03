@@ -186,9 +186,9 @@ pull_lazarus_upstream() {
         git -C "$LAZARUS_DIR" merge --ff-only upstream/main 2>&1
         log_ok "Fast-forward merge from upstream"
     else
-        log_info "Rebasing $local_commits local commit(s) onto upstream..."
-        git -C "$LAZARUS_DIR" rebase upstream/main 2>&1
-        log_ok "Rebase onto upstream complete"
+        log_info "Merging upstream into local branch ($local_commits local commit(s) preserved)..."
+        git -C "$LAZARUS_DIR" merge --no-edit upstream/main 2>&1
+        log_ok "Merge from upstream complete"
     fi
 
     log_info "Pushing to origin..."
