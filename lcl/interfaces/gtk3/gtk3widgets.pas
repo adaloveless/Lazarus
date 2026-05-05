@@ -2155,6 +2155,9 @@ procedure TGtk3Widget.GtkEventFocus(Sender: PGtkWidget; Event: PGdkEvent);
 var
   Msg: TLMessage;
   ACaret: TGtk3Caret;
+  LContainer, LWidget: PGtkWidget;
+  LWidgetType: TGtk3WidgetTypes;
+  LIsCombo: Boolean;
 begin
   {$IF DEFINED(GTK3DEBUGEVENTS) OR DEFINED(GTK3DEBUGFOCUS)}
   DebugLn('TGtk3Widget.GtkEventFocus ',dbgsName(LCLObject),' FocusIn ',dbgs(Event^.focus_change.in_ <> 0));
@@ -2186,17 +2189,25 @@ begin
     end;
   end;
 
+  LContainer := GetContainerWidget;
+  LWidget := FWidget;
+  LWidgetType := WidgetType;
+  LIsCombo := Self is TGtk3ComboBox;
+
   DeliverMessage(Msg);
 
   if Msg.Msg = LM_KILLFOCUS then
   begin
-    if ([wtEntry, wtSpinEdit] * WidgetType <> []) and
-      Gtk3IsEditable(PGObject(GetContainerWidget)) then
-        PGtkEditable(GetContainerWidget)^.select_region(0, 0)
+    if ([wtEntry, wtSpinEdit] * LWidgetType <> []) and
+       Gtk3IsWidget(LContainer) and
+       Gtk3IsEditable(PGObject(LContainer)) then
+        PGtkEditable(LContainer)^.select_region(0, 0)
     else
-    if (wtComboBox in WidgetType) and (Self is TGtk3ComboBox) and PGtkComboBox(FWidget)^.has_entry and
-       Gtk3IsEditable(PGObject(PGtkComboBox(FWidget)^.get_child)) then
-         PGtkEditable(PGtkComboBox(FWidget)^.get_child)^.select_region(0, 0);
+    if (wtComboBox in LWidgetType) and LIsCombo and
+       Gtk3IsWidget(LWidget) and
+       PGtkComboBox(LWidget)^.has_entry and
+       Gtk3IsEditable(PGObject(PGtkComboBox(LWidget)^.get_child)) then
+         PGtkEditable(PGtkComboBox(LWidget)^.get_child)^.select_region(0, 0);
   end;
 end;
 
@@ -2928,7 +2939,7 @@ begin
     end;
     if AValue <> clDefault then
     begin
-      ACSS := Format('textview text selection { background-color: #%02x%02x%02x; }',
+      ACSS := Format('textview text selection { background-color: #%.2x%.2x%.2x; }',
         [Round(AColor.red * 255), Round(AColor.green * 255), Round(AColor.blue * 255)]);
       ANewProvider := gtk_css_provider_new;
       gtk_css_provider_load_from_data(ANewProvider, PChar(ACSS), -1, nil);
@@ -7109,8 +7120,8 @@ begin
 
   ACSSProvider := gtk_css_provider_new;
   gtk_css_provider_load_from_data(ACSSProvider,
-    '#tab-close-button { background-color: transparent; border-radius: 3px; }' +
-    '#tab-close-button:hover { background-color: alpha(currentColor, 0.15); }', -1, nil);
+    '#tab-close-button { background-color: rgba(0,0,0,0); border-radius: 3px; }' +
+    '#tab-close-button:hover { background-color: alpha(@theme_fg_color, 0.15); }', -1, nil);
   AStyleCtx := FCloseButton^.get_style_context;
   AStyleCtx^.add_provider(PGtkStyleProvider(ACSSProvider), GTK_STYLE_PROVIDER_PRIORITY_USER);
   g_object_unref(ACSSProvider);
