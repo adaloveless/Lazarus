@@ -3,18 +3,39 @@ set -e
 
 LAZARUS_DIR="$(cd "$(dirname "$0")" && pwd)"
 VP_DIR="/home/jason/src/vibepascal"
-VP_COMPILER="$VP_DIR/compiler/ppcx64"
 RELEASE_DIR="$LAZARUS_DIR/releases"
 LAZARUS_VERSION="4.99-vp"
 DATE_STAMP=$(date +%Y%m%d)
 
 LINUX_CFG="$VP_DIR/vibepascal-linux-x86_64.cfg"
 WIN64_CFG="$VP_DIR/vibepascal-win64-x86_64.cfg"
+AARCH64_LINUX_CFG="$VP_DIR/vibepascal-aarch64-linux.cfg"
+ARM_LINUX_CFG="$VP_DIR/vibepascal-arm-linux.cfg"
+
+get_compiler_for_target() {
+    local target=$1
+    case "$target" in
+        x86_64-linux|x86_64-win64)
+            echo "$VP_DIR/compiler/ppcx64"
+            ;;
+        aarch64-linux)
+            echo "$VP_DIR/compiler/ppcrossaarch64"
+            ;;
+        arm-linux)
+            echo "$VP_DIR/compiler/ppcrossarm"
+            ;;
+        *)
+            echo "$VP_DIR/compiler/ppcx64"
+            ;;
+    esac
+}
 
 usage() {
-    echo "Usage: $0 [linux|win64|all]"
+    echo "Usage: $0 [linux|win64|pi64|pi32|all]"
     echo "  linux  - Build Lazarus for x86_64-linux"
     echo "  win64  - Build Lazarus for x86_64-win64 (cross-compile)"
+    echo "  pi64   - Build Lazarus for aarch64-linux (Pi 4/5)"
+    echo "  pi32   - Build Lazarus for arm-linux (Pi 3 and older)"
     echo "  all    - Build for all platforms"
     exit 1
 }
@@ -22,11 +43,12 @@ usage() {
 ensure_vp_packages() {
     local target=$1
     local cfg=$2
+    local compiler=$(get_compiler_for_target "$target")
     local rtl_units="$VP_DIR/rtl/units/$target"
 
     if [ ! -d "$rtl_units" ]; then
         echo "ERROR: VibePascal RTL units not found for $target"
-        echo "Build VibePascal RTL first: cd $VP_DIR && make rtl PP=$VP_COMPILER OS_TARGET=... CPU_TARGET=..."
+        echo "Build VibePascal RTL first: cd $VP_DIR && make rtl PP=$compiler OS_TARGET=... CPU_TARGET=..."
         exit 1
     fi
 
@@ -36,7 +58,7 @@ ensure_vp_packages() {
         cd "$VP_DIR"
         local os_target=$(echo "$target" | cut -d- -f2)
         local cpu_target=$(echo "$target" | cut -d- -f1)
-        make packages PP="$VP_COMPILER" OS_TARGET="$os_target" CPU_TARGET="$cpu_target" OPT="-n @$cfg" 2>&1 | grep -E "^\[|Compiled package|Fatal|Error" || true
+        make packages PP="$compiler" OS_TARGET="$os_target" CPU_TARGET="$cpu_target" OPT="-n @$cfg" 2>&1 | grep -E "^\[|Compiled package|Fatal|Error" || true
         cd "$LAZARUS_DIR"
     fi
     echo "VibePascal packages ready for $target ($pkg_count packages)"
@@ -45,13 +67,14 @@ ensure_vp_packages() {
 build_lazbuild() {
     local target=$1
     local cfg=$2
+    local compiler=$(get_compiler_for_target "$target")
 
     echo "=== Building lazbuild for $target ==="
     local os_target=$(echo "$target" | cut -d- -f2)
     local cpu_target=$(echo "$target" | cut -d- -f1)
 
     make -C "$LAZARUS_DIR" lazbuild \
-        PP="$VP_COMPILER" \
+        PP="$compiler" \
         FPCDIR="$VP_DIR" \
         OS_TARGET="$os_target" \
         CPU_TARGET="$cpu_target" \
@@ -73,14 +96,19 @@ package_release() {
 
     cp "$LAZARUS_DIR/lazbuild${ext}" "$staging/bin/"
 
+    local compiler=$(get_compiler_for_target "$target")
     if [ "$target" = "x86_64-linux" ]; then
-        cp "$VP_COMPILER" "$staging/compiler/ppcx64"
+        cp "$compiler" "$staging/compiler/ppcx64"
     elif [ "$target" = "x86_64-win64" ]; then
         if [ -f "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" ]; then
             cp "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" "$staging/compiler/"
         else
             echo "WARNING: Win64 ppcx64.exe not found in VibePascal dist. Skipping compiler."
         fi
+    elif [ "$target" = "aarch64-linux" ]; then
+        cp "$compiler" "$staging/compiler/ppcrossaarch64"
+    elif [ "$target" = "arm-linux" ]; then
+        cp "$compiler" "$staging/compiler/ppcrossarm"
     fi
 
     cp -r "$VP_DIR/rtl/units/$target" "$staging/units/rtl"
@@ -140,9 +168,17 @@ case "$TARGET" in
     win64)
         build_platform "x86_64-win64" "$WIN64_CFG"
         ;;
+    pi64)
+        build_platform "aarch64-linux" "$AARCH64_LINUX_CFG"
+        ;;
+    pi32)
+        build_platform "arm-linux" "$ARM_LINUX_CFG"
+        ;;
     all)
         build_platform "x86_64-linux" "$LINUX_CFG"
         build_platform "x86_64-win64" "$WIN64_CFG"
+        build_platform "aarch64-linux" "$AARCH64_LINUX_CFG"
+        build_platform "arm-linux" "$ARM_LINUX_CFG"
         ;;
     *)
         usage
