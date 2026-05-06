@@ -100,7 +100,6 @@ type
     class function MoveTabFocus(aWidget: PGtkWidget;
       aDirection: TGtkDirectionType; aData: gPointer): gBoolean; cdecl; static;
     class function WidgetEvent(widget: PGtkWidget; event: PGdkEvent; data: GPointer): gboolean; cdecl; static; {main event filter of widget}
-    class function WidgetFocusIn(AWidget: PGtkWidget; Event: PGdkEventFocus; AData: gpointer): gboolean; cdecl; static;
     class procedure DestroyWidgetEvent({%H-}w: PGtkWidget;{%H-}data:gpointer); cdecl; static;
   strict private
     FCentralWidgetRGBA: array [0{GTK_STATE_NORMAL}..4{GTK_STATE_INSENSITIVE}] of TDefaultRGBA;
@@ -1503,6 +1502,18 @@ begin
       if (wtSpinEdit in TGtk3Widget(Data).WidgetType) and
          Gtk3IsArrowKey(Event^.key.keyval) then
         exit(gtk_false);
+      if (wtComboBox in TGtk3Widget(Data).WidgetType) and
+         (TGtk3Widget(Data) is TGtk3ComboBox) and
+         not PGtkComboBox(Widget)^.has_entry and
+         not Widget^.has_focus then
+      begin
+        TGtk3Widget(Data).GtkEventKey(Widget, Event, True);
+        if (Event^.key.keyval = GDK_KEY_Return) or
+           (Event^.key.keyval = GDK_KEY_KP_Enter) or
+           (Event^.key.keyval = GDK_KEY_ISO_Enter) then
+          Result := True;
+        exit;
+      end;
       if Widget^.has_focus then
         Result := TGtk3Widget(Data).GtkEventKey(Widget, Event, True)
       else if Widget^.is_toplevel then
@@ -1527,6 +1538,18 @@ begin
     end;
   GDK_KEY_RELEASE:
     begin
+      if (wtComboBox in TGtk3Widget(Data).WidgetType) and
+         (TGtk3Widget(Data) is TGtk3ComboBox) and
+         not PGtkComboBox(Widget)^.has_entry and
+         not Widget^.has_focus then
+      begin
+        TGtk3Widget(Data).GtkEventKey(Widget, Event, False);
+        if (Event^.key.keyval = GDK_KEY_Return) or
+           (Event^.key.keyval = GDK_KEY_KP_Enter) or
+           (Event^.key.keyval = GDK_KEY_ISO_Enter) then
+          Result := True;
+        exit;
+      end;
       if Widget^.has_focus then
       begin
         Result := TGtk3Widget(Data).GtkEventKey(Widget, Event, False);
@@ -2211,15 +2234,6 @@ begin
   end;
 end;
 
-
-class function TGtk3Widget.WidgetFocusIn(AWidget: PGtkWidget;
-  Event: PGdkEventFocus; AData: gpointer): gboolean; cdecl;
-begin
-  Result := False;
-  if AData = nil then
-    Exit;
-  TGtk3Widget(AData).GtkEventFocus(AWidget, PGdkEvent(Event));
-end;
 
 procedure TGtk3Widget.GtkEventDestroy; cdecl;
 var
@@ -3517,9 +3531,6 @@ begin
 
   if FWidgetType * [wtWindow, wtDialog, wtHintWindow] = [] then
   begin
-    g_signal_connect_data(FWidget, 'focus-in-event', TGCallback(@WidgetFocusIn), Self, nil, G_CONNECT_DEFAULT);
-    if FWidget <> GetContainerWidget then
-      g_signal_connect_data(GetContainerWidget, 'focus-in-event', TGCallback(@WidgetFocusIn), Self, nil, G_CONNECT_DEFAULT);
     //keyboard context menu
     g_signal_connect_data(FWidget, 'popup-menu', TGCallback(@Gtk3PopupMenuCB), Self, nil, G_CONNECT_DEFAULT);
     if FWidget <> GetContainerWidget then
@@ -4416,6 +4427,8 @@ begin
       '%s cannot host child %s on GTK3 (not a GtkContainer)',
       [BoolToStr(Assigned(AParent.LCLObject), AParent.LCLObject.ClassName, '<nil>'),
        BoolToStr(Assigned(LCLObject), LCLObject.ClassName, '<nil>')]);
+  if Assigned(LCLObject) and not LCLObject.Visible then
+    FWidget^.set_visible(False);
 end;
 
 procedure TGtk3Widget.Show;
