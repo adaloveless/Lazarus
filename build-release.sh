@@ -11,14 +11,16 @@ LINUX_CFG="$VP_DIR/vibepascal-linux-x86_64.cfg"
 WIN64_CFG="$VP_DIR/vibepascal-win64-x86_64.cfg"
 AARCH64_LINUX_CFG="$VP_DIR/vibepascal-aarch64-linux.cfg"
 ARM_LINUX_CFG="$VP_DIR/vibepascal-arm-linux.cfg"
+DARWIN_X86_64_CFG="$VP_DIR/vibepascal-darwin-x86_64.cfg"
+DARWIN_AARCH64_CFG="$VP_DIR/vibepascal-darwin-aarch64.cfg"
 
 get_compiler_for_target() {
     local target=$1
     case "$target" in
-        x86_64-linux|x86_64-win64)
+        x86_64-linux|x86_64-win64|x86_64-darwin)
             echo "$VP_DIR/compiler/ppcx64"
             ;;
-        aarch64-linux)
+        aarch64-linux|aarch64-darwin)
             echo "$VP_DIR/compiler/ppcrossaarch64"
             ;;
         arm-linux)
@@ -31,11 +33,13 @@ get_compiler_for_target() {
 }
 
 usage() {
-    echo "Usage: $0 [linux|win64|pi64|pi32|all]"
+    echo "Usage: $0 [linux|win64|pi64|pi32|osx64|osxarm|all]"
     echo "  linux  - Build Lazarus for x86_64-linux"
     echo "  win64  - Build Lazarus for x86_64-win64 (cross-compile)"
     echo "  pi64   - Build Lazarus for aarch64-linux (Pi 4/5)"
     echo "  pi32   - Build Lazarus for arm-linux (Pi 3 and older)"
+    echo "  osx64  - Build Lazarus for x86_64-darwin (macOS Intel)"
+    echo "  osxarm - Build Lazarus for aarch64-darwin (macOS Apple Silicon)"
     echo "  all    - Build for all platforms"
     exit 1
 }
@@ -109,6 +113,10 @@ package_release() {
         cp "$compiler" "$staging/compiler/ppcrossaarch64"
     elif [ "$target" = "arm-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcrossarm"
+    elif [ "$target" = "x86_64-darwin" ]; then
+        cp "$compiler" "$staging/compiler/ppcrossx64"
+    elif [ "$target" = "aarch64-darwin" ]; then
+        cp "$compiler" "$staging/compiler/ppcrossaarch64"
     fi
 
     cp -r "$VP_DIR/rtl/units/$target" "$staging/units/rtl"
@@ -174,11 +182,19 @@ case "$TARGET" in
     pi32)
         build_platform "arm-linux" "$ARM_LINUX_CFG"
         ;;
+    osx64)
+        build_platform "x86_64-darwin" "$DARWIN_X86_64_CFG"
+        ;;
+    osxarm)
+        build_platform "aarch64-darwin" "$DARWIN_AARCH64_CFG"
+        ;;
     all)
         build_platform "x86_64-linux" "$LINUX_CFG"
         build_platform "x86_64-win64" "$WIN64_CFG"
         build_platform "aarch64-linux" "$AARCH64_LINUX_CFG"
         build_platform "arm-linux" "$ARM_LINUX_CFG"
+        build_platform "x86_64-darwin" "$DARWIN_X86_64_CFG"
+        build_platform "aarch64-darwin" "$DARWIN_AARCH64_CFG"
         ;;
     *)
         usage
