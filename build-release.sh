@@ -94,22 +94,23 @@ build_darwin_ide() {
 
     echo "=== Building Darwin IDE for $target ==="
 
-    # Create compiler wrapper so native lazbuild can detect cross-compiler
-    # For detection calls (-i*, -va) use bare compiler; for compilation use -n @cfg
+    # Wrapper must always include the cross-compile cfg, including for lazbuild's
+    # detection calls (-iWTOTP, -va compilertest.pas). Without the cfg, the
+    # compiler has no unit search paths and lazbuild reports "system.ppu not found".
+    # An older variant of this wrapper bypassed the cfg for -i*/-va; that worked
+    # only as long as lazbuild's fpcdefines.xml cache covered the wrapper path.
     cat > "$wrapper" << EOF
 #!/bin/bash
-for arg in "\$@"; do
-    if [[ "\$arg" == -i* ]] || [[ "\$arg" == -va ]]; then
-        exec $compiler "\$@"
-    fi
-done
 exec $compiler -n @$cfg "\$@"
 EOF
     chmod +x "$wrapper"
 
-    # Build IDE using native lazbuild
+    # Build IDE using native lazbuild. set -o pipefail ensures we surface
+    # lazbuild failures even though we tee through tail.
+    set -o pipefail
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
-        --cpu="$cpu_target" --os=darwin --ws=cocoa --build-ide-minimal 2>&1 | tail -20
+        --cpu="$cpu_target" --os=darwin --ws=cocoa --build-ide-minimal 2>&1 | tail -40
+    set +o pipefail
 
     rm -f "$wrapper"
 }
