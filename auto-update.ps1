@@ -625,12 +625,28 @@ function Rebuild-IDE {
     $lazarusExe = Join-Path $LazarusDir "lazarus.exe"
     $preBuildTime = if (Test-Path $lazarusExe) { (Get-Item $lazarusExe).LastWriteTime } else { $null }
 
+    # Configure-Environment writes MakeFilename to environmentoptions.xml, but on
+    # fresh bootstraps lazbuild has been observed to fall back to PATH lookup for
+    # `make` and fail with "Make not found" when MinGW make is in a versioned FPC
+    # subdir (Finn 2026-04-21, item #39). Prepend the discovered make dir to PATH
+    # for the duration of the lazbuild invocation as defense-in-depth.
+    $oldPath = $env:PATH
+    $makeForPath = Find-Make
+    if ($makeForPath) {
+        $makeDir = Split-Path -Parent $makeForPath
+        if ($env:PATH -notlike "*$makeDir*") {
+            $env:PATH = "$makeDir;$env:PATH"
+            Log-Info "PATH prepended with make dir: $makeDir"
+        }
+    }
+
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 2>&1 |
         Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
     $buildExit = $LASTEXITCODE
     $ErrorActionPreference = $prevEAP
+    $env:PATH = $oldPath
 
     if ($buildExit -ne 0) {
         Log-Err "lazarus.exe build failed with exit code $buildExit"
