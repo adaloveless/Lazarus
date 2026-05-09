@@ -229,8 +229,13 @@ package_release() {
         local app_name="lazarus-${cpu_target}-darwin.app"
         if [ -d "$LAZARUS_DIR/$app_name" ]; then
             cp -r "$LAZARUS_DIR/$app_name" "$staging/"
-            # Fix startlazarus symlink inside the app bundle (should point to bin/startlazarus)
-            ln -sf ../../../../../../bin/startlazarus "$staging/$app_name/Contents/Resources/startlazarus.app/Contents/MacOS/startlazarus"
+            # Retarget the inner startlazarus.app helper symlink so it resolves INSIDE the .app
+            # bundle. Old target ../../../../../../bin/startlazarus escapes the bundle (works
+            # only with the unpacked tarball; breaks on drag-to-/Applications). New target
+            # ../../../../MacOS/startlazarus lands on the outer Contents/MacOS/startlazarus
+            # binary that create_darwin_app_bundle already places, so the .app stays
+            # self-contained no matter where it lives.
+            ln -sf ../../../../MacOS/startlazarus "$staging/$app_name/Contents/Resources/startlazarus.app/Contents/MacOS/startlazarus"
         fi
         # Remove broken lhelp.app symlink (lhelp binary not built in this configuration)
         if [ -L "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
