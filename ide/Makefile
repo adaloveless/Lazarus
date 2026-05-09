@@ -356,7 +356,7 @@ DBG_OPTIONS=-gw
 endif
 LAZARUS_OPT=$(LAZARUS_LIBPATHS)
 ifeq ($(LCL_PLATFORM),cocoa)
-LAZARUS_OPT+=-k-weak_framework -kAppKit -k-weak_framework -kUserNotifications
+LAZARUS_OPT+=-k-weak_framework -kAppKit
 endif
 DEFAULT_IDE_OPTIONS=  \
   -Fu../packager/units/$(CPU_TARGET)-$(OS_TARGET) \
