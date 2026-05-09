@@ -1290,10 +1290,10 @@ begin
     Include(Result, ssLeft);
 
   if GDK_BUTTON2_MASK in AState  then
-    Include(Result, ssRight);
+    Include(Result, ssMiddle);
 
   if GDK_BUTTON3_MASK in AState  then
-    Include(Result, ssMiddle);
+    Include(Result, ssRight);
 
   if GDK_BUTTON4_MASK in AState  then
     Include(Result, ssExtra1);
@@ -1789,13 +1789,15 @@ end;
 procedure SetWindowCursor(AWindow: PGdkWindow; Cursor: PGdkCursor; ASetDefault: Boolean);
 var
   OldCursor: PGdkCursor;
-  Data: gpointer;
+  SavedCursor: PGdkCursor;
 begin
   if ASetDefault then //and ((Cursor <> nil) or ( <> nil)) then
   begin
-    // Override any old default cursor
-    g_object_steal_data(PGObject(AWindow), 'havesavedcursor'); // OK?
-    g_object_steal_data(PGObject(AWindow), 'savedcursor');
+    // Override any old default cursor.
+    SavedCursor := PGdkCursor(g_object_steal_data(PGObject(AWindow), 'savedcursor'));
+    if SavedCursor <> nil then
+      g_object_unref(SavedCursor);
+    g_object_steal_data(PGObject(AWindow), 'havesavedcursor');
     gdk_window_set_cursor(AWindow, Cursor);
     Exit;
   end;
@@ -1804,6 +1806,8 @@ begin
     OldCursor := gdk_window_get_cursor(AWindow);
     if ASetDefault or (g_object_get_data(PGObject(AWindow), 'havesavedcursor') = nil) then
     begin
+      if OldCursor <> nil then
+        g_object_ref(OldCursor);
       g_object_set_data(PGObject(AWindow), 'havesavedcursor', gpointer(1));
       g_object_set_data(PGObject(AWindow), 'savedcursor', gpointer(OldCursor));
     end;
@@ -1812,8 +1816,10 @@ begin
   begin
     if g_object_steal_data(PGObject(AWindow), 'havesavedcursor') <> nil then
     begin
-      Cursor := g_object_steal_data(PGObject(AWindow), 'savedcursor');
-      gdk_window_set_cursor(AWindow, Cursor);
+      SavedCursor := PGdkCursor(g_object_steal_data(PGObject(AWindow), 'savedcursor'));
+      gdk_window_set_cursor(AWindow, SavedCursor);
+      if SavedCursor <> nil then
+        g_object_unref(SavedCursor);
     end;
   end;
 end;
@@ -2268,7 +2274,17 @@ begin
           SizeMsg.Width  := Word(ACtl.Width);
           SizeMsg.Height := Word(ACtl.Height);
         end;
+        {$IFDEF GTK3DEBUGSIZE}
+        DebugLn(Format('Gtk3DrainResizeQueue %s pre-LM_SIZE Msg=%dx%d LCL=%dx%d',
+          [ACtl.ClassName + ':' + ACtl.Name, SizeMsg.Width, SizeMsg.Height,
+           ACtl.Width, ACtl.Height]));
+        {$ENDIF}
         ACtl.WindowProc(TLMessage(SizeMsg));
+        {$IFDEF GTK3DEBUGSIZE}
+        DebugLn(Format('Gtk3DrainResizeQueue %s post-LM_SIZE Msg=%dx%d LCL=%dx%d',
+          [ACtl.ClassName + ':' + ACtl.Name, SizeMsg.Width, SizeMsg.Height,
+           ACtl.Width, ACtl.Height]));
+        {$ENDIF}
       end;
     end;
 

@@ -170,6 +170,19 @@ begin
   Result := FIsWayland;
 end;
 
+function TGtk3WidgetSet.IsKDEPlasmaWaylandSession: boolean;
+var
+  s: string;
+begin
+  //NOTE: this is hack for Qt5 KDE Plasma wayland, so might
+  //be unnecessary with KDE Plasma 6.
+  Result := False;
+  if not FIsWayland then
+    exit;
+  s := SysUtils.GetEnvironmentVariable('XDG_CURRENT_DESKTOP');
+  Result := SameText(s, 'KDE') or SameText(s, 'PLASMA') or SameText(s, 'KDE-Plasma');
+end;
+
 {$IFNDEF UNIX}
 procedure TGtk3WidgetSet.DoWakeMainThread(Sender: TObject);
 begin
@@ -797,12 +810,17 @@ begin
 end;
 
 procedure TGtk3WidgetSet.AppBringToFront;
+var
+  ATime: guint32;
 begin
   if Assigned(Application.MainForm) and Application.MainForm.HandleAllocated then
   begin
     TGtk3Window(Application.MainForm.Handle).raiseWidget;
-    gdk_window_focus(TGtk3Window(Application.MainForm.Handle).Widget^.window,
-                                gtk_get_current_event_time);
+    ATime := gtk_get_current_event_time;
+    if ATime = 0 then
+      ATime := LastUserEventTime;
+    if ATime <> 0 then
+      gdk_window_focus(TGtk3Window(Application.MainForm.Handle).Widget^.window, ATime);
   end;
 end;
 procedure TGtk3WidgetSet.AppSetIcon(const Small, Big: HICON);
