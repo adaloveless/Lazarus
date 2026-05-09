@@ -85,6 +85,80 @@ build_lazbuild() {
         OPT="-n @$cfg" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
 }
 
+build_darwin_ide() {
+    local target=$1
+    local cfg=$2
+    local compiler=$(get_compiler_for_target "$target")
+    local cpu_target=$(echo "$target" | cut -d- -f1)
+    local wrapper="/tmp/ppc${cpu_target}-darwin-wrapper"
+
+    echo "=== Building Darwin IDE for $target ==="
+
+    # Create compiler wrapper so native lazbuild can detect cross-compiler
+    # For detection calls (-i*, -va) use bare compiler; for compilation use -n @cfg
+    cat > "$wrapper" << EOF
+#!/bin/bash
+for arg in "\$@"; do
+    if [[ "\$arg" == -i* ]] || [[ "\$arg" == -va ]]; then
+        exec $compiler "\$@"
+    fi
+done
+exec $compiler -n @$cfg "\$@"
+EOF
+    chmod +x "$wrapper"
+
+    # Build IDE using native lazbuild
+    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
+        --cpu="$cpu_target" --os=darwin --ws=cocoa --build-ide-minimal 2>&1 | tail -20
+
+    rm -f "$wrapper"
+}
+
+build_darwin_starter() {
+    local target=$1
+    local cfg=$2
+    local compiler=$(get_compiler_for_target "$target")
+
+    echo "=== Building Darwin startlazarus for $target ==="
+    local os_target=$(echo "$target" | cut -d- -f2)
+    local cpu_target=$(echo "$target" | cut -d- -f1)
+
+    make -C "$LAZARUS_DIR" starter \
+        PP="$compiler" \
+        FPCDIR="$VP_DIR" \
+        OS_TARGET="$os_target" \
+        CPU_TARGET="$cpu_target" \
+        OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -10
+}
+
+create_darwin_app_bundle() {
+    local target=$1
+    local cpu_target=$(echo "$target" | cut -d- -f1)
+
+    echo "=== Creating Lazarus.app for $target ==="
+    local app_name="lazarus-${cpu_target}-darwin.app"
+    local pcp_bin="$HOME/.lazarus/bin/${target}/lazarus"
+
+    rm -rf "$LAZARUS_DIR/$app_name"
+    cp -r "$LAZARUS_DIR/lazarus.app" "$LAZARUS_DIR/$app_name"
+    mkdir -p "$LAZARUS_DIR/$app_name/Contents/MacOS"
+    rm -f "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus"
+
+    # Copy IDE binary (from lazbuild primary config path or fallback)
+    if [ -f "$pcp_bin" ]; then
+        cp "$pcp_bin" "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus"
+    else
+        echo "WARNING: IDE binary not found at $pcp_bin"
+    fi
+
+    # Copy startlazarus
+    if [ -f "$LAZARUS_DIR/startlazarus" ]; then
+        cp "$LAZARUS_DIR/startlazarus" "$LAZARUS_DIR/$app_name/Contents/MacOS/startlazarus"
+    fi
+
+    file "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus" 2>/dev/null || true
+}
+
 package_release() {
     local target=$1
     local ext=""
@@ -114,9 +188,11 @@ package_release() {
     elif [ "$target" = "arm-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcrossarm"
     elif [ "$target" = "x86_64-darwin" ]; then
-        cp "$compiler" "$staging/compiler/ppcrossx64"
+        echo "NOTE: Native x86_64-darwin compiler not yet available (linker issue under investigation)." > "$staging/COMPILER_NOTES.txt"
+        echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
     elif [ "$target" = "aarch64-darwin" ]; then
-        cp "$compiler" "$staging/compiler/ppcrossaarch64"
+        echo "NOTE: Native aarch64-darwin compiler not yet available (self-compile crash under investigation)." > "$staging/COMPILER_NOTES.txt"
+        echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
     fi
 
     cp -r "$VP_DIR/rtl/units/$target" "$staging/units/rtl"
@@ -139,6 +215,28 @@ package_release() {
     cp -r "$LAZARUS_DIR/designer" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
 
+    # Darwin: include IDE binary, startlazarus, and .app bundle
+    if [[ "$target" == *-darwin ]]; then
+        local cpu_target=$(echo "$target" | cut -d- -f1)
+        local pcp_bin="$HOME/.lazarus/bin/${target}/lazarus"
+        if [ -f "$pcp_bin" ]; then
+            cp "$pcp_bin" "$staging/bin/lazarus"
+        fi
+        if [ -f "$LAZARUS_DIR/startlazarus" ]; then
+            cp "$LAZARUS_DIR/startlazarus" "$staging/bin/startlazarus"
+        fi
+        local app_name="lazarus-${cpu_target}-darwin.app"
+        if [ -d "$LAZARUS_DIR/$app_name" ]; then
+            cp -r "$LAZARUS_DIR/$app_name" "$staging/"
+            # Fix startlazarus symlink inside the app bundle (should point to bin/startlazarus)
+            ln -sf ../../../../../../bin/startlazarus "$staging/$app_name/Contents/Resources/startlazarus.app/Contents/MacOS/startlazarus"
+        fi
+        # Remove broken lhelp.app symlink (lhelp binary not built in this configuration)
+        if [ -L "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
+            rm -f "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp"
+        fi
+    fi
+
     cd "$RELEASE_DIR"
     tar czf "${release_name}.tar.gz" "$release_name"
     echo "Release: $RELEASE_DIR/${release_name}.tar.gz"
@@ -158,6 +256,28 @@ build_platform() {
     make -C "$LAZARUS_DIR" clean 2>&1 | tail -1
 
     build_lazbuild "$target" "$cfg"
+
+    # Darwin: build IDE and .app bundle
+    if [[ "$target" == *-darwin ]]; then
+        # Save darwin lazbuild and restore native lazbuild for IDE build
+        local saved_lazbuild="$LAZARUS_DIR/lazbuild-${target}"
+        cp "$LAZARUS_DIR/lazbuild" "$saved_lazbuild"
+        make -C "$LAZARUS_DIR" lazbuild \
+            PP="$VP_DIR/compiler/ppcx64" \
+            FPCDIR="$VP_DIR" \
+            OS_TARGET=linux \
+            CPU_TARGET=x86_64 \
+            OPT="-n @$LINUX_CFG" 2>&1 | tail -5
+
+        build_darwin_ide "$target" "$cfg"
+        build_darwin_starter "$target" "$cfg"
+        create_darwin_app_bundle "$target"
+
+        # Restore darwin lazbuild for packaging
+        cp "$saved_lazbuild" "$LAZARUS_DIR/lazbuild"
+        rm -f "$saved_lazbuild"
+    fi
+
     package_release "$target"
 }
 
