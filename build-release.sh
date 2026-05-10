@@ -250,6 +250,12 @@ package_release() {
 Lazarus on macOS -- First-Run Setup
 ====================================
 
+IMPORTANT: Run fix-macos.command BEFORE you attempt to launch the .app for
+the first time. Double-clicking the .app first can leave the bundle sealed
+in a way that prevents the fix-up step from working. If that happens,
+re-extract the .app from the tarball into a fresh directory and run
+fix-macos.command on that fresh copy.
+
 The .app in this archive is UNSIGNED (no Apple Developer ID yet). After
 downloading, Safari/Chrome stamp the .tar.gz with a com.apple.quarantine
 extended attribute that Finder's Archive Utility propagates onto the .app.
@@ -283,6 +289,11 @@ MACREADME
 #!/bin/bash
 # fix-macos.command -- de-quarantine + ad-hoc sign Lazarus.app
 # Double-click in Finder OR run from Terminal.
+#
+# IMPORTANT: Run this BEFORE you launch the .app for the first time. A
+# previously-launched bundle can be sealed by launchd in a way that breaks
+# the codesign --deep step below. If that happens, re-extract from the
+# tarball into a fresh directory and run this script first.
 set -e
 cd "$(dirname "$0")"
 
@@ -296,10 +307,33 @@ fi
 
 echo "Target: $APP"
 echo "Removing com.apple.quarantine xattr..."
-xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+# || true keeps us going so the verification step below can give a precise
+# diagnosis if removal actually failed (e.g. sealed bundle).
+xattr -dr com.apple.quarantine "$APP" || true
+
+remaining=$(xattr -lr "$APP" 2>/dev/null | grep -c "com.apple.quarantine" || true)
+if [ "${remaining:-0}" -gt 0 ]; then
+    echo ""
+    echo "WARNING: $remaining file(s) still carry com.apple.quarantine after xattr -dr."
+    echo "This usually means the .app was launched once before this script ran,"
+    echo "and macOS sealed the bundle so xattr can no longer modify it."
+    echo "Fix: re-extract the .app from the tarball into a fresh directory"
+    echo "     and run fix-macos.command BEFORE double-clicking the .app."
+    read -p "Press Return to close..." _
+    exit 1
+fi
 
 echo "Applying ad-hoc code signature (this may take a minute)..."
-codesign --force --deep --sign - "$APP"
+if ! codesign --force --deep --sign - "$APP"; then
+    echo ""
+    echo "ERROR: codesign --deep failed."
+    echo "If the message mentioned 'internal error in Code Signing subsystem',"
+    echo "the .app was launched before this script ran and is now sealed."
+    echo "Fix: re-extract the .app from the tarball into a fresh directory"
+    echo "     and run fix-macos.command BEFORE double-clicking the .app."
+    read -p "Press Return to close..." _
+    exit 1
+fi
 
 echo ""
 echo "Done. Double-click $APP to launch Lazarus."
