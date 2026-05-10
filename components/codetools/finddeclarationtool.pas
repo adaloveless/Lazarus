@@ -3833,6 +3833,11 @@ begin
               end else
                 Result += 'enum';
             end;
+          ctnProcedureType:
+            begin
+              Result +=
+                ExtractCode(TypeNode.StartPos, TypeNode.EndPos,[]);
+            end;
           end;
         end else begin
           case Node.Desc of
