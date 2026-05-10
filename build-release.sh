@@ -237,13 +237,75 @@ package_release() {
         local app_name="lazarus-${cpu_target}-darwin.app"
         if [ -d "$LAZARUS_DIR/$app_name" ]; then
             cp -r "$LAZARUS_DIR/$app_name" "$staging/"
+            local app_root="$staging/$app_name"
+            local app_macos="$app_root/Contents/MacOS"
+            local app_resources="$app_root/Contents/Resources"
+            local bundled_laz="$app_resources/lazarus"
+
             # Retarget the inner startlazarus.app helper symlink so it resolves INSIDE the .app
             # bundle. Old target ../../../../../../bin/startlazarus escapes the bundle (works
             # only with the unpacked tarball; breaks on drag-to-/Applications). New target
             # ../../../../MacOS/startlazarus lands on the outer Contents/MacOS/startlazarus
             # binary that create_darwin_app_bundle already places, so the .app stays
             # self-contained no matter where it lives.
-            ln -sf ../../../../MacOS/startlazarus "$staging/$app_name/Contents/Resources/startlazarus.app/Contents/MacOS/startlazarus"
+            ln -sf ../../../../MacOS/startlazarus "$app_resources/startlazarus.app/Contents/MacOS/startlazarus"
+
+            # Also make the app self-contained for Finder drag-to-/Applications installs.
+            # LazarusDirectory quality checks require these source-tree neighbors; if they
+            # live only beside the .app at tarball root, dragging just the .app loses them.
+            rm -rf "$bundled_laz"
+            mkdir -p "$bundled_laz"
+            for bundle_dir in components lcl packager ide ideintf debugger converter designer tools units compiler; do
+                if [ -e "$staging/$bundle_dir" ]; then
+                    cp -al "$staging/$bundle_dir" "$bundled_laz/" 2>/dev/null || cp -a "$staging/$bundle_dir" "$bundled_laz/"
+                fi
+            done
+
+            # Launch through a tiny wrapper so the bundle-local primary config always
+            # points LazarusDirectory and CompilerFilename back inside the moved .app.
+            if [ -f "$app_macos/lazarus" ] && [ ! -f "$app_macos/lazarus-bin" ]; then
+                mv "$app_macos/lazarus" "$app_macos/lazarus-bin"
+            fi
+            cat > "$app_macos/lazarus" << 'DARWINLAUNCH'
+#!/bin/bash
+set -e
+
+contents_dir="$(cd "$(dirname "$0")/.." && pwd)"
+resources_dir="$contents_dir/Resources"
+pcp_dir="$resources_dir/etc"
+lazarus_dir="$resources_dir/lazarus"
+compiler="$lazarus_dir/compiler/ppcx64"
+env_file="$pcp_dir/environmentoptions.xml"
+
+xml_escape() {
+    printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g" -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+mkdir -p "$pcp_dir"
+lazarus_xml=$(xml_escape "$lazarus_dir/")
+compiler_value=""
+if [ -x "$compiler" ]; then
+    compiler_value="$compiler"
+fi
+compiler_xml=$(xml_escape "$compiler_value")
+
+if [ ! -f "$env_file" ] || ! grep -F "LazarusDirectory Value=\"$lazarus_dir/\"" "$env_file" >/dev/null 2>&1; then
+    cat > "$env_file" << EOF
+<?xml version="1.0"?>
+<CONFIG>
+  <EnvironmentOptions>
+    <Version Value="110" Lazarus="4.99.0"/>
+    <LazarusDirectory Value="$lazarus_xml"/>
+    <CompilerFilename Value="$compiler_xml"/>
+    <TestBuildDirectory Value="~/tmp/"/>
+  </EnvironmentOptions>
+</CONFIG>
+EOF
+fi
+
+exec "$contents_dir/MacOS/lazarus-bin" "--pcp=$pcp_dir" "$@"
+DARWINLAUNCH
+            chmod +x "$app_macos/lazarus"
         fi
         # Remove broken lhelp.app symlink (lhelp binary not built in this configuration)
         if [ -L "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
