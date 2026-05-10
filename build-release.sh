@@ -132,6 +132,27 @@ build_darwin_starter() {
         OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -10
 }
 
+sign_darwin_app_machos() {
+    local app_root=$1
+    local file_info=""
+    local signed_count=0
+
+    if ! command -v rcodesign >/dev/null 2>&1; then
+        echo "WARNING: rcodesign not found; shipping Darwin app Mach-O files without build-time ad-hoc signatures."
+        return 0
+    fi
+
+    echo "=== Ad-hoc signing $(basename "$app_root") Mach-O files with rcodesign ==="
+    while IFS= read -r -d '' candidate; do
+        file_info=$(file "$candidate")
+        if echo "$file_info" | grep -Eq 'Mach-O .*executable|Mach-O .*dynamically linked shared library|Mach-O .*bundle'; then
+            rcodesign sign "$candidate"
+            signed_count=$((signed_count + 1))
+        fi
+    done < <(find "$app_root" -type f -perm /111 -print0)
+    echo "Signed $signed_count Mach-O file(s) inside $(basename "$app_root")."
+}
+
 create_darwin_app_bundle() {
     local target=$1
     local cpu_target=$(echo "$target" | cut -d- -f1)
@@ -318,16 +339,22 @@ fi
 exec "$contents_dir/MacOS/lazarus-bin" "--pcp=$pcp_dir" "$@"
 DARWINLAUNCH
             chmod +x "$app_macos/lazarus"
+
+            # Remove broken lhelp.app symlinks (lhelp binary not built in this configuration)
+            # before signing; rcodesign descends into nested app bundles.
+            if [ -L "$bundled_laz/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
+                rm -f "$bundled_laz/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp"
+            fi
+            if [ -L "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
+                rm -f "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp"
+            fi
+
+            sign_darwin_app_machos "$app_root"
         fi
-        # Remove broken lhelp.app symlink (lhelp binary not built in this configuration)
-        if [ -L "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
-            rm -f "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp"
-        fi
-        # Gatekeeper de-quarantine + ad-hoc sign helper. The .app ships unsigned (no
-        # Apple Developer ID), so on download macOS adds com.apple.quarantine and -- on
-        # Apple Silicon -- refuses the unsigned binary with "is damaged and can't be
-        # opened" (GOD report moz5231r, Cycle 2026-05-10). README + .command let users
-        # fix it without us needing a Linux-side codesign tool.
+        # Gatekeeper de-quarantine + ad-hoc sign helper. rcodesign gives bundled Mach-O
+        # files Linux-built ad-hoc signatures, but browser downloads can still carry quarantine
+        # and there is no Apple Developer ID notarization yet. README + .command remain
+        # the recovery path for Finder/Safari installs (GOD report moz5231r).
         cat > "$staging/README-MACOS.txt" << 'MACREADME'
 Lazarus on macOS -- First-Run Setup
 ====================================
@@ -338,11 +365,12 @@ in a way that prevents the fix-up step from working. If that happens,
 re-extract the .app from the tarball into a fresh directory and run
 fix-macos.command on that fresh copy.
 
-The .app in this archive is UNSIGNED (no Apple Developer ID yet). After
-downloading, Safari/Chrome stamp the .tar.gz with a com.apple.quarantine
-extended attribute that Finder's Archive Utility propagates onto the .app.
-On Apple Silicon, Gatekeeper additionally refuses unsigned binaries
-outright. The error you see is misleading:
+Mach-O files inside this .app are ad-hoc signed during packaging, but the app
+is not signed with an Apple Developer ID and it is not notarized yet. After
+downloading, Safari/Chrome can stamp the .tar.gz with a
+com.apple.quarantine extended attribute that Finder's Archive Utility
+propagates onto the .app. On Apple Silicon, Gatekeeper can still present a
+misleading error:
 
     "lazarus-<arch>-darwin" is damaged and can't be opened.
 
@@ -365,7 +393,8 @@ If you later move the .app to /Applications, re-run the same two commands
 against the moved copy. Quarantine attaches per-file, not per-bundle.
 
 Permanent zero-touch fix is Apple Developer ID + notarization. Until that
-lands, this README + fix-macos.command is the supported flow.
+lands, build-time Mach-O ad-hoc signing plus this README + fix-macos.command
+is the supported flow.
 MACREADME
         cat > "$staging/fix-macos.command" << 'MACFIX'
 #!/bin/bash
