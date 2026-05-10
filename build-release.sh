@@ -241,6 +241,71 @@ package_release() {
         if [ -L "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
             rm -f "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp"
         fi
+        # Gatekeeper de-quarantine + ad-hoc sign helper. The .app ships unsigned (no
+        # Apple Developer ID), so on download macOS adds com.apple.quarantine and -- on
+        # Apple Silicon -- refuses the unsigned binary with "is damaged and can't be
+        # opened" (GOD report moz5231r, Cycle 2026-05-10). README + .command let users
+        # fix it without us needing a Linux-side codesign tool.
+        cat > "$staging/README-MACOS.txt" << 'MACREADME'
+Lazarus on macOS -- First-Run Setup
+====================================
+
+The .app in this archive is UNSIGNED (no Apple Developer ID yet). After
+downloading, Safari/Chrome stamp the .tar.gz with a com.apple.quarantine
+extended attribute that Finder's Archive Utility propagates onto the .app.
+On Apple Silicon, Gatekeeper additionally refuses unsigned binaries
+outright. The error you see is misleading:
+
+    "lazarus-<arch>-darwin" is damaged and can't be opened.
+
+Nothing is actually damaged. The fix in one step:
+
+    Double-click fix-macos.command  (Finder opens Terminal, runs it.)
+
+If macOS blocks fix-macos.command with the same "damaged" message, do this
+once: right-click fix-macos.command -> Open -> Open. macOS remembers the
+override after the first run.
+
+Manual equivalent (Terminal) -- adjust the path:
+
+    xattr -dr com.apple.quarantine /path/to/lazarus-<arch>-darwin.app
+    codesign --force --deep --sign - /path/to/lazarus-<arch>-darwin.app
+
+After either path, double-clicking the .app launches Lazarus normally.
+
+If you later move the .app to /Applications, re-run the same two commands
+against the moved copy. Quarantine attaches per-file, not per-bundle.
+
+Permanent zero-touch fix is Apple Developer ID + notarization. Until that
+lands, this README + fix-macos.command is the supported flow.
+MACREADME
+        cat > "$staging/fix-macos.command" << 'MACFIX'
+#!/bin/bash
+# fix-macos.command -- de-quarantine + ad-hoc sign Lazarus.app
+# Double-click in Finder OR run from Terminal.
+set -e
+cd "$(dirname "$0")"
+
+APP=$(ls -d lazarus-*-darwin.app 2>/dev/null | head -1)
+if [ -z "$APP" ]; then
+    echo "ERROR: No lazarus-*-darwin.app found in $(pwd)"
+    echo "Place this script next to the .app or run it from the unpacked tarball directory."
+    read -p "Press Return to close..." _
+    exit 1
+fi
+
+echo "Target: $APP"
+echo "Removing com.apple.quarantine xattr..."
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+
+echo "Applying ad-hoc code signature (this may take a minute)..."
+codesign --force --deep --sign - "$APP"
+
+echo ""
+echo "Done. Double-click $APP to launch Lazarus."
+read -p "Press Return to close this window..." _
+MACFIX
+        chmod +x "$staging/fix-macos.command"
     fi
 
     cd "$RELEASE_DIR"
