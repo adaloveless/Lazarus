@@ -327,7 +327,6 @@ if [ ! -f "$env_file" ] || ! grep -F "LazarusDirectory Value=\"$lazarus_dir/\"" 
 <?xml version="1.0"?>
 <CONFIG>
   <EnvironmentOptions>
-    <Version Value="110" Lazarus="4.99.0"/>
     <LazarusDirectory Value="$lazarus_xml"/>
     <CompilerFilename Value="$compiler_xml"/>
     <TestBuildDirectory Value="~/tmp/"/>
