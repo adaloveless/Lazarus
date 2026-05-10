@@ -2185,6 +2185,10 @@ implementation
 uses
   Registry;
 {$ENDIF}
+{$IFDEF DARWIN}
+uses
+  Process;
+{$ENDIF}
 
 {$R editoroptions.res}
 
@@ -3002,7 +3006,7 @@ begin
   end;
 end;
 
-function IsWindowsDarkModeActive: Boolean;
+function IsSystemDarkModeActive: Boolean;
 {$IFDEF Windows}
 var
   Reg: TRegistry;
@@ -3026,9 +3030,26 @@ begin
   end;
 end;
 {$ELSE}
+{$IFDEF DARWIN}
+// macOS: NSGlobalDomain key AppleInterfaceStyle returns "Dark" in dark mode and
+// is absent (defaults exits non-zero) in light mode. RunCommand returns False on
+// non-zero exit, which we treat as "not dark".
+var
+  AOutput: string;
+begin
+  Result := False;
+  try
+    if RunCommand('/usr/bin/defaults', ['read', '-g', 'AppleInterfaceStyle'], AOutput) then
+      Result := Pos('Dark', AOutput) > 0;
+  except
+    Result := False;
+  end;
+end;
+{$ELSE}
 begin
   Result := False;
 end;
+{$ENDIF}
 {$ENDIF}
 
 // The lazy-man color scheme factory
@@ -3053,7 +3074,7 @@ begin
     TheColorSchemeFactorSingleton.RegisterScheme(TColorSchemeFromResource.CreateFrom('ColorSchemePascalClassic', 'Pascal Classic', TColorSchemeFactory.XML_COL_PATH));
     TheColorSchemeFactorSingleton.RegisterScheme(TColorSchemeFromResource.CreateFrom('ColorSchemeOcean',         'Ocean',    TColorSchemeFactory.XML_COL_PATH));
     TheColorSchemeFactorSingleton.RegisterScheme(TColorSchemeFromResource.CreateFrom('ColorSchemeDelphi',        'Delphi',   TColorSchemeFactory.XML_COL_PATH));
-    if IsWindowsDarkModeActive then
+    if IsSystemDarkModeActive then
       DefaultColorSchemeName := 'Twilight'
     else
       DefaultColorSchemeName := 'Default';
@@ -6639,7 +6660,7 @@ function TEditorOptions.ReadColorScheme(const LanguageName: String): String;
 (* The name of the currently chosen color-scheme for that language *)
 begin
   if fAutoDetectColorScheme then begin
-    if IsWindowsDarkModeActive then
+    if IsSystemDarkModeActive then
       Result := 'Twilight'
     else
       Result := 'Default';
@@ -6665,7 +6686,7 @@ var
   FormatVersion: Integer;
 begin
   if fAutoDetectColorScheme then begin
-    if IsWindowsDarkModeActive then
+    if IsSystemDarkModeActive then
       Result := 'Twilight'
     else
       Result := 'Default';
