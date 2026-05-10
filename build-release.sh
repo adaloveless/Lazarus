@@ -200,8 +200,16 @@ package_release() {
             echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
         fi
     elif [ "$target" = "aarch64-darwin" ]; then
-        echo "NOTE: Native aarch64-darwin compiler not yet available (self-compile crash under investigation)." > "$staging/COMPILER_NOTES.txt"
-        echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
+        local native_dir=$(find "$VP_DIR/dist/darwin-native" -maxdepth 1 -type d -name 'vibepascal-native-aarch64-darwin-*' 2>/dev/null | sort | tail -1)
+        if [ -n "$native_dir" ] && [ -x "$native_dir/bin/ppca64" ]; then
+            cp "$native_dir/bin/ppca64" "$staging/compiler/ppca64"
+            chmod +x "$staging/compiler/ppca64"
+            echo "Bundled native aarch64-darwin VibePascal compiler from $(basename "$native_dir")." > "$staging/COMPILER_NOTES.txt"
+            [ -f "$native_dir/COMPILER_NOTES.txt" ] && cat "$native_dir/COMPILER_NOTES.txt" >> "$staging/COMPILER_NOTES.txt"
+        else
+            echo "NOTE: Native aarch64-darwin compiler not yet available (self-compile crash under investigation)." > "$staging/COMPILER_NOTES.txt"
+            echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
+        fi
     fi
 
     cp -r "$VP_DIR/rtl/units/$target" "$staging/units/rtl"
