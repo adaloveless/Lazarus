@@ -272,6 +272,16 @@ begin
     ResolvedDir:=GetPhysicalFilenameCached(Dir,false);
     if (ResolvedDir<>Dir) and (CheckDir(ResolvedDir,Result)) then exit;
 
+    {$IFDEF DARWIN}
+    // self-contained .app bundle: probe <bundle>/Contents/Resources/lazarus/
+    // defensive fallback when wrapper fails to seed environmentoptions.xml
+    Dir:=ChompPathDelim(ProgramDirectory);
+    if RightStr(Dir,Length('.app/Contents/MacOS'))='.app/Contents/MacOS' then begin
+      Dir:=LeftStr(Dir,Length(Dir)-Length('MacOS'))+'Resources'+PathDelim+'lazarus';
+      if CheckDir(Dir,Result) then exit;
+    end;
+    {$ENDIF}
+
     // check the primary options
     Dir:=GetValueFromPrimaryConfig(EnvOptsConfFileName,
                                      'EnvironmentOptions/LazarusDirectory/Value');
