@@ -785,6 +785,62 @@ function Test-LazarusDirectoryQuality {
     return @{ Quality = "Compatible"; Note = "OK ($incVersion)" }
 }
 
+function Test-IdePackageLpkConsistency {
+    # GOD UX directive mozyeiiu sub-issue (d) (2026-05-10): Windows IDE startup
+    # showed "Unit 'IDeDbgExcludedRoutinesSettingsFrame' was not found in the
+    # lpk file" -- the IDE's PackageSystem.RegistrationError raised by
+    # ide/packages/idepackager/packagesystem.pas line ~2060 when the autogen
+    # <pkg>package.pas registers a unit that the loaded <pkg>.lpk does not
+    # list. Mirrors that check statically: every RegisterUnit('Name', ...)
+    # call in <pkg>package.pas must appear as a <UnitName Value="Name"/> in
+    # <pkg>.lpk. Catches stale .lpk vs newer build deployments before the
+    # user hits the runtime error at IDE startup.
+    param([string]$Dir)
+
+    $result = @{ Ok = $true; Mismatches = @() }
+    $packagesDir = Join-Path $Dir "ide\packages"
+    if (-not (Test-Path $packagesDir)) {
+        return $result
+    }
+
+    foreach ($pkgDirInfo in (Get-ChildItem -Path $packagesDir -Directory -ErrorAction SilentlyContinue)) {
+        $pkgDir = $pkgDirInfo.FullName
+        $pkgName = $pkgDirInfo.Name
+        $lpkFile = Join-Path $pkgDir "$pkgName.lpk"
+        $autogenFile = Join-Path $pkgDir "$($pkgName)package.pas"
+        if (-not (Test-Path $lpkFile) -or -not (Test-Path $autogenFile)) { continue }
+
+        try {
+            $xml = [xml](Get-Content $lpkFile -Raw)
+        } catch {
+            $result.Ok = $false
+            $result.Mismatches += "Package '$pkgName': could not parse $lpkFile : $_"
+            continue
+        }
+
+        $lpkUnitNames = @{}
+        foreach ($node in $xml.SelectNodes("//UnitName")) {
+            $val = $node.GetAttribute("Value")
+            if ($val) { $lpkUnitNames[$val.ToLower()] = $true }
+        }
+
+        $autogenSrc = Get-Content $autogenFile -Raw
+        $registered = @{}
+        foreach ($m in [regex]::Matches($autogenSrc, "RegisterUnit\(\s*'([^']+)'")) {
+            $registered[$m.Groups[1].Value.ToLower()] = $m.Groups[1].Value
+        }
+
+        foreach ($name in $registered.Keys) {
+            if (-not $lpkUnitNames.ContainsKey($name)) {
+                $result.Mismatches += "Package '$pkgName': $($pkgName)package.pas calls RegisterUnit('$($registered[$name])') but $pkgName.lpk has no matching <UnitName>"
+                $result.Ok = $false
+            }
+        }
+    }
+
+    return $result
+}
+
 function Reset-LazarusConfig {
     Log-Header "Resetting Lazarus user config"
 
@@ -948,6 +1004,17 @@ function Invoke-Doctor {
     } else {
         Log-Err "MetaDarkStyle (dark mode IDE skin): NOT installed"
         foreach ($n in $mds.Notes) { Log-Err "  $n" }
+        $problems++
+    }
+
+    $lpkCheck = Test-IdePackageLpkConsistency -Dir $LazarusDir
+    if ($lpkCheck.Ok) {
+        Log-Ok "IDE package .lpk vs source consistency: OK"
+    } else {
+        Log-Err "IDE package .lpk vs source mismatches detected ($($lpkCheck.Mismatches.Count)):"
+        foreach ($m in $lpkCheck.Mismatches) { Log-Err "  $m" }
+        Log-Err "  Cause: source pulled but .lpk stale, or .lpk pulled but source not yet rebuilt."
+        Log-Err "  Fix: re-pull origin/main, then run -ForceRebuild."
         $problems++
     }
 
