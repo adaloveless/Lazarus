@@ -432,6 +432,19 @@ in a way that prevents the fix-up step from working. If that happens,
 re-extract the .app from the tarball into a fresh directory and run
 fix-macos.command on that fresh copy.
 
+Where the build is:
+
+    Downloaded .tar.gz: usually in ~/Downloads unless your browser is set
+    differently.
+
+    Extracted .app: exactly where you unpacked the tarball. Finder does not
+    move it automatically.
+
+    Permanent install location: /Applications/lazarus-<arch>-darwin.app.
+    After running fix-macos.command successfully, double-click
+    install-macos.command to copy the app there. The script prints the exact
+    installed path when it finishes.
+
 Mach-O files inside this .app are ad-hoc signed during packaging, but the app
 is not signed with an Apple Developer ID and it is not notarized yet. After
 downloading, Safari/Chrome can stamp the .tar.gz with a
@@ -459,6 +472,9 @@ After either path, double-clicking the .app launches Lazarus normally.
 If you later move the .app to /Applications, re-run the same two commands
 against the moved copy. Quarantine attaches per-file, not per-bundle.
 
+The shipped install-macos.command does that move and re-sign step for the
+standard /Applications location.
+
 Permanent zero-touch fix is Apple Developer ID + notarization. Until that
 lands, build-time Mach-O ad-hoc signing plus this README + fix-macos.command
 is the supported flow.
@@ -475,11 +491,17 @@ MACREADME
 set -e
 cd "$(dirname "$0")"
 
+pause_if_interactive() {
+    if [ -t 0 ]; then
+        read -p "$1" _
+    fi
+}
+
 APP=$(ls -d lazarus-*-darwin.app 2>/dev/null | head -1)
 if [ -z "$APP" ]; then
     echo "ERROR: No lazarus-*-darwin.app found in $(pwd)"
     echo "Place this script next to the .app or run it from the unpacked tarball directory."
-    read -p "Press Return to close..." _
+    pause_if_interactive "Press Return to close..."
     exit 1
 fi
 
@@ -497,7 +519,7 @@ if [ "${remaining:-0}" -gt 0 ]; then
     echo "and macOS sealed the bundle so xattr can no longer modify it."
     echo "Fix: re-extract the .app from the tarball into a fresh directory"
     echo "     and run fix-macos.command BEFORE double-clicking the .app."
-    read -p "Press Return to close..." _
+    pause_if_interactive "Press Return to close..."
     exit 1
 fi
 
@@ -509,15 +531,76 @@ if ! codesign --force --deep --sign - "$APP"; then
     echo "the .app was launched before this script ran and is now sealed."
     echo "Fix: re-extract the .app from the tarball into a fresh directory"
     echo "     and run fix-macos.command BEFORE double-clicking the .app."
-    read -p "Press Return to close..." _
+    pause_if_interactive "Press Return to close..."
     exit 1
 fi
 
 echo ""
 echo "Done. Double-click $APP to launch Lazarus."
-read -p "Press Return to close this window..." _
+pause_if_interactive "Press Return to close this window..."
 MACFIX
         chmod +x "$staging/fix-macos.command"
+        cat > "$staging/install-macos.command" << 'MACINSTALL'
+#!/bin/bash
+# install-macos.command -- copy the packaged Lazarus.app to /Applications.
+# Run fix-macos.command first, then run this helper when you want a stable
+# Finder-visible install location.
+set -e
+cd "$(dirname "$0")"
+
+pause_if_interactive() {
+    if [ -t 0 ]; then
+        read -p "$1" _
+    fi
+}
+
+APP=$(ls -d lazarus-*-darwin.app 2>/dev/null | head -1)
+if [ -z "$APP" ]; then
+    echo "ERROR: No lazarus-*-darwin.app found in $(pwd)"
+    echo "Place this script next to the .app or run it from the unpacked tarball directory."
+    pause_if_interactive "Press Return to close..."
+    exit 1
+fi
+
+DEST="/Applications/$APP"
+
+echo "Installing $APP to $DEST"
+if [ -e "$DEST" ]; then
+    echo "Removing existing $DEST"
+    rm -rf "$DEST"
+fi
+
+cp -R "$APP" "$DEST"
+
+echo "Removing quarantine from installed app..."
+xattr -dr com.apple.quarantine "$DEST" || true
+
+remaining=$(xattr -lr "$DEST" 2>/dev/null | grep -c "com.apple.quarantine" || true)
+if [ "${remaining:-0}" -gt 0 ]; then
+    echo ""
+    echo "WARNING: $remaining file(s) still carry com.apple.quarantine after install."
+    echo "Fix: delete $DEST, re-extract the tarball, run fix-macos.command first,"
+    echo "     then run install-macos.command again."
+    pause_if_interactive "Press Return to close..."
+    exit 1
+fi
+
+echo "Applying ad-hoc code signature to installed app..."
+if ! codesign --force --deep --sign - "$DEST"; then
+    echo ""
+    echo "ERROR: codesign --deep failed on $DEST"
+    echo "Fix: delete $DEST, re-extract the tarball, run fix-macos.command first,"
+    echo "     then run install-macos.command again."
+    pause_if_interactive "Press Return to close..."
+    exit 1
+fi
+
+echo ""
+echo "Installed Lazarus at: $DEST"
+echo "Open it from Finder > Applications, or run: open \"$DEST\""
+pause_if_interactive "Press Return to close this window..."
+MACINSTALL
+        chmod +x "$staging/install-macos.command"
     fi
 
     cd "$RELEASE_DIR"
