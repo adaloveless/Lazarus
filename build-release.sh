@@ -393,10 +393,28 @@ pcp_dir="${LAZARUS_PCP:-$HOME/Library/Application Support/Lazarus/$app_name}"
 lazarus_dir="$resources_dir/lazarus"
 compiler=""
 env_file="$pcp_dir/environmentoptions.xml"
+desktop_seed_marker="$pcp_dir/.object-inspector-visible-seeded"
 pcp_lib="$pcp_dir/lib"
 
 xml_escape() {
     printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g" -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+seed_object_inspector_desktop() {
+    [ -f "$desktop_seed_marker" ] && return 0
+    [ -f "$env_file" ] || return 0
+
+    perl -0pi -e '
+        if (m{<ObjectInspectorDlg>.*?</ObjectInspectorDlg>}s) {
+            s{(<ObjectInspectorDlg>.*?<Visible Value=")[^"]*(".*?</ObjectInspectorDlg>)}{$1True$2}s
+                or s{(<ObjectInspectorDlg>.*?)(</ObjectInspectorDlg>)}{$1\n        <Visible Value="True"/>\n      $2}s;
+        } elsif (m{<Desktop1\b}s) {
+            s{(</Desktop1>)}{      <ObjectInspectorDlg>\n        <Caption Value="ObjectInspectorDlg"/>\n        <Visible Value="True"/>\n      </ObjectInspectorDlg>\n    $1}s;
+        } elsif (m{</CONFIG>}s) {
+            s{</CONFIG>}{  <Desktops Count="1" ActiveDesktop="default">\n    <Desktop1 Name="default">\n      <Desktop Version="2" FormIdCount="1">\n        <FormIdList a1="ObjectInspectorDlg"/>\n      </Desktop>\n      <ObjectInspectorDlg>\n        <Caption Value="ObjectInspectorDlg"/>\n        <Visible Value="True"/>\n      </ObjectInspectorDlg>\n    </Desktop1>\n  </Desktops>\n</CONFIG>}s;
+        }
+    ' "$env_file"
+    : > "$desktop_seed_marker"
 }
 
 mkdir -p "$pcp_dir"
@@ -451,9 +469,21 @@ if [ "$rewrite_env" -eq 1 ]; then
     <CompilerFilename Value="$compiler_xml"/>
     <TestBuildDirectory Value="~/tmp/"/>
   </EnvironmentOptions>
+  <Desktops Count="1" ActiveDesktop="default">
+    <Desktop1 Name="default">
+      <Desktop Version="2" FormIdCount="1">
+        <FormIdList a1="ObjectInspectorDlg"/>
+      </Desktop>
+      <ObjectInspectorDlg>
+        <Caption Value="ObjectInspectorDlg"/>
+        <Visible Value="True"/>
+      </ObjectInspectorDlg>
+    </Desktop1>
+  </Desktops>
 </CONFIG>
 EOF
 fi
+seed_object_inspector_desktop
 
 fpc_cfg="$pcp_dir/fpc.cfg"
 if [ -n "$compiler_value" ] && [ -d "$lazarus_dir/units/rtl" ]; then
