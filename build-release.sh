@@ -189,6 +189,48 @@ build_darwin_starter() {
         OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -10
 }
 
+build_darwin_lhelp() {
+    local target=$1
+    local cfg=$2
+    local compiler=$(get_compiler_for_target "$target")
+
+    echo "=== Building Darwin lhelp for $target ==="
+    local os_target=$(echo "$target" | cut -d- -f2)
+    local cpu_target=$(echo "$target" | cut -d- -f1)
+
+    set -o pipefail
+    make -C "$LAZARUS_DIR/components/turbopower_ipro" \
+        PP="$compiler" \
+        FPCDIR="$VP_DIR" \
+        OS_TARGET="$os_target" \
+        CPU_TARGET="$cpu_target" \
+        LAZDIR="$LAZARUS_DIR" \
+        OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -20
+    make -C "$LAZARUS_DIR/components/chmhelp/packages/help" \
+        PP="$compiler" \
+        FPCDIR="$VP_DIR" \
+        OS_TARGET="$os_target" \
+        CPU_TARGET="$cpu_target" \
+        LAZDIR="$LAZARUS_DIR" \
+        OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -20
+    make -C "$LAZARUS_DIR/components/chmhelp/lhelp" \
+        clean \
+        PP="$compiler" \
+        FPCDIR="$VP_DIR" \
+        OS_TARGET="$os_target" \
+        CPU_TARGET="$cpu_target" \
+        LAZDIR="$LAZARUS_DIR" \
+        OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -10
+    make -C "$LAZARUS_DIR/components/chmhelp/lhelp" \
+        PP="$compiler" \
+        FPCDIR="$VP_DIR" \
+        OS_TARGET="$os_target" \
+        CPU_TARGET="$cpu_target" \
+        LAZDIR="$LAZARUS_DIR" \
+        OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -20
+    set +o pipefail
+}
+
 sign_darwin_app_machos() {
     local app_root=$1
     local file_info=""
@@ -231,6 +273,26 @@ rewrite_darwin_lpk_output_dirs() {
             }ge;
         ' "$lpk_file"
     done < <(find "$bundle_root" -name '*.lpk' -print0)
+}
+
+materialize_darwin_lhelp_app() {
+    local lhelp_dir=$1
+    local lhelp_bin="$lhelp_dir/lhelp"
+    local lhelp_app_bin="$lhelp_dir/lhelp.app/Contents/MacOS/lhelp"
+
+    [ -d "$lhelp_dir/lhelp.app/Contents/MacOS" ] || return 0
+
+    if [ -x "$lhelp_bin" ]; then
+        rm -f "$lhelp_app_bin"
+        cp "$lhelp_bin" "$lhelp_app_bin"
+        chmod +x "$lhelp_app_bin"
+        return 0
+    fi
+
+    if [ -L "$lhelp_app_bin" ]; then
+        echo "WARNING: lhelp binary not built for Darwin; removing broken lhelp.app executable symlink."
+        rm -f "$lhelp_app_bin"
+    fi
 }
 
 create_darwin_app_bundle() {
@@ -338,6 +400,10 @@ package_release() {
     cp -r "$LAZARUS_DIR/designer" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
 
+    if [[ "$target" == *-darwin ]]; then
+        materialize_darwin_lhelp_app "$staging/components/chmhelp/lhelp"
+    fi
+
     # Darwin: include IDE binary, startlazarus, and .app bundle
     if [[ "$target" == *-darwin ]]; then
         local cpu_target=$(echo "$target" | cut -d- -f1)
@@ -375,6 +441,7 @@ package_release() {
                 fi
             done
             rewrite_darwin_lpk_output_dirs "$bundled_laz"
+            materialize_darwin_lhelp_app "$bundled_laz/components/chmhelp/lhelp"
 
             # Launch through a tiny wrapper so the per-user primary config points
             # LazarusDirectory and CompilerFilename back inside the moved .app.
@@ -511,15 +578,6 @@ export PATH="$lazarus_dir/bin:$lazarus_dir/compiler:$PATH"
 exec "$contents_dir/MacOS/lazarus-bin" "--pcp=$pcp_dir" "$@"
 DARWINLAUNCH
             chmod +x "$app_macos/lazarus"
-
-            # Remove broken lhelp.app symlinks (lhelp binary not built in this configuration)
-            # before signing; rcodesign descends into nested app bundles.
-            if [ -L "$bundled_laz/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
-                rm -f "$bundled_laz/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp"
-            fi
-            if [ -L "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp" ]; then
-                rm -f "$staging/components/chmhelp/lhelp/lhelp.app/Contents/MacOS/lhelp"
-            fi
 
             sign_darwin_app_machos "$app_root"
         fi
@@ -810,6 +868,7 @@ build_platform() {
 
         build_darwin_ide "$target" "$cfg"
         build_darwin_starter "$target" "$cfg"
+        build_darwin_lhelp "$target" "$cfg"
         create_darwin_app_bundle "$target"
 
         # Restore darwin lazbuild for packaging
