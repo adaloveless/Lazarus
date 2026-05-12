@@ -1893,6 +1893,7 @@ function TPascalParserTool.ReadTilProcedureHeadEnd(
 var IsSpecifier: boolean;
   Attr: TProcHeadAttributes;
   Specifiers: TKeyWordFunctionList;
+  BracketIsAttribute: boolean;
 begin
   //DebugLn('[TPascalParserTool.ReadTilProcedureHeadEnd] ',
   //'Method=',IsMethod,', Function=',IsFunction,', Type=',IsType);
@@ -2030,8 +2031,22 @@ begin
       AtomIsIdentifierSaveE(20180411194054);
       ReadNextAtom;
     end else if CurPos.Flag=cafEdgedBracketOpen then begin
-      if [cmsPrefixedAttributes,cmsIgnoreAttributes]*Scanner.CompilerModeSwitches<>[]
-      then begin
+      // '[' in proc-spec context: ambiguous between Delphi-style attribute
+      // (cmsPrefixedAttributes/cmsIgnoreAttributes) and FPC proc modifier
+      // ([internproc:name], [alias:'name'], [public,alias:'name'], etc).
+      // When attribute-modes are active, peek the next atom: if it is a
+      // known FPC proc-bracket specifier, treat as FPC proc modifier.
+      BracketIsAttribute:=
+        ([cmsPrefixedAttributes,cmsIgnoreAttributes]*Scanner.CompilerModeSwitches<>[]);
+      if BracketIsAttribute then begin
+        ReadNextAtom;
+        if (CurPos.Flag in AllCommonAtomWords)
+            and IsKeyWordProcedureBracketSpecifier.DoIdentifier(@Src[CurPos.StartPos])
+        then
+          BracketIsAttribute:=false;
+        UndoReadNextAtom;
+      end;
+      if BracketIsAttribute then begin
         // Delphi attribute
         UndoReadNextAtom;
         break;

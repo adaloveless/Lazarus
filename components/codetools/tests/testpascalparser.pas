@@ -64,6 +64,7 @@ type
     procedure TestParseGenericsDelphi;
     procedure TestParseExternalConcat;
     procedure TestParseExternalConst;
+    procedure TestParseInternProcBracketModifier;
     procedure TestParseModeTP;
     procedure TestParseIFOpt;
     procedure TestParseProcAnoAssign;
@@ -644,6 +645,39 @@ begin
   '    const id;',
   '  end;',
   'begin']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseInternProcBracketModifier;
+// Regression: in modes that include cmsPrefixedAttributes (delphi, delphiunicode,
+// unleashed) or with {$modeswitch prefixedattributes}, [internproc:NAME] was
+// misrouted to the Delphi-attribute handler and rejected. The parser must peek
+// the bracket contents and treat FPC proc-bracket specifiers (internproc,
+// internconst, alias, public, external, saveregisters, iocheck, safecall) as
+// proc modifiers regardless of attribute mode.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'function Lo(b: byte): byte; [internproc:fpc_in_lo_word];',
+  'function R(d: double): int64; [internconst:in_const_round];',
+  'procedure Pub; [public,alias:''alt_name''];',
+  'implementation',
+  'function Lo(b: byte): byte; begin Result := 0; end;',
+  'function R(d: double): int64; begin Result := 0; end;',
+  'procedure Pub; begin end;',
+  'end.']);
+  ParseModule;
+
+  Add([
+  'unit test2;',
+  '{$mode delphi}',
+  'interface',
+  'function Lo(b: byte): byte; [internproc:fpc_in_lo_word];',
+  'implementation',
+  'function Lo(b: byte): byte; begin Result := 0; end;',
+  'end.']);
   ParseModule;
 end;
 
