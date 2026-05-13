@@ -364,8 +364,21 @@ rebuild_ide() {
         pre_mtime=$(stat -c %Y "$LAZARUS_DIR/lazarus" 2>/dev/null || stat -f %m "$LAZARUS_DIR/lazarus" 2>/dev/null)
     fi
 
+    # GOD mp3nzr3r: ensure customdrawn LCL controls are installed by default on
+    # every site, so users do not need to run `lazbuild --add-package` manually.
+    # --build-ide (not --build-ide-minimal) is required because TBuildIDE.Minimal
+    # skips LoadAutoInstallPackages.
+    local customdrawn_lpk="$LAZARUS_DIR/components/customdrawn/customdrawn.lpk"
+    local add_pkg_args=""
+    if [ -f "$customdrawn_lpk" ]; then
+        add_pkg_args="--add-package=$customdrawn_lpk"
+        log_info "Including customdrawn LCL controls (--add-package)"
+    else
+        log_info "customdrawn.lpk not found at $customdrawn_lpk -- skipping --add-package"
+    fi
+
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
-        --compiler="$VP_COMPILER" --ws="$ws" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+        --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
     local build_exit=${PIPESTATUS[0]}
 
     if [ "$build_exit" -ne 0 ]; then

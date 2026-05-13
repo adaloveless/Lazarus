@@ -640,9 +640,22 @@ function Rebuild-IDE {
         }
     }
 
+    # GOD mp3nzr3r: ensure customdrawn LCL controls are installed by default on
+    # every site, so users do not need to run `lazbuild --add-package` manually.
+    # --build-ide (not --build-ide-minimal) is required because TBuildIDE.Minimal
+    # skips LoadAutoInstallPackages.
+    $customdrawnLpk = Join-Path $LazarusDir "components\customdrawn\customdrawn.lpk"
+    $addPkgArgs = @()
+    if (Test-Path $customdrawnLpk) {
+        $addPkgArgs = @("--add-package=$customdrawnLpk")
+        Log-Info "Including customdrawn LCL controls (--add-package)"
+    } else {
+        Log-Info "customdrawn.lpk not found at $customdrawnLpk -- skipping --add-package"
+    }
+
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 2>&1 |
+    & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @addPkgArgs 2>&1 |
         Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
     $buildExit = $LASTEXITCODE
     $ErrorActionPreference = $prevEAP
