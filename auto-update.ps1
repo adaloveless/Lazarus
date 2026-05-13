@@ -52,6 +52,8 @@ function Log-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor C
 $script:LazarusUpdated = $false
 $script:VPUpdated = $false
 $script:UpstreamUpdated = $false
+$script:BuildProductsWereMissing = $false
+$script:LocalBuildProductsRestored = $false
 
 if (-not $VPDir -and $env:VPDIR -and (Test-Path (Join-Path $env:VPDIR ".git"))) {
     $VPDir = $env:VPDIR
@@ -522,12 +524,13 @@ function Find-Make {
         (Get-Command "make" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
         (Get-Command "mingw32-make" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
         "C:\lazarus\fpc\bin\x86_64-win64\make.exe",
+        "C:\installs\lazarus\fpc\bin\x86_64-win64\make.exe",
         "C:\FPC\bin\x86_64-win64\make.exe"
     )
     foreach ($p in $makePaths) {
         if ($p -and (Test-Path $p)) { return $p }
     }
-    foreach ($root in @("C:\lazarus\fpc", "C:\FPC")) {
+    foreach ($root in @("C:\lazarus\fpc", "C:\installs\lazarus\fpc", "C:\FPC")) {
         if (Test-Path $root) {
             $versionedDirs = Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue |
                 Where-Object { $_.Name -match '^\d+\.\d+' } |
@@ -726,7 +729,13 @@ function Print-Summary {
         Write-Host "  [-] Lazarus: no changes" -ForegroundColor Cyan
     }
 
-    if (-not $script:VPUpdated -and -not $script:UpstreamUpdated -and -not $script:LazarusUpdated) {
+    if ($script:LocalBuildProductsRestored) {
+        Write-Host "  [+] Local build products rebuilt" -ForegroundColor Green
+    } elseif ($script:BuildProductsWereMissing) {
+        Write-Host "  [!] Local build products missing" -ForegroundColor Yellow
+    }
+
+    if (-not $script:VPUpdated -and -not $script:UpstreamUpdated -and -not $script:LazarusUpdated -and -not $script:BuildProductsWereMissing) {
         Write-Host ""
         Log-Ok "Everything is up to date. Nothing to do."
     }
@@ -1303,6 +1312,22 @@ Relaunch-IfUpdated -PreHash $scriptPreHash
 
 $anyUpdated = $script:VPUpdated -or $script:LazarusUpdated -or $script:UpstreamUpdated
 
+$missingBuildProducts = @()
+foreach ($buildProduct in @("lazbuild.exe", "lazarus.exe")) {
+    $buildProductPath = Join-Path $LazarusDir $buildProduct
+    if (-not (Test-Path $buildProductPath)) {
+        $missingBuildProducts += $buildProduct
+    }
+}
+if ($missingBuildProducts.Count -gt 0) {
+    $script:BuildProductsWereMissing = $true
+    Log-Warn "Missing local build product(s): $($missingBuildProducts -join ', ')"
+    if (-not $NoBuild) {
+        Log-Info "Forcing rebuild because required local binaries are missing"
+        $anyUpdated = $true
+    }
+}
+
 if ($ForceRebuild) {
     Log-Info "Force rebuild requested"
     $anyUpdated = $true
@@ -1315,6 +1340,9 @@ if ($anyUpdated) {
         Rebuild-Lazbuild
         Configure-Environment
         Rebuild-IDE
+        if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
+            $script:LocalBuildProductsRestored = $true
+        }
         if ($Release) {
             Log-Header "Building release"
             Log-Info "Run build-release.sh via WSL or cross-compile from Linux for release tarballs."
