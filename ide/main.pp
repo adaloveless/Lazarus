@@ -10492,6 +10492,13 @@ begin
   if (Screen.GetCurrentModalForm<>nil) or (CodeToolBoss.ErrorMessage='') then
   begin
     UpdateSourceNames;
+    // Bug B diagnostic capture (lars/codetools-bug-b-diagnostic, 2026-05-13): unconditional bail log.
+    // Splits the two trigger conditions so silent Bug B (empty-error path) is distinguishable from
+    // modal-blocked dialog suppression. The existing ConsoleVerbosity-gated debugln below is kept
+    // intact for back-compat.
+    DebugLn(['Bug B diagnostic: DoJumpToCodeToolBossError early-bail; ModalForm=',
+      (Screen.GetCurrentModalForm<>nil),'; ErrorMessageEmpty=',(CodeToolBoss.ErrorMessage=''),
+      '; ErrorCodeIsNil=',(CodeToolBoss.ErrorCode=nil),'; ErrorLine=',CodeToolBoss.ErrorLine]);
     if ConsoleVerbosity>0 then
       debugln('Note: (lazarus) TMainIDE.DoJumpToCodeToolBossError No errormessage');
     exit;
@@ -13366,6 +13373,19 @@ begin
       {$ENDIF}
     end else begin
       DebugLn(['Error: (lazarus) TMainIDE.PropHookCreateMethod failed adding method "'+ShortMethodName+'" to source']);
+      // Bug B diagnostic capture (lars/codetools-bug-b-diagnostic, 2026-05-13): silent-fail surface.
+      // CodeToolBoss.CreatePublishedMethod returned false WITHOUT raising. Empty ErrorMessage here
+      // means the codetools silent-bail (one of cycle 278's 7 named paths) fired. Dump caller-side
+      // inputs + codetools error state so future repros disambiguate which path.
+      DebugLn(['Bug B diagnostic: PropHookCreateMethod r=false; MethodClassName="',MethodClassName,
+        '"; AddOverride=',AddOverride,'; ATypeInfoIsNil=',(ATypeInfo=nil),
+        '; SourceFile=',ActiveUnitInfo.Source.Filename,
+        '; ComponentClass=',ActiveUnitInfo.Component.ClassName]);
+      DebugLn(['Bug B diagnostic: CodeToolBoss.ErrorMessage="',CodeToolBoss.ErrorMessage,
+        '"; ErrorLine=',CodeToolBoss.ErrorLine,'; ErrorColumn=',CodeToolBoss.ErrorColumn,
+        '; ErrorCodeIsNil=',(CodeToolBoss.ErrorCode=nil)]);
+      if CodeToolBoss.ErrorCode<>nil then
+        DebugLn(['Bug B diagnostic: CodeToolBoss.ErrorCode.Filename=',CodeToolBoss.ErrorCode.Filename]);
       DoJumpToCodeToolBossError;
       //Firing the exception twice + its handling message dialog causes high CPU load. Issue #41019.
       //raise Exception.Create(lisUnableToCreateNewMethod+' '+lisPleaseFixTheErrorInTheMessageWindow);
