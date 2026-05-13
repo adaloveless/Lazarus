@@ -399,6 +399,7 @@ package_release() {
     cp -r "$LAZARUS_DIR/converter" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/designer" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
+    cp -r "$LAZARUS_DIR/images" "$staging/" 2>/dev/null || true
 
     if [[ "$target" == *-darwin ]]; then
         materialize_darwin_lhelp_app "$staging/components/chmhelp/lhelp"
