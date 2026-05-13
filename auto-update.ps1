@@ -337,13 +337,7 @@ function Ensure-SelfClean {
     $scriptName = "auto-update.ps1"
     $result = Invoke-Git -WorkDir $RepoDir -GitArgs @("status", "--porcelain", "--", $scriptName)
     if ($result.Output -and $result.Output.Trim().Length -gt 0) {
-        Log-Warn "auto-update.ps1 has local modifications -- restoring upstream version"
-        $restore = Invoke-Git -WorkDir $RepoDir -GitArgs @("checkout", "--", $scriptName)
-        if ($restore.ExitCode -eq 0) {
-            Log-Ok "Restored clean auto-update.ps1 from git"
-        } else {
-            Log-Err "Failed to restore auto-update.ps1: $($restore.Error)"
-        }
+        Log-Warn "auto-update.ps1 has local modifications -- leaving local version in place"
     }
 }
 
@@ -1353,7 +1347,7 @@ if (-not $NoLaunch) {
         Start-Process -FilePath $exeToLaunch -WorkingDirectory $LazarusDir
         Log-Ok "IDE launched"
     } else {
-        Log-Err "Cannot launch IDE — neither startlazarus.exe nor lazarus.exe found in $LazarusDir"
+        Log-Err "Cannot launch IDE - neither startlazarus.exe nor lazarus.exe found in $LazarusDir"
     }
 }
 
