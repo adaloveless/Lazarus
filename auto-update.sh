@@ -371,7 +371,7 @@ rebuild_ide() {
     local customdrawn_lpk="$LAZARUS_DIR/components/customdrawn/customdrawn.lpk"
     local add_pkg_args=""
     if [ -f "$customdrawn_lpk" ]; then
-        add_pkg_args="--add-package=$customdrawn_lpk"
+        add_pkg_args="--add-package $customdrawn_lpk"
         log_info "Including customdrawn LCL controls (--add-package)"
     else
         log_info "customdrawn.lpk not found at $customdrawn_lpk -- skipping --add-package"

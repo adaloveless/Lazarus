@@ -647,7 +647,7 @@ function Rebuild-IDE {
     $customdrawnLpk = Join-Path $LazarusDir "components\customdrawn\customdrawn.lpk"
     $addPkgArgs = @()
     if (Test-Path $customdrawnLpk) {
-        $addPkgArgs = @("--add-package=$customdrawnLpk")
+        $addPkgArgs = @("--add-package", $customdrawnLpk)
         Log-Info "Including customdrawn LCL controls (--add-package)"
     } else {
         Log-Info "customdrawn.lpk not found at $customdrawnLpk -- skipping --add-package"

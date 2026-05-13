@@ -176,7 +176,7 @@ EOF
     set -o pipefail
     "$LAZARUS_DIR/lazbuild" --pcp="$pcp" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
         --cpu="$cpu_target" --os=darwin --ws=cocoa \
-        --add-package="$LAZARUS_DIR/components/customdrawn/customdrawn.lpk" \
+        --add-package "$LAZARUS_DIR/components/customdrawn/customdrawn.lpk" \
         --build-ide 2>&1 | tail -40
     set +o pipefail
 
