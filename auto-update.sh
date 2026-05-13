@@ -32,6 +32,7 @@ usage() {
     echo "  --fix-lpi        Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
     echo "  --build-ide      Also rebuild the full Lazarus IDE (requires GTK2 or Qt5)"
     echo "  --force-rebuild  Force rebuild even if no updates are available"
+    echo "  --doctor         Run diagnostics (no state changes); exit 1 if problems found"
     echo "  --help           Show this help"
     echo ""
     echo "Default: pull updates and rebuild lazbuild if anything changed."
@@ -47,6 +48,7 @@ FIX_LPI=0
 BUILD_IDE=0
 FORCE_REBUILD=0
 SELF_UPDATED=0
+DOCTOR=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -59,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --build-ide)   BUILD_IDE=1; shift ;;
         --force-rebuild) FORCE_REBUILD=1; shift ;;
         --self-updated) SELF_UPDATED=1; shift ;;
+        --doctor)      DOCTOR=1; shift ;;
         --help|-h)     usage ;;
         *)             echo "Unknown option: $1"; usage ;;
     esac
@@ -99,6 +102,7 @@ relaunch_if_updated() {
         [ "$FIX_LPI" -eq 1 ] && args+=("--fix-lpi")
         [ "$BUILD_IDE" -eq 1 ] && args+=("--build-ide")
         [ "$FORCE_REBUILD" -eq 1 ] && args+=("--force-rebuild")
+        [ "$DOCTOR" -eq 1 ] && args+=("--doctor")
         exec "$script_path" "${args[@]}"
     fi
 }
@@ -390,6 +394,132 @@ rebuild_ide() {
     log_ok "lazarus rebuilt ($size)"
 }
 
+test_ide_package_lpk_consistency() {
+    # Mirrors Test-IdePackageLpkConsistency in auto-update.ps1 (cycle 232 / #114).
+    # GOD UX directive mozyeiiu sub-issue (d): IDE startup raised "Unit 'X' was
+    # not found in the lpk file" from ide/packages/idepackager/packagesystem.pas
+    # line ~2060 because <pkg>package.pas listed a RegisterUnit('X', ...) call
+    # but the loaded <pkg>.lpk had no matching <UnitName Value="X"/>. This is
+    # the static mirror -- catches the same condition before the IDE launches.
+    local packages_dir="$LAZARUS_DIR/ide/packages"
+    local mismatch_count=0
+
+    if [ ! -d "$packages_dir" ]; then
+        log_ok "IDE package .lpk vs source consistency: OK (no ide/packages dir)"
+        return 0
+    fi
+
+    for pkg_dir in "$packages_dir"/*/; do
+        [ -d "$pkg_dir" ] || continue
+        local pkg_name
+        pkg_name=$(basename "$pkg_dir")
+        local lpk_file="${pkg_dir}${pkg_name}.lpk"
+        local autogen_file="${pkg_dir}${pkg_name}package.pas"
+
+        [ -f "$lpk_file" ] && [ -f "$autogen_file" ] || continue
+
+        local lpk_unit_names
+        if command -v xmlstarlet &>/dev/null; then
+            lpk_unit_names=$(xmlstarlet sel -t -v '//UnitName/@Value' -n "$lpk_file" 2>/dev/null \
+                | tr '[:upper:]' '[:lower:]' | sort -u)
+        else
+            lpk_unit_names=$(grep -oE '<UnitName Value="[^"]+"' "$lpk_file" 2>/dev/null \
+                | sed -E 's/.*<UnitName Value="([^"]+)".*/\1/' \
+                | tr '[:upper:]' '[:lower:]' | sort -u)
+        fi
+
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            local name_lower
+            name_lower=$(echo "$name" | tr '[:upper:]' '[:lower:]')
+            if ! grep -qFx "$name_lower" <<< "$lpk_unit_names"; then
+                log_err "Package '$pkg_name': ${pkg_name}package.pas calls RegisterUnit('$name') but $pkg_name.lpk has no matching <UnitName>"
+                mismatch_count=$((mismatch_count + 1))
+            fi
+        done < <(grep -oE "RegisterUnit\(\s*'[^']+'" "$autogen_file" 2>/dev/null \
+            | sed -E "s/.*RegisterUnit\(\s*'([^']+)'.*/\1/")
+    done
+
+    if [ "$mismatch_count" -eq 0 ]; then
+        log_ok "IDE package .lpk vs source consistency: OK"
+        return 0
+    else
+        log_err "  Cause: source pulled but .lpk stale, or .lpk pulled but source not yet rebuilt."
+        log_err "  Fix: cd $LAZARUS_DIR && git pull && ./auto-update.sh --force-rebuild"
+        return 1
+    fi
+}
+
+invoke_doctor() {
+    log_header "Lazarus + VibePascal Doctor"
+    local problems=0
+
+    log_info "Lazarus directory: $LAZARUS_DIR"
+    if [ -d "$LAZARUS_DIR/lcl" ] && [ -d "$LAZARUS_DIR/ide" ] && [ -d "$LAZARUS_DIR/components" ]; then
+        log_ok "Lazarus dir structure: lcl/ ide/ components/ all present"
+    else
+        log_err "Lazarus dir incomplete: missing one of lcl/ ide/ components/"
+        problems=$((problems + 1))
+    fi
+
+    log_info "VibePascal directory: $VP_DIR"
+    if [ -x "$VP_COMPILER" ]; then
+        log_ok "VibePascal compiler: $VP_COMPILER"
+    else
+        log_err "VibePascal compiler not found at $VP_COMPILER"
+        problems=$((problems + 1))
+    fi
+
+    local vp_cfg="$VP_DIR/bin/fpc.cfg"
+    if [ -f "$vp_cfg" ]; then
+        local cfg_paths
+        cfg_paths=$(grep -c '^-Fu' "$vp_cfg" 2>/dev/null || echo 0)
+        log_ok "VibePascal fpc.cfg: $vp_cfg ($cfg_paths unit paths)"
+    else
+        log_warn "VibePascal fpc.cfg not found at $vp_cfg (run --setup or --force-rebuild)"
+    fi
+
+    local user_cfg="$HOME/.lazarus/environmentoptions.xml"
+    if [ -f "$user_cfg" ]; then
+        log_ok "User config: $user_cfg"
+    else
+        log_warn "User config not found at $user_cfg (run --setup)"
+    fi
+
+    local lazarus_bin="$LAZARUS_DIR/lazarus"
+    if [ -x "$lazarus_bin" ]; then
+        local mtime
+        mtime=$(stat -c '%y' "$lazarus_bin" 2>/dev/null | cut -d. -f1)
+        [ -z "$mtime" ] && mtime=$(stat -f '%Sm' "$lazarus_bin" 2>/dev/null)
+        log_ok "lazarus binary: $lazarus_bin ($mtime)"
+    else
+        log_warn "lazarus binary not built yet (run --build-ide)"
+    fi
+
+    local lazbuild_bin="$LAZARUS_DIR/lazbuild"
+    if [ -x "$lazbuild_bin" ]; then
+        log_ok "lazbuild binary: $lazbuild_bin"
+    else
+        log_warn "lazbuild binary not built yet"
+    fi
+
+    if ! test_ide_package_lpk_consistency; then
+        problems=$((problems + 1))
+    fi
+
+    echo ""
+    if [ "$problems" -eq 0 ]; then
+        log_ok "No problems found. Toolchain looks healthy."
+    else
+        log_err "$problems problem(s) found."
+        log_info "Suggested fixes:"
+        log_info "  1. cd $LAZARUS_DIR && git pull"
+        log_info "  2. ./auto-update.sh --force-rebuild"
+        log_info "  3. If problems persist, verify VibePascal at $VP_DIR"
+    fi
+    return $problems
+}
+
 fix_lpi_files() {
     local search_dir="${1:-$LAZARUS_DIR}"
     log_header "Scanning .lpi files for UnitOutputDirectory fixes"
@@ -425,6 +555,11 @@ fix_lpi_files() {
         log_ok "Fixed $fix_count .lpi file(s)"
     fi
 }
+
+if [ "$DOCTOR" -eq 1 ]; then
+    invoke_doctor
+    exit $?
+fi
 
 if [ "$FIX_LPI" -eq 1 ]; then
     fix_lpi_files
