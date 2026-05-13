@@ -148,6 +148,7 @@ build_darwin_ide() {
     local compiler=$(get_compiler_for_target "$target")
     local cpu_target=$(echo "$target" | cut -d- -f1)
     local wrapper="/tmp/ppc${cpu_target}-darwin-wrapper"
+    local pcp="/tmp/lazbuild-pcp-${target}"
 
     echo "=== Building Darwin IDE for $target ==="
 
@@ -162,14 +163,25 @@ exec $compiler -n @$cfg "\$@"
 EOF
     chmod +x "$wrapper"
 
-    # Build IDE using native lazbuild. set -o pipefail ensures we surface
-    # lazbuild failures even though we tee through tail.
+    # Per-build isolated PrimaryConfigPath: customdrawn becomes the only entry in
+    # staticpackages.inc, no cross-target leak between IDE builds. Pre-clearing
+    # staticpackages.inc keeps the user-install list deterministic across runs.
+    rm -rf "$pcp"
+    mkdir -p "$pcp"
+
+    # Build IDE with customdrawn LCL controls installed by default (GOD mp3l6s84:
+    # "I want to have customdrawn LCL controls as a default fucking package").
+    # --add-package registers + links customdrawn; --build-ide (NOT --build-ide-minimal)
+    # is required because TBuildIDE.Minimal skips LoadAutoInstallPackages.
     set -o pipefail
-    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
-        --cpu="$cpu_target" --os=darwin --ws=cocoa --build-ide-minimal 2>&1 | tail -40
+    "$LAZARUS_DIR/lazbuild" --pcp="$pcp" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
+        --cpu="$cpu_target" --os=darwin --ws=cocoa \
+        --add-package="$LAZARUS_DIR/components/customdrawn/customdrawn.lpk" \
+        --build-ide 2>&1 | tail -40
     set +o pipefail
 
     rm -f "$wrapper"
+    rm -rf "$pcp"
 }
 
 build_darwin_starter() {
