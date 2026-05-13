@@ -448,7 +448,7 @@ package_release() {
             # live only beside the .app at tarball root, dragging just the .app loses them.
             rm -rf "$bundled_laz"
             mkdir -p "$bundled_laz"
-            for bundle_dir in bin components lcl packager ide ideintf debugger converter designer tools units compiler; do
+            for bundle_dir in bin components lcl packager ide ideintf debugger converter designer tools units compiler images; do
                 if [ -e "$staging/$bundle_dir" ]; then
                     cp -al "$staging/$bundle_dir" "$bundled_laz/" 2>/dev/null || cp -a "$staging/$bundle_dir" "$bundled_laz/"
                 fi
