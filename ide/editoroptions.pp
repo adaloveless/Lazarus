@@ -3019,7 +3019,11 @@ begin
       if Reg.OpenKeyReadOnly('Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') then
       begin
         if Reg.ValueExists('AppsUseLightTheme') then
-          Result := Reg.ReadInteger('AppsUseLightTheme') = 0;
+          Result := Reg.ReadInteger('AppsUseLightTheme') = 0
+        else if Reg.ValueExists('SystemUsesLightTheme') then
+          // Windows 11 fallback: if AppsUseLightTheme is not explicitly set,
+          // infer from the system shell theme.
+          Result := Reg.ReadInteger('SystemUsesLightTheme') = 0;
         Reg.CloseKey;
       end;
     finally
