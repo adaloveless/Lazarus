@@ -11,9 +11,9 @@ uses
   BaseIDEIntf;
 
 const
-  amOptAllowDarkName='Allow dark';
-  amOptForceDarkName='Force dark';
-  amOptForceLightName='Force light';
+  amOptAllowDarkName='Match OS';
+  amOptForceDarkName='Dark';
+  amOptForceLightName='Light';
 resourcestring
   RSamOptAllowDarkName=amOptAllowDarkName;
   RSamOptForceDarkName=amOptForceDarkName;

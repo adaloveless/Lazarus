@@ -10,7 +10,7 @@ uses
   MetaDarkStyleDSGNOptions,uDarkStyleSchemes;
 
 resourceString
-  RSDarkStyleDSGNOptionsFrame='Dark style';
+  RSDarkStyleDSGNOptionsFrame='Theme';
 
 
 type
