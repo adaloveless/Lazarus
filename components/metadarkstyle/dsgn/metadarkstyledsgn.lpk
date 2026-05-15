@@ -37,7 +37,7 @@
         <PackageName Value="IDEIntf"/>
       </Item>
       <Item>
-        <PackageName Value="MetaDarkStyle"/>
+        <PackageName Value="LCLBase"/>
       </Item>
       <Item>
         <PackageName Value="FCL"/>
