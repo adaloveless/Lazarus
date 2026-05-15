@@ -69,7 +69,7 @@ const
     );
 
   // extra packages for the release, alias "bigide"
-  LazarusIDEReleasePkgNames: array[0..33] of string = (
+  LazarusIDEReleasePkgNames: array[0..34] of string = (
 	  'SyneditDsgn',
     'DockedFormEditor',
     'OnlinePackageManager',
@@ -103,7 +103,8 @@ const
     'Pas2jsDsgn',
     'Charactermap_ide_pkg',
     'AnchorDockingDsgn',
-    'BGRABitmapPack'
+    'BGRABitmapPack',
+    'bgracontrols'
     );
 
 implementation
