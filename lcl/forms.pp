@@ -2053,7 +2053,11 @@ implementation
 {$endif}
 
 uses
-  WSControls, WSForms; // Widgetset uses circle is allowed
+  WSControls, WSForms // Widgetset uses circle is allowed
+  {$IFDEF MSWINDOWS}
+  , uMetaDarkStyle, uDarkStyleSchemes
+  {$ENDIF}
+  ;
 
 var
   HandlingException: Boolean = False;

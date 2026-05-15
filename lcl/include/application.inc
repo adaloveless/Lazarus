@@ -529,6 +529,16 @@ begin
     if Res <> 0 then
       Icon.LoadFromResourceHandle(Hinstance, Res);
   end;
+
+  {$IFDEF MSWINDOWS}
+  // Auto-apply dark mode if system is in dark mode. PreferredAppMode defaults
+  // to pamAllowDark (uDarkStyleParams), so InitDarkMode reads the registry and
+  // enables dark only when the system theme is dark. On light systems
+  // ApplyDarkStyle early-exits. To force light or force dark regardless of the
+  // system setting, set uDarkStyleParams.PreferredAppMode in your .lpr BEFORE
+  // calling Application.Initialize.
+  uMetaDarkStyle.ApplyMetaDarkStyle(uDarkStyleSchemes.GetScheme('Dark'));
+  {$ENDIF}
 end;
 
 {------------------------------------------------------------------------------
