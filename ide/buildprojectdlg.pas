@@ -135,7 +135,7 @@ end;
 function CleanDirectoryByMask(const ADirectory, AMask: string): Integer;
 var
   Cache: TCTDirectoryCache;
-  Files: TStringList;
+  Files: TStrings;
   MaskList: TMaskList;
   i: Integer;
   Dir, Filename: string;
