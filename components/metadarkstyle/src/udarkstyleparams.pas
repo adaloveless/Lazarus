@@ -38,7 +38,7 @@ type
   );
 
 var
-  PreferredAppMode:TPreferredAppMode=pamForceLight;
+  PreferredAppMode:TPreferredAppMode=pamAllowDark;
   IsDarkModeEnabled: Boolean = False;
 
 implementation
