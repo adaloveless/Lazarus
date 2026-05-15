@@ -51,7 +51,7 @@ procedure InitDarkMode;
 implementation
 
 uses
-  UxTheme, JwaWinUser, FileInfo, uDarkStyleParams
+  UxTheme, JwaWinUser, FileInfo, Registry, uDarkStyleParams
   {$IF DEFINED(LCLQT5)}
   ,Qt5
   {$ENDIF}
@@ -94,12 +94,44 @@ begin
     Result:= false;
 end;
 
+function IsSystemDarkModeActive: Boolean;
+var
+  Reg: TRegistry;
+begin
+  Result := False;
+  try
+    Reg := TRegistry.Create(KEY_READ);
+    try
+      Reg.RootKey := HKEY_CURRENT_USER;
+      if Reg.OpenKeyReadOnly('Software\Microsoft\Windows\CurrentVersion\Themes\Personalize') then
+      begin
+        if Reg.ValueExists('AppsUseLightTheme') then
+          Result := Reg.ReadInteger('AppsUseLightTheme') = 0
+        else if Reg.ValueExists('SystemUsesLightTheme') then
+          Result := Reg.ReadInteger('SystemUsesLightTheme') = 0;
+      end;
+    finally
+      Reg.Free;
+    end;
+  except
+    Result := False;
+  end;
+end;
+
 function ShouldAppsUseDarkMode: Boolean;
 var
   bb:bool;
 begin
-  bb:=_ShouldAppsUseDarkMode();
-  Result:= (_ShouldAppsUseDarkMode() or (AppMode = pamForceDark)) and not IsHighContrast();
+  if Assigned(_ShouldAppsUseDarkMode) then
+    bb:=_ShouldAppsUseDarkMode()
+  else
+    bb:=False;
+  Result:= (bb or (AppMode = pamForceDark)) and not IsHighContrast();
+  // Fallback: on newer Windows 11 builds the private uxtheme ordinal 132
+  // may be missing or return false even when the system is in dark mode.
+  // Trust the registry when the API disagrees or is absent.
+  if not Result and not IsHighContrast() then
+    Result := IsSystemDarkModeActive;
 end;
 
 procedure RefreshTitleBarThemeColor(hWnd: HWND);
@@ -110,7 +142,10 @@ var
   dark: BOOL;
   dwAttribute: DWORD;
 begin
-  dark:= (_IsDarkModeAllowedForWindow(hWnd) and ShouldAppsUseDarkMode);
+  if Assigned(_IsDarkModeAllowedForWindow) then
+    dark:= (_IsDarkModeAllowedForWindow(hWnd) and ShouldAppsUseDarkMode)
+  else
+    dark:= ShouldAppsUseDarkMode;
 
   if (Win32BuildNumber < 19041) then
     dwAttribute:= DWMWA_USE_IMMERSIVE_DARK_MODE_OLD
@@ -270,18 +305,19 @@ begin
 
           @DwmSetWindowAttribute := GetProcAddress(LoadLibrary('dwmapi.dll'), 'DwmSetWindowAttribute');
 
-          if Assigned(_RefreshImmersiveColorPolicyState) and
-             Assigned(_ShouldAppsUseDarkMode) and
-             Assigned(_AllowDarkModeForWindow) and
-             (Assigned(_AllowDarkModeForApp) or Assigned(_SetPreferredAppMode)) and
-             Assigned(_IsDarkModeAllowedForWindow) then
+          // On newer Windows 11 builds Microsoft may remove private uxtheme
+          // ordinals. Only _AllowDarkModeForWindow and the app-mode setter
+          // are strictly required; the rest have safe fallbacks.
+          if Assigned(_AllowDarkModeForWindow) and
+             (Assigned(_AllowDarkModeForApp) or Assigned(_SetPreferredAppMode)) then
           begin
             g_darkModeSupported := true;
             AppMode := PreferredAppMode;
             if AppMode <> pamForceLight then
             begin
               AllowDarkModeForApp(true);
-              _RefreshImmersiveColorPolicyState();
+              if Assigned(_RefreshImmersiveColorPolicyState) then
+                _RefreshImmersiveColorPolicyState();
               IsDarkModeEnabled := ShouldAppsUseDarkMode;
               if IsDarkModeEnabled then AppMode := pamForceDark;
             end;
