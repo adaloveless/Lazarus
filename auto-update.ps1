@@ -487,14 +487,14 @@ function Pull-LazarusUpstream {
         }
         Log-Ok "Fast-forward merge from upstream"
     } else {
-        Log-Info "Rebasing $localCommits local commit(s) onto upstream..."
-        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("rebase", "upstream/main")
+        Log-Info "Merging upstream/main ($localCommits local commit(s) ahead)..."
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge upstream/main", "upstream/main")
         if ($result.ExitCode -ne 0) {
-            Log-Err "Rebase failed: $($result.Error)"
+            Log-Err "Merge failed: $($result.Error)"
             Log-Err "Resolve conflicts manually, then re-run."
             return
         }
-        Log-Ok "Rebase onto upstream complete"
+        Log-Ok "Merge from upstream complete"
     }
 
     Log-Info "Pushing to origin..."
