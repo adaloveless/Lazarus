@@ -65,7 +65,7 @@ uses
   Splash,
   Main,
   LazDebuggerFpLldb, LazDebuggerFp, laz.virtualtreeview_package,
-  LazControlDsgn,
+  LazControlDsgn, metadarkstyledsgn,
   // use the custom IDE static packages AFTER 'main'
   {$IFDEF AddStaticPkgs}
   // In case you get duplicate identifier errors in the uses clause,
@@ -84,7 +84,6 @@ uses
     OnlinePackageManager,
     SimpleWebServerGUI, LazProjectGroups, Pas2jsDsgn, charactermap_ide_pkg,
     AnchorDockingDsgn, DockedFormEditor,
-    metadarkstyledsgn,
   {$ENDIF}
   MainBase;
 

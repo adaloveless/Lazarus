@@ -114,7 +114,9 @@ DEFAULT_IDE_OPTIONS=  \
   -Fupackages/idepackager/lib/$(CPU_TARGET)-$(OS_TARGET) \
   -Fupackages/ideproject/lib/$(CPU_TARGET)-$(OS_TARGET) \
   -Fupackages/ideutils/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
-  -Fupackages/idedebugger/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM)
+  -Fupackages/idedebugger/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
+  -Fu../components/metadarkstyle/lib/$(CPU_TARGET)-$(OS_TARGET) \
+  -Fu../components/metadarkstyle/dsgn/lib/$(CPU_TARGET)-$(OS_TARGET)
 
 #
 # Options to compile an IDE with a lot of packages
@@ -157,9 +159,7 @@ BIG_IDE_OPTIONS=-dBigIDE $(DEFAULT_IDE_OPTIONS) \
   -Fu../components/charactermap/design/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
   -Fu../components/dockedformeditor/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
   -Fu../components/anchordocking/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
-  -Fu../components/anchordocking/design/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
-  -Fu../components/metadarkstyle/lib/$(CPU_TARGET)-$(OS_TARGET) \
-  -Fu../components/metadarkstyle/dsgn/lib/$(CPU_TARGET)-$(OS_TARGET)
+  -Fu../components/anchordocking/design/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM)
 
 #
 # Options for compiling lazbuild
