@@ -38,8 +38,12 @@ procedure LoadLResources;
 procedure LoadPath(APath,AMask:string);
 
 implementation
+// Windows in implementation-uses shadows LCLIntf.GetSysColor with the WinAPI
+// version below; LCLIntf.GetSysColor dispatches through WidgetSet which is
+// still nil when our init fires (Forms.pp pulls us in before Interfaces
+// creates the widgetset). Bypass avoids the AV at startup.
 uses
-  uDarkStyleSchemesLoader;
+  uDarkStyleSchemesLoader{$IFDEF MSWINDOWS}, Windows{$ENDIF};
 
 function SchameName2SchameID(AName:TSchemeName):TSchemeKey;inline;
 begin
