@@ -817,6 +817,8 @@ begin
     ecCleanUpAndBuild         : Result:= srkmecCleanUpAndBuild;
     ecBuildManyModes          : Result:= srkmecBuildManyModes;
     ecAbortBuild              : Result:= srkmecAbortBuild;
+    ecClean                   : Result:= srkmecClean;
+    ecCleanAndBuild           : Result:= srkmecCleanAndBuild;
     ecRunWithoutDebugging     : Result:= srkmecRunWithoutDebugging;
     ecRunWithDebugging        : Result:= srkmecRunWithDebugging;
     ecRun                     : Result:= srkmecRun;
@@ -1487,6 +1489,8 @@ begin
   ecBuild:               SetSingle(VK_F9,[ssShift]);
   ecQuickCompile:        SetSingle(VK_UNKNOWN,[]);
   ecCleanUpAndBuild:     SetSingle(VK_UNKNOWN,[]);
+  ecClean:               SetSingle(VK_UNKNOWN,[]);
+  ecCleanAndBuild:       SetSingle(VK_UNKNOWN,[]);
   ecBuildManyModes:      SetSingle(VK_UNKNOWN,[]);
   ecAbortBuild:          SetSingle(VK_UNKNOWN,[]);
   ecRunWithoutDebugging: SetSingle(VK_F9, [XCtrl, ssShift]);
@@ -1948,6 +1952,8 @@ begin
   ecBuild:               SetSingle(VK_F9,[ssShift]);
   ecQuickCompile:        SetSingle(VK_UNKNOWN,[]);
   ecCleanUpAndBuild:     SetSingle(VK_UNKNOWN,[]);
+  ecClean:               SetSingle(VK_UNKNOWN,[]);
+  ecCleanAndBuild:       SetSingle(VK_UNKNOWN,[]);
   ecBuildManyModes:      SetSingle(VK_UNKNOWN,[]);
   ecAbortBuild:          SetSingle(VK_UNKNOWN,[]);
   ecRunWithoutDebugging: SetSingle(VK_F9,[ssCtrl, ssShift]);
@@ -2605,6 +2611,8 @@ begin
   ecBuild:               SetSingle(VK_UNKNOWN,[]);
   ecQuickCompile:        SetSingle(VK_UNKNOWN,[]);
   ecCleanUpAndBuild:     SetSingle(VK_UNKNOWN,[]);
+  ecClean:               SetSingle(VK_UNKNOWN,[]);
+  ecCleanAndBuild:       SetSingle(VK_UNKNOWN,[]);
   ecBuildManyModes:      SetSingle(VK_UNKNOWN,[]);
   ecAbortBuild:          SetSingle(VK_UNKNOWN,[]);
   ecRunWithoutDebugging: SetSingle(VK_R,[ssMeta, ssCtrl]);
@@ -2781,6 +2789,8 @@ begin
   ecBuild:               SetSingle(VK_F9,[ssShift]);
   ecQuickCompile:        SetSingle(VK_UNKNOWN,[]);
   ecCleanUpAndBuild:     SetSingle(VK_UNKNOWN,[]);
+  ecClean:               SetSingle(VK_UNKNOWN,[]);
+  ecCleanAndBuild:       SetSingle(VK_UNKNOWN,[]);
   ecBuildManyModes:      SetSingle(VK_UNKNOWN,[]);
   ecAbortBuild:          SetSingle(VK_UNKNOWN,[]);
   ecRun:                 SetSingle(VK_F9,[],          VK_F9,[ssMeta]);
@@ -3340,6 +3350,8 @@ begin
   AddDefault(C, 'Build project/program', lisKMBuildProjectProgram, ecBuild);
   AddDefault(C, 'Quick compile, no linking', lisKMQuickCompileNoLinking, ecQuickCompile);
   AddDefault(C, 'Clean up and build', lisKMCleanUpAndBuild, ecCleanUpAndBuild);
+  AddDefault(C, 'Clean output directories', lisKMClean, ecClean);
+  AddDefault(C, 'Clean and build', lisKMCleanAndBuild, ecCleanAndBuild);
   AddDefault(C, 'Build many modes', lisKMBuildManyModes, ecBuildManyModes);
   AddDefault(C, 'Abort building', lisKMAbortBuilding, ecAbortBuild);
   AddDefault(C, 'Run without debugging', lisMenuRunWithoutDebugging, ecRunWithoutDebugging);

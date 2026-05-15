@@ -108,7 +108,16 @@ type
 
 function ShowBuildProjectDialog(AProject: TProject): TModalResult;
 
+// Headless clean: deletes compiler output files (.ppu, .o, .a, .rsj, .rst, .compiled,
+// .so, .dll, .dylib) from the project's output directory and every required-package
+// output directory. NEVER touches source files. Returns mrOk on success; ADeletedCount
+// is the number of files removed.
+function QuickCleanProject(AProject: TProject; out ADeletedCount: Integer): TModalResult;
+
 implementation
+
+const
+  QuickCleanOutputMask = '*.ppu;*.o;*.a;*.rsj;*.rst;*.compiled;*.so;*.dll;*.dylib';
 
 function ShowBuildProjectDialog(AProject: TProject): TModalResult;
 var
@@ -121,6 +130,67 @@ begin
   finally
     CleanBuildProjectDialog.Free;
   end;
+end;
+
+function CleanDirectoryByMask(const ADirectory, AMask: string): Integer;
+var
+  Cache: TCTDirectoryCache;
+  Files: TStringList;
+  MaskList: TMaskList;
+  i: Integer;
+  Dir, Filename: string;
+begin
+  Result:=0;
+  Dir:=ChompPathDelim(ADirectory);
+  if (Dir='') or (not FilenameIsAbsolute(Dir)) or (not DirPathExistsCached(Dir)) then
+    exit;
+  Cache:=CodeToolBoss.DirectoryCachePool.GetCache(Dir,true,false);
+  if Cache=nil then exit;
+  Files:=TStringList.Create;
+  MaskList:=TMaskList.Create(AMask,';');
+  try
+    if MaskList.Count=0 then exit;
+    Cache.GetFiles(Files,false);
+    for i:=0 to Files.Count-1 do
+      if MaskList.Matches(Files[i]) then begin
+        Filename:=AppendPathDelim(Dir)+Files[i];
+        if FileExistsUTF8(Filename) and DeleteFileUTF8(Filename) then
+          Inc(Result);
+      end;
+  finally
+    InvalidateFileStateCache;
+    MaskList.Free;
+    Files.Free;
+  end;
+end;
+
+function QuickCleanProject(AProject: TProject; out ADeletedCount: Integer): TModalResult;
+var
+  PkgList: TFPList;
+  i: Integer;
+  Pkg: TLazPackage;
+begin
+  ADeletedCount:=0;
+  if AProject=nil then exit(mrCancel);
+  // Project output directory
+  Inc(ADeletedCount, CleanDirectoryByMask(
+    AProject.CompilerOptions.GetUnitOutputDirectory(false), QuickCleanOutputMask));
+  // Required package output directories (skip design-time-only and manual-update)
+  PkgList:=nil;
+  try
+    PackageGraph.GetAllRequiredPackages(nil, AProject.FirstRequiredDependency,
+      PkgList, [pirSkipDesignTimeOnly]);
+    if PkgList<>nil then
+      for i:=0 to PkgList.Count-1 do begin
+        Pkg:=TLazPackage(PkgList[i]);
+        if Pkg.AutoUpdate=pupManually then continue;
+        Inc(ADeletedCount, CleanDirectoryByMask(
+          Pkg.CompilerOptions.GetUnitOutputDirectory(false), QuickCleanOutputMask));
+      end;
+  finally
+    PkgList.Free;
+  end;
+  Result:=mrOk;
 end;
 
 {$R *.lfm}

@@ -359,6 +359,8 @@ type
     procedure mnuCompileProjectClicked(Sender: TObject);
     procedure mnuBuildProjectClicked(Sender: TObject);
     procedure mnuQuickCompileProjectClicked(Sender: TObject);
+    procedure mnuCleanProjectClicked(Sender: TObject);
+    procedure mnuCleanAndBuildProjectClicked(Sender: TObject);
     procedure mnuCleanUpAndBuildProjectClicked(Sender: TObject);
     procedure mnuBuildManyModesClicked(Sender: TObject);
     procedure mnuAbortBuildProjectClicked(Sender: TObject);
@@ -3162,6 +3164,8 @@ begin
     itmRunMenuCompile.Command:=GetCommand(ecCompile, @mnuCompileProjectClicked);
     itmRunMenuBuild.Command:=GetCommand(ecBuild, @mnuBuildProjectClicked);
     itmRunMenuQuickCompile.Command:=GetCommand(ecQuickCompile, @mnuQuickCompileProjectClicked);
+    itmRunMenuClean.Command:=GetCommand(ecClean, @mnuCleanProjectClicked);
+    itmRunMenuCleanAndBuild.Command:=GetCommand(ecCleanAndBuild, @mnuCleanAndBuildProjectClicked);
     itmRunMenuCleanUpAndBuild.Command:=GetCommand(ecCleanUpAndBuild, @mnuCleanUpAndBuildProjectClicked);
     itmRunMenuBuildManyModes.Command:=GetCommand(ecBuildManyModes, @mnuBuildManyModesClicked);
     itmRunMenuAbortBuild.Command:=GetCommand(ecAbortBuild, @mnuAbortBuildProjectClicked);
@@ -3664,6 +3668,8 @@ begin
     end;
   ecDetach:                   DebugBoss.Detach;
   ecCleanUpAndBuild:          mnuCleanUpAndBuildProjectClicked(nil);
+  ecClean:                    mnuCleanProjectClicked(nil);
+  ecCleanAndBuild:            mnuCleanAndBuildProjectClicked(nil);
   ecQuickCompile:             DoQuickCompile;
   ecAbortBuild:               DoAbortBuild(false);
   ecStopProgram:              mnuStopProjectClicked(self);
@@ -4722,6 +4728,29 @@ end;
 procedure TMainIDE.mnuQuickCompileProjectClicked(Sender: TObject);
 begin
   DoQuickCompile;
+end;
+
+procedure TMainIDE.mnuCleanProjectClicked(Sender: TObject);
+var
+  Deleted: Integer;
+begin
+  if Project1=nil then exit;
+  if QuickCleanProject(Project1, Deleted)<>mrOk then exit;
+  if Deleted>0 then
+    IDEMessageDialog(lisInformation, Format(lisCleanProjectDone, [Deleted]),
+      mtInformation, [mbOK])
+  else
+    IDEMessageDialog(lisInformation, lisCleanProjectNoFiles,
+      mtInformation, [mbOK]);
+end;
+
+procedure TMainIDE.mnuCleanAndBuildProjectClicked(Sender: TObject);
+var
+  Deleted: Integer;
+begin
+  if Project1=nil then exit;
+  if QuickCleanProject(Project1, Deleted)<>mrOk then exit;
+  DoBuildProject(crBuild, []);
 end;
 
 procedure TMainIDE.mnuCleanUpAndBuildProjectClicked(Sender: TObject);

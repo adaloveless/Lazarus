@@ -430,7 +430,12 @@ resourcestring
   lisShowOutput = 'Show output';
   lisBFBuildCommand = 'Build Command';
   lisMenuQuickCompile = 'Quick Compile';
+  lisMenuCleanProject = 'Clean';
+  lisMenuCleanAndBuild = 'Clean and Build';
   lisMenuCleanUpAndBuild = 'Clean up and Build ...';
+  lisCleanProjectDone = 'Cleaned %d file(s) from project and package output directories.';
+  lisCleanProjectNoFiles = 'Nothing to clean. Output directories are already empty.';
+  lisCleanProjectFailed = 'Clean failed: could not delete %s';
   lisMenuCompileManyModes = 'Compile many Modes ...';
   lisMenuAbortBuild = 'Abort Build';
   lisMenuProjectRun = '&Run';
@@ -3353,6 +3358,8 @@ resourcestring
   srkmecCleanUpAndBuild           = 'clean up and build';
   srkmecBuildManyModes            = 'build many modes';
   srkmecAbortBuild                = 'abort build';
+  srkmecClean                     = 'clean output directories';
+  srkmecCleanAndBuild             = 'clean and build';
   srkmecRunWithoutDebugging       = 'run without debugging';
   srkmecRunWithDebugging          = 'run with debugging';
   srkmecRun                       = 'run program';
@@ -3446,6 +3453,8 @@ resourcestring
   lisKMBuildProjectProgram = 'Build project/program';
   lisKMQuickCompileNoLinking = 'Quick compile, no linking';
   lisKMCleanUpAndBuild = 'Clean up and build';
+  lisKMClean = 'Clean output directories';
+  lisKMCleanAndBuild = 'Clean and build';
   lisKMBuildManyModes = 'Build many modes';
   lisKMAbortBuilding = 'Abort building';
   lisContinueBuilding = 'Continue building';

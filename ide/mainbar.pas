@@ -298,6 +298,8 @@ type
         itmRunMenuCompile: TIDEMenuCommand;
         itmRunMenuBuild: TIDEMenuCommand;
         itmRunMenuQuickCompile: TIDEMenuCommand;
+        itmRunMenuClean: TIDEMenuCommand;
+        itmRunMenuCleanAndBuild: TIDEMenuCommand;
         itmRunMenuCleanUpAndBuild: TIDEMenuCommand;
         itmRunMenuBuildManyModes: TIDEMenuCommand;
         itmRunMenuAbortBuild: TIDEMenuCommand;
@@ -862,6 +864,8 @@ begin
   itmRunMenuBuild              .Enabled := aAllow;
   itmRunMenuBuildManyModes     .Enabled := aAllow;
   itmRunMenuQuickCompile       .Enabled := aAllow;
+  itmRunMenuClean              .Enabled := aAllow;
+  itmRunMenuCleanAndBuild      .Enabled := aAllow;
   itmRunMenuCleanUpAndBuild    .Enabled := aAllow;
   itmRunMenuAbortBuild         .Enabled := not aAllow;
   // Package menu

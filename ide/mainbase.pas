@@ -1368,6 +1368,8 @@ begin
     CreateMenuItem(ParentMI,itmRunMenuCompile,'itmRunMenuCompile',lisCompile,'menu_compile');
     CreateMenuItem(ParentMI,itmRunMenuBuild,'itmRunMenuBuild',RemoveAmpersands(lisBuild),'menu_build');
     CreateMenuItem(ParentMI,itmRunMenuQuickCompile,'itmRunMenuQuickCompile',lisMenuQuickCompile,'menu_quick_compile');
+    CreateMenuItem(ParentMI,itmRunMenuClean,'itmRunMenuClean',lisMenuCleanProject,'menu_clean');
+    CreateMenuItem(ParentMI,itmRunMenuCleanAndBuild,'itmRunMenuCleanAndBuild',lisMenuCleanAndBuild,'menu_build_clean');
     CreateMenuItem(ParentMI,itmRunMenuCleanUpAndBuild,'itmRunMenuCleanUpAndBuild',lisMenuCleanUpAndBuild,'menu_build_clean');
     CreateMenuItem(ParentMI,itmRunMenuBuildManyModes,'itmRunMenuBuildManyModes',lisMenuCompileManyModes,'menu_build_all');
     CreateMenuItem(ParentMI,itmRunMenuAbortBuild,'itmRunMenuAbortBuild',lisMenuAbortBuild,'menu_abort_build',False);

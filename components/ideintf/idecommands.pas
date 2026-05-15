@@ -271,6 +271,8 @@ const
   ecCleanUpAndBuild         = ecFirstLazarus + 403;
   ecBuildManyModes          = ecFirstLazarus + 404;
   ecAbortBuild              = ecFirstLazarus + 405;
+  ecClean                   = ecFirstLazarus + 406;
+  ecCleanAndBuild           = ecFirstLazarus + 407;
   ecRunWithoutDebugging     = ecFirstLazarus + 409;
   ecRun                     = ecFirstLazarus + 410;
   ecPause                   = ecFirstLazarus + 411;
