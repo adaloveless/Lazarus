@@ -1708,7 +1708,6 @@ bigide:
 	$(MAKE) -C dockedformeditor
 	$(MAKE) -C anchordocking
 	$(MAKE) -C anchordocking/design
-	$(MAKE) -C metadarkstyle
 	$(MAKE) -C metadarkstyle/dsgn
 all: lazbuildpackages idepackages bigide
 clean:
@@ -1772,7 +1771,6 @@ clean:
 	$(MAKE) -C dockedformeditor clean
 	$(MAKE) -C anchordocking clean
 	$(MAKE) -C anchordocking/design clean
-	$(MAKE) -C metadarkstyle clean
 	$(MAKE) -C metadarkstyle/dsgn clean
 cleanall: clean
 distclean:
@@ -1836,5 +1834,4 @@ distclean:
 	$(MAKE) -C dockedformeditor distclean
 	$(MAKE) -C anchordocking distclean
 	$(MAKE) -C anchordocking/design distclean
-	$(MAKE) -C metadarkstyle distclean
 	$(MAKE) -C metadarkstyle/dsgn distclean
