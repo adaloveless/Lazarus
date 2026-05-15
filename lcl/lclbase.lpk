@@ -1198,18 +1198,22 @@
       <Item>
         <Filename Value="darkstyle/udarkstyleparams.pas"/>
         <UnitName Value="uDarkStyleParams"/>
+        <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>
         <Filename Value="darkstyle/udarkstyleschemes.pas"/>
         <UnitName Value="uDarkStyleSchemes"/>
+        <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>
         <Filename Value="darkstyle/udarkstyleschemesloader.pas"/>
         <UnitName Value="uDarkStyleSchemesLoader"/>
+        <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>
         <Filename Value="darkstyle/udarkstyleschemesadditional.pas"/>
         <UnitName Value="uDarkStyleSchemesAdditional"/>
+        <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>
         <Filename Value="darkstyle/uimport.pas"/>
@@ -1219,6 +1223,7 @@
       <Item>
         <Filename Value="darkstyle/umetadarkstyle.pas"/>
         <UnitName Value="uMetaDarkStyle"/>
+        <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>
         <Filename Value="darkstyle/uwin32widgetsetdark.pas"/>
