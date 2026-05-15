@@ -164,7 +164,7 @@ const
       { ocDefValue           } clNavy,
       { ocValueDifferBackgrnd} clWindow,
       { ocSubProp            } clGreen,
-      { ocReference          } clMaroon,
+      { ocReference          } clRed,
       { ocReadOnly           } clGrayText
       );
     Options: (

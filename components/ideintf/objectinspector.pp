@@ -52,10 +52,10 @@ const
   OIOptionsFileVersion = 3;
 
   DefBackgroundColor = clBtnFace;
-  DefReferencesColor = clMaroon;
+  DefReferencesColor = clRed;
   DefSubPropertiesColor = clGreen;
   DefNameColor = clWindowText;
-  DefValueColor = clMaroon;
+  DefValueColor = clRed;
   DefDefaultValueColor = clWindowText;
   DefValueDifferBackgrndColor = $F0F0FF; // Sort of pink.
   DefReadOnlyColor = clGrayText;
