@@ -1,5 +1,5 @@
 {
-@author(Andrey Zubarev <zamtmn@yandex.ru>) 
+@author(Andrey Zubarev <zamtmn@yandex.ru>)
 }
 
 unit uMetaDarkStyle;
@@ -9,10 +9,10 @@ interface
 
 {$IFDEF WINDOWS}
 uses
-    {IF DEFINED(LCLQT5)}
-      uDarkStyle,
-    {ENDIF}
     uDarkStyleParams,
+    {$IF DEFINED(LCLWIN32) OR DEFINED(LCLQT5) OR DEFINED(LCLQT6)}
+    uDarkStyle,
+    {$ENDIF}
     {$IFDEF LCLWIN32}
     uWin32WidgetSetDark,
     {$ENDIF}
@@ -29,9 +29,13 @@ implementation
 {$IFDEF WINDOWS}
 procedure ApplyMetaDarkStyle(const CS:TDSColors);
 begin
+  {$IF DEFINED(LCLWIN32) OR DEFINED(LCLQT5) OR DEFINED(LCLQT6)}
   InitDarkMode;
+  {$IFDEF LCLWIN32}
   Initialize(CS);
+  {$ENDIF}
   ApplyDarkStyle;
+  {$ENDIF}
 end;
 {$ENDIF}
 
