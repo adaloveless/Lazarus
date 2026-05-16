@@ -70,15 +70,22 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 log_header(){ echo -e "\n${CYAN}=== $1 ===${NC}"; }
 
-ensure_self_clean() {
-    local script_name="auto-update.sh"
-    local status
-    status=$(git -C "$LAZARUS_DIR" status --porcelain -- "$script_name" 2>/dev/null || true)
-    if [ -n "$status" ]; then
-        log_warn "auto-update.sh has local modifications -- restoring upstream version"
-        git -C "$LAZARUS_DIR" checkout -- "$script_name" 2>/dev/null && \
-            log_ok "Restored clean auto-update.sh from git" || \
-            log_err "Failed to restore auto-update.sh"
+# GOD mp8g1me3 (2026-05-16): auto-update is for pristine test envs, not local dev.
+# Wipe ALL local changes (tracked + untracked) so test machines pull cleanly.
+# If you are a developer with local work, do NOT run auto-update.sh -- use git directly.
+wipe_local_changes() {
+    log_header "Wiping local changes (pristine test-env mode)"
+    log_warn "auto-update.sh discards ALL uncommitted changes and untracked files."
+    log_warn "If you are a developer with local work, abort NOW (Ctrl-C)."
+
+    git -C "$LAZARUS_DIR" reset --hard HEAD 2>&1 | tail -1
+    git -C "$LAZARUS_DIR" clean -fdx 2>&1 | tail -1
+    log_ok "Lazarus working tree reset + cleaned ($LAZARUS_DIR)"
+
+    if [ "$UPSTREAM_ONLY" -eq 0 ] && [ -d "$VP_DIR/.git" ]; then
+        git -C "$VP_DIR" reset --hard HEAD 2>&1 | tail -1
+        git -C "$VP_DIR" clean -fdx 2>&1 | tail -1
+        log_ok "VibePascal working tree reset + cleaned ($VP_DIR)"
     fi
 }
 
@@ -455,7 +462,7 @@ echo "  VibePascal: $VP_DIR"
 echo "  Compiler:   $VP_COMPILER"
 echo ""
 
-ensure_self_clean
+wipe_local_changes
 SCRIPT_PRE_HASH=$(sha256sum "$LAZARUS_DIR/auto-update.sh" 2>/dev/null | cut -d' ' -f1)
 
 git -C "$LAZARUS_DIR" fetch upstream 2>/dev/null

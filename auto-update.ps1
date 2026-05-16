@@ -334,13 +334,24 @@ function Ensure-VPConfig {
     Log-Info "Generated VibePascal config: $VPCfgPath ($($unitPaths.Count) unit path$(if ($unitPaths.Count -ne 1) { 's' }))"
 }
 
-function Ensure-SelfClean {
-    param([string]$RepoDir)
-    $scriptName = "auto-update.ps1"
-    $result = Invoke-Git -WorkDir $RepoDir -GitArgs @("status", "--porcelain", "--", $scriptName)
-    if ($result.Output -and $result.Output.Trim().Length -gt 0) {
-        Log-Warn "auto-update.ps1 has local modifications -- leaving local version in place"
+# GOD mp8g1me3 (2026-05-16): auto-update is for pristine test envs, not local dev.
+# Wipe ALL local changes (tracked + untracked) so test machines pull cleanly.
+# If you are a developer with local work, do NOT run auto-update.bat -- use git directly.
+function Wipe-LocalChanges {
+    param([string]$RepoDir, [string]$Label)
+    Log-Header "Wiping local changes in $Label (pristine test-env mode)"
+    Log-Warn "auto-update.bat discards ALL uncommitted changes and untracked files."
+    Log-Warn "If you are a developer with local work, abort NOW (Ctrl-C)."
+
+    $reset = Invoke-Git -WorkDir $RepoDir -GitArgs @("reset", "--hard", "HEAD")
+    if ($reset.ExitCode -ne 0) {
+        Log-Err "git reset --hard HEAD failed in $RepoDir`: $($reset.Error)"
     }
+    $clean = Invoke-Git -WorkDir $RepoDir -GitArgs @("clean", "-fdx")
+    if ($clean.ExitCode -ne 0) {
+        Log-Err "git clean -fdx failed in $RepoDir`: $($clean.Error)"
+    }
+    Log-Ok "$Label working tree reset + cleaned ($RepoDir)"
 }
 
 function Relaunch-IfUpdated {
@@ -1286,7 +1297,10 @@ if ($FixLpi) {
 
 Extract-VPBinaries
 
-Ensure-SelfClean -RepoDir $LazarusDir
+Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
+if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
+    Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
+}
 $scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
 
 Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
