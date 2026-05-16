@@ -57,7 +57,7 @@ uses
   UxTheme, Win32Themes, ExtCtrls, WSMenus, JwaWinGDI, FPImage, Math, uDarkStyle,
   WSComCtrls, CommCtrl, uImport, WSForms, Win32WSButtons, Buttons, Win32Extra,
   Win32WSForms, Win32WSSpin, Spin, Win32WSMenus, Dialogs, GraphUtil,
-  gmap, gutil, TmSchema, InterfaceBase;
+  gmap, gutil, TmSchema, InterfaceBase, uMetaDarkStyle;
 
 type
   TWinControlDark = class(TWinControl);
@@ -1593,6 +1593,12 @@ begin
     ScreenFormEvent(nil,nil,Form as TForm);
 end;
 
+procedure ApplyWin32MetaDarkStyle(const CS: TDSColors);
+begin
+  Initialize(CS);
+  ApplyDarkStyle;
+end;
+
 {
   Override several widgetset controls
 }
@@ -2601,8 +2607,9 @@ begin
 end;
 
 initialization
+  RegisterMetaDarkStyleHandlers(@ApplyWin32MetaDarkStyle, @DarkFormChanged);
 finalization
+  RegisterMetaDarkStyleHandlers(nil, nil);
   if Assigned(ThemeClass) then
     FreeAndNil(ThemeClass);
 end.
-

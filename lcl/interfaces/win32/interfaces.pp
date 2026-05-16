@@ -31,7 +31,7 @@ uses
 implementation
 
 uses
-  Win32Int, Forms;
+  Win32Int, Forms, uWin32WidgetSetDark;
 
 initialization
   CreateWidgetset(TWin32WidgetSet);
