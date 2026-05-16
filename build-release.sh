@@ -258,12 +258,28 @@ EOF
     # makes the stored Params symmetric with runtime, no rebuild trigger. Lars-side
     # alternative is to extend RemoveFPCVerbosityParams to also strip target/CPU;
     # filed as r17 candidate for architectural cleanup.
-    grep -rl --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null \
-        | xargs -r sed -i \
+    # Preserve each state file's original mtime. Lazarus uses .compiled mtimes
+    # to decide whether dependent packages are stale; touching only the rewritten
+    # Lazarus-format files can make FCL look newer than LazUtils and force a
+    # user-side rebuild.
+    local compiled_file
+    local mtime_ref
+    while IFS= read -r -d '' compiled_file; do
+        mtime_ref=$(mktemp)
+        touch -r "$compiled_file" "$mtime_ref"
+        if sed -i \
             -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g" \
             -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
-            -e '/Params Value=/ s/ \+"/"/g'
+            -e '/Params Value=/ s/ \+"/"/g' \
+            "$compiled_file"; then
+            touch -r "$mtime_ref" "$compiled_file"
+            rm -f "$mtime_ref"
+        else
+            rm -f "$mtime_ref"
+            return 1
+        fi
+    done < <(grep -rlZ --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null || true)
 
     rm -f "$wrapper"
     rm -rf "$pcp"
@@ -392,6 +408,23 @@ materialize_darwin_lhelp_app() {
     fi
 }
 
+restore_staged_compiled_mtimes() {
+    local staging=$1
+    local staged_file=""
+    local rel_path=""
+    local source_file=""
+
+    # cp -r resets destination mtimes, which can make copied .compiled files look
+    # newer or older purely because of package-directory copy order. Restore the
+    # source-tree mtimes before creating the Darwin .app hardlinks and tarball.
+    while IFS= read -r -d '' staged_file; do
+        rel_path="${staged_file#$staging/}"
+        source_file="$LAZARUS_DIR/$rel_path"
+        [ -f "$source_file" ] || continue
+        touch -r "$source_file" "$staged_file"
+    done < <(find "$staging" -type f -name '*.compiled' -print0)
+}
+
 create_darwin_app_bundle() {
     local target=$1
     local cpu_target=$(echo "$target" | cut -d- -f1)
@@ -493,6 +526,8 @@ package_release() {
     cp -r "$LAZARUS_DIR/designer" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/images" "$staging/" 2>/dev/null || true
+
+    restore_staged_compiled_mtimes "$staging"
 
     if [[ "$target" == *-darwin ]]; then
         materialize_darwin_lhelp_app "$staging/components/chmhelp/lhelp"
