@@ -133,7 +133,7 @@ begin
             AddScheme(ChangeFileExt(sr.Name,''),DSC);
       end;
     until FindNext(sr) <> 0;
-    FindClose(sr);
+    SysUtils.FindClose(sr);
   end;
 end;
 
