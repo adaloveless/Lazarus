@@ -4240,6 +4240,13 @@ begin
               // relative because of the leading '$' and gets DirectoryExpanded prepended.
               if Assigned(GlobalMacroList) then
                 GlobalMacroList.SubstituteStr(Stats.CompilerFilename);
+              // $(LazarusDir) expands WITH a trailing slash, so the macro form
+              // "$(LazarusDir)/compiler/ppca64" becomes "<LAZDIR>//compiler/ppca64".
+              // FilenameIsAbsolute returns True (skipping the ResolveDots branch below)
+              // but CompareFilenames does not collapse "//", so the saved-vs-live compare
+              // trips on every pristine-PCP lazbuild. TrimFilename calls ResolveDots which
+              // collapses duplicate path delimiters.
+              Stats.CompilerFilename:=TrimFilename(Stats.CompilerFilename);
               if not FilenameIsAbsolute(Stats.CompilerFilename) then
                 Stats.CompilerFilename:=ResolveDots(APackage.DirectoryExpanded+Stats.CompilerFilename);
             end;
