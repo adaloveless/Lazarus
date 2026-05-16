@@ -192,8 +192,15 @@ EOF
         aarch64-darwin) user_compiler_name=ppca64 ;;
         *)              user_compiler_name=ppcx64 ;;
     esac
+    # $(LazarusDir) always expands WITH trailing slash (Sterling/Melissa C346 r15
+    # smoke). $(LazarusDir)/compiler/X -> <lazdir>//compiler/X -> Lars 29bdfd5afc
+    # collapses the // post-expand, but older IDEs (pre-29bdfd5afc tarballs,
+    # third-party Lazarus installs) still string-compare and trip "Compiler
+    # filename changed for FCL 1.0.1" -> forced FCL rebuild. Drop the separator
+    # slash here so the stored Value is double-slash-free regardless of which
+    # Lazarus consumes it.
     grep -rl --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null \
-        | xargs -r sed -i "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)/compiler/${user_compiler_name}\"|g"
+        | xargs -r sed -i "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g"
 
     rm -f "$wrapper"
     rm -rf "$pcp"
