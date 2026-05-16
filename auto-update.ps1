@@ -1316,12 +1316,17 @@ if ($FixLpi) {
     exit 0
 }
 
-Extract-VPBinaries
-
 Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
 if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
     Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
 }
+
+# Extract VibePascal AFTER wipe: extracted binaries (bin\ppcx64.exe, units\x86_64-win64\*.ppu,
+# bin\fpc.cfg, .auto-update-extracted.txt marker) live at untracked paths inside $VPDir, so
+# `git clean -fdx` during the VibePascal wipe deletes them. Extract first leaves the rebuild
+# step with no compiler (GOD mp8h9y4b/mp8har98).
+Extract-VPBinaries
+
 $scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
 
 Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
