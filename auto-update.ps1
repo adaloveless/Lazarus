@@ -327,11 +327,16 @@ function Extract-VPBinaries {
             }
 
             # Capture compiler from the first archive that has one (bin tarball does;
-            # units/RTL-overlay archives don't include ppcx64.exe).
+            # units/RTL-overlay archives don't include ppcx64.exe). Track the DESTINATION
+            # path in $VPDir (which persists), not the source in $tempDir (deleted by
+            # the finally below). GOD mp8x4twg: previous code pointed at a temp path
+            # that was gone by the time the legacy-compiler\ copy at line ~370 ran.
             if (-not $srcCompiler) {
                 foreach ($rel in @("bin\ppcx64.exe", "compiler\ppcx64.exe")) {
-                    $candidate = Join-Path $extractRoot $rel
-                    if (Test-Path $candidate) { $srcCompiler = $candidate; break }
+                    if (Test-Path (Join-Path $extractRoot $rel)) {
+                        $srcCompiler = Join-Path $VPDir $rel
+                        break
+                    }
                 }
             }
 
