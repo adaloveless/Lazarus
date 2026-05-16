@@ -180,6 +180,21 @@ EOF
         --build-ide 2>&1 | tail -40
     set +o pipefail
 
+    # Rewrite the build-side wrapper path in every .compiled state file so user
+    # invocations of `lazbuild --compiler=<tarball>/compiler/ppcX` don't trip
+    # the "compiler changed" check and force a rebuild that fails without an
+    # fpc.cfg in the tarball. The Date attribute is stripped because the user
+    # side compiler binary has a different mtime than the build-side wrapper.
+    # Melissa C326 finding 3 (2026-05-16).
+    local user_compiler_name
+    case "$target" in
+        x86_64-darwin)  user_compiler_name=ppcx64 ;;
+        aarch64-darwin) user_compiler_name=ppca64 ;;
+        *)              user_compiler_name=ppcx64 ;;
+    esac
+    grep -rl --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null \
+        | xargs -r sed -i "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)/compiler/${user_compiler_name}\"|g"
+
     rm -f "$wrapper"
     rm -rf "$pcp"
 }
