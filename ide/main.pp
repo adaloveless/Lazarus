@@ -2269,13 +2269,14 @@ begin
   ShowTabOrderEditor:=@mnuViewTabOrderClicked;
 
   // always show the object inspector in case no local or user specific environment
-  // options configuration file existed
-  if not FEnvOptsCfgExisted then
-  begin
-    OIWindowLayout := IDEWindowCreators.SimpleLayoutStorage.ItemByFormID(DefaultObjectInspectorName);
-    if OIWindowLayout <> nil then
+  // options configuration file existed, or the loaded config carries no OI
+  // layout data (e.g. an installer/wrapper pre-seeded environmentoptions.xml
+  // with only EnvironmentOptions metadata and no Desktops/ObjectInspectorDlg
+  // entry — without this fall-through OI ends up hidden on first launch).
+  OIWindowLayout := IDEWindowCreators.SimpleLayoutStorage.ItemByFormID(DefaultObjectInspectorName);
+  if OIWindowLayout <> nil then
+    if (not FEnvOptsCfgExisted) or (not OIWindowLayout.CustomCoordinatesAreValid) then
       OIWindowLayout.Visible := True;
-  end;
 end;
 
 procedure TMainIDE.SetupFormEditor;
