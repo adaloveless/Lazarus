@@ -200,7 +200,7 @@ end;
 
 procedure TAboutForm.miVerToClipboardClick(Sender: TObject);
 begin
-  Clipboard.AsText := 'Lazarus ' + LazarusVersionStr + ' (rev ' + LazarusRevisionStr + ')' +
+  Clipboard.AsText := 'Lazarus Revanant ' + LazarusVersionStr + ' (rev ' + LazarusRevisionStr + ')' +
     ' FPC ' + {$I %FPCVERSION%} + ' ' + PlatformLabel.Caption;
 end;
 

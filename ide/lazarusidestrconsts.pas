@@ -975,7 +975,7 @@ resourcestring
   lisProjectSessionChanged = 'Project session changed';
   lisSaveSessionChangesToProject = 'Save session changes to project %s?';
 
-  lisAboutLazarus = 'About Lazarus';
+  lisAboutLazarus = 'About Lazarus Revanant';
   lisVersion = 'Version';
   lisVerToClipboard = 'Copy version information to clipboard';
   lisBuildDate = 'Build Date';
