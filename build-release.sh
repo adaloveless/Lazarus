@@ -199,8 +199,23 @@ EOF
     # filename changed for FCL 1.0.1" -> forced FCL rebuild. Drop the separator
     # slash here so the stored Value is double-slash-free regardless of which
     # Lazarus consumes it.
+    #
+    # Also strip -T<os> and -P<cpu> from <Params Value="..."/> lines. Melissa C18
+    # finding 2 (r15 smoke RED, 2026-05-16): packaging-time build records
+    # `<Params Value="-Tdarwin -Paarch64 -Munleashed -Scghi ...">` because lazbuild
+    # passes --os/--cpu to the wrapper. Runtime IDE invocation of ppca64 does NOT
+    # pass -Tdarwin/-Paarch64 (target+CPU auto-detect from the compiler binary
+    # itself), so IDE compare on the Params Value string trips "Compiler params
+    # changed for FCL 1.0.1" -> forced FCL rebuild. Stripping at packaging time
+    # makes the stored Params symmetric with runtime, no rebuild trigger. Lars-side
+    # alternative is to extend RemoveFPCVerbosityParams to also strip target/CPU;
+    # filed as r17 candidate for architectural cleanup.
     grep -rl --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null \
-        | xargs -r sed -i "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g"
+        | xargs -r sed -i \
+            -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g" \
+            -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
+            -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
+            -e '/Params Value=/ s/ \+"/"/g'
 
     rm -f "$wrapper"
     rm -rf "$pcp"
