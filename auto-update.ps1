@@ -12,6 +12,7 @@ param(
     [string]$VPDir,
     [switch]$SelfUpdated,
     [switch]$NoLaunch,
+    [switch]$AllowPush,
     [switch]$Help
 )
 
@@ -37,6 +38,10 @@ if ($Help) {
     Write-Host "  -Doctor         Diagnose toolchain + IDE config; report problems without changing state"
     Write-Host "  -VPDir <path>   Path to VibePascal source (auto-detected if omitted)"
     Write-Host "  -NoLaunch       Do not launch the IDE after a successful update/rebuild"
+    Write-Host "  -AllowPush      Opt-in: push the post-upstream-merge result to origin/main."
+    Write-Host "                  Default is no-push (per GOD directive 2026-05-16) -- merge stays local"
+    Write-Host "                  to avoid background-process credential-prompt hangs and accidental"
+    Write-Host "                  pushes from end-user boxes. BuildMaster ships releases, not clients."
     Write-Host "  -Help           Show this help"
     Write-Host ""
     Write-Host "Default: pull updates, rebuild lazbuild + IDE if anything changed."
@@ -579,12 +584,16 @@ function Pull-LazarusUpstream {
         Log-Ok "Merge from upstream complete"
     }
 
-    Log-Info "Pushing to origin..."
-    $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("push", "origin", "main")
-    if ($result.ExitCode -ne 0) {
-        Log-Warn "Push failed (non-critical): $($result.Error)"
+    if ($AllowPush) {
+        Log-Info "Pushing to origin..."
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("push", "origin", "main")
+        if ($result.ExitCode -ne 0) {
+            Log-Warn "Push failed (non-critical): $($result.Error)"
+        } else {
+            Log-Ok "Pushed to adaloveless/Lazarus"
+        }
     } else {
-        Log-Ok "Pushed to adaloveless/Lazarus"
+        Log-Info "Skipping push to origin/main (use -AllowPush to enable; merge stays local per GOD directive)"
     }
     $script:LazarusUpdated = $true
 }
