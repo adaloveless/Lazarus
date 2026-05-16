@@ -4234,8 +4234,15 @@ begin
             Stats.Kind:=pcskRelease
           else begin
             Stats.Kind:=pcskDefault;
-            if (Stats.CompilerFilename>'') and not FilenameIsAbsolute(Stats.CompilerFilename) then
-              Stats.CompilerFilename:=ResolveDots(APackage.DirectoryExpanded+Stats.CompilerFilename);
+            if Stats.CompilerFilename>'' then begin
+              // Expand IDE macros (e.g. $(LazarusDir)) before the FilenameIsAbsolute test;
+              // tarball-shipped .compiled files use the macro form, which otherwise looks
+              // relative because of the leading '$' and gets DirectoryExpanded prepended.
+              if Assigned(GlobalMacroList) then
+                GlobalMacroList.SubstituteStr(Stats.CompilerFilename);
+              if not FilenameIsAbsolute(Stats.CompilerFilename) then
+                Stats.CompilerFilename:=ResolveDots(APackage.DirectoryExpanded+Stats.CompilerFilename);
+            end;
           end;
         end
         else begin
