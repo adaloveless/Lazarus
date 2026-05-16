@@ -955,31 +955,27 @@ function Reset-LazarusConfig {
 
 function Test-MetaDarkStyleInstalled {
     # GOD directive moehki0x (2026-04-25): MetaDarkStyle is a flagship feature.
-    # Verify the design-time package vendored at components\metadarkstyle was
-    # built and linked into lazarus.exe. Returns @{ Ok = $bool; Notes = @() }.
+    # Post-cycle 322 #182: runtime units live in lcl/darkstyle/ (linked via
+    # lclbase.lpk), only the design-time package remains at
+    # components\metadarkstyle\dsgn\. Verify design-time LPK + PPU + that
+    # MetaDarkStyle symbols are linked into lazarus.exe.
     param([string]$Dir = $LazarusDir, [string]$Cpu = "x86_64", [string]$Os = "win64")
 
     $result = @{ Ok = $true; Notes = @() }
 
-    $rtLpk = Join-Path $Dir "components\metadarkstyle\metadarkstyle.lpk"
     $dsLpk = Join-Path $Dir "components\metadarkstyle\dsgn\metadarkstyledsgn.lpk"
-    foreach ($lpk in @($rtLpk, $dsLpk)) {
-        if (-not (Test-Path $lpk)) {
-            $result.Ok = $false
-            $result.Notes += "Source missing: $lpk (re-pull from upstream fork)"
-        }
+    if (-not (Test-Path $dsLpk)) {
+        $result.Ok = $false
+        $result.Notes += "Source missing: $dsLpk (re-pull from upstream fork)"
+        return $result
     }
-    if (-not $result.Ok) { return $result }
 
-    $rtPpu = Join-Path $Dir "components\metadarkstyle\lib\$Cpu-$Os\metadarkstyle.ppu"
     $dsPpu = Join-Path $Dir "components\metadarkstyle\dsgn\lib\$Cpu-$Os\metadarkstyledsgn.ppu"
-    foreach ($ppu in @($rtPpu, $dsPpu)) {
-        if (-not (Test-Path $ppu)) {
-            $result.Ok = $false
-            $result.Notes += "Build artifact missing: $ppu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
-        }
+    if (-not (Test-Path $dsPpu)) {
+        $result.Ok = $false
+        $result.Notes += "Build artifact missing: $dsPpu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
+        return $result
     }
-    if (-not $result.Ok) { return $result }
 
     $lazExe = Join-Path $Dir "lazarus.exe"
     if (Test-Path $lazExe) {
