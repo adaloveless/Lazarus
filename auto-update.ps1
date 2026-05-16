@@ -162,6 +162,59 @@ function Sort-VPArchives {
         @{Expression = {$_.LastWriteTime}; Descending = $true}
 }
 
+function Get-VPArchiveSet {
+    # Resolve the ordered list of FileInfo archives that Extract-VPBinaries must unpack.
+    # v32+ tarballs are split: bin-only (compiler + bin/) needs pairing with a units tarball
+    # (RTL+packages PPU baseline) and optionally an RTL overlay (cycle-fix RTL PPUs over the
+    # baseline). Legacy v23-v31 tarballs are monolithic and extract alone. Extract order
+    # matters: units (baseline) -> bin (compiler + bin/) -> RTL overlay (patches over baseline).
+    param([string]$DistDir, [string]$Filter)
+    $all = @(Get-ChildItem -Path $DistDir -Filter $Filter -ErrorAction SilentlyContinue)
+    if ($all.Count -eq 0) { return @() }
+
+    $sorted = @(Sort-VPArchives $all)
+    $primary = $sorted[0]
+
+    # v32+ split-bin pattern: vibepascal-v<N>(-rc)?-<sha>-win64-bin.tar.gz
+    if ($primary.Name -match '^vibepascal-v(\d+)(?:-rc)?-([0-9a-f]+)-win64-bin\.tar\.gz$') {
+        $binVersion = [int]$Matches[1]
+        $binSha = $Matches[2]
+
+        # Units baseline: latest vibepascal-v<N>-win64-units.tar.gz (no -rc, no -bin).
+        # Otto ships v33-units as the stable baseline; v42-bin diffs only RTL from v33.
+        $unitsCandidates = @($all | Where-Object { $_.Name -match '^vibepascal-v\d+-win64-units\.tar\.gz$' })
+        if ($unitsCandidates.Count -eq 0) {
+            Log-Err "v$binVersion bin-only tarball requires a paired units tarball (vibepascal-v<N>-win64-units.tar.gz); none found in $DistDir"
+            Log-Warn "Otto ships v33 units as the stable baseline -- ensure dist/win64 contains vibepascal-v33-win64-units.tar.gz (or newer)"
+            return @()
+        }
+        $units = (Sort-VPArchives $unitsCandidates)[0]
+
+        # RTL overlay: prefer commit-hash prefix match against the bin's sha (e.g. v42-bin c7617b0
+        # pairs with vibepascal-c7617b0252-rtl-findclose-win64.tar.gz). Falls back to latest mtime
+        # if no prefix match. Overlay is optional -- units alone may be sufficient for many builds.
+        $overlayCandidates = @($all | Where-Object { $_.Name -match '^vibepascal-([0-9a-f]+)-rtl-.*-win64\.tar\.gz$' })
+        $matchingOverlay = $null
+        if ($overlayCandidates.Count -gt 0) {
+            $shaPrefix = $binSha.Substring(0, [Math]::Min(7, $binSha.Length))
+            $prefixMatch = @($overlayCandidates | Where-Object { $_.Name.StartsWith("vibepascal-$shaPrefix") })
+            if ($prefixMatch.Count -gt 0) {
+                $matchingOverlay = ($prefixMatch | Sort-Object LastWriteTime -Descending)[0]
+            } else {
+                $matchingOverlay = ($overlayCandidates | Sort-Object LastWriteTime -Descending)[0]
+                Log-Warn "RTL overlay $($matchingOverlay.Name) does not match bin commit-hash prefix $shaPrefix -- using latest available"
+            }
+        }
+
+        $set = @($units, $primary)
+        if ($matchingOverlay) { $set += $matchingOverlay }
+        return $set
+    }
+
+    # Legacy monolithic v23-v31 (or any unrecognized naming): extract primary alone.
+    return @($primary)
+}
+
 function Extract-VPBinaries {
     $compilerExe = Join-Path $VPDir "compiler\ppcx64.exe"
     $markerFile = Join-Path $VPDir ".auto-update-extracted.txt"
@@ -170,122 +223,134 @@ function Extract-VPBinaries {
     if (-not (Test-Path $distDir)) {
         $distDir = Join-Path $VPDir "dist"
     }
-
-    $tarballs = @()
-    if (Test-Path $distDir) {
-        $tarballs = @(Sort-VPArchives (Get-ChildItem -Path $distDir -Filter "*.tar.gz" -ErrorAction SilentlyContinue))
-    }
-    if ($tarballs.Count -eq 0 -and (Test-Path $distDir)) {
-        $tarballs = @(Sort-VPArchives (Get-ChildItem -Path $distDir -Filter "*.zip" -ErrorAction SilentlyContinue))
-    }
-
-    if ($tarballs.Count -eq 0) {
+    if (-not (Test-Path $distDir)) {
         if (Test-Path $compilerExe) { return }
-        Log-Warn "No VibePascal dist archives found at $distDir"
+        Log-Warn "No VibePascal dist directory found at $distDir"
         return
     }
 
-    $archive = $tarballs[0].FullName
-    $archiveKey = "$($tarballs[0].Name)|$($tarballs[0].LastWriteTime.Ticks)"
+    $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.tar.gz")
+    if ($archiveSet.Count -eq 0) {
+        $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.zip")
+    }
+    if ($archiveSet.Count -eq 0) {
+        if (Test-Path $compilerExe) { return }
+        Log-Warn "No usable VibePascal archives in $distDir"
+        return
+    }
+
+    # Marker fingerprints every archive in the set so any change invalidates the cache.
+    $archiveKey = ($archiveSet | ForEach-Object { "$($_.Name)|$($_.LastWriteTime.Ticks)" }) -join ';'
 
     if ((Test-Path $compilerExe) -and (Test-Path $markerFile)) {
         $lastExtracted = (Get-Content $markerFile -Raw -ErrorAction SilentlyContinue).Trim()
         if ($lastExtracted -eq $archiveKey) { return }
-        Log-Info "Newer VibePascal tarball detected ($($tarballs[0].Name)), re-extracting..."
+        Log-Info "VibePascal archive set changed, re-extracting..."
+    } elseif ($archiveSet.Count -gt 1) {
+        $names = ($archiveSet | ForEach-Object { $_.Name }) -join ', '
+        Log-Info "Extracting VibePascal split-archive set ($($archiveSet.Count) archives): $names"
     } else {
-        Log-Info "Extracting VibePascal binaries from $archive"
+        Log-Info "Extracting VibePascal binaries from $($archiveSet[0].FullName)"
     }
 
-    $tempDir = Join-Path $env:TEMP "vp-extract-$(Get-Random)"
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-    try {
-        if ($archive.EndsWith(".zip")) {
-            Expand-Archive -Path $archive -DestinationPath $tempDir -Force
-        } else {
-            & "$env:SystemRoot\System32\tar.exe" -xzf $archive -C $tempDir 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                Log-Err "tar extraction failed (exit $LASTEXITCODE)"
-                return
-            }
+    # Blow away stale units once at the start to avoid v24-compiler+v22-PPU CRC mismatches.
+    # Both dirs matter: units\x86_64-win64 holds tarball PPUs, rtl\units\x86_64-win64 may hold
+    # source-build PPUs that collide with tarball PPUs (different system.ppu CRC).
+    foreach ($stale in @("units\x86_64-win64", "rtl\units\x86_64-win64")) {
+        $stalePath = Join-Path $VPDir $stale
+        if (Test-Path $stalePath) {
+            Log-Info "Removing stale PPU units at $stalePath"
+            Remove-Item -Recurse -Force $stalePath -ErrorAction SilentlyContinue
         }
+    }
 
-        # Descend into a single root dir if the tarball wrapped everything in one
-        $extractRoot = $tempDir
-        $topDirs = @(Get-ChildItem -Path $tempDir -Directory -ErrorAction SilentlyContinue)
-        $topFiles = @(Get-ChildItem -Path $tempDir -File -ErrorAction SilentlyContinue)
-        if ($topDirs.Count -eq 1 -and $topFiles.Count -eq 0) {
-            $extractRoot = $topDirs[0].FullName
-        }
+    $srcCompiler = $null
 
-        # Find the compiler binary in the tarball (v24+: bin/ppcx64.exe, legacy: compiler/ppcx64.exe)
-        $srcCompiler = $null
-        foreach ($rel in @("bin\ppcx64.exe", "compiler\ppcx64.exe")) {
-            $candidate = Join-Path $extractRoot $rel
-            if (Test-Path $candidate) { $srcCompiler = $candidate; break }
-        }
-        if (-not $srcCompiler) {
-            $found = Get-ChildItem -Path $extractRoot -Filter "ppcx64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $srcCompiler = $found.FullName }
-        }
-        if (-not $srcCompiler) {
-            Log-Err "ppcx64.exe not found in archive"
-            return
-        }
-
-        # Blow away stale units before re-extracting to avoid v24-compiler+v22-PPU CRC mismatches.
-        # Both dirs matter: units\x86_64-win64 holds tarball PPUs, rtl\units\x86_64-win64 may hold
-        # PPUs from a prior source build that collide with tarball PPUs (different system.ppu CRC).
-        foreach ($stale in @("units\x86_64-win64", "rtl\units\x86_64-win64")) {
-            $stalePath = Join-Path $VPDir $stale
-            if (Test-Path $stalePath) {
-                Log-Info "Removing stale PPU units at $stalePath"
-                Remove-Item -Recurse -Force $stalePath -ErrorAction SilentlyContinue
-            }
-        }
-
-        # Copy ALL top-level entries (bin/, units/, compiler/, fpc.cfg, etc.) into $VPDir
-        Log-Info "Copying tarball contents to $VPDir"
-        Get-ChildItem -Path $extractRoot -Force -ErrorAction SilentlyContinue | ForEach-Object {
-            $destPath = Join-Path $VPDir $_.Name
-            if ($_.PSIsContainer) {
-                if (-not (Test-Path $destPath)) {
-                    New-Item -ItemType Directory -Path $destPath -Force | Out-Null
-                }
-                Copy-Item -Path (Join-Path $_.FullName "*") -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($archive in $archiveSet) {
+        $archivePath = $archive.FullName
+        $tempDir = Join-Path $env:TEMP "vp-extract-$(Get-Random)"
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+        try {
+            if ($archivePath.EndsWith(".zip")) {
+                Expand-Archive -Path $archivePath -DestinationPath $tempDir -Force
             } else {
-                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                & "$env:SystemRoot\System32\tar.exe" -xzf $archivePath -C $tempDir 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Log-Err "tar extraction failed for $($archive.Name) (exit $LASTEXITCODE)"
+                    return
+                }
             }
-        }
 
-        # Ensure compiler\ppcx64.exe exists for legacy callers that look there
-        if (-not (Test-Path $compilerExe)) {
-            $compilerDir = Join-Path $VPDir "compiler"
-            if (-not (Test-Path $compilerDir)) { New-Item -ItemType Directory -Path $compilerDir -Force | Out-Null }
-            Copy-Item $srcCompiler $compilerExe -Force
-        }
+            # Descend into a single root dir if the tarball wrapped everything in one
+            $extractRoot = $tempDir
+            $topDirs = @(Get-ChildItem -Path $tempDir -Directory -ErrorAction SilentlyContinue)
+            $topFiles = @(Get-ChildItem -Path $tempDir -File -ErrorAction SilentlyContinue)
+            if ($topDirs.Count -eq 1 -and $topFiles.Count -eq 0) {
+                $extractRoot = $topDirs[0].FullName
+            }
 
-        $unitCount = 0
-        $unitsDir = Join-Path $VPDir "units\x86_64-win64"
-        if (Test-Path $unitsDir) {
-            $unitCount = (Get-ChildItem -Path $unitsDir -Filter "*.ppu" -ErrorAction SilentlyContinue).Count
-        }
-        $fpcCfgExtracted = Test-Path (Join-Path $VPDir "bin\fpc.cfg")
-        Log-Ok "Extracted VibePascal: ppcx64.exe + $unitCount PPUs$(if ($fpcCfgExtracted) { ' + bin\fpc.cfg' })"
+            # Capture compiler from the first archive that has one (bin tarball does;
+            # units/RTL-overlay archives don't include ppcx64.exe).
+            if (-not $srcCompiler) {
+                foreach ($rel in @("bin\ppcx64.exe", "compiler\ppcx64.exe")) {
+                    $candidate = Join-Path $extractRoot $rel
+                    if (Test-Path $candidate) { $srcCompiler = $candidate; break }
+                }
+            }
 
-        [IO.File]::WriteAllText($markerFile, $archiveKey, (New-Object System.Text.UTF8Encoding $false))
-
-        # Prefer bin\ppcx64.exe -- fpcres.exe and friends live in bin\ alongside it, and the
-        # tarball's fpc.cfg is authored for $FPCBINDIR=bin/. compiler\ppcx64.exe is kept for
-        # legacy callers but has no resource compiler next to it, so running lazbuild from
-        # compiler\ fails with "fpcres.exe not found".
-        $binCompiler = Join-Path $VPDir "bin\ppcx64.exe"
-        if (Test-Path $binCompiler) {
-            $script:VPCompiler = $binCompiler
-        } else {
-            $script:VPCompiler = $compilerExe
+            # Copy ALL top-level entries into $VPDir. Later archives in the set overlay earlier ones.
+            Log-Info "Copying $($archive.Name) contents to $VPDir"
+            Get-ChildItem -Path $extractRoot -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                $destPath = Join-Path $VPDir $_.Name
+                if ($_.PSIsContainer) {
+                    if (-not (Test-Path $destPath)) {
+                        New-Item -ItemType Directory -Path $destPath -Force | Out-Null
+                    }
+                    Copy-Item -Path (Join-Path $_.FullName "*") -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
+                } else {
+                    Copy-Item -Path $_.FullName -Destination $destPath -Force
+                }
+            }
+        } finally {
+            Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
         }
-    } finally {
-        Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+    }
+
+    # Recover compiler if no archive contained it (e.g. user supplied units-only + overlay).
+    if (-not $srcCompiler) {
+        $found = @(Get-ChildItem -Path $VPDir -Filter "ppcx64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($found.Count -gt 0) { $srcCompiler = $found[0].FullName }
+    }
+    if (-not $srcCompiler) {
+        Log-Err "ppcx64.exe not found in any extracted archive"
+        return
+    }
+
+    # Ensure compiler\ppcx64.exe exists for legacy callers that look there
+    if (-not (Test-Path $compilerExe)) {
+        $compilerDir = Join-Path $VPDir "compiler"
+        if (-not (Test-Path $compilerDir)) { New-Item -ItemType Directory -Path $compilerDir -Force | Out-Null }
+        Copy-Item $srcCompiler $compilerExe -Force
+    }
+
+    $unitCount = 0
+    $unitsDir = Join-Path $VPDir "units\x86_64-win64"
+    if (Test-Path $unitsDir) {
+        $unitCount = (Get-ChildItem -Path $unitsDir -Filter "*.ppu" -ErrorAction SilentlyContinue).Count
+    }
+    $fpcCfgExtracted = Test-Path (Join-Path $VPDir "bin\fpc.cfg")
+    $setDesc = if ($archiveSet.Count -gt 1) { " ($($archiveSet.Count)-archive set)" } else { "" }
+    Log-Ok "Extracted VibePascal${setDesc}: ppcx64.exe + $unitCount PPUs$(if ($fpcCfgExtracted) { ' + bin\fpc.cfg' })"
+
+    [IO.File]::WriteAllText($markerFile, $archiveKey, (New-Object System.Text.UTF8Encoding $false))
+
+    # Prefer bin\ppcx64.exe -- fpcres.exe and the tarball's fpc.cfg live in bin\ alongside it.
+    # compiler\ppcx64.exe is the legacy fallback but has no resource compiler next to it.
+    $binCompiler = Join-Path $VPDir "bin\ppcx64.exe"
+    if (Test-Path $binCompiler) {
+        $script:VPCompiler = $binCompiler
+    } else {
+        $script:VPCompiler = $compilerExe
     }
 }
 
