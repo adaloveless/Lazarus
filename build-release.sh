@@ -59,6 +59,54 @@ get_cfg_for_target() {
     esac
 }
 
+get_latest_win64_bin_tarball() {
+    find "$VP_DIR/dist/win64" -maxdepth 1 -type f -name 'vibepascal-v*-win64-bin.tar.gz' 2>/dev/null |
+        while IFS= read -r tarball; do
+            local base version
+            base=$(basename "$tarball")
+            version=${base#vibepascal-v}
+            version=${version%%-*}
+            case "$version" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            printf '%08d %s\n' "$version" "$tarball"
+        done |
+        sort -n |
+        tail -1 |
+        cut -d' ' -f2-
+}
+
+copy_win64_compiler_to_staging() {
+    local staging=$1
+    local tarball member
+
+    tarball=$(get_latest_win64_bin_tarball)
+    if [ -n "$tarball" ]; then
+        member=$(tar -tzf "$tarball" | awk '/(^|\/)bin\/ppcx64\.exe$/ { print; exit }')
+        if [ -n "$member" ]; then
+            tar -xOzf "$tarball" "$member" > "$staging/compiler/ppcx64.exe"
+            echo "Bundled Win64 VibePascal compiler from $(basename "$tarball")."
+            return 0
+        fi
+        echo "WARNING: $(basename "$tarball") does not contain bin/ppcx64.exe."
+    fi
+
+    if [ -f "$VP_DIR/compiler/ppcx64.exe" ]; then
+        cp "$VP_DIR/compiler/ppcx64.exe" "$staging/compiler/"
+        echo "Bundled Win64 VibePascal compiler from compiler/ppcx64.exe."
+        return 0
+    fi
+
+    if [ -f "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" ]; then
+        cp "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" "$staging/compiler/"
+        echo "WARNING: Bundled Win64 VibePascal compiler from legacy dist/win64/staging."
+        return 0
+    fi
+
+    echo "ERROR: Win64 ppcx64.exe not found in VibePascal dist or compiler tree." >&2
+    return 1
+}
+
 build_darwin_fpcres() {
     local target=$1
     local dest=$2
@@ -391,11 +439,7 @@ package_release() {
     if [ "$target" = "x86_64-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcx64"
     elif [ "$target" = "x86_64-win64" ]; then
-        if [ -f "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" ]; then
-            cp "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" "$staging/compiler/"
-        else
-            echo "WARNING: Win64 ppcx64.exe not found in VibePascal dist. Skipping compiler."
-        fi
+        copy_win64_compiler_to_staging "$staging"
     elif [ "$target" = "aarch64-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcrossaarch64"
     elif [ "$target" = "arm-linux" ]; then
