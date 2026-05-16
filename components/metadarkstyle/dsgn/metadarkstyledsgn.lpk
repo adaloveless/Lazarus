@@ -9,7 +9,7 @@
       <Version Value="11"/>
       <PathDelim Value="\"/>
       <SearchPaths>
-        <OtherUnitFiles Value="..\src\dsgn;..\..\..\lcl\darkstyle"/>
+        <OtherUnitFiles Value="..\src\dsgn"/>
         <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
