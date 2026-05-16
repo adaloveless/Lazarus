@@ -126,14 +126,46 @@ if (-not $VPDir) {
         }
     }
     if (-not $VPDir) {
-        Log-Err "VibePascal directory not found. Use -VPDir to specify its location."
-        Log-Err "Searched: $($candidates -join ', ')"
-        Log-Err ""
-        Log-Err "How to fix:"
-        Log-Err "  1. Clone next to Lazarus: git clone git@github.com:adaloveless/vibepascal.git ""$parent\vibepascal"""
-        Log-Err "  2. Or pass the path:      .\auto-update.bat -VPDir C:\path\to\vibepascal"
-        Log-Err "  3. Or set the env var:    setx VPDIR ""C:\path\to\vibepascal"" (then open a new shell)"
-        exit 1
+        # GOD directive mp8vlvmq (2026-05-16): if VibePascal isn't anywhere on this machine,
+        # materialize it from GitHub rather than bailing out. Canonical default: C:\vibepascal.
+        $cloneTarget = "C:\vibepascal"
+        $cloneRepo = "https://github.com/adaloveless/vibepascal.git"
+        Log-Warn "VibePascal directory not found in any candidate path."
+
+        if (Test-Path $cloneTarget) {
+            Log-Err "$cloneTarget exists but lacks .git or VibePascal source markers -- refusing to clone over it."
+            Log-Err "Move it aside (rename to ${cloneTarget}.bak) and re-run, or pass -VPDir."
+            exit 1
+        }
+
+        Log-Info "Materializing VibePascal: git clone $cloneRepo -> $cloneTarget"
+        $cloneParent = Split-Path -Parent $cloneTarget
+        if ($cloneParent -and -not (Test-Path $cloneParent)) {
+            New-Item -ItemType Directory -Path $cloneParent -Force | Out-Null
+        }
+
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & git clone $cloneRepo $cloneTarget 2>&1 | ForEach-Object { Write-Host $_ }
+            $cloneExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+
+        if ($cloneExit -ne 0 -or -not (Test-Path (Join-Path $cloneTarget ".git"))) {
+            Log-Err "git clone failed (exit $cloneExit) -- VibePascal could not be materialized."
+            Log-Err "Searched: $($candidates -join ', ')"
+            Log-Err ""
+            Log-Err "How to fix manually:"
+            Log-Err "  1. Clone next to Lazarus: git clone $cloneRepo ""$parent\vibepascal"""
+            Log-Err "  2. Or pass the path:      .\auto-update.bat -VPDir C:\path\to\vibepascal"
+            Log-Err "  3. Or set the env var:    setx VPDIR ""C:\path\to\vibepascal"" (then open a new shell)"
+            exit 1
+        }
+
+        $VPDir = $cloneTarget
+        Log-Ok "VibePascal materialized at: $VPDir"
     }
 }
 
