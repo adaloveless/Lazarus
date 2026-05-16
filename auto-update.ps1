@@ -145,13 +145,19 @@ if (-not (Test-Path $VPCompiler)) {
 
 function Sort-VPArchives {
     param([object[]]$Items)
-    # Parse -v## suffix (e.g., vibepascal-win64-<sha>-v28.tar.gz) and sort numerically
-    # descending; unversioned archives fall behind and sort by LastWriteTime.
-    # Fresh git clones give all archives nearly identical mtimes, so LastWriteTime
-    # alone is non-deterministic -- version number is the authoritative ordering.
+    # Parse -v## from filename and sort numerically descending; unversioned archives
+    # fall behind and sort by LastWriteTime. Fresh git clones give all archives nearly
+    # identical mtimes, so LastWriteTime alone is non-deterministic -- version number
+    # is the authoritative ordering.
+    #
+    # Two naming conventions are supported:
+    #   legacy (v23-v31):  vibepascal-win64-<sha>-v28.tar.gz       -- "-v28." at end
+    #   v32+ split-archives: vibepascal-v32-rc-<sha>-win64-bin.tar.gz -- "-v32-" mid-name
+    # The single regex '-v(\d+)[-.]' captures both: the version-number segment is
+    # always preceded by '-v' and followed by '-' (new) or '.' (legacy).
     return $Items | Sort-Object `
         @{Expression = {
-            if ($_.Name -match '-v(\d+)\.(tar\.gz|zip)$') { [int]$Matches[1] } else { -1 }
+            if ($_.Name -match '-v(\d+)[-.]') { [int]$Matches[1] } else { -1 }
           }; Descending = $true}, `
         @{Expression = {$_.LastWriteTime}; Descending = $true}
 }
@@ -1275,7 +1281,22 @@ if ($ResetConfig) {
     $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
     if ($quality.Quality -ne "Compatible") {
         Log-Warn "Lazarus directory still flagged $($quality.Quality): $($quality.Note)"
-        Log-Warn "IDE may show 'Without a proper Lazarus directory' on startup. Run -ForceRebuild to rebuild lazarus.exe."
+        if (-not $ForceRebuild) {
+            Log-Warn "IDE may show 'Without a proper Lazarus directory' on startup. Run -ForceRebuild to rebuild lazarus.exe."
+        }
+    }
+    if ($ForceRebuild) {
+        # -ResetConfig -ForceRebuild: rebuild current source after config reset.
+        # Calls Rebuild-Lazbuild + Rebuild-IDE directly instead of falling through
+        # to the main pipeline, which would re-extract VP, wipe local changes, and
+        # pull upstream -- not what the user asked for with -ResetConfig.
+        Log-Info "-ResetConfig -ForceRebuild: rebuilding lazbuild + IDE after config reset"
+        Rebuild-Lazbuild
+        Configure-Environment
+        Rebuild-IDE
+        if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
+            Log-Ok "Lazarus rebuilt after ResetConfig"
+        }
     }
     exit 0
 }
