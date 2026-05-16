@@ -1827,6 +1827,11 @@ begin
     SynDefaultFontHeight := 10;
     {$DEFINE SynDefaultFont}
   {$ENDIF}
+  {$IFDEF MSWINDOWS}
+    SynDefaultFontName   := 'Consolas';
+    SynDefaultFontHeight := -13;
+    {$DEFINE SynDefaultFont}
+  {$ENDIF}
   // LCLgtk2 and LCLQt use default settings
   {$IFnDEF SynDefaultFont}
     SynDefaultFontName   := 'Courier New';

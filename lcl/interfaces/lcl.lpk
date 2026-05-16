@@ -25,8 +25,13 @@ if LCLWidgetType+&apos;&apos;=&apos;&apos; then begin
       LCLWidgetType := &apos;win32&apos;
     else if TargetOS=&apos;wince&apos; then
       LCLWidgetType := &apos;wince&apos;
-    else if TargetOS=&apos;darwin&apos; then
-      LCLWidgetType := &apos;carbon&apos;
+    else if TargetOS=&apos;darwin&apos; then begin
+      // Carbon is 32-bit/PowerPC legacy. Modern 64-bit darwin (aarch64 Apple Silicon, x86_64 since macOS 10.15) needs cocoa.
+      if (TargetCPU=&apos;powerpc&apos;) or (TargetCPU=&apos;i386&apos;) then
+        LCLWidgetType := &apos;carbon&apos;
+      else
+        LCLWidgetType := &apos;cocoa&apos;;
+    end
     else if (TargetOS=&apos;amiga&apos;) or (TargetOS=&apos;aros&apos;) or (TargetOS=&apos;morphos&apos;) then
       LCLWidgetType := &apos;mui&apos;
     else
