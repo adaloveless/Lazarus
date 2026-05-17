@@ -273,6 +273,7 @@ type
       Copying: boolean = false; const Attr: TProcHeadAttributes = [];
       ParserFlags: TPascalParserFlags = []): boolean;
     function ReadAnonymousFunction(ExceptionOnError: boolean): boolean;
+    function CurrentAtomStartsBlockStatement: boolean;
     function SkipTypeReference(ExceptionOnError: boolean): boolean;
     function SkipSpecializeParams(ExceptionOnError: boolean): boolean;
     function WordIsPropertyEnd: boolean;
@@ -346,6 +347,9 @@ function dbgs(Attr: TProcHeadAttributes): string; overload;
 function dbgs(Attr: TParseProcHeadAttributes): string; overload;
 
 implementation
+
+uses
+  BasicCodeTools;
 
 
 type
@@ -2901,10 +2905,7 @@ begin
       CurSection:=CurNode.Desc;
       ScannedRange:=lsrFinalizationStart;
       if ord(ScanTill)<=ord(ScannedRange) then exit;
-    end else if BlockStatementStartKeyWordFuncList.DoIdentifier(@Src[CurPos.StartPos])
-    and not (UpAtomIs('MATCH') and (LastAtoms.GetPriorAtom.Flag=cafPoint))
-    then begin
-      // 'match' after '.' is a member access (e.g. obj.Match[i]), not a block
+    end else if CurrentAtomStartsBlockStatement then begin
       if not ReadTilBlockEnd(false,true) then
         SaveRaiseEndOfSourceExpected(20170421195551);
     end else if UpAtomIs('WITH') then begin
@@ -3177,11 +3178,7 @@ begin
       end;
     end else if CurPos.Flag<>cafWord then begin
       continue;
-    end else if BlockStatementStartKeyWordFuncList.DoIdentifier(@Src[CurPos.StartPos])
-    and not (UpAtomIs('MATCH') and (LastAtoms.GetPriorAtom.Flag=cafPoint))
-    then begin
-      // 'match' is a context-sensitive keyword; when preceded by '.' it is a
-      // member access (e.g. obj.Match[i]), not a `match...end` block.
+    end else if CurrentAtomStartsBlockStatement then begin
       if (BlockType<>ebtRecord) then begin
         ReadTilBlockEnd(false,CreateNodes);
         if (BlockType=ebtIf) and (CurPos.Flag in [cafSemicolon]) then
@@ -3577,16 +3574,57 @@ begin
 end;
 
 
+function TPascalParserTool.CurrentAtomStartsBlockStatement: boolean;
+var
+  Prior: TAtomPosition;
+
+  function MatchSyntaxFollows: boolean;
+  var
+    AtomStart, Position, BracketDepth: integer;
+    Atom: string;
+    NestedComments: boolean;
+  begin
+    Result:=false;
+    Position:=CurPos.EndPos;
+    BracketDepth:=0;
+    NestedComments:=false;
+    if Scanner<>nil then
+      NestedComments:=Scanner.NestedComments;
+    repeat
+      ReadRawNextPascalAtom(Src,Position,AtomStart,NestedComments,true);
+      if AtomStart>SrcLen then exit;
+      Atom:=UpperCaseStr(copy(Src,AtomStart,Position-AtomStart));
+      if BracketDepth=0 then begin
+        if (Atom='OF') or (Atom=':') then exit(true);
+        if (Atom=';') or (Atom='THEN') or (Atom='DO') or (Atom='UNTIL')
+        or (Atom='ELSE') or (Atom='END') then exit(false);
+      end;
+      if (Atom='(') or (Atom='[') then
+        inc(BracketDepth)
+      else if (Atom=')') or (Atom=']') then begin
+        if BracketDepth=0 then exit(false);
+        dec(BracketDepth);
+      end;
+    until false;
+  end;
+begin
+  Result:=BlockStatementStartKeyWordFuncList.DoIdentifier(@Src[CurPos.StartPos]);
+  if (not Result) or (not UpAtomIs('MATCH')) then exit;
+
+  Prior:=LastAtoms.GetPriorAtom;
+  if (Prior.Flag=cafPoint)
+  or ((Prior.Flag=cafWord) and FreeUpAtomIs(Prior,'CASE'))
+  or not MatchSyntaxFollows then
+    exit(false);
+end;
+
 function TPascalParserTool.ReadTilStatementEnd(ExceptionOnError,
   CreateNodes: boolean): boolean;
 // after reading the current atom will be on the last atom of the statement
 begin
   Result:=true;
   while CurPos.StartPos<=SrcLen do begin
-    if BlockStatementStartKeyWordFuncList.DoIdentifier(@Src[CurPos.StartPos])
-    and not (UpAtomIs('MATCH') and (LastAtoms.GetPriorAtom.Flag=cafPoint))
-    then begin
-      // 'match' after '.' is a member access (e.g. obj.Match[i]), not a block
+    if CurrentAtomStartsBlockStatement then begin
       // Statement expression try (e.g. s := try X except Y) has no 'end'
       if UpAtomIs('TRY') and IsTryExpression(CurPos.StartPos) then begin
         // Note: except/finally/else are PART of the expression, not enders
@@ -7600,5 +7638,3 @@ begin
 end;
 
 end.
-
-

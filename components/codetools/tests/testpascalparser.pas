@@ -65,6 +65,7 @@ type
     procedure TestParseExternalConcat;
     procedure TestParseExternalConst;
     procedure TestParseInternProcBracketModifier;
+    procedure TestParseLocalFunctionNamedMatch;
     procedure TestParseModeTP;
     procedure TestParseIFOpt;
     procedure TestParseProcAnoAssign;
@@ -681,6 +682,50 @@ begin
   ParseModule;
 end;
 
+procedure TTestPascalParser.TestParseLocalFunctionNamedMatch;
+begin
+  Add([
+  'unit test1;',
+  '{$mode objfpc}{$H+}',
+  'interface',
+  'type',
+  '  TTest = class',
+  '    function MatchListItem(const AValue: string): Integer;',
+  '  end;',
+  'implementation',
+  'function TTest.MatchListItem(const AValue: string): Integer;',
+  'var',
+  '  matchText: string;',
+  '  i: Integer;',
+  '  function match(itemText: string): Boolean;',
+  '  begin',
+  '    Result := matchText = itemText;',
+  '  end;',
+  'begin',
+  '  Result := -1;',
+  '  if match(AValue) then',
+  '    Result := 0;',
+  '  for i := 0 to 1 do',
+  '    if match(AValue) then',
+  '      break;',
+  '  Result := Ord(match(AValue));',
+  '  case match(AValue) of',
+  '    True: Result := 1;',
+  '    False: Result := 0;',
+  '  end;',
+  'end;',
+  'function MatchExpression(const AValue: string): Integer;',
+  'begin',
+  '  Result := match AValue of',
+  '    ''one'': 1;',
+  '  else',
+  '    0;',
+  '  end;',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
 procedure TTestPascalParser.TestParseModeTP;
 begin
   Add([
@@ -1010,4 +1055,3 @@ initialization
   RegisterTest(TTestPascalParser);
 
 end.
-
