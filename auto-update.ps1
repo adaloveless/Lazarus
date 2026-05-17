@@ -51,7 +51,7 @@ if ($Help) {
 function Log-Info  { param($msg) Write-Host "[INFO] $msg" -ForegroundColor Cyan }
 function Log-Ok    { param($msg) Write-Host "[OK] $msg" -ForegroundColor Green }
 function Log-Warn  { param($msg) Write-Host "[WARN] $msg" -ForegroundColor Yellow }
-function Log-Err   { param($msg) Write-Host "[ERROR] $msg" -ForegroundColor Red }
+function Log-Err   { param($msg) $script:ErrorCount++; Write-Host "[ERROR] $msg" -ForegroundColor Red }
 function Log-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
 $script:LazarusUpdated = $false
@@ -59,6 +59,7 @@ $script:VPUpdated = $false
 $script:UpstreamUpdated = $false
 $script:BuildProductsWereMissing = $false
 $script:LocalBuildProductsRestored = $false
+$script:ErrorCount = 0
 
 if (-not $VPDir -and $env:VPDIR -and (Test-Path (Join-Path $env:VPDIR ".git"))) {
     $VPDir = $env:VPDIR
@@ -653,10 +654,21 @@ function Find-Make {
         (Get-Command "mingw32-make" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
         "C:\lazarus\fpc\bin\x86_64-win64\make.exe",
         "C:\installs\lazarus\fpc\bin\x86_64-win64\make.exe",
-        "C:\FPC\bin\x86_64-win64\make.exe"
+        "C:\FPC\bin\x86_64-win64\make.exe",
+        "C:\tools\msys64\usr\bin\make.exe",
+        "C:\msys64\usr\bin\make.exe",
+        "C:\msys32\usr\bin\make.exe"
     )
     foreach ($p in $makePaths) {
-        if ($p -and (Test-Path $p)) { return $p }
+        if ($p -and (Test-Path $p)) {
+            # MSYS2 make depends on sibling tools (sh.exe, sed.exe) in the same usr\bin dir;
+            # prepend that directory to PATH so child processes can find them.
+            $makeDir = Split-Path -Parent $p
+            if ($makeDir -match '(?i)msys(64|32)?\\usr\\bin$' -and ($env:PATH -notlike "*$makeDir*")) {
+                $env:PATH = "$makeDir;$env:PATH"
+            }
+            return $p
+        }
     }
     foreach ($root in @("C:\lazarus\fpc", "C:\installs\lazarus\fpc", "C:\FPC")) {
         if (Test-Path $root) {
@@ -1527,3 +1539,10 @@ if (-not $NoLaunch) {
 }
 
 Print-Summary
+
+if ($script:ErrorCount -gt 0) {
+    Write-Host ""
+    Log-Warn "Auto-update completed with $($script:ErrorCount) error(s) -- see [ERROR] lines above. Returning exit 1."
+    exit 1
+}
+exit 0
