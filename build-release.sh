@@ -285,6 +285,201 @@ EOF
     rm -rf "$pcp"
 }
 
+get_lcl_widget_for_target() {
+    local target=$1
+    case "$target" in
+        x86_64-win64)
+            echo "win32"
+            ;;
+        *-darwin)
+            echo "cocoa"
+            ;;
+        *)
+            echo "gtk2"
+            ;;
+    esac
+}
+
+get_release_compiler_name_for_target() {
+    local target=$1
+    case "$target" in
+        x86_64-linux)
+            echo "ppcx64"
+            ;;
+        x86_64-win64)
+            echo "ppcx64.exe"
+            ;;
+        aarch64-linux)
+            echo "ppcrossaarch64"
+            ;;
+        arm-linux)
+            echo "ppcrossarm"
+            ;;
+        x86_64-darwin)
+            echo "ppcx64"
+            ;;
+        aarch64-darwin)
+            echo "ppca64"
+            ;;
+        *)
+            echo "ppcx64"
+            ;;
+    esac
+}
+
+get_lazbuild_path_for_target() {
+    local target=$1
+    if [ "$target" = "x86_64-win64" ]; then
+        echo "$LAZARUS_DIR/lazbuild.exe"
+    else
+        echo "$LAZARUS_DIR/lazbuild"
+    fi
+}
+
+clean_bgra_release_package_outputs() {
+    local target=$1
+    local widget=$2
+
+    rm -rf "$LAZARUS_DIR/components/mouseandkeyinput/lib/$target/$widget"
+    rm -rf "$LAZARUS_DIR/components/bgrabitmap/bgrabitmap/lib/${target}-${widget}-"*
+    rm -rf "$LAZARUS_DIR/components/bgracontrols/lib/${target}-${widget}-"*
+}
+
+rewrite_bgra_compiled_state() {
+    local target=$1
+    local wrapper=$2
+    local compiler_name
+    compiler_name=$(get_release_compiler_name_for_target "$target")
+
+    local compiled_file=""
+    local mtime_ref=""
+    local replacement="\$(LazarusDir)compiler/${compiler_name}"
+    while IFS= read -r -d '' compiled_file; do
+        mtime_ref=$(mktemp)
+        touch -r "$compiled_file" "$mtime_ref"
+        if sed -i \
+            -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"${replacement}\"|g" \
+            -e "s|Value=\"${wrapper}\"|Value=\"${replacement}\"|g" \
+            -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
+            -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
+            -e '/Params Value=/ s/ \+"/"/g' \
+            "$compiled_file"; then
+            touch -r "$mtime_ref" "$compiled_file"
+            rm -f "$mtime_ref"
+        else
+            rm -f "$mtime_ref"
+            return 1
+        fi
+    done < <(grep -rlZ --include='*.compiled' "$wrapper" \
+        "$LAZARUS_DIR/components/mouseandkeyinput" \
+        "$LAZARUS_DIR/components/bgrabitmap" \
+        "$LAZARUS_DIR/components/bgracontrols" 2>/dev/null || true)
+}
+
+verify_bgra_release_package_outputs() {
+    local target=$1
+    local widget=$2
+    local missing=0
+
+    shopt -s nullglob
+    local mouse_compiled=("$LAZARUS_DIR"/components/mouseandkeyinput/lib/"$target"/"$widget"/lazmouseandkeyinput.compiled)
+    local bgra_compiled=("$LAZARUS_DIR"/components/bgrabitmap/bgrabitmap/lib/"${target}-${widget}-"*/bgrabitmappack.compiled)
+    local controls_compiled=("$LAZARUS_DIR"/components/bgracontrols/lib/"${target}-${widget}-"*/bgracontrols.compiled)
+    local mouse_ppu=("$LAZARUS_DIR"/components/mouseandkeyinput/lib/"$target"/"$widget"/*.ppu)
+    local bgra_ppu=("$LAZARUS_DIR"/components/bgrabitmap/bgrabitmap/lib/"${target}-${widget}-"*/*.ppu)
+    local controls_ppu=("$LAZARUS_DIR"/components/bgracontrols/lib/"${target}-${widget}-"*/*.ppu)
+    shopt -u nullglob
+
+    if [ "${#mouse_compiled[@]}" -eq 0 ]; then
+        echo "ERROR: lazmouseandkeyinput compiled output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#bgra_compiled[@]}" -eq 0 ]; then
+        echo "ERROR: BGRABitmapPack compiled output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#controls_compiled[@]}" -eq 0 ]; then
+        echo "ERROR: bgracontrols compiled output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#mouse_ppu[@]}" -eq 0 ]; then
+        echo "ERROR: lazmouseandkeyinput ppu output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#bgra_ppu[@]}" -eq 0 ]; then
+        echo "ERROR: BGRABitmapPack ppu output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#controls_ppu[@]}" -eq 0 ]; then
+        echo "ERROR: bgracontrols ppu output missing for $target/$widget" >&2
+        missing=1
+    fi
+
+    [ "$missing" -eq 0 ]
+}
+
+build_bgra_release_packages() {
+    local target=$1
+    local cfg=$2
+    local compiler
+    compiler=$(get_compiler_for_target "$target")
+    local os_target=$(echo "$target" | cut -d- -f2)
+    local cpu_target=$(echo "$target" | cut -d- -f1)
+    local widget
+    widget=$(get_lcl_widget_for_target "$target")
+    local wrapper="/tmp/lazrelease-${target}-compiler-wrapper"
+    local pcp="/tmp/lazrelease-bgra-pcp-${target}"
+    local package=""
+
+    echo "=== Building BGRA release packages for $target ($widget) ==="
+    clean_bgra_release_package_outputs "$target" "$widget"
+
+    cat > "$wrapper" << EOF
+#!/bin/bash
+exec "$compiler" -n @"$cfg" "\$@"
+EOF
+    chmod +x "$wrapper"
+    rm -rf "$pcp"
+    mkdir -p "$pcp"
+
+    set -o pipefail
+    for package in \
+        components/mouseandkeyinput/lazmouseandkeyinput.lpk \
+        components/bgrabitmap/bgrabitmap/bgrabitmappack.lpk \
+        components/bgracontrols/bgracontrols.lpk
+    do
+        echo "=== lazbuild $package for $target ($widget) ==="
+        if ! "$LAZARUS_DIR/lazbuild" \
+            --pcp="$pcp" \
+            --lazarusdir="$LAZARUS_DIR" \
+            --compiler="$wrapper" \
+            --cpu="$cpu_target" \
+            --os="$os_target" \
+            --ws="$widget" \
+            "$LAZARUS_DIR/$package" 2>&1 | tail -60; then
+            set +o pipefail
+            rm -f "$wrapper"
+            rm -rf "$pcp"
+            return 1
+        fi
+    done
+    set +o pipefail
+
+    if ! rewrite_bgra_compiled_state "$target" "$wrapper"; then
+        rm -f "$wrapper"
+        rm -rf "$pcp"
+        return 1
+    fi
+    if ! verify_bgra_release_package_outputs "$target" "$widget"; then
+        rm -f "$wrapper"
+        rm -rf "$pcp"
+        return 1
+    fi
+
+    rm -f "$wrapper"
+    rm -rf "$pcp"
+}
+
 build_darwin_starter() {
     local target=$1
     local cfg=$2
@@ -448,6 +643,8 @@ strip_stale_host_arch_artifacts() {
     # was ELF x86-64 LSB inside the aarch64-darwin tarball).
     local staging=$1
     local target=$2
+    local widget
+    widget=$(get_lcl_widget_for_target "$target")
 
     rm -f "$staging/components/codetools/tests/runtestscodetools" \
           "$staging/components/codetools/tests/runtestscodetools.exe" \
@@ -464,6 +661,43 @@ strip_stale_host_arch_artifacts() {
         [ "$arch" = "$target" ] && continue
         rm -rf "$libdir"
     done < <(find "$staging/components" -path '*/tests/lib/*' -type d -mindepth 4 -maxdepth 5 2>/dev/null)
+
+    # Keep only the BGRA package outputs for this release target. In an `all`
+    # build, previous platform passes leave their lib dirs in the source tree;
+    # package_release copies the whole components tree for each target.
+    local libroot=""
+    local bgra_dir=""
+    local bgra_base=""
+    for libroot in \
+        "$staging/components/bgrabitmap/bgrabitmap/lib" \
+        "$staging/components/bgracontrols/lib"
+    do
+        [ -d "$libroot" ] || continue
+        while IFS= read -r bgra_dir; do
+            bgra_base=$(basename "$bgra_dir")
+            case "$bgra_base" in
+                ${target}-${widget}-*) ;;
+                *) rm -rf "$bgra_dir" ;;
+            esac
+        done < <(find "$libroot" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+    done
+
+    local mouse_root="$staging/components/mouseandkeyinput/lib"
+    local mouse_dir=""
+    local mouse_base=""
+    if [ -d "$mouse_root" ]; then
+        while IFS= read -r mouse_dir; do
+            mouse_base=$(basename "$mouse_dir")
+            [ "$mouse_base" = "$target" ] || rm -rf "$mouse_dir"
+        done < <(find "$mouse_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+
+        if [ -d "$mouse_root/$target" ]; then
+            while IFS= read -r mouse_dir; do
+                mouse_base=$(basename "$mouse_dir")
+                [ "$mouse_base" = "$widget" ] || rm -rf "$mouse_dir"
+            done < <(find "$mouse_root/$target" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+        fi
+    fi
 
     # Strip macOS-only artifacts from non-darwin tarballs. lhelp.app contains a
     # relative symlink (Contents/MacOS/lhelp -> ../../../lhelp) that aborts the
@@ -1053,9 +1287,45 @@ build_platform() {
         build_darwin_starter "$target" "$cfg"
         build_darwin_lhelp "$target" "$cfg"
         create_darwin_app_bundle "$target"
+        if ! build_bgra_release_packages "$target" "$cfg"; then
+            cp "$saved_lazbuild" "$LAZARUS_DIR/lazbuild"
+            rm -f "$saved_lazbuild"
+            return 1
+        fi
 
         # Restore darwin lazbuild for packaging
         cp "$saved_lazbuild" "$LAZARUS_DIR/lazbuild"
+        rm -f "$saved_lazbuild"
+    elif [ "$target" = "x86_64-linux" ]; then
+        build_bgra_release_packages "$target" "$cfg"
+    else
+        # Cross-target lazbuild binaries are not executable on this Linux build
+        # host. Use a native lazbuild with a per-target compiler wrapper to
+        # produce package artifacts, then restore the target lazbuild for
+        # packaging.
+        local target_lazbuild
+        target_lazbuild=$(get_lazbuild_path_for_target "$target")
+        local saved_lazbuild="$LAZARUS_DIR/lazbuild-${target}"
+        [ "$target" = "x86_64-win64" ] && saved_lazbuild="${saved_lazbuild}.exe"
+        if [ ! -f "$target_lazbuild" ]; then
+            echo "ERROR: target lazbuild not found at $target_lazbuild" >&2
+            return 1
+        fi
+        cp "$target_lazbuild" "$saved_lazbuild"
+        make -C "$LAZARUS_DIR" lazbuild \
+            PP="$VP_DIR/compiler/ppcx64" \
+            FPCDIR="$VP_DIR" \
+            OS_TARGET=linux \
+            CPU_TARGET=x86_64 \
+            OPT="-n @$LINUX_CFG" 2>&1 | tail -5
+
+        if ! build_bgra_release_packages "$target" "$cfg"; then
+            cp "$saved_lazbuild" "$target_lazbuild"
+            rm -f "$saved_lazbuild"
+            return 1
+        fi
+
+        cp "$saved_lazbuild" "$target_lazbuild"
         rm -f "$saved_lazbuild"
     fi
 
