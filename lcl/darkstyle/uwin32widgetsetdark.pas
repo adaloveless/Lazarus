@@ -1351,6 +1351,32 @@ end;
 var
   __CreateWindowExW: function(dwExStyle: DWORD; lpClassName: LPCWSTR; lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint; nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU; hInstance: HINST; lpParam: LPVOID): HWND; stdcall;
 
+function _CreateWindowExW(dwExStyle: DWORD; lpClassName: LPCWSTR;
+  lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint;
+  nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU;
+  hInstance: HINST; lpParam: LPVOID): HWND; stdcall; forward;
+
+function CallCreateWindowExW(dwExStyle: DWORD; lpClassName: LPCWSTR;
+  lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint;
+  nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU;
+  hInstance: HINST; lpParam: LPVOID): HWND;
+begin
+  if (not Assigned(__CreateWindowExW)) or
+    (Pointer(__CreateWindowExW) = Pointer(@_CreateWindowExW)) then
+    Pointer(__CreateWindowExW):= GetProcAddress(GetModuleHandle(user32),
+      'CreateWindowExW');
+
+  if Assigned(__CreateWindowExW) and
+    (Pointer(__CreateWindowExW) <> Pointer(@_CreateWindowExW)) then
+    Result:= __CreateWindowExW(dwExStyle, lpClassName, lpWindowName,
+      dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam)
+  else
+  begin
+    SetLastError(ERROR_PROC_NOT_FOUND);
+    Result:= 0;
+  end;
+end;
+
 function _DrawEdge(hdc: HDC; var qrc: TRect; edge: UINT; grfFlags: UINT): BOOL; stdcall;
 var
   Original: HGDIOBJ;
@@ -1506,7 +1532,8 @@ begin
   end else begin
     dwExStyle:= dwExStyle or WS_EX_CONTEXTHELP;
   end;
-  Result:= __CreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+  Result:= CallCreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle,
+    X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
 end;
 
 function TaskDialogIndirectDark(const pTaskConfig: PTASKDIALOGCONFIG; pnButton: PInteger; pnRadioButton: PInteger; pfVerificationFlagChecked: PBOOL): HRESULT; stdcall;
@@ -2492,14 +2519,16 @@ begin
   if Assigned(pLibrary) then
   begin
     hModule:= GetModuleHandle(user32);
+    Pointer(__CreateWindowExW):= GetProcAddress(hModule, 'CreateWindowExW');
 
-    pFunction:= FindImportFunction(pLibrary, GetProcAddress(hModule, 'CreateWindowExW'));
+    pFunction:= FindImportFunction(pLibrary, Pointer(__CreateWindowExW));
     // UPX purpose
     if pFunction=nil then
       pFunction := FindIATEntry(@Windows.CreateWindowExW);
     if Assigned(pFunction) then
     begin
-      Pointer(__CreateWindowExW):= ReplaceImportFunction(pFunction, @_CreateWindowExW);
+      if pFunction^ <> Pointer(@_CreateWindowExW) then
+        ReplaceImportFunction(pFunction, @_CreateWindowExW);
     end;
     pFunction:= FindImportFunction(pLibrary, GetProcAddress(hModule, 'DrawEdge'));
     // UPX purpose
@@ -2529,9 +2558,14 @@ begin
   else
   begin
     // UPX purpose
+    Pointer(__CreateWindowExW):= GetProcAddress(GetModuleHandle(user32),
+      'CreateWindowExW');
     pFunction := FindIATEntry(@Windows.CreateWindowExW);
     if Assigned(pFunction) then
-      Pointer(__CreateWindowExW):= ReplaceImportFunction(pFunction, @_CreateWindowExW);
+    begin
+      if pFunction^ <> Pointer(@_CreateWindowExW) then
+        ReplaceImportFunction(pFunction, @_CreateWindowExW);
+    end;
     pFunction := FindIATEntry(@Windows.DrawEdge);
     if Assigned(pFunction) then
       ReplaceImportFunction(pFunction, @_DrawEdge);
