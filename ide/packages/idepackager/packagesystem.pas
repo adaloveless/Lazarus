@@ -2627,6 +2627,10 @@ function TLazPackageGraph.IsCompiledInBasePackage(PackageName: string): boolean;
 var
   bp: TLazarusIDEBasePkg;
 begin
+  {$IFNDEF MSWINDOWS}
+  if SameText(PackageName,'metadarkstyledsgn') then
+    exit(true);
+  {$ENDIF}
   for bp in TLazarusIDEBasePkg do
     if SameText(PackageName,LazarusIDEBasePkgNames[bp]) then
       exit(true);
