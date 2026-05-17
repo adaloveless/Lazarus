@@ -464,6 +464,17 @@ strip_stale_host_arch_artifacts() {
         [ "$arch" = "$target" ] && continue
         rm -rf "$libdir"
     done < <(find "$staging/components" -path '*/tests/lib/*' -type d -mindepth 4 -maxdepth 5 2>/dev/null)
+
+    # Strip macOS-only artifacts from non-darwin tarballs. lhelp.app contains a
+    # relative symlink (Contents/MacOS/lhelp -> ../../../lhelp) that aborts the
+    # default Windows tar.exe mid-extract, leaving the user with a partial
+    # tree (Wynona C95 r17 finding). The .app bundle is macOS-specific and
+    # provides no value in win64/linux tarballs. Darwin tarballs keep the
+    # bundle and the materialize_darwin_lhelp_app pass below replaces the
+    # symlink with a real binary.
+    if [[ "$target" != *-darwin ]]; then
+        rm -rf "$staging/components/chmhelp/lhelp/lhelp.app"
+    fi
 }
 
 create_darwin_app_bundle() {
