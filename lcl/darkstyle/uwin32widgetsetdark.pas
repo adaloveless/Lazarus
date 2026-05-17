@@ -1520,11 +1520,24 @@ const
 
 function _CreateWindowExW(dwExStyle: DWORD; lpClassName: LPCWSTR; lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint; nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU; hInstance: HINST; lpParam: LPVOID): HWND; stdcall;
 var
-  AParams: PNCCreateParams absolute lpParam;
+  AParams: PNCCreateParams;
+  LWinControl: TWinControl;
 begin
-  if Assigned(AParams) and (AParams^.WinControl is TCustomForm) then
+  LWinControl:= nil;
+  if Assigned(lpParam) then
   begin
-    if (hWndParent = 0) and AParams^.WinControl.ClassNameIs('TfrmMain') then
+    try
+      AParams:= PNCCreateParams(lpParam);
+      if Assigned(AParams^.WinControl) and (AParams^.WinControl is TWinControl) then
+        LWinControl:= AParams^.WinControl;
+    except
+      LWinControl:= nil;
+    end;
+  end;
+
+  if Assigned(LWinControl) and (LWinControl is TCustomForm) then
+  begin
+    if (hWndParent = 0) and LWinControl.ClassNameIs('TfrmMain') then
       lpClassName:= ClassNameTC
     else begin
       lpClassName:= ClassNameW;
