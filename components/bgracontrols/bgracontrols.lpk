@@ -13,7 +13,7 @@
       <Parsing>
         <SyntaxOptions>
           <SyntaxMode Value="Delphi"/>
-          <CStyleOperator Value="False"/>
+          <CStyleOperator Value="True"/>
           <AllowLabel Value="False"/>
           <UseAnsiStrings Value="False"/>
           <CPPInline Value="False"/>
