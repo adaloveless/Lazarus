@@ -408,21 +408,36 @@ materialize_darwin_lhelp_app() {
     fi
 }
 
-restore_staged_compiled_mtimes() {
+restore_staged_mtimes() {
     local staging=$1
     local staged_file=""
     local rel_path=""
     local source_file=""
 
-    # cp -r resets destination mtimes, which can make copied .compiled files look
-    # newer or older purely because of package-directory copy order. Restore the
-    # source-tree mtimes before creating the Darwin .app hardlinks and tarball.
+    # cp -r resets destination mtimes, which can make copied source/.compiled
+    # files look newer or older than their source-tree counterparts. Two
+    # rebuild-trigger traps this prevents:
+    #   * Package-directory copy order making FCL .compiled look newer than
+    #     LazUtils, forcing LazUtils rebuild (Melissa F4, cycle 352).
+    #   * Source .pas/.lpk mtimes ending up ~5 min newer than .compiled state,
+    #     tripping TLazPackageGraph's "source disk file modified" check and
+    #     forcing package rebuild from source (Melissa F5, cycle 363).
+    # Restore source-tree mtimes before creating the Darwin .app hardlinks and
+    # the tarball, so user-side IDE sees a consistent timeline.
     while IFS= read -r -d '' staged_file; do
         rel_path="${staged_file#$staging/}"
         source_file="$LAZARUS_DIR/$rel_path"
         [ -f "$source_file" ] || continue
         touch -r "$source_file" "$staged_file"
-    done < <(find "$staging" -type f -name '*.compiled' -print0)
+    done < <(find "$staging" -type f \( \
+        -name '*.compiled' -o \
+        -name '*.pas' -o \
+        -name '*.pp' -o \
+        -name '*.lpk' -o \
+        -name '*.inc' -o \
+        -name '*.lpr' -o \
+        -name '*.lfm' \
+        \) -print0)
 }
 
 create_darwin_app_bundle() {
@@ -527,7 +542,7 @@ package_release() {
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/images" "$staging/" 2>/dev/null || true
 
-    restore_staged_compiled_mtimes "$staging"
+    restore_staged_mtimes "$staging"
 
     if [[ "$target" == *-darwin ]]; then
         materialize_darwin_lhelp_app "$staging/components/chmhelp/lhelp"
