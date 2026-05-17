@@ -1216,18 +1216,8 @@
         <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>
-        <Filename Value="darkstyle/uimport.pas"/>
-        <UnitName Value="uImport"/>
-        <AddToUsesPkgSection Value="False"/>
-      </Item>
-      <Item>
         <Filename Value="darkstyle/umetadarkstyle.pas"/>
         <UnitName Value="uMetaDarkStyle"/>
-        <AddToUsesPkgSection Value="False"/>
-      </Item>
-      <Item>
-        <Filename Value="darkstyle/uwin32widgetsetdark.pas"/>
-        <UnitName Value="uWin32WidgetSetDark"/>
         <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>
