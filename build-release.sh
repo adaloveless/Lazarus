@@ -440,6 +440,32 @@ restore_staged_mtimes() {
         \) -print0)
 }
 
+strip_stale_host_arch_artifacts() {
+    # Strip host-arch test/dev binaries and non-target build intermediates that
+    # leak from the source tree via `cp -r components/`. Without this, an
+    # x86_64-linux build host ships its own runtestscodetools/lhelp ELF inside
+    # every cross-arch tarball (Sterling C378 r17 finding: runtestscodetools
+    # was ELF x86-64 LSB inside the aarch64-darwin tarball).
+    local staging=$1
+    local target=$2
+
+    rm -f "$staging/components/codetools/tests/runtestscodetools" \
+          "$staging/components/codetools/tests/runtestscodetools.exe" \
+          "$staging/components/chmhelp/lhelp/lhelp" \
+          "$staging/components/chmhelp/lhelp/lhelp.exe"
+
+    # Remove non-target tests/lib intermediate dirs (e.g., tests/lib/x86_64-linux
+    # inside an aarch64-darwin staging). End users do not need test
+    # intermediates and they trip lazbuild ambiguous-unit checks.
+    local libdir=""
+    while IFS= read -r libdir; do
+        local arch
+        arch=$(basename "$libdir")
+        [ "$arch" = "$target" ] && continue
+        rm -rf "$libdir"
+    done < <(find "$staging/components" -path '*/tests/lib/*' -type d -mindepth 4 -maxdepth 5 2>/dev/null)
+}
+
 create_darwin_app_bundle() {
     local target=$1
     local cpu_target=$(echo "$target" | cut -d- -f1)
@@ -541,6 +567,8 @@ package_release() {
     cp -r "$LAZARUS_DIR/designer" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/images" "$staging/" 2>/dev/null || true
+
+    strip_stale_host_arch_artifacts "$staging" "$target"
 
     restore_staged_mtimes "$staging"
 
