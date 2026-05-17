@@ -529,7 +529,10 @@ begin
       Exit(1);
     end;
     else begin
-      Result:= CallWindowProc(OldUpDownWndProc, Window, Msg, WParam, LParam);
+      if Assigned(OldUpDownWndProc) and (Pointer(OldUpDownWndProc) <> Pointer(@UpDownWndProc)) then
+        Result:= CallWindowProc(OldUpDownWndProc, Window, Msg, WParam, LParam)
+      else
+        Result:= DefWindowProcW(Window, Msg, WParam, LParam);
     end;
   end;
 end;
@@ -731,8 +734,6 @@ end;
 
 class function TWin32WSCustomFormDark.CreateHandle(
   const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
-var
-  Info: PWin32WindowInfo;
 begin
   if not (csDesigning in AWinControl.ComponentState) then begin
     AWinControl.DoubleBuffered:= True;
@@ -742,11 +743,11 @@ begin
 
   Result:= inherited CreateHandle(AWinControl, AParams);
 
-    Info:= GetWin32WindowInfo(Result);
-
-    Info^.DefWndProc:= @WindowProc;
-
-    CustomFormWndProc:= Windows.WNDPROC(SetWindowLongPtrW(Result, GWL_WNDPROC, LONG_PTR(@FormWndProc2)));
+  if Result <> 0 then
+  begin
+    AllowDarkModeForWindow(Result, True);
+    RefreshTitleBarThemeColor(Result);
+  end;
 
   if not (csDesigning in AWinControl.ComponentState) then begin
     AWinControl.Color:= SysColor[COLOR_BTNFACE];
@@ -1356,25 +1357,35 @@ function _CreateWindowExW(dwExStyle: DWORD; lpClassName: LPCWSTR;
   nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU;
   hInstance: HINST; lpParam: LPVOID): HWND; stdcall; forward;
 
-function CallCreateWindowExW(dwExStyle: DWORD; lpClassName: LPCWSTR;
-  lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint;
-  nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU;
-  hInstance: HINST; lpParam: LPVOID): HWND;
+procedure EnsureCreateWindowExWTrampoline;
+var
+  hModule: THandle;
 begin
-  if (not Assigned(__CreateWindowExW)) or
-    (Pointer(__CreateWindowExW) = Pointer(@_CreateWindowExW)) then
-    Pointer(__CreateWindowExW):= GetProcAddress(GetModuleHandle(user32),
-      'CreateWindowExW');
+  if Assigned(__CreateWindowExW) and (Pointer(__CreateWindowExW) <> Pointer(@_CreateWindowExW)) then
+    Exit;
 
-  if Assigned(__CreateWindowExW) and
-    (Pointer(__CreateWindowExW) <> Pointer(@_CreateWindowExW)) then
-    Result:= __CreateWindowExW(dwExStyle, lpClassName, lpWindowName,
-      dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam)
-  else
+  hModule:= GetModuleHandle(user32);
+  if hModule <> 0 then
+    Pointer(__CreateWindowExW):= GetProcAddress(hModule, 'CreateWindowExW');
+end;
+
+procedure HookCreateWindowExW(pFunction: PPointer);
+var
+  OldFunction: Pointer;
+begin
+  if not Assigned(pFunction) then
+    Exit;
+
+  if Pointer(pFunction^) = Pointer(@_CreateWindowExW) then
   begin
-    SetLastError(ERROR_PROC_NOT_FOUND);
-    Result:= 0;
+    EnsureCreateWindowExWTrampoline;
+    Exit;
   end;
+
+  OldFunction:= ReplaceImportFunction(pFunction, @_CreateWindowExW);
+  if (OldFunction <> nil) and (OldFunction <> Pointer(@_CreateWindowExW)) then
+    Pointer(__CreateWindowExW):= OldFunction;
+  EnsureCreateWindowExWTrampoline;
 end;
 
 function _DrawEdge(hdc: HDC; var qrc: TRect; edge: UINT; grfFlags: UINT): BOOL; stdcall;
@@ -1514,26 +1525,13 @@ begin
   end;
 end;
 
-const
-  ClassNameW: PWideChar = 'TCustomForm';
-  ClassNameTC: PWideChar = 'TTOTAL_CMD'; // for compatibility with plugins
-
 function _CreateWindowExW(dwExStyle: DWORD; lpClassName: LPCWSTR; lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint; nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU; hInstance: HINST; lpParam: LPVOID): HWND; stdcall;
-var
-  AParams: PNCCreateParams absolute lpParam;
 begin
-  if Assigned(AParams) and (AParams^.WinControl is TCustomForm) then
-  begin
-    if (hWndParent = 0) and AParams^.WinControl.ClassNameIs('TfrmMain') then
-      lpClassName:= ClassNameTC
-    else begin
-      lpClassName:= ClassNameW;
-    end;
-  end else begin
-    dwExStyle:= dwExStyle or WS_EX_CONTEXTHELP;
-  end;
-  Result:= CallCreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle,
-    X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+  EnsureCreateWindowExWTrampoline;
+  if Assigned(__CreateWindowExW) and (Pointer(__CreateWindowExW) <> Pointer(@_CreateWindowExW)) then
+    Result:= __CreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam)
+  else
+    Result:= 0;
 end;
 
 function TaskDialogIndirectDark(const pTaskConfig: PTASKDIALOGCONFIG; pnButton: PInteger; pnRadioButton: PInteger; pfVerificationFlagChecked: PBOOL): HRESULT; stdcall;
@@ -1594,11 +1592,15 @@ end;
 procedure SubClassUpDown;
 var
   Window: HWND;
+  CurrentWndProc: Windows.WNDPROC;
 begin
   Window:= CreateWindowW(UPDOWN_CLASSW, nil, 0, 0, 0, 200, 20, 0, 0, HINSTANCE, nil);
-  OldUpDownWndProc:= Windows.WNDPROC(GetClassLongPtr(Window, GCLP_WNDPROC));
-
-  SetClassLongPtr(Window, GCLP_WNDPROC, LONG_PTR(@UpDownWndProc));
+  CurrentWndProc:= Windows.WNDPROC(GetClassLongPtr(Window, GCLP_WNDPROC));
+  if Assigned(CurrentWndProc) and (Pointer(CurrentWndProc) <> Pointer(@UpDownWndProc)) then
+  begin
+    OldUpDownWndProc:= CurrentWndProc;
+    SetClassLongPtr(Window, GCLP_WNDPROC, LONG_PTR(@UpDownWndProc));
+  end;
   DestroyWindow(Window);
 end;
 
@@ -1685,8 +1687,6 @@ begin
   DrawThemeText:= @DrawThemeTextDark;
   DrawThemeBackground:= @DrawThemeBackgroundDark;
 
-  DefaultWindowInfo.DefWndProc:= @WindowProc;
-
   TaskDialogIndirect:= @TaskDialogIndirectDark;
 
   Win32Theme:= TWin32ThemeServices(ThemeServices);
@@ -1694,8 +1694,6 @@ end;
 
 function FormWndProc(Window: HWnd; Msg: UInt; WParam: Windows.WParam;
     LParam: Windows.LParam): LResult; stdcall;
-var
-  Info: PWin32WindowInfo;
 begin
   if Msg = WM_CREATE then
   begin
@@ -1704,12 +1702,7 @@ begin
   end
   else if (Msg = WM_SETFONT) then
   begin
-    Info := GetWin32WindowInfo(Window);
-    if Assigned(Info) then
-    begin
-     Info^.DefWndProc:= @WindowProc;
-    end;
-    Result:= CallWindowProc(@WindowProc, Window, Msg, WParam, LParam);
+    Result:= DefWindowProcW(Window, Msg, WParam, LParam);
     Exit;
   end;
   Result:= DefWindowProcW(Window, Msg, WParam, LParam);
@@ -2502,9 +2495,6 @@ begin
 
   InitializeColors(CS);
 
-  WinRegister(ClassNameW);
-  WinRegister(ClassNameTC);
-
   ThemeClass:= TThemeClassMap.Create;
 
   hModule:= GetModuleHandle(gdi32);
@@ -2519,17 +2509,11 @@ begin
   if Assigned(pLibrary) then
   begin
     hModule:= GetModuleHandle(user32);
-    Pointer(__CreateWindowExW):= GetProcAddress(hModule, 'CreateWindowExW');
-
-    pFunction:= FindImportFunction(pLibrary, Pointer(__CreateWindowExW));
+    pFunction:= FindImportFunction(pLibrary, GetProcAddress(hModule, 'CreateWindowExW'));
     // UPX purpose
     if pFunction=nil then
       pFunction := FindIATEntry(@Windows.CreateWindowExW);
-    if Assigned(pFunction) then
-    begin
-      if pFunction^ <> Pointer(@_CreateWindowExW) then
-        ReplaceImportFunction(pFunction, @_CreateWindowExW);
-    end;
+    HookCreateWindowExW(pFunction);
     pFunction:= FindImportFunction(pLibrary, GetProcAddress(hModule, 'DrawEdge'));
     // UPX purpose
     if pFunction=nil then
@@ -2558,14 +2542,8 @@ begin
   else
   begin
     // UPX purpose
-    Pointer(__CreateWindowExW):= GetProcAddress(GetModuleHandle(user32),
-      'CreateWindowExW');
     pFunction := FindIATEntry(@Windows.CreateWindowExW);
-    if Assigned(pFunction) then
-    begin
-      if pFunction^ <> Pointer(@_CreateWindowExW) then
-        ReplaceImportFunction(pFunction, @_CreateWindowExW);
-    end;
+    HookCreateWindowExW(pFunction);
     pFunction := FindIATEntry(@Windows.DrawEdge);
     if Assigned(pFunction) then
       ReplaceImportFunction(pFunction, @_DrawEdge);
