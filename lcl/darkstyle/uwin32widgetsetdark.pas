@@ -2040,12 +2040,6 @@ begin
   WSStdCtrls.RegisterRadioButton;
   RegisterWSComponent(TRadioButton, TWin32WSRadioButtonDark);
 
-  ComCtrls.RegisterCustomPage;
-  RegisterWSComponent(TCustomPage, TWin32WSCustomPageDark);
-
-  ComCtrls.RegisterCustomTabControl;
-  RegisterWSComponent(TCustomTabControl, TWin32WSCustomTabControlDark);
-
   WSComCtrls.RegisterStatusBar;
   RegisterWSComponent(TStatusBar, TWin32WSStatusBarDark);
 
