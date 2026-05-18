@@ -187,7 +187,7 @@ begin
   DefaultDark.DrawControl.TreeViewExpandSignOverride:=   False;
   DefaultDark.DrawControl.TreeViewExpandSignValue:=      tvestTheme;
   DefaultDark.DrawControl.BorderStyleOverride:=          True;
-  DefaultDark.DrawControl.CustomDrawPushButtons:=        False;
+  DefaultDark.DrawControl.CustomDrawPushButtons:=        True;
   DefaultDark.DrawControl.CustomDrawComboBoxs:=          False;
   DefaultDark.DrawControl.CustomDrawTreeViews:=          False;
 
