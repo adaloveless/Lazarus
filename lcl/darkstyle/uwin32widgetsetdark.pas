@@ -56,7 +56,8 @@ uses
   WSStdCtrls, Win32WSControls, StdCtrls, WSControls, Graphics, Themes, LazUTF8,
   UxTheme, Win32Themes, ExtCtrls, WSMenus, JwaWinGDI, FPImage, Math, uDarkStyle,
   WSComCtrls, CommCtrl, uImport, WSForms, Win32WSButtons, WSButtons, Buttons, Win32Extra,
-  Win32WSForms, Win32WSSpin, Spin, Win32WSMenus, Dialogs, GraphUtil,
+  Win32WSForms, Win32WSSpin, Spin, Win32WSMenus, Win32WSExtCtrls, WSExtCtrls,
+  Dialogs, GraphUtil,
   gmap, gutil, TmSchema, InterfaceBase, uMetaDarkStyle;
 
 type
@@ -68,6 +69,22 @@ type
     { TWin32WSWinControlDark }
 
     TWin32WSWinControlDark = class(TWin32WSWinControl)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+    end;
+
+    { TWin32WSCustomTreeViewDark }
+
+    TWin32WSCustomTreeViewDark = class(TWin32WSCustomTreeView)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+    end;
+
+    { TWin32WSCustomSplitterDark }
+
+    TWin32WSCustomSplitterDark = class(TWin32WSCustomSplitter)
     published
       class function CreateHandle(const AWinControl: TWinControl;
             const AParams: TCreateParams): HWND; override;
@@ -1054,6 +1071,22 @@ begin
   end;
 end;
 
+{ TWin32WSCustomTreeViewDark }
+
+class function TWin32WSCustomTreeViewDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  Result := TWin32WSWinControlDark.CreateHandle(AWinControl, AParams);
+end;
+
+{ TWin32WSCustomSplitterDark }
+
+class function TWin32WSCustomSplitterDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  Result := TWin32WSWinControlDark.CreateHandle(AWinControl, AParams);
+end;
+
 { TWin32WSCustomFormDark }
 
 function FormWndProc2(Window: HWnd; Msg: UInt; WParam: Windows.WParam;
@@ -2024,6 +2057,12 @@ begin
 
   with TWinControl.Create(nil) do Free;
   RegisterWSComponent(TWinControl, TWin32WSWinControlDark);
+
+  WSComCtrls.RegisterCustomTreeView;
+  RegisterWSComponent(TCustomTreeView, TWin32WSCustomTreeViewDark);
+
+  WSExtCtrls.RegisterCustomSplitter;
+  RegisterWSComponent(TCustomSplitter, TWin32WSCustomSplitterDark);
 
   WSStdCtrls.RegisterCustomGroupBox;
   RegisterWSComponent(TCustomGroupBox, TWin32WSCustomGroupBoxDark);
