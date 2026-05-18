@@ -74,6 +74,14 @@ type
             const AParams: TCreateParams): HWND; override;
     end;
 
+    { TWin32WSScrollBarDark }
+
+    TWin32WSScrollBarDark = class(TWin32WSScrollBar)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+    end;
+
     { TWin32WSCustomTreeViewDark }
 
     TWin32WSCustomTreeViewDark = class(TWin32WSCustomTreeView)
@@ -107,6 +115,12 @@ type
       class function GetDefaultColor(const AControl: TControl;
             const ADefaultColorType: TDefaultColorType): TColor; override;
       class procedure ShowHide(const AWinControl: TWinControl); override;
+    end;
+
+    { TWin32WSCustomRadioGroupDark }
+
+    TWin32WSCustomRadioGroupDark = class(TWin32WSCustomGroupBoxDark)
+    published
     end;
 
     { TWin32WSButtonDark }
@@ -241,6 +255,7 @@ const
   ID_SUB_STATUSBAR   = 4;
   ID_SUB_TRACKBAR    = 5;
   ID_SUB_LISTVIEW    = 6;
+  ID_SUB_SCROLLBAR   = 7;
   DARK_BUTTON_OLD_PROC_PROP = 'LazDarkButtonOldProc';
 
 const
@@ -317,12 +332,26 @@ begin
 end;
 
 procedure SetDarkControlColors(AWinControl: TWinControl);
+
+  function IsSystemTextColor(AColor: TColor): Boolean;
+  begin
+    Result := (AColor = clDefault) or (AColor = clBtnText) or
+      (AColor = clWindowText);
+  end;
+
+  function ShouldPreserveFontColor: Boolean;
+  begin
+    Result := (AWinControl is TCustomRadioGroup) or
+      (AWinControl is TCustomCheckBox);
+  end;
+
 begin
   if (AWinControl <> nil) and not (csDesigning in AWinControl.ComponentState) then
   begin
     AWinControl.Color := SysColor[COLOR_BTNFACE];
     AWinControl.Brush.Color := SysColor[COLOR_BTNFACE];
-    AWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
+    if IsSystemTextColor(AWinControl.Font.Color) or not ShouldPreserveFontColor then
+      AWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
   end;
 end;
 
@@ -1071,6 +1100,202 @@ begin
   end;
 end;
 
+{ TWin32WSScrollBarDark }
+
+procedure DrawDarkScrollBarArrow(ACanvas: TCanvas; const ARect: TRect;
+  AVertical, AForward: Boolean);
+var
+  CenterX, CenterY, Size: Integer;
+  Points: array[0..2] of TPoint;
+
+  procedure SetPoint(AIndex, X, Y: Integer);
+  begin
+    Points[AIndex].X := X;
+    Points[AIndex].Y := Y;
+  end;
+
+begin
+  CenterX := (ARect.Left + ARect.Right) div 2;
+  CenterY := (ARect.Top + ARect.Bottom) div 2;
+  Size := Max(3, Min(ARect.Width, ARect.Height) div 4);
+
+  if AVertical then
+  begin
+    if AForward then
+    begin
+      SetPoint(0, CenterX - Size, CenterY - Size div 2);
+      SetPoint(1, CenterX + Size, CenterY - Size div 2);
+      SetPoint(2, CenterX, CenterY + Size);
+    end
+    else
+    begin
+      SetPoint(0, CenterX - Size, CenterY + Size div 2);
+      SetPoint(1, CenterX + Size, CenterY + Size div 2);
+      SetPoint(2, CenterX, CenterY - Size);
+    end;
+  end
+  else
+  begin
+    if AForward then
+    begin
+      SetPoint(0, CenterX - Size div 2, CenterY - Size);
+      SetPoint(1, CenterX - Size div 2, CenterY + Size);
+      SetPoint(2, CenterX + Size, CenterY);
+    end
+    else
+    begin
+      SetPoint(0, CenterX + Size div 2, CenterY - Size);
+      SetPoint(1, CenterX + Size div 2, CenterY + Size);
+      SetPoint(2, CenterX - Size, CenterY);
+    end;
+  end;
+
+  ACanvas.Brush.Color := SysColor[COLOR_GRAYTEXT];
+  ACanvas.Pen.Color := ACanvas.Brush.Color;
+  ACanvas.Polygon(Points);
+end;
+
+procedure PaintDarkScrollBar(Window: HWND; DC: HDC);
+const
+  MinThumbSize = 10;
+var
+  Info: PWin32WindowInfo;
+  R, FirstButtonRect, SecondButtonRect, TrackRect, ThumbRect: TRect;
+  ACanvas: TCanvas;
+  IsVertical: Boolean;
+  ArrowLength, TrackLength, ThumbLength, ThumbTravel, ThumbOffset: Integer;
+  MinScroll, MaxScroll, ScrollRange, PageSize, MaxPosition, PositionRange,
+  ScrollPos: Integer;
+begin
+  GetClientRect(Window, @R);
+  if (R.Width <= 0) or (R.Height <= 0) then
+    Exit;
+
+  IsVertical := (GetWindowLongPtr(Window, GWL_STYLE) and SBS_VERT) <> 0;
+  Info := GetWin32WindowInfo(Window);
+  if Assigned(Info) and (Info^.WinControl is TCustomScrollBar) then
+  begin
+    IsVertical := TCustomScrollBar(Info^.WinControl).Kind = sbVertical;
+    MinScroll := TCustomScrollBar(Info^.WinControl).Min;
+    MaxScroll := TCustomScrollBar(Info^.WinControl).Max;
+    PageSize := TCustomScrollBar(Info^.WinControl).PageSize;
+    ScrollPos := TCustomScrollBar(Info^.WinControl).Position;
+  end
+  else
+  begin
+    MinScroll := 0;
+    MaxScroll := 100;
+    PageSize := 10;
+    ScrollPos := 0;
+  end;
+
+  if IsVertical then
+  begin
+    ArrowLength := Min(GetSystemMetrics(SM_CYVSCROLL), R.Height div 2);
+    FirstButtonRect := Classes.Rect(R.Left, R.Top, R.Right, R.Top + ArrowLength);
+    SecondButtonRect := Classes.Rect(R.Left, R.Bottom - ArrowLength, R.Right, R.Bottom);
+    TrackRect := Classes.Rect(R.Left, FirstButtonRect.Bottom, R.Right, SecondButtonRect.Top);
+    TrackLength := TrackRect.Height;
+  end
+  else
+  begin
+    ArrowLength := Min(GetSystemMetrics(SM_CXHSCROLL), R.Width div 2);
+    FirstButtonRect := Classes.Rect(R.Left, R.Top, R.Left + ArrowLength, R.Bottom);
+    SecondButtonRect := Classes.Rect(R.Right - ArrowLength, R.Top, R.Right, R.Bottom);
+    TrackRect := Classes.Rect(FirstButtonRect.Right, R.Top, SecondButtonRect.Left, R.Bottom);
+    TrackLength := TrackRect.Width;
+  end;
+
+  ScrollRange := Max(1, MaxScroll - MinScroll + 1);
+  PageSize := Max(0, PageSize);
+  if (PageSize > 0) and (TrackLength > 0) then
+    ThumbLength := MulDiv(TrackLength, Min(PageSize, ScrollRange), ScrollRange)
+  else
+    ThumbLength := MinThumbSize;
+  ThumbLength := Max(MinThumbSize, Min(TrackLength, ThumbLength));
+
+  MaxPosition := MaxScroll - Max(PageSize - 1, 0);
+  if MaxPosition < MinScroll then
+    MaxPosition := MinScroll;
+  ScrollPos := Max(MinScroll, Min(ScrollPos, MaxPosition));
+  PositionRange := MaxPosition - MinScroll;
+  ThumbTravel := Max(0, TrackLength - ThumbLength);
+  if PositionRange > 0 then
+    ThumbOffset := MulDiv(ScrollPos - MinScroll, ThumbTravel, PositionRange)
+  else
+    ThumbOffset := 0;
+
+  if IsVertical then
+    ThumbRect := Classes.Rect(TrackRect.Left, TrackRect.Top + ThumbOffset, TrackRect.Right,
+      TrackRect.Top + ThumbOffset + ThumbLength)
+  else
+    ThumbRect := Classes.Rect(TrackRect.Left + ThumbOffset, TrackRect.Top,
+      TrackRect.Left + ThumbOffset + ThumbLength, TrackRect.Bottom);
+
+  ACanvas := TCanvas.Create;
+  try
+    ACanvas.Handle := DC;
+    ACanvas.Brush.Color := SysColor[COLOR_BTNSHADOW];
+    ACanvas.Pen.Color := ACanvas.Brush.Color;
+    ACanvas.FillRect(R);
+
+    ACanvas.Brush.Color := SysColor[COLOR_BTNFACE];
+    ACanvas.FillRect(FirstButtonRect);
+    ACanvas.FillRect(SecondButtonRect);
+
+    ACanvas.Brush.Color := RGBToColor(77, 77, 77);
+    ACanvas.Pen.Color := SysColor[COLOR_BTNHIGHLIGHT];
+    ACanvas.Rectangle(ThumbRect);
+
+    DrawDarkScrollBarArrow(ACanvas, FirstButtonRect, IsVertical, False);
+    DrawDarkScrollBarArrow(ACanvas, SecondButtonRect, IsVertical, True);
+  finally
+    ACanvas.Handle := 0;
+    ACanvas.Free;
+  end;
+end;
+
+function ScrollBarDarkWndProc(Window: HWND; Msg: UINT; wParam: Windows.WPARAM;
+  lParam: Windows.LPARAM; uISubClass: UINT_PTR; dwRefData: DWORD_PTR): LRESULT; stdcall;
+var
+  PS: TPaintStruct;
+  DC: HDC;
+begin
+  case Msg of
+    WM_ERASEBKGND:
+      Exit(1);
+    WM_PAINT:
+      begin
+        DC := BeginPaint(Window, @PS);
+        try
+          PaintDarkScrollBar(Window, DC);
+        finally
+          EndPaint(Window, @PS);
+        end;
+        Exit(0);
+      end;
+    WM_ENABLE, WM_SIZE, $00E0, $00E2, $00E6, $00E9:
+      begin
+        Result := DefSubclassProc(Window, Msg, WParam, LParam);
+        InvalidateRect(Window, nil, False);
+        Exit;
+      end;
+  end;
+
+  Result := DefSubclassProc(Window, Msg, WParam, LParam);
+end;
+
+class function TWin32WSScrollBarDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  Result := inherited CreateHandle(AWinControl, AParams);
+  if not (csDesigning in AWinControl.ComponentState) then
+  begin
+    SetWindowSubclass(Result, @ScrollBarDarkWndProc, ID_SUB_SCROLLBAR, 0);
+    EnableDarkStyle(Result);
+  end;
+end;
+
 { TWin32WSCustomTreeViewDark }
 
 class function TWin32WSCustomTreeViewDark.CreateHandle(
@@ -1462,7 +1687,7 @@ begin
       OldColor:= SysColor[COLOR_GRAYTEXT]
     else
       OldColor:= SysColor[COLOR_BTNTEXT]
-  end else
+  end else if (hTheme <> Win32Theme.Theme[teButton]) then
     OldColor:= SysColor[COLOR_BTNTEXT];
 
   OldColor:= SetTextColor(hdc, OldColor);
@@ -2058,6 +2283,9 @@ begin
   with TWinControl.Create(nil) do Free;
   RegisterWSComponent(TWinControl, TWin32WSWinControlDark);
 
+  WSStdCtrls.RegisterCustomScrollBar;
+  RegisterWSComponent(TCustomScrollBar, TWin32WSScrollBarDark);
+
   WSComCtrls.RegisterCustomTreeView;
   RegisterWSComponent(TCustomTreeView, TWin32WSCustomTreeViewDark);
 
@@ -2066,6 +2294,9 @@ begin
 
   WSStdCtrls.RegisterCustomGroupBox;
   RegisterWSComponent(TCustomGroupBox, TWin32WSCustomGroupBoxDark);
+
+  WSExtCtrls.RegisterCustomRadioGroup;
+  RegisterWSComponent(TCustomRadioGroup, TWin32WSCustomRadioGroupDark);
 
   WSStdCtrls.RegisterCustomButton;
   RegisterWSComponent(TCustomButton, TWin32WSButtonDark);
@@ -2733,6 +2964,7 @@ var
   OldColor: COLORREF;
   ClassName: LPCWSTR;
 begin
+  OldColor:= GetTextColor(hdc);
   if Assigned(ThemeClass) then
     if ThemeClass.TryGetValue(hTheme, ClassName) then
     begin
@@ -2744,7 +2976,7 @@ begin
 
       if SameText(ClassName, VSCLASS_TOOLTIP) then
         OldColor:= SysColor[COLOR_INFOTEXT]
-      else begin
+      else if not SameText(ClassName, VSCLASS_DARK_BUTTON) then begin
         OldColor:= SysColor[COLOR_BTNTEXT];
       end;
 
