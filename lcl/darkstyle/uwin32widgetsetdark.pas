@@ -904,7 +904,6 @@ begin
   Result := inherited CreateHandle(AWinControl, AParams);
   if not (csDesigning in AWinControl.ComponentState) then
   begin
-    InstallDarkButtonWndProc(Result);
     EnableDarkStyle(Result);
   end;
 end;
@@ -923,7 +922,6 @@ begin
   Result := inherited CreateHandle(AWinControl, AParams);
   if not (csDesigning in AWinControl.ComponentState) then
   begin
-    InstallDarkButtonWndProc(Result);
     EnableDarkStyle(Result);
   end;
 end;
