@@ -257,6 +257,10 @@ begin
 	  {$ELSE}
     ScreenInfo.PixelsPerInchX := GetDeviceCaps(ScreenDC, LOGPIXELSX);
     ScreenInfo.PixelsPerInchY := GetDeviceCaps(ScreenDC, LOGPIXELSY);
+    if ScreenInfo.PixelsPerInchX <= 0 then
+      ScreenInfo.PixelsPerInchX := 96;
+    if ScreenInfo.PixelsPerInchY <= 0 then
+      ScreenInfo.PixelsPerInchY := 96;
 	  {$ENDIF}
     ScreenInfo.ColorDepth := GetDeviceCaps(ScreenDC, BITSPIXEL);
   finally
