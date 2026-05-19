@@ -244,6 +244,10 @@ begin
   DC := Windows.GetDC(Handle);
   ScreenInfo.PixelsPerInchX := GetDeviceCaps(DC, LOGPIXELSX);
   ScreenInfo.PixelsPerInchY := GetDeviceCaps(DC, LOGPIXELSY);
+  if ScreenInfo.PixelsPerInchX <= 0 then
+    ScreenInfo.PixelsPerInchX := 96;
+  if ScreenInfo.PixelsPerInchY <= 0 then
+    ScreenInfo.PixelsPerInchY := 96;
   ScreenInfo.ColorDepth := GetDeviceCaps(DC, BITSPIXEL);
   ReleaseDC(Handle, DC);
 

@@ -618,6 +618,10 @@ begin
     // GetDeviceCaps(ScreenDC, LOGPIXELSX);
     ScreenInfo.PixelsPerInchY := Round(gdk_screen_get_resolution(gdk_screen_get_default));
     // GetDeviceCaps(ScreenDC, LOGPIXELSY);
+    if ScreenInfo.PixelsPerInchX <= 0 then
+      ScreenInfo.PixelsPerInchX := 96;
+    if ScreenInfo.PixelsPerInchY <= 0 then
+      ScreenInfo.PixelsPerInchY := 96;
     ScreenInfo.ColorDepth := GetDeviceCaps(ScreenDC, BITSPIXEL);
   finally
     ReleaseDC(0, ScreenDC);
