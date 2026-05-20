@@ -4248,17 +4248,39 @@ begin
     end else
     if (wtLayout in AParent.WidgetType) then
     begin
-      aWindow := PGtkLayout(AParent.GetContainerWidget)^.get_bin_window;
-      if Gtk3IsGdkWindow(aWindow) then
-        aWindow^.get_position(@XOffset, @YOffset);
-      GtkLeft := ALeft - XOffset;
-      GtkTop := ATop - YOffset;
-      //Compare actual GTK coordinates so scroll-offset changes are not missed.
-      if (GtkLeft = LCLLeft) and (GtkTop = LCLTop) then
-        Exit;
-      LCLLeft := GtkLeft;
-      LCLTop := GtkTop;
-      PGtkLayout(AParent.GetContainerWidget)^.move(FWidget, GtkLeft, GtkTop);
+      if Assigned(AParent.LCLObject) and
+         (AParent.LCLObject is TCustomForm) and
+         TCustomForm(AParent.LCLObject).AutoScroll then
+      begin
+        GtkLeft := ALeft;
+        GtkTop := ATop;
+
+        if (GtkLeft = LCLLeft) and (GtkTop = LCLTop) then
+          exit;
+
+        LCLLeft := GtkLeft;
+        LCLTop := GtkTop;
+
+        PGtkLayout(AParent.GetContainerWidget)^.move(FWidget, GtkLeft, GtkTop);
+      end else
+      begin
+        aWindow := PGtkLayout(AParent.GetContainerWidget)^.get_bin_window;
+
+        if Gtk3IsGdkWindow(aWindow) then
+          aWindow^.get_position(@XOffset, @YOffset);
+
+        GtkLeft := ALeft - XOffset;
+        GtkTop := ATop - YOffset;
+
+        //Compare actual GTK coordinates so scroll-offset changes are not missed.
+        if (GtkLeft = LCLLeft) and (GtkTop = LCLTop) then
+          exit;
+
+        LCLLeft := GtkLeft;
+        LCLTop := GtkTop;
+
+        PGtkLayout(AParent.GetContainerWidget)^.move(FWidget, GtkLeft, GtkTop);
+      end;
     end;
   end;
 end;
@@ -9591,7 +9613,6 @@ begin
       [GetTickCount64, dbgsName(ACtl.LCLObject), AGdkRect^.height, vadj^.upper, vadj^.page_size,
        VSize, uHeight, BoolToStr(ViewportChanged, True), HSize, uWidth]));
   {$ENDIF}
-
   if (uWidth <> HSize) or (uHeight <> VSize) then
     PGtkLayout(aWidget)^.set_size(HSize, VSize);
 
@@ -9851,6 +9872,8 @@ var
   APressed, AMouseOver: boolean;
   Adjustment: PGtkAdjustment;
   AAtGTKMax: Boolean;
+  ASBAlloc: TGtkAllocation;
+  AScrollBar: PGtkWidget;
 begin
   Control := TGtk3ScrollableWin(data);
   {$IFDEF GTK3DEBUGSCROLL}
@@ -9932,6 +9955,18 @@ begin
           ', Delta=', Delta:0:2, ', InUpdate=', Control.InUpdate, ' releasing lock ...');
   {$ENDIF}
   Control.EndUpdate;
+  if (wtWindow in Control.WidgetType) and
+     Assigned(Control.LCLObject) and
+     (Control.LCLObject is TCustomForm) and
+     TCustomForm(Control.LCLObject).AutoScroll then
+  begin
+    AScrollBar := PGtkWidget(range);
+    if AScrollBar^.get_realized and AScrollBar^.get_mapped then
+    begin
+      AScrollBar^.get_allocation(@ASBAlloc);
+      AScrollBar^.size_allocate(@ASBAlloc);
+    end;
+  end;
 end;
 
 procedure TGtk3ScrollableWin.SetColor(AValue: TColor);
@@ -10349,12 +10384,15 @@ procedure TGtk3Memo.setSelStart(AValue: Integer);
 var
   AIter: TGtkTextIter;
   ATextView: PGtkTextView;
+  ATextMark: PGtkTextMark;
 begin
   if not IsWidgetOk then
     exit;
   ATextView := PGtkTextView(GetContainerWidget);
   gtk_text_buffer_get_iter_at_offset(ATextView^.get_buffer, @AIter, AValue);
   gtk_text_buffer_place_cursor(ATextView^.get_buffer, @AIter);
+  ATextMark := gtk_text_buffer_get_insert(ATextView^.get_buffer);
+  gtk_text_view_scroll_to_mark(ATextView, ATextMark, 0, True, 0, 1);
 end;
 
 procedure TGtk3Memo.setSelLength(AValue: Integer);
