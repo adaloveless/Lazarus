@@ -536,6 +536,9 @@ var TheControlSelection: TControlSelection;
 
 implementation
 
+uses
+  LCLType;
+
 const
   GRAB_CURSOR: array[TGrabIndex] of TCursor = (
     crSizeNW,   crSizeN,  crSizeNE,
@@ -548,6 +551,22 @@ const
     [gpLeft          ],             [          gpRight],
     [gpLeft, gpBottom], [gpBottom], [gpBottom, gpRight]
   );
+
+type
+  TWinControlAccess = class(TWinControl);
+
+procedure RealizeWinControlBounds(AControl: TControl);
+var
+  LControl: TWinControl;
+begin
+  if not (AControl is TWinControl) then Exit;
+  LControl := TWinControl(AControl);
+  TWinControlAccess(LControl).InvalidateBoundsRealized;
+  TWinControlAccess(LControl).RealizeBounds;
+  if LControl.HandleAllocated then
+    SetWindowPos(LControl.Handle, HWND(0), LControl.Left, LControl.Top,
+      LControl.Width, LControl.Height, SWP_NOZORDER or SWP_NOACTIVATE);
+end;
 
 function RoundToGrid(p, GridOrigin, GridStep: integer): integer;
 begin
@@ -633,9 +652,14 @@ begin
   FMovedResizedBounds:=Bounds(ALeft,ATop,AWidth,AHeight);
   if Owner.Mediator<>nil then begin
     Owner.Mediator.SetBounds(TComponent(FPersistent),FMovedResizedBounds);
+    if FIsTControl then begin
+      TControl(FPersistent).SetBounds(ALeft, ATop, AWidth, AHeight);
+      RealizeWinControlBounds(TControl(FPersistent));
+    end;
   end
   else if FIsTControl then begin
     TControl(FPersistent).SetBounds(ALeft, ATop, AWidth, AHeight);
+    RealizeWinControlBounds(TControl(FPersistent));
   end else if FIsNonVisualComponent then begin
     if (Left<>ALeft) or (Top<>ATop) then begin
       //debugln(['TSelectedControl.SetBounds Old=',Left,',',Top,' New=',ALeft,',',ATop]);
