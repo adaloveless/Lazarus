@@ -1386,6 +1386,13 @@ begin
         DrawParentBackground(HWND(LParam), WindowDC);
         LMessage.Result := GetStockObject(HOLLOW_BRUSH);
         SetBkMode(WindowDC, TRANSPARENT);
+        if ChildWinControl is TCustomCheckBox then
+        begin
+          WindowColor := ChildWinControl.Font.Color;
+          if WindowColor = clDefault then
+            WindowColor := ChildWinControl.GetDefaultColor(dctFont);
+          Windows.SetTextColor(WindowDC, ColorToRGB(WindowColor));
+        end;
         WinProcess := false;
       end;
     end;

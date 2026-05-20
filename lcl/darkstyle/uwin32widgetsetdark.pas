@@ -147,6 +147,8 @@ type
     published
       class function CreateHandle(const AWinControl: TWinControl;
             const AParams: TCreateParams): HWND; override;
+      class function GetDefaultColor(const AControl: TControl;
+            const ADefaultColorType: TDefaultColorType): TColor; override;
       class procedure ShowHide(const AWinControl: TWinControl); override;
     end;
 
@@ -986,8 +988,13 @@ class function TWin32WSCustomCheckBoxDark.CreateHandle(
 begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
-  if not (csDesigning in AWinControl.ComponentState) then
-    EnableDarkStyle(Result);
+  EnableDarkStyle(Result);
+end;
+
+class function TWin32WSCustomCheckBoxDark.GetDefaultColor(
+  const AControl: TControl; const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  Result := DarkControlDefaultColor(ADefaultColorType);
 end;
 
 class procedure TWin32WSCustomCheckBoxDark.ShowHide(
@@ -2965,6 +2972,47 @@ function InterceptDrawThemeText(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Int
 var
   OldColor: COLORREF;
   ClassName: LPCWSTR;
+
+  function IsSystemFontColor(AColor: TColor): Boolean;
+  begin
+    Result := (AColor = clDefault) or (AColor = clBtnText) or
+      (AColor = clWindowText);
+  end;
+
+  function ControlFromDC: TWinControl;
+  var
+    Window: HWND;
+    Info: PWin32WindowInfo;
+  begin
+    Result := nil;
+    Window := WindowFromDC(hdc);
+    if Window = 0 then
+      Exit;
+
+    Info := GetWin32WindowInfo(Window);
+    if Assigned(Info) then
+      Result := Info^.WinControl;
+
+    if Result = nil then
+      Result := TWinControl(GetProp(Window, PChar('WinControl')));
+  end;
+
+  function CheckBoxTextColor(ACurrentColor: COLORREF): COLORREF;
+  var
+    Control: TWinControl;
+  begin
+    if iStateId in [CBS_UNCHECKEDDISABLED, CBS_CHECKEDDISABLED, CBS_MIXEDDISABLED] then
+      Exit(SysColor[COLOR_GRAYTEXT]);
+
+    Control := ControlFromDC;
+    if (Control is TCustomCheckBox) and not IsSystemFontColor(Control.Font.Color) then
+      Exit(ColorToRGB(Control.Font.Color));
+
+    if (Control <> nil) or (ACurrentColor = 0) then
+      Exit(SysColor[COLOR_BTNTEXT]);
+
+    Result := ACurrentColor;
+  end;
 begin
   OldColor:= GetTextColor(hdc);
   if Assigned(ThemeClass) then
@@ -2984,8 +3032,8 @@ begin
 
       if SameText(ClassName, VSCLASS_DARK_BUTTON) then
       begin
-        if (iPartId = BP_CHECKBOX) and (iStateId in [CBS_UNCHECKEDDISABLED, CBS_CHECKEDDISABLED, CBS_MIXEDDISABLED]) then
-          OldColor:= SysColor[COLOR_GRAYTEXT]
+        if iPartId = BP_CHECKBOX then
+          OldColor:= CheckBoxTextColor(OldColor)
         else if (iPartId = BP_RADIOBUTTON) and (iStateId in [RBS_UNCHECKEDDISABLED, RBS_CHECKEDDISABLED]) then
           OldColor:= SysColor[COLOR_GRAYTEXT]
         else if (iPartId = BP_GROUPBOX) and (iStateId = GBS_DISABLED) then
