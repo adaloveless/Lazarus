@@ -80,7 +80,7 @@ uses
   SynEditTypes,
   // BuildIntf
   BaseIDEIntf, MacroIntf, NewItemIntf, IDEExternToolIntf, LazMsgWorker, ComponentReg,
-  PackageIntf, ProjectIntf, ProjectResourcesIntf, CompOptsIntf, IDEOptionsIntf,
+  ProjPackIntf, PackageIntf, ProjectIntf, ProjectResourcesIntf, CompOptsIntf, IDEOptionsIntf,
   // IDE interface
   IDEIntf, ObjectInspector, PropEdits, PropEditUtils, EditorSyntaxHighlighterDef,
   IDECommands, IDEWindowIntf, IDEDialogs, SrcEditorIntf, IDEMsgIntf,
@@ -785,7 +785,7 @@ type
     function DoAddUnitToProject(AEditor: TSourceEditorInterface): TModalResult; override;
     function DoNewFile(NewFileDescriptor: TProjectFileDescriptor;
         var NewFilename: string; NewSource: string;
-        NewFlags: TNewFlags; NewOwner: TObject): TModalResult; override;
+        NewFlags: TNewFlags; NewOwner: TIDEProjPackBase): TModalResult; override;
 
     function DoSaveEditorFile(AEditor: TSourceEditorInterface;
                               Flags: TSaveFlags): TModalResult; override;
@@ -833,7 +833,7 @@ type
     procedure CreateIDEWindow(Sender: TObject; aFormName: string;
                           var AForm: TCustomForm; DoDisableAutoSizing: boolean);
     function CreateNewUniqueFilename(const Prefix, Ext: string;
-       NewOwner: TObject; Flags: TSearchIDEFileFlags; TryWithoutNumber: boolean
+       NewOwner: TIDEProjPackBase; Flags: TSearchIDEFileFlags; TryWithoutNumber: boolean
        ): string; override;
     procedure MarkUnitsModifiedUsingSubComponent(SubComponent: TComponent);
 
@@ -913,7 +913,7 @@ type
     procedure UpdateSaveMenuItemsAndButtons(UpdateSaveAll: boolean); override;
 
     // useful file methods
-    function FindUnitFile(const AFilename: string; TheOwner: TObject = nil;
+    function FindUnitFile(const AFilename: string; TheOwner: TIDEProjPackBase = nil;
                           IgnoreUninstallPkgs: boolean = false): string; override;
     function FindSourceFile(const AFilename, BaseDirectory: string;
                             Flags: TFindSourceFlags): string; override;
@@ -945,7 +945,8 @@ type
     procedure DoJumpToCodeToolBossError; override;
     function NeedSaveSourceEditorChangesToCodeCache(AEditor: TSourceEditorInterface): boolean; override;
     function SaveSourceEditorChangesToCodeCache(AEditor: TSourceEditorInterface): boolean; override;
-    function FindUnitsOfOwner(TheOwner: TObject; Flags: TFindUnitsOfOwnerFlags): TStrings; override;
+    function FindUnitsOfOwner(TheOwner: TIDEProjPackBase;
+                              Flags: TFindUnitsOfOwnerFlags): TStrings; override;
     procedure ApplyCodeToolChanges;
     procedure DoJumpToOtherProcedureSection;
     procedure DoFindDeclarationAtCursor;
@@ -5826,8 +5827,8 @@ begin
 end;
 
 function TMainIDE.DoNewFile(NewFileDescriptor: TProjectFileDescriptor;
-  var NewFilename: string; NewSource: string;
-  NewFlags: TNewFlags; NewOwner: TObject): TModalResult;
+  var NewFilename: string; NewSource: string; NewFlags: TNewFlags;
+  NewOwner: TIDEProjPackBase): TModalResult;
 begin
   Result := NewFile(NewFileDescriptor, NewFilename, NewSource, NewFlags, NewOwner);
 end;
@@ -6309,7 +6310,7 @@ begin
 end;
 
 function TMainIDE.CreateNewUniqueFilename(const Prefix, Ext: string;
-  NewOwner: TObject; Flags: TSearchIDEFileFlags; TryWithoutNumber: boolean): string;
+  NewOwner: TIDEProjPackBase; Flags: TSearchIDEFileFlags; TryWithoutNumber: boolean): string;
 
   function FileIsUnique(const ShortFilename: string): boolean;
   var
@@ -9605,7 +9606,7 @@ begin
   Result:=MainBuildBoss.GetFPCFrontEndOptions;
 end;
 
-function TMainIDE.FindUnitFile(const AFilename: string; TheOwner: TObject;
+function TMainIDE.FindUnitFile(const AFilename: string; TheOwner: TIDEProjPackBase;
   IgnoreUninstallPkgs: boolean): string;
 begin
   Result:=FindProjPackUnitFile(AFilename, TheOwner, IgnoreUninstallPkgs);
@@ -10265,7 +10266,7 @@ begin
   Result:=SaveEditorChangesToCodeCache(AEditor);
 end;
 
-function TMainIDE.FindUnitsOfOwner(TheOwner: TObject; Flags: TFindUnitsOfOwnerFlags): TStrings;
+function TMainIDE.FindUnitsOfOwner(TheOwner: TIDEProjPackBase; Flags: TFindUnitsOfOwnerFlags): TStrings;
 begin
   Result:=FindUnitsOfOwnerImpl(TheOwner,Flags);
 end;
