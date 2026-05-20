@@ -2972,47 +2972,6 @@ function InterceptDrawThemeText(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Int
 var
   OldColor: COLORREF;
   ClassName: LPCWSTR;
-
-  function IsSystemFontColor(AColor: TColor): Boolean;
-  begin
-    Result := (AColor = clDefault) or (AColor = clBtnText) or
-      (AColor = clWindowText);
-  end;
-
-  function ControlFromDC: TWinControl;
-  var
-    Window: HWND;
-    Info: PWin32WindowInfo;
-  begin
-    Result := nil;
-    Window := WindowFromDC(hdc);
-    if Window = 0 then
-      Exit;
-
-    Info := GetWin32WindowInfo(Window);
-    if Assigned(Info) then
-      Result := Info^.WinControl;
-
-    if Result = nil then
-      Result := TWinControl(GetProp(Window, PChar('WinControl')));
-  end;
-
-  function CheckBoxTextColor(ACurrentColor: COLORREF): COLORREF;
-  var
-    Control: TWinControl;
-  begin
-    if iStateId in [CBS_UNCHECKEDDISABLED, CBS_CHECKEDDISABLED, CBS_MIXEDDISABLED] then
-      Exit(SysColor[COLOR_GRAYTEXT]);
-
-    Control := ControlFromDC;
-    if (Control is TCustomCheckBox) and not IsSystemFontColor(Control.Font.Color) then
-      Exit(ColorToRGB(Control.Font.Color));
-
-    if (Control <> nil) or (ACurrentColor = 0) then
-      Exit(SysColor[COLOR_BTNTEXT]);
-
-    Result := ACurrentColor;
-  end;
 begin
   OldColor:= GetTextColor(hdc);
   if Assigned(ThemeClass) then
@@ -3032,8 +2991,8 @@ begin
 
       if SameText(ClassName, VSCLASS_DARK_BUTTON) then
       begin
-        if iPartId = BP_CHECKBOX then
-          OldColor:= CheckBoxTextColor(OldColor)
+        if (iPartId = BP_CHECKBOX) and (iStateId in [CBS_UNCHECKEDDISABLED, CBS_CHECKEDDISABLED, CBS_MIXEDDISABLED]) then
+          OldColor:= SysColor[COLOR_GRAYTEXT]
         else if (iPartId = BP_RADIOBUTTON) and (iStateId in [RBS_UNCHECKEDDISABLED, RBS_CHECKEDDISABLED]) then
           OldColor:= SysColor[COLOR_GRAYTEXT]
         else if (iPartId = BP_GROUPBOX) and (iStateId = GBS_DISABLED) then
