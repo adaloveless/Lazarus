@@ -2857,7 +2857,9 @@ begin
     case TheMessage.CharCode of
       VK_DELETE:
         if not Selection.OnlyInvisiblePersistentsSelected then
-          DoDeleteSelectedPersistents;
+        begin
+          Application.QueueAsyncCall(@DoDeleteSelectedPersistentsAsync, 0);
+        end;
 
       VK_UP:
         Nudge(0,-1);
@@ -3218,6 +3220,8 @@ begin
     {$IFDEF VerboseDesigner}
     DebugLn('[TDesigner.Notification] opRemove ',dbgsName(AComponent));
     {$ENDIF}
+    if DeletingPersistent.IndexOf(AComponent) >= 0 then
+      exit;
     // Notification is usually triggered by TheFormEditor.DeleteComponent in DoDeletePersistent.
     DoDeletePersistent(AComponent,false);
   end;

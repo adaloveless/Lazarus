@@ -948,8 +948,9 @@ begin
   else begin
     FPreviousDeleted := APersistent;
     //FindAndChange(APersistent, zoDelete); // Does not work with CollectionItems.
-    // Now rebuild the tree. ToDo: use TCollectionObserver, IFPObserver interface.
-    BuildComponentNodes(True);
+    // Rebuild after the current delete notification has unwound. Rebuilding
+    // here can walk components that are still in csDestroying.
+    IdleBuildNodes:=true;
   end;
 end;
 

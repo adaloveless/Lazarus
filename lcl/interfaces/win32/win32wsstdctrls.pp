@@ -1963,13 +1963,18 @@ function ButtonWndProc(Window: HWnd; Msg: UInt; WParam: Windows.WParam;
     LParam: Windows.LParam): LResult; stdcall;
 var
   Control: TWinControl;
+  WindowInfo: PWin32WindowInfo;
   LMessage: TLMessage;
 begin
   case Msg of
     WM_PAINT,
     WM_ERASEBKGND:
       begin
-        Control := GetWin32WindowInfo(Window)^.WinControl;
+        WindowInfo := GetWin32WindowInfo(Window);
+        Control := WindowInfo^.WinControl;
+        if (Control = nil) or (Control.WidgetSetClass = nil)
+        or (csDestroying in Control.ComponentState) then
+          Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
         if not TWSWinControlClass(Control.WidgetSetClass).GetDoubleBuffered(Control) then
         begin
           LMessage.msg := Msg;
