@@ -348,6 +348,9 @@ var
 
 implementation
 
+type
+  TWinControlAccess = class(TWinControl);
+
 function CompareDefPropCacheItems(Item1, Item2: TDefinePropertiesCacheItem): integer;
 begin
   Result:=CompareText(Item1.PersistentClassname,Item2.PersistentClassname);
@@ -648,6 +651,11 @@ Begin
   end else if FreeComponent then begin
     if (AComponent.Owner=nil) then
       DebugLn(['WARNING: TCustomFormEditor.DeleteComponent freeing orphaned component ',DbgSName(AComponent)]);
+    if AComponent is TWinControl then begin
+      AWinControl:=TWinControl(AComponent);
+      if AWinControl.HandleAllocated then
+        TWinControlAccess(AWinControl).DestroyHandle;
+    end;
     TryFreeComponent(AComponent);
   end;
   // if not free, then hide it
