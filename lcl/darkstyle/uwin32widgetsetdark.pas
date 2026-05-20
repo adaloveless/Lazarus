@@ -52,7 +52,7 @@ implementation
 
 uses
   Classes, SysUtils, Win32Int, WSLCLClasses, Forms, Windows, Win32Proc, Menus,
-  LCLType, Win32WSComCtrls, ComCtrls, LMessages, Win32WSStdCtrls,
+  LCLType, Win32WSComCtrls, ComCtrls, ToolWin, LMessages, Win32WSStdCtrls,
   WSStdCtrls, Win32WSControls, StdCtrls, WSControls, Graphics, Themes, LazUTF8,
   UxTheme, Win32Themes, ExtCtrls, WSMenus, JwaWinGDI, FPImage, Math, uDarkStyle,
   WSComCtrls, CommCtrl, uImport, WSForms, Win32WSButtons, WSButtons, Buttons, Win32Extra,
@@ -2282,6 +2282,8 @@ begin
 
   with TWinControl.Create(nil) do Free;
   RegisterWSComponent(TWinControl, TWin32WSWinControlDark);
+  RegisterWSComponent(TCustomControl, TWin32WSWinControlDark);
+  RegisterWSComponent(TToolWindow, TWin32WSWinControlDark);
 
   WSStdCtrls.RegisterCustomScrollBar;
   RegisterWSComponent(TCustomScrollBar, TWin32WSScrollBarDark);
