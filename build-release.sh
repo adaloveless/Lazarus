@@ -5,7 +5,7 @@ LAZARUS_DIR="$(cd "$(dirname "$0")" && pwd)"
 VP_DIR="/home/jason/src/vibepascal"
 RELEASE_DIR="$LAZARUS_DIR/releases"
 LAZARUS_VERSION="4.99-vp"
-DATE_STAMP=$(date +%Y%m%d)
+DATE_STAMP="${DATE_STAMP:-$(date +%Y%m%d)}"
 
 LINUX_CFG="$VP_DIR/vibepascal-linux-x86_64.cfg"
 WIN64_CFG="$VP_DIR/vibepascal-win64-x86_64.cfg"
@@ -370,10 +370,15 @@ rewrite_bgra_compiled_state() {
             rm -f "$mtime_ref"
             return 1
         fi
-    done < <(grep -rlZ --include='*.compiled' "$wrapper" \
-        "$LAZARUS_DIR/components/mouseandkeyinput" \
-        "$LAZARUS_DIR/components/bgrabitmap" \
-        "$LAZARUS_DIR/components/bgracontrols" 2>/dev/null || true)
+    # Whole-tree scan. build_bgra_release_packages runs lazbuild on the BGRA
+    # .lpk set, which rebuilds FCL/LCL/LazUtils/IDEintf and other core packages
+    # as dependencies -- stamping THEIR .compiled files with the wrapper path
+    # too (Melissa r18 aarch64-darwin F7, 2026-05-19: 11 core packages carried
+    # the stale /tmp/lazrelease-*-compiler-wrapper path + -Tdarwin Params). A
+    # subdir-scoped grep missed them. grep -l only returns files that CONTAIN
+    # "$wrapper", so widening to $LAZARUS_DIR is a no-op for already-clean
+    # state files. Mirrors build_darwin_ide's rewrite scope.
+    done < <(grep -rlZ --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null || true)
 }
 
 verify_bgra_release_package_outputs() {
@@ -812,6 +817,15 @@ package_release() {
     cp -r "$LAZARUS_DIR/designer" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/images" "$staging/" 2>/dev/null || true
+
+    # Ship the auto-update helper scripts at tarball root so users can refresh
+    # and rebuild the IDE from the source tree this tarball delivers. The copies
+    # above bring only subtrees (components/, lcl/, ide/, ...) -- never repo-root
+    # files -- so the updater scripts were absent (GOD mpd5wmli: "no
+    # auto-update.bat script was included").
+    for updater in auto-update.bat auto-update.ps1 auto-update.sh; do
+        [ -f "$LAZARUS_DIR/$updater" ] && cp "$LAZARUS_DIR/$updater" "$staging/"
+    done
 
     strip_stale_host_arch_artifacts "$staging" "$target"
 
