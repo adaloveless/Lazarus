@@ -17,6 +17,17 @@ REM   -NoLaunch       Do not launch the IDE after a successful rebuild
 REM   -AllowPush      Opt-in: push post-upstream-merge to origin/main
 REM   -Help           Show full ps1 help
 
+REM --- Close any running Lazarus IDE so the updater can replace its files. ---
+REM A running lazarus.exe / startlazarus.exe locks the binaries on Windows, so
+REM the rebuild step fails silently (stale-binary error). Skip the kill for
+REM read-only operations that never touch the installed binaries.
+echo X %* | findstr /i /c:"-Check" /c:"-Doctor" /c:"-Help" /c:"-NoBuild" >nul
+if errorlevel 1 (
+    echo Closing any running Lazarus IDE so its files can be updated...
+    taskkill /F /IM lazarus.exe      >nul 2>&1
+    taskkill /F /IM startlazarus.exe >nul 2>&1
+)
+
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0auto-update.ps1" %*
 set "AU_EXIT=%ERRORLEVEL%"
 
