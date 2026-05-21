@@ -420,6 +420,26 @@ begin
   end;
 end;
 
+procedure HideDarkGroupedDesignChildren(const AWinControl: TWinControl);
+var
+  I: Integer;
+  ChildWinControl: TWinControl;
+begin
+  if not ((AWinControl is TCustomRadioGroup) or
+          (AWinControl is TCustomCheckGroup)) then
+    Exit;
+  if not (csDesigning in AWinControl.ComponentState) then
+    Exit;
+
+  for I := 0 to AWinControl.ControlCount - 1 do
+    if AWinControl.Controls[I] is TWinControl then
+    begin
+      ChildWinControl := TWinControl(AWinControl.Controls[I]);
+      if ChildWinControl.HandleAllocated then
+        ShowWindow(ChildWinControl.Handle, SW_HIDE);
+    end;
+end;
+
 procedure TryEnforceDarkStyleForCtrl(AWinControl:TWinControl);
 begin
   if (AWinControl <> nil) then begin
@@ -942,6 +962,8 @@ var
   end;
 begin
   Control := DarkControlFromWindow(Window);
+  if Control <> nil then
+    HideDarkGroupedDesignChildren(Control);
 
   GetClientRect(Window, R);
   ExcludeChildWindows;
