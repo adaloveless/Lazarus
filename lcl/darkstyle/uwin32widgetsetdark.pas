@@ -276,6 +276,7 @@ const
   ID_SUB_SCROLLBAR   = 7;
   DARK_BUTTON_OLD_PROC_PROP = 'LazDarkButtonOldProc';
   DARK_GROUPBOX_OLD_PROC_PROP = 'LazDarkGroupBoxOldProc';
+  DARK_GROUPBOX_SYNC_CHILDREN_MSG = WM_APP + 138;
 
 const
   themelib = 'uxtheme.dll';
@@ -342,14 +343,48 @@ end;
 
 procedure SyncDarkGroupChildren(const AWinControl: TWinControl);
 var
-  I: Integer;
+  I, ChildTop, MinChildTop: Integer;
   Child: TControl;
   ChildR: TRect;
   ChildWinControl: TWinControl;
+  DC: HDC;
+  TM: Windows.TextMetric;
+  OldFont: HGDIOBJ;
 begin
   if not ((AWinControl is TCustomRadioGroup) or
           (AWinControl is TCustomCheckGroup)) then
     Exit;
+
+  if (AWinControl.Color = clDefault) or (AWinControl.Color = clWindow) or
+     (AWinControl.Color = clBtnFace) then
+  begin
+    AWinControl.Color := SysColor[COLOR_BTNFACE];
+    AWinControl.Brush.Color := SysColor[COLOR_BTNFACE];
+  end;
+  if (AWinControl.Font.Color = clDefault) or
+     (AWinControl.Font.Color = clBtnText) or
+     (AWinControl.Font.Color = clWindowText) then
+    AWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
+
+  MinChildTop := 18;
+  if AWinControl.HandleAllocated then
+  begin
+    DC := Windows.GetDC(AWinControl.Handle);
+    if DC <> 0 then
+    try
+      OldFont := SelectObject(DC, AWinControl.Font.Reference.Handle);
+      try
+        TM := Default(Windows.TextMetric);
+        if Windows.GetTextMetrics(DC, TM) then
+          MinChildTop := Max(MinChildTop, TM.tmHeight + 4);
+      finally
+        if OldFont <> 0 then
+          SelectObject(DC, OldFont);
+      end;
+    finally
+      Windows.ReleaseDC(AWinControl.Handle, DC);
+    end;
+  end;
 
   for I := 0 to AWinControl.ControlCount - 1 do
   begin
@@ -357,14 +392,27 @@ begin
     if Child is TWinControl then
     begin
       ChildWinControl := TWinControl(Child);
+      if (ChildWinControl.Color = clDefault) or
+         (ChildWinControl.Color = clWindow) or
+         (ChildWinControl.Color = clBtnFace) then
+      begin
+        ChildWinControl.Color := SysColor[COLOR_BTNFACE];
+        ChildWinControl.Brush.Color := SysColor[COLOR_BTNFACE];
+      end;
+      if (ChildWinControl.Font.Color = clDefault) or
+         (ChildWinControl.Font.Color = clBtnText) or
+         (ChildWinControl.Font.Color = clWindowText) then
+        ChildWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
       if ChildWinControl.HandleAllocated then
       begin
+        ChildTop := Max(Child.Top, MinChildTop);
         GetWindowRect(ChildWinControl.Handle, ChildR);
         MapWindowPoints(0, AWinControl.Handle, ChildR, 2);
-        if (ChildR.Left <> Child.Left) or (ChildR.Top <> Child.Top) or
+        if (ChildR.Left <> Child.Left) or (ChildR.Top <> ChildTop) or
            (ChildR.Width <> Child.Width) or (ChildR.Height <> Child.Height) then
-          SetWindowPos(ChildWinControl.Handle, 0, Child.Left, Child.Top,
-            Child.Width, Child.Height, SWP_NOZORDER or SWP_NOACTIVATE);
+          SetWindowPos(ChildWinControl.Handle, 0, Child.Left, ChildTop,
+            Child.Width, Child.Height,
+            SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
       end;
     end;
   end;
@@ -705,12 +753,15 @@ var
   end;
 begin
   Control := DarkControlFromWindow(Window);
-  if Control <> nil then
-    SyncDarkGroupChildren(Control);
 
   GetClientRect(Window, R);
   ExcludeChildWindows;
-  ThemeServices.DrawParentBackground(Window, DC, nil, False);
+  Brush := CreateSolidBrush(ColorToRGB(SysColor[COLOR_BTNFACE]));
+  try
+    FillRect(DC, R, Brush);
+  finally
+    DeleteObject(Brush);
+  end;
 
   if Control <> nil then
   begin
@@ -783,8 +834,27 @@ function DarkGroupBoxWndProc(Window: HWND; Msg: UInt;
 var
   PS: PAINTSTRUCT;
   DC: HDC;
+  Control: TWinControl;
 begin
   case Msg of
+    DARK_GROUPBOX_SYNC_CHILDREN_MSG:
+      begin
+        Control := DarkControlFromWindow(Window);
+        if Control <> nil then
+        begin
+          SyncDarkGroupChildren(Control);
+          InvalidateRect(Window, nil, True);
+        end;
+        Exit(0);
+      end;
+    WM_SIZE, WM_WINDOWPOSCHANGED:
+      begin
+        Result := CallDarkGroupBoxOldProc(Window, Msg, WParam, LParam);
+        Control := DarkControlFromWindow(Window);
+        if (Control is TCustomRadioGroup) or (Control is TCustomCheckGroup) then
+          PostMessage(Window, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
+        Exit;
+      end;
     WM_PAINT:
       begin
         DC := BeginPaint(Window, @PS);
@@ -1181,6 +1251,8 @@ begin
   Result := inherited CreateHandle(AWinControl, AParams);
   InstallDarkGroupBoxWndProc(Result);
   EnableDarkStyle(Result);
+  if (AWinControl is TCustomRadioGroup) or (AWinControl is TCustomCheckGroup) then
+    PostMessage(Result, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
 end;
 
 class function TWin32WSCustomGroupBoxDark.GetDefaultColor(
@@ -2682,7 +2754,7 @@ begin
   try
     LCanvas.Handle:= HDC;
 
-    LCanvas.Brush.Color:= clBtnFace;
+    LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
     LCanvas.FillRect(pRect);
 
     AStyle:= LCanvas.TextStyle;
@@ -3316,7 +3388,7 @@ var
        ((iPartId = BP_PUSHBUTTON) and (iStateId = PBS_DISABLED)) then
       Exit(SysColor[COLOR_GRAYTEXT]);
 
-    if iPartId in [BP_RADIOBUTTON, BP_GROUPBOX] then
+    if iPartId in [BP_CHECKBOX, BP_RADIOBUTTON, BP_GROUPBOX] then
     begin
       Control := ControlFromTheme;
       if Control = nil then
