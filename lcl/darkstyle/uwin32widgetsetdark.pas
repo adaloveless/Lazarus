@@ -781,21 +781,62 @@ end;
 function DarkControlFromWindow(Window: HWND): TWinControl;
 var
   Info: PWin32WindowInfo;
+
+  function IsLiveWindowControl(AControl: TWinControl): Boolean;
+  begin
+    Result := False;
+    try
+      if (AControl = nil) or (PPointer(AControl)^ = nil) then
+        Exit;
+      if (AControl.WidgetSetClass = nil) or
+         (csDestroying in AControl.ComponentState) or
+         (not AControl.HandleAllocated) or
+         (HWND(AControl.Handle) <> Window) then
+        Exit;
+      Result := True;
+    except
+      Result := False;
+    end;
+  end;
+
 begin
   Result := nil;
   if Window = 0 then
     Exit;
 
   Result := FindControl(Window);
-  if Result <> nil then
+  if IsLiveWindowControl(Result) then
     Exit;
+  Result := nil;
 
   Info := GetWin32WindowInfo(Window);
-  if Assigned(Info) then
+  if Assigned(Info) and IsLiveWindowControl(Info^.WinControl) then
     Result := Info^.WinControl;
 
-  if Result = nil then
+  if (Result = nil) and
+     IsLiveWindowControl(TWinControl(GetProp(Window, PChar('WinControl')))) then
     Result := TWinControl(GetProp(Window, PChar('WinControl')));
+end;
+
+function DarkWindowHasLiveVisibleControl(Window: HWND): Boolean;
+var
+  Control: TWinControl;
+begin
+  Control := DarkControlFromWindow(Window);
+  Result := (Control <> nil) and Control.Visible and IsWindowVisible(Window);
+end;
+
+function IsDarkGroupedDesignItem(const AWinControl: TWinControl): Boolean;
+begin
+  Result := False;
+  try
+    if (AWinControl = nil) or not (csDesigning in AWinControl.ComponentState) then
+      Exit;
+    Result := (AWinControl.Parent is TCustomRadioGroup) or
+      (AWinControl.Parent is TCustomCheckGroup);
+  except
+    Result := True;
+  end;
 end;
 
 function DarkControlTextColor(Window: HWND; ADefaultColor: TColor): TColor;
@@ -987,7 +1028,26 @@ function DarkCheckRadioWndProc(Window: HWND; Msg: UInt;
 var
   PS: PAINTSTRUCT;
   DC: HDC;
+  Control: TWinControl;
 begin
+  Control := DarkControlFromWindow(Window);
+  if (Msg <> WM_NCDESTROY) and
+     ((Control = nil) or (not Control.Visible) or (not IsWindowVisible(Window))) then
+    Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+
+  if IsDarkGroupedDesignItem(Control) then
+  begin
+    case Msg of
+      WM_PAINT, WM_PRINTCLIENT, WM_ERASEBKGND:
+        Exit(0);
+      WM_SETTEXT, WM_SETFONT, WM_ENABLE, WM_SETFOCUS, WM_KILLFOCUS,
+      WM_LBUTTONDOWN, WM_LBUTTONUP, WM_KEYDOWN, WM_KEYUP, WM_CHAR,
+      WM_DEADCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_SYSCHAR,
+      WM_SYSDEADCHAR, BM_SETCHECK, BM_SETSTATE:
+        Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+    end;
+  end;
+
   case Msg of
     WM_PAINT:
       begin
@@ -1286,6 +1346,9 @@ var
   DC: HDC;
   Control: TWinControl;
 begin
+  if (Msg <> WM_NCDESTROY) and not DarkWindowHasLiveVisibleControl(Window) then
+    Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+
   case Msg of
     DARK_GROUPBOX_SYNC_CHILDREN_MSG:
       begin
@@ -1763,7 +1826,8 @@ begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
   EnableDarkStyle(Result);
-  InstallDarkCheckRadioWndProc(Result);
+  if not IsDarkGroupedDesignItem(AWinControl) then
+    InstallDarkCheckRadioWndProc(Result);
 end;
 
 class function TWin32WSCustomCheckBoxDark.GetDefaultColor(
@@ -1786,7 +1850,8 @@ begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
   EnableDarkStyle(Result);
-  InstallDarkCheckRadioWndProc(Result);
+  if not IsDarkGroupedDesignItem(AWinControl) then
+    InstallDarkCheckRadioWndProc(Result);
 end;
 
 class function TWin32WSRadioButtonDark.GetDefaultColor(
