@@ -811,8 +811,8 @@ var
   Button: TControl;
   Items: TStrings;
   ColumnLayout: TColumnLayout;
-  I, ItemCount, Columns, Rows, Row, Col, CellWidth, CellHeight, ItemHeight,
-    ItemTop: Integer;
+  I, ChildIndex, VisibleChildIndex, ItemCount, Columns, Rows, Row, Col,
+    CellWidth, CellHeight, ItemHeight, ItemTop: Integer;
   ItemR, WorkR: TRect;
   IsRadio, Checked, Enabled: Boolean;
   Text: UnicodeString;
@@ -870,8 +870,18 @@ begin
   for I := 0 to ItemCount - 1 do
   begin
     Button := nil;
-    if AWinControl.ControlCount > I then
-      Button := AWinControl.Controls[I];
+    VisibleChildIndex := -1;
+    for ChildIndex := 0 to AWinControl.ControlCount - 1 do
+    begin
+      if not AWinControl.Controls[ChildIndex].Visible then
+        Continue;
+      Inc(VisibleChildIndex);
+      if VisibleChildIndex = I then
+      begin
+        Button := AWinControl.Controls[ChildIndex];
+        Break;
+      end;
+    end;
 
     if IsRadio then
     begin
@@ -880,9 +890,6 @@ begin
     end
     else
       Checked := (Button is TCheckBox) and TCheckBox(Button).Checked;
-
-    if (Button <> nil) and not Button.Visible then
-      Continue;
 
     if ColumnLayout = clHorizontalThenVertical then
     begin
