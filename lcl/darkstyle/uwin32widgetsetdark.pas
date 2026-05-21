@@ -120,7 +120,11 @@ type
     { TWin32WSCustomRadioGroupDark }
 
     TWin32WSCustomRadioGroupDark = class(TWin32WSCustomGroupBoxDark)
-    published
+    end;
+
+    { TWin32WSCustomCheckGroupDark }
+
+    TWin32WSCustomCheckGroupDark = class(TWin32WSCustomGroupBoxDark)
     end;
 
     { TWin32WSButtonDark }
@@ -334,6 +338,36 @@ begin
   AllowDarkModeForWindow(Window, True);
   SetWindowTheme(Window, 'DarkMode_Explorer', nil);
   SendMessageW(Window, WM_THEMECHANGED, 0, 0);
+end;
+
+procedure SyncDarkGroupChildren(const AWinControl: TWinControl);
+var
+  I: Integer;
+  Child: TControl;
+  ChildR: TRect;
+  ChildWinControl: TWinControl;
+begin
+  if not ((AWinControl is TCustomRadioGroup) or
+          (AWinControl is TCustomCheckGroup)) then
+    Exit;
+
+  for I := 0 to AWinControl.ControlCount - 1 do
+  begin
+    Child := AWinControl.Controls[I];
+    if Child is TWinControl then
+    begin
+      ChildWinControl := TWinControl(Child);
+      if ChildWinControl.HandleAllocated then
+      begin
+        GetWindowRect(ChildWinControl.Handle, ChildR);
+        MapWindowPoints(0, AWinControl.Handle, ChildR, 2);
+        if (ChildR.Left <> Child.Left) or (ChildR.Top <> Child.Top) or
+           (ChildR.Width <> Child.Width) or (ChildR.Height <> Child.Height) then
+          SetWindowPos(ChildWinControl.Handle, 0, Child.Left, Child.Top,
+            Child.Width, Child.Height, SWP_NOZORDER or SWP_NOACTIVATE);
+      end;
+    end;
+  end;
 end;
 
 procedure TryEnforceDarkStyleForCtrl(AWinControl:TWinControl);
@@ -652,11 +686,32 @@ var
   OldTextColor: COLORREF;
   Brush: HBRUSH;
   TextColor: TColor;
+
+  procedure ExcludeChildWindows;
+  var
+    Child: HWND;
+    ChildR: TRect;
+  begin
+    Child := GetWindow(Window, GW_CHILD);
+    while Child <> 0 do
+    begin
+      if IsWindowVisible(Child) and GetWindowRect(Child, ChildR) then
+      begin
+        MapWindowPoints(0, Window, ChildR, 2);
+        ExcludeClipRect(DC, ChildR.Left, ChildR.Top, ChildR.Right, ChildR.Bottom);
+      end;
+      Child := GetWindow(Child, GW_HWNDNEXT);
+    end;
+  end;
 begin
+  Control := DarkControlFromWindow(Window);
+  if Control <> nil then
+    SyncDarkGroupChildren(Control);
+
   GetClientRect(Window, R);
+  ExcludeChildWindows;
   ThemeServices.DrawParentBackground(Window, DC, nil, False);
 
-  Control := DarkControlFromWindow(Window);
   if Control <> nil then
   begin
     Text := UTF8ToUTF16(Control.Caption);
@@ -2538,6 +2593,9 @@ begin
 
   WSExtCtrls.RegisterCustomRadioGroup;
   RegisterWSComponent(TCustomRadioGroup, TWin32WSCustomRadioGroupDark);
+
+  WSExtCtrls.RegisterCustomCheckGroup;
+  RegisterWSComponent(TCustomCheckGroup, TWin32WSCustomCheckGroupDark);
 
   WSStdCtrls.RegisterCustomButton;
   RegisterWSComponent(TCustomButton, TWin32WSButtonDark);
