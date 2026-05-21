@@ -444,6 +444,8 @@ begin
         Continue;
 
       ChildWinControl := TWinControl(Child);
+      ChildWinControl.BorderSpacing.CellAlignHorizontal := ccaFill;
+      ChildWinControl.BorderSpacing.CellAlignVertical := ccaFill;
       if (ChildWinControl.Color = clDefault) or
          (ChildWinControl.Color = clWindow) or
          (ChildWinControl.Color = clBtnFace) then
@@ -488,6 +490,11 @@ begin
           SetWindowPos(ChildWinControl.Handle, 0, TargetR.Left, ChildTop,
             TargetR.Right - TargetR.Left, TargetR.Bottom - ChildTop,
             SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
+        if ChildWinControl.HandleAllocated then
+        begin
+          EnableDarkStyle(ChildWinControl.Handle);
+          InstallDarkCheckRadioWndProc(ChildWinControl.Handle);
+        end;
         InvalidateRect(ChildWinControl.Handle, nil, True);
       end;
     end;
@@ -1052,10 +1059,11 @@ var
 begin
   Control := DarkControlFromWindow(Window);
   if (Msg <> WM_NCDESTROY) and
-     ((Control = nil) or (not Control.Visible) or (not IsWindowVisible(Window))) then
+     (((Control <> nil) and (not Control.Visible)) or
+      (not IsWindowVisible(Window))) then
     Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
 
-  if IsDarkGroupedDesignItem(Control) then
+  if (Control <> nil) and IsDarkGroupedDesignItem(Control) then
   begin
     case Msg of
       WM_PAINT, WM_PRINTCLIENT, WM_ERASEBKGND:
