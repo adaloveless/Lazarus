@@ -3061,8 +3061,14 @@ begin
     Special := (Copy(APersistent.ClassName,1,3) = 'TPS') // A hack for PSScript plugins. ToDo...
       or ((APersistent is TWinControl) and TWinControl(APersistent).IsSpecialSubControl);
     // delete component
-    if APersistent is TComponent then
+    if APersistent is TComponent then begin
+      if APersistent is TControl then begin
+        TControl(APersistent).Visible:=false;
+        if (APersistent is TWinControl) and TWinControl(APersistent).HandleAllocated then
+          LCLIntf.ShowWindow(TWinControl(APersistent).Handle, SW_HIDE);
+      end;
       TheFormEditor.DeleteComponent(TComponent(APersistent),FreeIt)
+    end
     else if FreeIt then
       APersistent.Free;
     // call ComponentDeleted handler
