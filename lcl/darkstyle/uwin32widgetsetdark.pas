@@ -336,6 +336,7 @@ var
   TrampolineDrawThemeBackground: function(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect; pClipRect: Pointer): HRESULT; stdcall =  nil;
 
 procedure InstallDarkCheckRadioWndProc(Window: HWND); forward;
+function GetSysColorBrushDark(nIndex: longint): HBRUSH; stdcall; forward;
 
 procedure EnableDarkStyle(Window: HWND);
 begin
@@ -496,6 +497,8 @@ begin
           InstallDarkCheckRadioWndProc(ChildWinControl.Handle);
         end;
         InvalidateRect(ChildWinControl.Handle, nil, True);
+        RedrawWindow(ChildWinControl.Handle, nil, 0,
+          RDW_INVALIDATE or RDW_ERASE or RDW_UPDATENOW);
       end;
     end;
   end;
@@ -1099,7 +1102,8 @@ begin
     BM_SETSTATE:
       begin
         Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
-        InvalidateRect(Window, nil, True);
+        RedrawWindow(Window, nil, 0,
+          RDW_INVALIDATE or RDW_ERASE or RDW_UPDATENOW);
         Exit;
       end;
     WM_NCDESTROY:
@@ -1115,18 +1119,23 @@ end;
 
 procedure InstallDarkCheckRadioWndProc(Window: HWND);
 var
-  OldProc: LONG_PTR;
+  CurrentProc, OldProc: LONG_PTR;
   IsRadio: Boolean;
 begin
   if Window = 0 then
     Exit;
-  if GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)) <> 0 then
+  CurrentProc := GetWindowLongPtrW(Window, GWL_WNDPROC);
+  if CurrentProc = PtrInt(@DarkCheckRadioWndProc) then
     Exit;
   if not IsDarkCheckRadioWindow(Window, IsRadio) then
     Exit;
   OldProc := SetWindowLongPtrW(Window, GWL_WNDPROC, PtrInt(@DarkCheckRadioWndProc));
   if OldProc <> 0 then
+  begin
+    if GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)) <> 0 then
+      RemoveProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP));
     SetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP), THandle(OldProc));
+  end;
 end;
 
 procedure DrawDarkGroupedControlItems(DC: HDC; const AWinControl: TWinControl;
@@ -1388,6 +1397,14 @@ begin
         end;
         Exit(0);
       end;
+    WM_CTLCOLORSTATIC, WM_CTLCOLORBTN:
+      begin
+        DC := HDC(WParam);
+        SetBkColor(DC, ColorToRGB(SysColor[COLOR_BTNFACE]));
+        SetTextColor(DC, ColorToRGB(SysColor[COLOR_BTNTEXT]));
+        SetBkMode(DC, TRANSPARENT);
+        Exit(LResult(GetSysColorBrushDark(COLOR_BTNFACE)));
+      end;
     WM_SIZE, WM_WINDOWPOSCHANGED:
       begin
         Result := CallDarkGroupBoxOldProc(Window, Msg, WParam, LParam);
@@ -1426,15 +1443,20 @@ end;
 
 procedure InstallDarkGroupBoxWndProc(Window: HWND);
 var
-  OldProc: LONG_PTR;
+  CurrentProc, OldProc: LONG_PTR;
 begin
   if Window = 0 then
     Exit;
-  if GetProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP)) <> 0 then
+  CurrentProc := GetWindowLongPtrW(Window, GWL_WNDPROC);
+  if CurrentProc = PtrInt(@DarkGroupBoxWndProc) then
     Exit;
   OldProc := SetWindowLongPtrW(Window, GWL_WNDPROC, PtrInt(@DarkGroupBoxWndProc));
   if OldProc <> 0 then
+  begin
+    if GetProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP)) <> 0 then
+      RemoveProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP));
     SetProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP), THandle(OldProc));
+  end;
 end;
 
 {
