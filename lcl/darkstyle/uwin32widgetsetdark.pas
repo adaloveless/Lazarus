@@ -346,18 +346,41 @@ end;
 
 procedure SyncDarkGroupChildren(const AWinControl: TWinControl);
 var
-  I, ChildTop, MinChildTop: Integer;
+  I, ChildTop, MinChildTop, VisibleChildIndex, ItemCount, Columns, Rows,
+    Row, Col, CellWidth, CellHeight, ItemHeight, Margin, BottomMargin: Integer;
   Child: TControl;
-  ChildR: TRect;
+  ChildR, WorkR, TargetR: TRect;
   ChildWinControl: TWinControl;
   DC: HDC;
   TM: Windows.TextMetric;
   OldFont: HGDIOBJ;
+  ColumnLayout: TColumnLayout;
+  IsRadio: Boolean;
 begin
   if not ((AWinControl is TCustomRadioGroup) or
           (AWinControl is TCustomCheckGroup)) then
     Exit;
   if csDesigning in AWinControl.ComponentState then
+    Exit;
+
+  IsRadio := AWinControl is TCustomRadioGroup;
+  if IsRadio then
+  begin
+    ItemCount := TCustomRadioGroup(AWinControl).Items.Count;
+    Columns := Max(1, Min(TCustomRadioGroup(AWinControl).Columns,
+      Max(1, ItemCount)));
+    Rows := Max(1, TCustomRadioGroup(AWinControl).Rows);
+    ColumnLayout := TCustomRadioGroup(AWinControl).ColumnLayout;
+  end
+  else
+  begin
+    ItemCount := TCustomCheckGroup(AWinControl).Items.Count;
+    Columns := Max(1, Min(TCustomCheckGroup(AWinControl).Columns,
+      Max(1, ItemCount)));
+    Rows := Max(1, TCustomCheckGroup(AWinControl).Rows);
+    ColumnLayout := TCustomCheckGroup(AWinControl).ColumnLayout;
+  end;
+  if ItemCount = 0 then
     Exit;
 
   if (AWinControl.Color = clDefault) or (AWinControl.Color = clWindow) or
@@ -372,6 +395,7 @@ begin
     AWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
 
   MinChildTop := 18;
+  ItemHeight := 24;
   if AWinControl.HandleAllocated then
   begin
     DC := Windows.GetDC(AWinControl.Handle);
@@ -381,7 +405,10 @@ begin
       try
         TM := Default(Windows.TextMetric);
         if Windows.GetTextMetrics(DC, TM) then
+        begin
           MinChildTop := Max(MinChildTop, TM.tmHeight + 4);
+          ItemHeight := Max(20, TM.tmHeight + 8);
+        end;
       finally
         if OldFont <> 0 then
           SelectObject(DC, OldFont);
@@ -391,11 +418,31 @@ begin
     end;
   end;
 
+  Margin := Max(6, AWinControl.ChildSizing.LeftRightSpacing);
+  BottomMargin := Max(6, AWinControl.ChildSizing.TopBottomSpacing);
+  WorkR := AWinControl.ClientRect;
+  Inc(WorkR.Left, Margin);
+  Dec(WorkR.Right, Margin);
+  WorkR.Top := MinChildTop;
+  Dec(WorkR.Bottom, BottomMargin);
+
+  if ColumnLayout = clHorizontalThenVertical then
+    Rows := Max(1, ((ItemCount - 1) div Columns) + 1)
+  else
+    Columns := Max(1, ((ItemCount - 1) div Rows) + 1);
+
+  CellWidth := Max(1, (WorkR.Right - WorkR.Left) div Columns);
+  CellHeight := Max(ItemHeight, (WorkR.Bottom - WorkR.Top) div Rows);
+  VisibleChildIndex := -1;
   for I := 0 to AWinControl.ControlCount - 1 do
   begin
     Child := AWinControl.Controls[I];
-    if Child is TWinControl then
+    if (Child is TWinControl) and Child.Visible then
     begin
+      Inc(VisibleChildIndex);
+      if VisibleChildIndex >= ItemCount then
+        Continue;
+
       ChildWinControl := TWinControl(Child);
       if (ChildWinControl.Color = clDefault) or
          (ChildWinControl.Color = clWindow) or
@@ -412,13 +459,28 @@ begin
       begin
         EnableDarkStyle(ChildWinControl.Handle);
         InstallDarkCheckRadioWndProc(ChildWinControl.Handle);
-        ChildTop := Max(Child.Top, MinChildTop);
+        if ColumnLayout = clHorizontalThenVertical then
+        begin
+          Row := VisibleChildIndex div Columns;
+          Col := VisibleChildIndex mod Columns;
+        end
+        else
+        begin
+          Row := VisibleChildIndex mod Rows;
+          Col := VisibleChildIndex div Rows;
+        end;
+        TargetR.Left := WorkR.Left + Col * CellWidth;
+        TargetR.Top := WorkR.Top + Row * CellHeight;
+        TargetR.Right := Min(WorkR.Right, TargetR.Left + CellWidth);
+        TargetR.Bottom := Min(WorkR.Bottom, TargetR.Top + CellHeight);
+        ChildTop := Max(TargetR.Top, MinChildTop);
         GetWindowRect(ChildWinControl.Handle, ChildR);
         MapWindowPoints(0, AWinControl.Handle, ChildR, 2);
-        if (ChildR.Left <> Child.Left) or (ChildR.Top <> ChildTop) or
-           (ChildR.Width <> Child.Width) or (ChildR.Height <> Child.Height) then
-          SetWindowPos(ChildWinControl.Handle, 0, Child.Left, ChildTop,
-            Child.Width, Child.Height,
+        if (ChildR.Left <> TargetR.Left) or (ChildR.Top <> ChildTop) or
+           (ChildR.Right <> TargetR.Right) or
+           (ChildR.Bottom <> TargetR.Bottom) then
+          SetWindowPos(ChildWinControl.Handle, 0, TargetR.Left, ChildTop,
+            TargetR.Right - TargetR.Left, TargetR.Bottom - ChildTop,
             SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
         InvalidateRect(ChildWinControl.Handle, nil, True);
       end;
