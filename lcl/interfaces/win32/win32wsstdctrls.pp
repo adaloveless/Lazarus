@@ -1965,15 +1965,31 @@ var
   Control: TWinControl;
   WindowInfo: PWin32WindowInfo;
   LMessage: TLMessage;
+
+  function HasLiveVisibleButtonControl: Boolean;
+  begin
+    Result := False;
+    try
+      WindowInfo := GetWin32WindowInfo(Window);
+      Control := WindowInfo^.WinControl;
+      if (Control = nil) or (PPointer(Control)^ = nil) then
+        Exit;
+      if (Control.WidgetSetClass = nil)
+      or (csDestroying in Control.ComponentState)
+      or (not Control.Visible) or (not Windows.IsWindowVisible(Window)) then
+        Exit;
+      Result := True;
+    except
+      Control := nil;
+    end;
+  end;
+
 begin
   case Msg of
     WM_PAINT,
     WM_ERASEBKGND:
       begin
-        WindowInfo := GetWin32WindowInfo(Window);
-        Control := WindowInfo^.WinControl;
-        if (Control = nil) or (Control.WidgetSetClass = nil)
-        or (csDestroying in Control.ComponentState) then
+        if not HasLiveVisibleButtonControl then
           Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
         if not TWSWinControlClass(Control.WidgetSetClass).GetDoubleBuffered(Control) then
         begin
@@ -1988,6 +2004,19 @@ begin
       end;
     WM_PRINTCLIENT:
       Result := CallDefaultWindowProc(Window, Msg, WParam, LParam);
+    WM_KEYDOWN,
+    WM_KEYUP,
+    WM_CHAR,
+    WM_DEADCHAR,
+    WM_SYSKEYDOWN,
+    WM_SYSKEYUP,
+    WM_SYSCHAR,
+    WM_SYSDEADCHAR:
+      begin
+        if not HasLiveVisibleButtonControl then
+          Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+        Result := WindowProc(Window, Msg, WParam, LParam);
+      end;
     else
       Result := WindowProc(Window, Msg, WParam, LParam);
   end;
