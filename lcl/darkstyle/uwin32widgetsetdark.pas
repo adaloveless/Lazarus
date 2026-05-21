@@ -1064,7 +1064,16 @@ begin
   if (Msg <> WM_NCDESTROY) and
      (((Control <> nil) and (not Control.Visible)) or
       (not IsWindowVisible(Window))) then
-    Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+  begin
+    case Msg of
+      WM_PAINT, WM_PRINTCLIENT, WM_ERASEBKGND:
+        Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+    end;
+    if Control <> nil then
+      Exit(CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam))
+    else
+      Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+  end;
 
   if (Control <> nil) and IsDarkGroupedDesignItem(Control) then
   begin
@@ -1295,10 +1304,7 @@ var
 begin
   Control := DarkControlFromWindow(Window);
   if Control <> nil then
-  begin
     HideDarkGroupedDesignChildren(Control);
-    SyncDarkGroupChildren(Control);
-  end;
 
   GetClientRect(Window, R);
   ExcludeChildWindows;
@@ -1383,13 +1389,24 @@ var
   DC: HDC;
   Control: TWinControl;
 begin
-  if (Msg <> WM_NCDESTROY) and not DarkWindowHasLiveVisibleControl(Window) then
-    Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+  Control := DarkControlFromWindow(Window);
+  if (Msg <> WM_NCDESTROY) and
+     ((Control = nil) or (not Control.Visible) or
+      (not IsWindowVisible(Window))) then
+  begin
+    case Msg of
+      WM_PAINT, WM_PRINTCLIENT, WM_ERASEBKGND:
+        Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+    end;
+    if Control <> nil then
+      Exit(CallDarkGroupBoxOldProc(Window, Msg, WParam, LParam))
+    else
+      Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+  end;
 
   case Msg of
     DARK_GROUPBOX_SYNC_CHILDREN_MSG:
       begin
-        Control := DarkControlFromWindow(Window);
         if Control <> nil then
         begin
           SyncDarkGroupChildren(Control);
