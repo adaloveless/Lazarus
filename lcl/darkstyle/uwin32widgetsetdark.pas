@@ -420,6 +420,7 @@ begin
           SetWindowPos(ChildWinControl.Handle, 0, Child.Left, ChildTop,
             Child.Width, Child.Height,
             SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
+        InvalidateRect(ChildWinControl.Handle, nil, True);
       end;
     end;
   end;
@@ -826,7 +827,7 @@ begin
   OldBkMode := SetBkMode(DC, TRANSPARENT);
   OldTextColor := SetTextColor(DC, ColorToRGB(ATextColor));
   DrawTextW(DC, PWideChar(AText), Length(AText), TextR,
-    DT_LEFT or DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS);
+    DT_LEFT or DT_SINGLELINE or DT_VCENTER);
   SetTextColor(DC, OldTextColor);
   SetBkMode(DC, OldBkMode);
 end;
