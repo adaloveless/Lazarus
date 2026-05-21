@@ -1745,8 +1745,7 @@ class function TWin32WSCustomPageDark.CreateHandle(
 begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
-  if not (csDesigning in AWinControl.ComponentState) then
-    EnableDarkStyle(Result);
+  EnableDarkStyle(Result);
 end;
 
 class function TWin32WSCustomPageDark.GetDefaultColor(const AControl: TControl;
@@ -1768,8 +1767,7 @@ class function TWin32WSCustomTabControlDark.CreateHandle(
 begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
-  if not (csDesigning in AWinControl.ComponentState) then
-    EnableDarkStyle(Result);
+  EnableDarkStyle(Result);
 end;
 
 class function TWin32WSCustomTabControlDark.GetDefaultColor(
