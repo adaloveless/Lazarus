@@ -474,6 +474,12 @@ begin
         TargetR.Right := Min(WorkR.Right, TargetR.Left + CellWidth);
         TargetR.Bottom := Min(WorkR.Bottom, TargetR.Top + CellHeight);
         ChildTop := Max(TargetR.Top, MinChildTop);
+        if (ChildWinControl.Left <> TargetR.Left) or
+           (ChildWinControl.Top <> ChildTop) or
+           (ChildWinControl.Width <> TargetR.Right - TargetR.Left) or
+           (ChildWinControl.Height <> TargetR.Bottom - ChildTop) then
+          ChildWinControl.SetBounds(TargetR.Left, ChildTop,
+            TargetR.Right - TargetR.Left, TargetR.Bottom - ChildTop);
         GetWindowRect(ChildWinControl.Handle, ChildR);
         MapWindowPoints(0, AWinControl.Handle, ChildR, 2);
         if (ChildR.Left <> TargetR.Left) or (ChildR.Top <> ChildTop) or
@@ -506,6 +512,20 @@ begin
       if ChildWinControl.HandleAllocated then
         ShowWindow(ChildWinControl.Handle, SW_HIDE);
     end;
+end;
+
+procedure PostDarkGroupedParentSync(const AWinControl: TWinControl);
+var
+  ParentControl: TWinControl;
+begin
+  if (AWinControl = nil) or (AWinControl.Parent = nil) then
+    Exit;
+  ParentControl := AWinControl.Parent;
+  if not ((ParentControl is TCustomRadioGroup) or
+          (ParentControl is TCustomCheckGroup)) then
+    Exit;
+  if ParentControl.HandleAllocated then
+    PostMessage(ParentControl.Handle, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
 end;
 
 procedure TryEnforceDarkStyleForCtrl(AWinControl:TWinControl);
@@ -1828,6 +1848,7 @@ begin
   EnableDarkStyle(Result);
   if not IsDarkGroupedDesignItem(AWinControl) then
     InstallDarkCheckRadioWndProc(Result);
+  PostDarkGroupedParentSync(AWinControl);
 end;
 
 class function TWin32WSCustomCheckBoxDark.GetDefaultColor(
@@ -1852,6 +1873,7 @@ begin
   EnableDarkStyle(Result);
   if not IsDarkGroupedDesignItem(AWinControl) then
     InstallDarkCheckRadioWndProc(Result);
+  PostDarkGroupedParentSync(AWinControl);
 end;
 
 class function TWin32WSRadioButtonDark.GetDefaultColor(
