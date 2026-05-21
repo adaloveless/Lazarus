@@ -354,6 +354,8 @@ begin
   if not ((AWinControl is TCustomRadioGroup) or
           (AWinControl is TCustomCheckGroup)) then
     Exit;
+  if csDesigning in AWinControl.ComponentState then
+    Exit;
 
   if (AWinControl.Color = clDefault) or (AWinControl.Color = clWindow) or
      (AWinControl.Color = clBtnFace) then
@@ -724,6 +726,186 @@ begin
     Result := ADefaultColor;
 end;
 
+function DarkGroupedItemTextColor(const AWinControl: TWinControl;
+  const AEnabled: Boolean): TColor;
+begin
+  if not AEnabled then
+    Exit(SysColor[COLOR_GRAYTEXT]);
+
+  Result := AWinControl.Font.Color;
+  if IsSystemTextColor(Result) then
+    Result := AWinControl.GetDefaultColor(dctFont);
+  if Result = clDefault then
+    Result := SysColor[COLOR_BTNTEXT];
+end;
+
+procedure DrawDarkGroupedItem(DC: HDC; const AItemRect: TRect;
+  const AText: UnicodeString; const AChecked, AEnabled, AIsRadio: Boolean;
+  const ATextColor: TColor);
+var
+  GlyphR, DotR, TextR: TRect;
+  GlyphSize, MidY: Integer;
+  OldPen, OldBrush: HGDIOBJ;
+  OldTextColor: COLORREF;
+  BorderColor: TColor;
+begin
+  if (AItemRect.Right <= AItemRect.Left) or (AItemRect.Bottom <= AItemRect.Top) then
+    Exit;
+
+  GlyphSize := Max(11, Min(16, AItemRect.Bottom - AItemRect.Top - 6));
+  GlyphR.Left := AItemRect.Left + 2;
+  GlyphR.Top := AItemRect.Top + Max(0, (AItemRect.Bottom - AItemRect.Top - GlyphSize) div 2);
+  GlyphR.Right := GlyphR.Left + GlyphSize;
+  GlyphR.Bottom := GlyphR.Top + GlyphSize;
+
+  if AEnabled then
+    BorderColor := SysColor[COLOR_BTNTEXT]
+  else
+    BorderColor := SysColor[COLOR_GRAYTEXT];
+
+  OldPen := SelectObject(DC, GetStockObject(DC_PEN));
+  OldBrush := SelectObject(DC, GetStockObject(DC_BRUSH));
+  try
+    SetDCPenColor(DC, ColorToRGB(BorderColor));
+    SetDCBrushColor(DC, ColorToRGB(SysColor[COLOR_BTNFACE]));
+    if AIsRadio then
+    begin
+      Ellipse(DC, GlyphR.Left, GlyphR.Top, GlyphR.Right, GlyphR.Bottom);
+      if AChecked then
+      begin
+        DotR := GlyphR;
+        InflateRect(DotR, -4, -4);
+        SetDCBrushColor(DC, ColorToRGB(BorderColor));
+        Ellipse(DC, DotR.Left, DotR.Top, DotR.Right, DotR.Bottom);
+      end;
+    end
+    else
+    begin
+      Rectangle(DC, GlyphR.Left, GlyphR.Top, GlyphR.Right, GlyphR.Bottom);
+      if AChecked then
+      begin
+        MidY := GlyphR.Top + (GlyphR.Bottom - GlyphR.Top) div 2;
+        MoveToEx(DC, GlyphR.Left + 3, MidY, nil);
+        LineTo(DC, GlyphR.Left + 6, GlyphR.Bottom - 4);
+        LineTo(DC, GlyphR.Right - 3, GlyphR.Top + 3);
+      end;
+    end;
+  finally
+    SelectObject(DC, OldBrush);
+    SelectObject(DC, OldPen);
+  end;
+
+  TextR := AItemRect;
+  TextR.Left := GlyphR.Right + 6;
+  OldTextColor := SetTextColor(DC, ColorToRGB(ATextColor));
+  DrawTextW(DC, PWideChar(AText), Length(AText), TextR,
+    DT_LEFT or DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS);
+  SetTextColor(DC, OldTextColor);
+end;
+
+procedure DrawDarkGroupedControlItems(DC: HDC; const AWinControl: TWinControl;
+  const AClientRect, ACaptionRect: TRect);
+var
+  RadioGroup: TCustomRadioGroup;
+  CheckGroup: TCustomCheckGroup;
+  Button: TControl;
+  Items: TStrings;
+  ColumnLayout: TColumnLayout;
+  I, ItemCount, Columns, Rows, Row, Col, CellWidth, CellHeight, ItemHeight,
+    ItemTop: Integer;
+  ItemR, WorkR: TRect;
+  IsRadio, Checked, Enabled: Boolean;
+  Text: UnicodeString;
+  TM: Windows.TextMetric;
+begin
+  if (AWinControl = nil) or not (csDesigning in AWinControl.ComponentState) then
+    Exit;
+
+  IsRadio := AWinControl is TCustomRadioGroup;
+  if IsRadio then
+  begin
+    RadioGroup := TCustomRadioGroup(AWinControl);
+    Items := RadioGroup.Items;
+    ItemCount := Items.Count;
+    Columns := Max(1, Min(RadioGroup.Columns, Max(1, ItemCount)));
+    Rows := Max(1, RadioGroup.Rows);
+    ColumnLayout := RadioGroup.ColumnLayout;
+  end
+  else if AWinControl is TCustomCheckGroup then
+  begin
+    CheckGroup := TCustomCheckGroup(AWinControl);
+    Items := CheckGroup.Items;
+    ItemCount := Items.Count;
+    Columns := Max(1, Min(CheckGroup.Columns, Max(1, ItemCount)));
+    Rows := Max(1, CheckGroup.Rows);
+    ColumnLayout := CheckGroup.ColumnLayout;
+  end
+  else
+    Exit;
+
+  if ItemCount = 0 then
+    Exit;
+
+  FillChar(TM{%H-}, SizeOf(TM), 0);
+  if Windows.GetTextMetrics(DC, TM) then
+    ItemHeight := Max(20, TM.tmHeight + 8)
+  else
+    ItemHeight := 24;
+
+  WorkR := AClientRect;
+  Inc(WorkR.Left, 10);
+  Dec(WorkR.Right, 8);
+  ItemTop := Max(18, ACaptionRect.Bottom + 2);
+  WorkR.Top := ItemTop;
+  Dec(WorkR.Bottom, 6);
+
+  if ColumnLayout = clHorizontalThenVertical then
+    Rows := Max(1, ((ItemCount - 1) div Columns) + 1)
+  else
+    Columns := Max(1, ((ItemCount - 1) div Rows) + 1);
+
+  CellWidth := Max(1, (WorkR.Right - WorkR.Left) div Columns);
+  CellHeight := Max(ItemHeight, (WorkR.Bottom - WorkR.Top) div Rows);
+
+  for I := 0 to ItemCount - 1 do
+  begin
+    Button := nil;
+    if AWinControl.ControlCount > I then
+      Button := AWinControl.Controls[I];
+
+    if IsRadio then
+    begin
+      RadioGroup := TCustomRadioGroup(AWinControl);
+      Checked := RadioGroup.ItemIndex = I;
+    end
+    else
+      Checked := (Button is TCheckBox) and TCheckBox(Button).Checked;
+
+    if (Button <> nil) and not Button.Visible then
+      Continue;
+
+    if ColumnLayout = clHorizontalThenVertical then
+    begin
+      Row := I div Columns;
+      Col := I mod Columns;
+    end
+    else
+    begin
+      Row := I mod Rows;
+      Col := I div Rows;
+    end;
+
+    ItemR.Left := WorkR.Left + Col * CellWidth;
+    ItemR.Top := WorkR.Top + Row * CellHeight;
+    ItemR.Right := Min(WorkR.Right, ItemR.Left + CellWidth);
+    ItemR.Bottom := Min(WorkR.Bottom, ItemR.Top + CellHeight);
+    Text := UTF8ToUTF16(Items[I]);
+    Enabled := AWinControl.Enabled and ((Button = nil) or Button.Enabled);
+    DrawDarkGroupedItem(DC, ItemR, Text, Checked, Enabled, IsRadio,
+      DarkGroupedItemTextColor(AWinControl, Enabled));
+  end;
+end;
+
 procedure DrawDarkGroupBoxWindow(Window: HWND; DC: HDC);
 var
   R, BorderR, TextR: TRect;
@@ -812,6 +994,7 @@ begin
   DrawTextW(DC, PWideChar(Text), Length(Text), TextR,
     DT_LEFT or DT_SINGLELINE or DT_END_ELLIPSIS);
   SetTextColor(DC, OldTextColor);
+  DrawDarkGroupedControlItems(DC, Control, R, TextR);
   SetBkMode(DC, OldBkMode);
   if OldFont <> 0 then
     SelectObject(DC, OldFont);
