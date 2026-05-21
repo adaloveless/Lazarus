@@ -275,6 +275,7 @@ const
   ID_SUB_LISTVIEW    = 6;
   ID_SUB_SCROLLBAR   = 7;
   DARK_BUTTON_OLD_PROC_PROP = 'LazDarkButtonOldProc';
+  DARK_CHECKRADIO_OLD_PROC_PROP = 'LazDarkCheckRadioOldProc';
   DARK_GROUPBOX_OLD_PROC_PROP = 'LazDarkGroupBoxOldProc';
   DARK_GROUPBOX_SYNC_CHILDREN_MSG = WM_APP + 138;
 
@@ -333,6 +334,8 @@ var
   TrampolineDrawThemeText: function(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; pszText: LPCWSTR; iCharCount: Integer;
                                     dwTextFlags, dwTextFlags2: DWORD; const pRect: TRect): HRESULT; stdcall = nil;
   TrampolineDrawThemeBackground: function(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect; pClipRect: Pointer): HRESULT; stdcall =  nil;
+
+procedure InstallDarkCheckRadioWndProc(Window: HWND); forward;
 
 procedure EnableDarkStyle(Window: HWND);
 begin
@@ -407,6 +410,8 @@ begin
         ChildWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
       if ChildWinControl.HandleAllocated then
       begin
+        EnableDarkStyle(ChildWinControl.Handle);
+        InstallDarkCheckRadioWndProc(ChildWinControl.Handle);
         ChildTop := Max(Child.Top, MinChildTop);
         GetWindowRect(ChildWinControl.Handle, ChildR);
         MapWindowPoints(0, AWinControl.Handle, ChildR, 2);
@@ -767,6 +772,7 @@ var
   GlyphSize, MidY: Integer;
   OldPen, OldBrush: HGDIOBJ;
   OldTextColor: COLORREF;
+  OldBkMode: Integer;
   BorderColor: TColor;
 begin
   if (AItemRect.Right <= AItemRect.Left) or (AItemRect.Bottom <= AItemRect.Top) then
@@ -817,10 +823,159 @@ begin
 
   TextR := AItemRect;
   TextR.Left := GlyphR.Right + 6;
+  OldBkMode := SetBkMode(DC, TRANSPARENT);
   OldTextColor := SetTextColor(DC, ColorToRGB(ATextColor));
   DrawTextW(DC, PWideChar(AText), Length(AText), TextR,
     DT_LEFT or DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS);
   SetTextColor(DC, OldTextColor);
+  SetBkMode(DC, OldBkMode);
+end;
+
+function IsDarkCheckRadioWindow(Window: HWND; out AIsRadio: Boolean): Boolean;
+const
+  DarkBSTypeMask = $0000000F;
+  DarkBSCheckBox = $00000002;
+  DarkBSAutoCheckBox = $00000003;
+  DarkBSRadioButton = $00000004;
+  DarkBS3State = $00000005;
+  DarkBSAuto3State = $00000006;
+  DarkBSAutoRadioButton = $00000009;
+var
+  Style, ButtonStyle: PtrUInt;
+begin
+  AIsRadio := False;
+  Style := PtrUInt(GetWindowLongPtrW(Window, GWL_STYLE));
+  ButtonStyle := Style and DarkBSTypeMask;
+  AIsRadio := ButtonStyle in [DarkBSRadioButton, DarkBSAutoRadioButton];
+  Result := AIsRadio or (ButtonStyle in [DarkBSCheckBox, DarkBSAutoCheckBox,
+    DarkBS3State, DarkBSAuto3State]);
+  if Result and ((Style and BS_PUSHLIKE) <> 0) then
+    Result := False;
+end;
+
+procedure DrawDarkCheckRadioWindow(Window: HWND; DC: HDC);
+var
+  R: TRect;
+  Text: UnicodeString;
+  Control: TWinControl;
+  FontHandle, OldFont: HGDIOBJ;
+  Brush: HBRUSH;
+  CheckState: LRESULT;
+  IsRadio, Checked, Enabled: Boolean;
+  TextColor: TColor;
+begin
+  if not IsDarkCheckRadioWindow(Window, IsRadio) then
+    Exit;
+
+  GetClientRect(Window, R);
+  Brush := CreateSolidBrush(ColorToRGB(SysColor[COLOR_BTNFACE]));
+  try
+    FillRect(DC, R, Brush);
+  finally
+    DeleteObject(Brush);
+  end;
+
+  Control := DarkControlFromWindow(Window);
+  if Control <> nil then
+  begin
+    Text := UTF8ToUTF16(Control.Caption);
+    FontHandle := Control.Font.Reference.Handle;
+  end
+  else
+  begin
+    SetLength(Text, GetWindowTextLengthW(Window));
+    if Length(Text) > 0 then
+      SetLength(Text, GetWindowTextW(Window, PWideChar(Text), Length(Text) + 1));
+    FontHandle := HFONT(SendMessage(Window, WM_GETFONT, 0, 0));
+  end;
+
+  OldFont := 0;
+  if FontHandle <> 0 then
+    OldFont := SelectObject(DC, FontHandle);
+  try
+    CheckState := SendMessage(Window, BM_GETCHECK, 0, 0);
+    Checked := CheckState = BST_CHECKED;
+    Enabled := IsWindowEnabled(Window);
+    if Enabled then
+      TextColor := DarkControlTextColor(Window, SysColor[COLOR_BTNTEXT])
+    else
+      TextColor := SysColor[COLOR_GRAYTEXT];
+    DrawDarkGroupedItem(DC, R, Text, Checked, Enabled, IsRadio, TextColor);
+  finally
+    if OldFont <> 0 then
+      SelectObject(DC, OldFont);
+  end;
+end;
+
+function CallDarkCheckRadioOldProc(Window: HWND; Msg: UInt;
+  WParam: Windows.WParam; LParam: Windows.LParam): LResult;
+var
+  OldProc: WNDPROC;
+begin
+  OldProc := WNDPROC(GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)));
+  if Assigned(OldProc) then
+    Result := CallWindowProcW(OldProc, Window, Msg, WParam, LParam)
+  else
+    Result := WindowProc(Window, Msg, WParam, LParam);
+end;
+
+function DarkCheckRadioWndProc(Window: HWND; Msg: UInt;
+  WParam: Windows.WParam; LParam: Windows.LParam): LResult; stdcall;
+var
+  PS: PAINTSTRUCT;
+  DC: HDC;
+begin
+  case Msg of
+    WM_PAINT:
+      begin
+        DC := BeginPaint(Window, @PS);
+        try
+          DrawDarkCheckRadioWindow(Window, DC);
+        finally
+          EndPaint(Window, @PS);
+        end;
+        Exit(0);
+      end;
+    WM_PRINTCLIENT:
+      begin
+        DrawDarkCheckRadioWindow(Window, HDC(WParam));
+        Exit(0);
+      end;
+    WM_ERASEBKGND:
+      Exit(1);
+    WM_SETTEXT, WM_SETFONT, WM_ENABLE, WM_SETFOCUS, WM_KILLFOCUS,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_KEYDOWN, WM_KEYUP, BM_SETCHECK,
+    BM_SETSTATE:
+      begin
+        Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        InvalidateRect(Window, nil, True);
+        Exit;
+      end;
+    WM_NCDESTROY:
+      begin
+        Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        RemoveProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP));
+        Exit;
+      end;
+  end;
+
+  Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+end;
+
+procedure InstallDarkCheckRadioWndProc(Window: HWND);
+var
+  OldProc: LONG_PTR;
+  IsRadio: Boolean;
+begin
+  if Window = 0 then
+    Exit;
+  if GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)) <> 0 then
+    Exit;
+  if not IsDarkCheckRadioWindow(Window, IsRadio) then
+    Exit;
+  OldProc := SetWindowLongPtrW(Window, GWL_WNDPROC, PtrInt(@DarkCheckRadioWndProc));
+  if OldProc <> 0 then
+    SetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP), THandle(OldProc));
 end;
 
 procedure DrawDarkGroupedControlItems(DC: HDC; const AWinControl: TWinControl;
@@ -948,6 +1103,8 @@ var
   var
     Child: HWND;
     ChildR: TRect;
+    I: Integer;
+    ChildWinControl: TWinControl;
   begin
     Child := GetWindow(Window, GW_CHILD);
     while Child <> 0 do
@@ -959,11 +1116,29 @@ var
       end;
       Child := GetWindow(Child, GW_HWNDNEXT);
     end;
+
+    if Control = nil then
+      Exit;
+    for I := 0 to Control.ControlCount - 1 do
+      if Control.Controls[I] is TWinControl then
+      begin
+        ChildWinControl := TWinControl(Control.Controls[I]);
+        if ChildWinControl.HandleAllocated and ChildWinControl.Visible and
+           IsWindowVisible(ChildWinControl.Handle) and
+           GetWindowRect(ChildWinControl.Handle, ChildR) then
+        begin
+          MapWindowPoints(0, Window, ChildR, 2);
+          ExcludeClipRect(DC, ChildR.Left, ChildR.Top, ChildR.Right, ChildR.Bottom);
+        end;
+      end;
   end;
 begin
   Control := DarkControlFromWindow(Window);
   if Control <> nil then
+  begin
     HideDarkGroupedDesignChildren(Control);
+    SyncDarkGroupChildren(Control);
+  end;
 
   GetClientRect(Window, R);
   ExcludeChildWindows;
@@ -1525,6 +1700,7 @@ begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
   EnableDarkStyle(Result);
+  InstallDarkCheckRadioWndProc(Result);
 end;
 
 class function TWin32WSCustomCheckBoxDark.GetDefaultColor(
@@ -1547,6 +1723,7 @@ begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
   EnableDarkStyle(Result);
+  InstallDarkCheckRadioWndProc(Result);
 end;
 
 class function TWin32WSRadioButtonDark.GetDefaultColor(
