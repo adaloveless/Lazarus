@@ -1976,6 +1976,7 @@ var
         Exit;
       if (Control.WidgetSetClass = nil)
       or (csDestroying in Control.ComponentState)
+      or (not Control.HandleAllocated) or (HWND(Control.Handle) <> Window)
       or (not Control.Visible) or (not Windows.IsWindowVisible(Window)) then
         Exit;
       Result := True;
