@@ -642,13 +642,28 @@ function Pull-LazarusUpstream {
 }
 
 function Pull-LazarusOrigin {
-    if ($script:LazarusUpdated -and -not $script:UpstreamUpdated) {
-        Log-Header "Pulling Lazarus origin changes"
+    if (-not $script:LazarusUpdated) { return }
+
+    Log-Header "Pulling Lazarus origin changes"
+
+    $localCommits = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "origin/main..HEAD")
+    if (-not $localCommits) { $localCommits = "0" }
+
+    if ([int]$localCommits -eq 0) {
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("pull", "--ff-only", "origin", "main")
         if ($result.ExitCode -ne 0) {
             Log-Err "Pull failed: $($result.Error)"
         } else {
             Log-Ok "Lazarus origin pulled"
+        }
+    } else {
+        Log-Info "Merging origin/main ($localCommits local commit(s) ahead)..."
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge origin/main", "origin/main")
+        if ($result.ExitCode -ne 0) {
+            Log-Err "Merge from origin failed: $($result.Error)"
+            Log-Err "Resolve conflicts manually, then re-run."
+        } else {
+            Log-Ok "Merge from origin complete"
         }
     }
 }
@@ -1516,12 +1531,20 @@ Extract-VPBinaries
 
 $scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
 
-Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
+$upstreamRemote = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("remote", "get-url", "upstream")
+if ($upstreamRemote) {
+    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
+} else {
+    Log-Warn "No 'upstream' remote configured -- skipping upstream Lazarus (fpc/Lazarus) checks"
+    Log-Info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
+}
 
 if (-not $UpstreamOnly) {
     Check-VPUpdates
 }
-Check-LazarusUpstream
+if ($upstreamRemote) {
+    Check-LazarusUpstream
+}
 Check-LazarusOrigin
 
 if ($Check) {
