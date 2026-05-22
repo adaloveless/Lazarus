@@ -138,6 +138,16 @@ begin
   FModalResult:=AValue;
 end;
 
+procedure TCustomButton.SetWordWrap(AValue: Boolean);
+begin
+  if FWordWrap = AValue then Exit;
+  FWordWrap := AValue;
+  // BS_MULTILINE is applied at handle creation (see TWin32WSButton.CreateHandle),
+  // so an existing handle must be recreated to pick up the style change.
+  if HandleAllocated then
+    RecreateWnd(Self);
+end;
+
 procedure TCustomButton.ExecuteDefaultAction;
 begin
   if FActive or FDefault then

@@ -2036,7 +2036,8 @@ begin
     pClassName := @ButtonClsName[0];
     SubClassWndProc := @ButtonWndProc;
     WindowTitle := StrCaption;
-    if (pos(#13, AWinControl.Caption) <> 0) or (pos(#10, AWinControl.Caption) <> 0) then
+    if (pos(#13, AWinControl.Caption) <> 0) or (pos(#10, AWinControl.Caption) <> 0)
+    or ((AWinControl is TCustomButton) and TCustomButton(AWinControl).WordWrap) then
       Flags:= Flags or BS_MULTILINE;
   end;
   // create window
