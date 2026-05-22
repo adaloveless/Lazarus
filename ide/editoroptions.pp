@@ -926,7 +926,7 @@ const
     ) deprecated 'for internal use only';
 
 const
-  SynEditDefaultOptions = SYNEDIT_DEFAULT_OPTIONS - [eoShowScrollHint]
+  SynEditDefaultOptions = SYNEDIT_DEFAULT_OPTIONS - [eoShowScrollHint, eoSmartTabs, eoAutoIndent]
                                                   + [eoHalfPageScroll, eoTabIndent];
   SynEditDefaultOptions2 = SYNEDIT_DEFAULT_OPTIONS2;
 
