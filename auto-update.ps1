@@ -742,6 +742,42 @@ function Rebuild-Lazbuild {
     Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
 }
 
+function Clean-ExternalPackageArtifacts {
+    # Stale .ppu/.o files in external packages (compiled with older/different
+    # compilers) cause VibePascal ICEs when lazbuild --build-ide= tries to
+    # recompile them. Scan packagefiles.xml for external packages and wipe
+    # their lib/ output dirs so they rebuild cleanly from source.
+    $pkgFilesXml = Join-Path $env:LOCALAPPDATA "lazarus\packagefiles.xml"
+    if (-not (Test-Path $pkgFilesXml)) { return }
+
+    try {
+        [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
+        foreach ($item in $pkgXml.CONFIG.UserPkgLinks.Item) {
+            $items = if ($item -is [array]) { $item } else { @($item) }
+            foreach ($it in $items) {
+                $file = $it.Filename.GetAttribute("Value")
+                if (-not $file) { continue }
+                if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
+                if ($file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+
+                $pkgDir = Split-Path -Parent $file
+                $libDir = Join-Path $pkgDir "lib"
+                if (-not (Test-Path $libDir)) { continue }
+
+                $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
+                if ($stale.Count -eq 0) { continue }
+
+                Log-Info "Cleaning stale build artifacts in external package: $($it.Name.GetAttribute('Value')) ($($stale.Count) file(s))"
+                foreach ($f in $stale) {
+                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    } catch {
+        Log-Warn "Could not clean external package artifacts: $_"
+    }
+}
+
 function Rebuild-IDE {
     Log-Header "Rebuilding Lazarus IDE (lazarus.exe)"
 
@@ -1417,6 +1453,7 @@ if ($ResetConfig) {
         Log-Info "-ResetConfig -ForceRebuild: rebuilding lazbuild + IDE after config reset"
         Rebuild-Lazbuild
         Configure-Environment
+        Clean-ExternalPackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
             Log-Ok "Lazarus rebuilt after ResetConfig"
@@ -1507,6 +1544,7 @@ if ($anyUpdated) {
     } else {
         Rebuild-Lazbuild
         Configure-Environment
+        Clean-ExternalPackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
             $script:LocalBuildProductsRestored = $true
