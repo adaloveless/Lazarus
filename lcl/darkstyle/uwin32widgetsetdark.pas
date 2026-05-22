@@ -704,11 +704,11 @@ procedure DrawDarkPushButtonWindow(Window: HWND; DC: HDC);
 var
   Info: PWin32WindowInfo;
   Control: TWinControl;
-  R: TRect;
+  R, CalcR, DrawR: TRect;
   Text: UnicodeString;
   State: LRESULT;
   FillColor, BorderColor, TextColor: TColor;
-  OldBkMode: Integer;
+  OldBkMode, YOff: Integer;
   OldTextColor: COLORREF;
   OldPenColor, OldBrushColor: COLORREF;
   OldPen, OldBrush, OldFont: HGDIOBJ;
@@ -732,6 +732,12 @@ begin
   else
   begin
     TextColor := SysColor[COLOR_BTNTEXT];
+    // Honor an explicitly-chosen button font color (e.g. a red "Stop" caption).
+    // A non-system Font.Color means the app deliberately set it; without this
+    // the dark scheme always overrode it to COLOR_BTNTEXT. Uses the same
+    // IsSystemTextColor idiom this unit applies elsewhere for dark text colors.
+    if Assigned(Control) and (not IsSystemTextColor(Control.Font.Color)) then
+      TextColor := Control.Font.Color;
     if (State and BST_PUSHED) <> 0 then
       FillColor := Darker(FillColor, 120);
   end;
@@ -768,8 +774,28 @@ begin
     OldFont := SelectObject(DC, FontHandle);
   OldBkMode := SetBkMode(DC, TRANSPARENT);
   OldTextColor := SetTextColor(DC, ColorToRGB(TextColor));
-  DrawTextW(DC, PWideChar(Text), Length(Text), R,
-    DT_CENTER or DT_VCENTER or DT_SINGLELINE or DT_END_ELLIPSIS);
+  // Word-wrap long captions: measure the caption single-line; if it is wider
+  // than the available client rect, draw it multi-line, vertically centered via
+  // a DT_CALCRECT height offset (DT_VCENTER is invalid with DT_WORDBREAK).
+  // Captions that fit keep the existing single-line centered draw.
+  CalcR := R;
+  DrawTextW(DC, PWideChar(Text), Length(Text), CalcR,
+    DT_CENTER or DT_SINGLELINE or DT_CALCRECT);
+  if (Length(Text) > 0) and ((CalcR.Right - CalcR.Left) > (R.Right - R.Left)) then
+  begin
+    CalcR := R;
+    DrawTextW(DC, PWideChar(Text), Length(Text), CalcR,
+      DT_CENTER or DT_WORDBREAK or DT_CALCRECT);
+    YOff := ((R.Bottom - R.Top) - (CalcR.Bottom - CalcR.Top)) div 2;
+    if YOff < 0 then YOff := 0;
+    DrawR := R;
+    DrawR.Top := R.Top + YOff;
+    DrawTextW(DC, PWideChar(Text), Length(Text), DrawR,
+      DT_CENTER or DT_WORDBREAK);
+  end
+  else
+    DrawTextW(DC, PWideChar(Text), Length(Text), R,
+      DT_CENTER or DT_VCENTER or DT_SINGLELINE or DT_END_ELLIPSIS);
   SetTextColor(DC, OldTextColor);
   SetBkMode(DC, OldBkMode);
   if OldFont <> 0 then
