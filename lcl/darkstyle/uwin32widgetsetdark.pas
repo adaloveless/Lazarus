@@ -3895,7 +3895,8 @@ begin
   begin
     P:= GetWindowLongPtr(hwnd, GWL_EXSTYLE);
 
-    if (P and WS_EX_CONTEXTHELP = 0) or (lstrcmpiW(pszClassList, VSCLASS_MONTHCAL) = 0) then
+    if ((P and WS_EX_CONTEXTHELP = 0) or (lstrcmpiW(pszClassList, VSCLASS_MONTHCAL) = 0))
+       and (lstrcmpiW(pszClassList, VSCLASS_TAB) <> 0) then
     begin
       Result:= TrampolineOpenThemeData(hwnd, pszClassList);
       Exit;
