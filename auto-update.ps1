@@ -742,42 +742,61 @@ function Rebuild-Lazbuild {
     Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
 }
 
-function Clean-ExternalPackageArtifacts {
-    # Stale .ppu/.o files in external packages (compiled with older/different
-    # compilers) cause VibePascal ICEs when lazbuild --build-ide= tries to
-    # recompile them. Scan packagefiles.xml for external packages and wipe
-    # their lib/ output dirs so they rebuild cleanly from source.
+function Clean-StalePackageArtifacts {
+    # Stale .ppu/.o files (compiled with older/different compilers) cause
+    # VibePascal ICEs when lazbuild --build-ide= tries to recompile them.
+    # Wipe lib/ output dirs for ALL installed packages (external + Lazarus
+    # built-in) so they rebuild cleanly from source.
+
+    # --- 1. External packages (from packagefiles.xml) ---
     $pkgFilesXml = Join-Path $env:LOCALAPPDATA "lazarus\packagefiles.xml"
-    if (-not (Test-Path $pkgFilesXml)) { return }
+    if (Test-Path $pkgFilesXml) {
+        try {
+            [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
+            $userLinks = $pkgXml.CONFIG.UserPkgLinks
+            $itemNodes = $userLinks.ChildNodes | Where-Object { $_.Name -match '^Item\d+$' }
+            foreach ($it in $itemNodes) {
+                $fileNode = $it.SelectSingleNode("Filename")
+                $nameNode = $it.SelectSingleNode("Name")
+                $file = if ($fileNode) { $fileNode.GetAttribute("Value") } else { $null }
+                $pkgName = if ($nameNode) { $nameNode.GetAttribute("Value") } else { "unknown" }
+                if (-not $file) { continue }
+                if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
+                if ($file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
 
+                $pkgDir = Split-Path -Parent $file
+                $libDir = Join-Path $pkgDir "lib"
+                if (-not (Test-Path $libDir)) { continue }
+
+                $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
+                if ($stale.Count -eq 0) { continue }
+
+                Log-Info "Cleaning stale build artifacts in external package: $pkgName ($($stale.Count) file(s))"
+                foreach ($f in $stale) {
+                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {
+            Log-Warn "Could not clean external package artifacts: $_"
+        }
+    }
+
+    # --- 2. Lazarus built-in packages (components, ide packages, lcl, etc.) ---
     try {
-        [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
-        $userLinks = $pkgXml.CONFIG.UserPkgLinks
-        # packagefiles.xml uses numbered child nodes: <Item1>, <Item2>, ...
-        $itemNodes = $userLinks.ChildNodes | Where-Object { $_.Name -match '^Item\d+$' }
-        foreach ($it in $itemNodes) {
-            $fileNode = $it.SelectSingleNode("Filename")
-            $nameNode = $it.SelectSingleNode("Name")
-            $file = if ($fileNode) { $fileNode.GetAttribute("Value") } else { $null }
-            $pkgName = if ($nameNode) { $nameNode.GetAttribute("Value") } else { "unknown" }
-            if (-not $file) { continue }
-            if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
-            if ($file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-
-            $pkgDir = Split-Path -Parent $file
-            $libDir = Join-Path $pkgDir "lib"
-            if (-not (Test-Path $libDir)) { continue }
-
-            $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
-            if ($stale.Count -eq 0) { continue }
-
-            Log-Info "Cleaning stale build artifacts in external package: $pkgName ($($stale.Count) file(s))"
-            foreach ($f in $stale) {
-                Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+        $lazarusLibDirs = @(Get-ChildItem -Path $LazarusDir -Recurse -Directory -Filter "lib" -ErrorAction SilentlyContinue | Where-Object {
+            (Get-ChildItem -Path $_.FullName -Recurse -Filter "*.ppu" -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null
+        })
+        foreach ($libDir in $lazarusLibDirs) {
+            $stale = @(Get-ChildItem -Path $libDir.FullName -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
+            if ($stale.Count -gt 0) {
+                Log-Info "Cleaning stale build artifacts in Lazarus lib: $($libDir.FullName) ($($stale.Count) file(s))"
+                foreach ($f in $stale) {
+                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                }
             }
         }
     } catch {
-        Log-Warn "Could not clean external package artifacts: $_"
+        Log-Warn "Could not clean Lazarus package artifacts: $_"
     }
 }
 
@@ -1456,7 +1475,7 @@ if ($ResetConfig) {
         Log-Info "-ResetConfig -ForceRebuild: rebuilding lazbuild + IDE after config reset"
         Rebuild-Lazbuild
         Configure-Environment
-        Clean-ExternalPackageArtifacts
+        Clean-StalePackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
             Log-Ok "Lazarus rebuilt after ResetConfig"
@@ -1547,7 +1566,7 @@ if ($anyUpdated) {
     } else {
         Rebuild-Lazbuild
         Configure-Environment
-        Clean-ExternalPackageArtifacts
+        Clean-StalePackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
             $script:LocalBuildProductsRestored = $true
