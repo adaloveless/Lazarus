@@ -13,6 +13,7 @@ param(
     [switch]$SelfUpdated,
     [switch]$NoLaunch,
     [switch]$AllowPush,
+    [switch]$KeepLocal,
     [switch]$Help
 )
 
@@ -42,6 +43,9 @@ if ($Help) {
     Write-Host "                  Default is no-push (per GOD directive 2026-05-16) -- merge stays local"
     Write-Host "                  to avoid background-process credential-prompt hangs and accidental"
     Write-Host "                  pushes from end-user boxes. BuildMaster ships releases, not clients."
+    Write-Host "  -KeepLocal      Preserve uncommitted changes and untracked files in both repos."
+    Write-Host "                  Use this when developing or testing updater changes so they are"
+    Write-Host "                  not wiped by the pristine-test-env reset."
     Write-Host "  -Help           Show this help"
     Write-Host ""
     Write-Host "Default: pull updates, rebuild lazbuild + IDE if anything changed."
@@ -487,6 +491,7 @@ function Relaunch-IfUpdated {
     if ($FixLpi)       { $relaunchParams['FixLpi']       = $true }
     if ($ForceRebuild) { $relaunchParams['ForceRebuild'] = $true }
     if ($NoLaunch)     { $relaunchParams['NoLaunch']     = $true }
+    if ($KeepLocal)    { $relaunchParams['KeepLocal']    = $true }
     if ($VPDir)        { $relaunchParams['VPDir']        = $VPDir }
 
     $paramSummary = ($relaunchParams.GetEnumerator() | ForEach-Object { "-$($_.Key) $($_.Value)" }) -join ' '
@@ -637,13 +642,28 @@ function Pull-LazarusUpstream {
 }
 
 function Pull-LazarusOrigin {
-    if ($script:LazarusUpdated -and -not $script:UpstreamUpdated) {
-        Log-Header "Pulling Lazarus origin changes"
+    if (-not $script:LazarusUpdated) { return }
+
+    Log-Header "Pulling Lazarus origin changes"
+
+    $localCommits = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "origin/main..HEAD")
+    if (-not $localCommits) { $localCommits = "0" }
+
+    if ([int]$localCommits -eq 0) {
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("pull", "--ff-only", "origin", "main")
         if ($result.ExitCode -ne 0) {
             Log-Err "Pull failed: $($result.Error)"
         } else {
             Log-Ok "Lazarus origin pulled"
+        }
+    } else {
+        Log-Info "Merging origin/main ($localCommits local commit(s) ahead)..."
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge origin/main", "origin/main")
+        if ($result.ExitCode -ne 0) {
+            Log-Err "Merge from origin failed: $($result.Error)"
+            Log-Err "Resolve conflicts manually, then re-run."
+        } else {
+            Log-Ok "Merge from origin complete"
         }
     }
 }
@@ -735,6 +755,64 @@ function Rebuild-Lazbuild {
 
     $size = (Get-Item $lazbuildExe).Length / 1MB
     Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
+}
+
+function Clean-StalePackageArtifacts {
+    # Stale .ppu/.o files (compiled with older/different compilers) cause
+    # VibePascal ICEs when lazbuild --build-ide= tries to recompile them.
+    # Wipe lib/ output dirs for ALL installed packages (external + Lazarus
+    # built-in) so they rebuild cleanly from source.
+
+    # --- 1. External packages (from packagefiles.xml) ---
+    $pkgFilesXml = Join-Path $env:LOCALAPPDATA "lazarus\packagefiles.xml"
+    if (Test-Path $pkgFilesXml) {
+        try {
+            [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
+            $userLinks = $pkgXml.CONFIG.UserPkgLinks
+            $itemNodes = $userLinks.ChildNodes | Where-Object { $_.Name -match '^Item\d+$' }
+            foreach ($it in $itemNodes) {
+                $fileNode = $it.SelectSingleNode("Filename")
+                $nameNode = $it.SelectSingleNode("Name")
+                $file = if ($fileNode) { $fileNode.GetAttribute("Value") } else { $null }
+                $pkgName = if ($nameNode) { $nameNode.GetAttribute("Value") } else { "unknown" }
+                if (-not $file) { continue }
+                if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
+                if ($file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+
+                $pkgDir = Split-Path -Parent $file
+                $libDir = Join-Path $pkgDir "lib"
+                if (-not (Test-Path $libDir)) { continue }
+
+                $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
+                if ($stale.Count -eq 0) { continue }
+
+                Log-Info "Cleaning stale build artifacts in external package: $pkgName ($($stale.Count) file(s))"
+                foreach ($f in $stale) {
+                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {
+            Log-Warn "Could not clean external package artifacts: $_"
+        }
+    }
+
+    # --- 2. Lazarus built-in packages (components, ide packages, lcl, etc.) ---
+    try {
+        $lazarusLibDirs = @(Get-ChildItem -Path $LazarusDir -Recurse -Directory -Filter "lib" -ErrorAction SilentlyContinue | Where-Object {
+            (Get-ChildItem -Path $_.FullName -Recurse -Filter "*.ppu" -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null
+        })
+        foreach ($libDir in $lazarusLibDirs) {
+            $stale = @(Get-ChildItem -Path $libDir.FullName -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
+            if ($stale.Count -gt 0) {
+                Log-Info "Cleaning stale build artifacts in Lazarus lib: $($libDir.FullName) ($($stale.Count) file(s))"
+                foreach ($f in $stale) {
+                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    } catch {
+        Log-Warn "Could not clean Lazarus package artifacts: $_"
+    }
 }
 
 function Rebuild-IDE {
@@ -1412,6 +1490,7 @@ if ($ResetConfig) {
         Log-Info "-ResetConfig -ForceRebuild: rebuilding lazbuild + IDE after config reset"
         Rebuild-Lazbuild
         Configure-Environment
+        Clean-StalePackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
             Log-Ok "Lazarus rebuilt after ResetConfig"
@@ -1435,9 +1514,13 @@ if ($FixLpi) {
     exit 0
 }
 
-Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
-if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
-    Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
+if (-not $KeepLocal) {
+    Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
+    if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
+        Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
+    }
+} else {
+    Log-Info "Keeping local changes (-KeepLocal)"
 }
 
 # Extract VibePascal AFTER wipe: extracted binaries (bin\ppcx64.exe, units\x86_64-win64\*.ppu,
@@ -1448,12 +1531,20 @@ Extract-VPBinaries
 
 $scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
 
-Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
+$upstreamRemote = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("remote", "get-url", "upstream")
+if ($upstreamRemote) {
+    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
+} else {
+    Log-Warn "No 'upstream' remote configured -- skipping upstream Lazarus (fpc/Lazarus) checks"
+    Log-Info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
+}
 
 if (-not $UpstreamOnly) {
     Check-VPUpdates
 }
-Check-LazarusUpstream
+if ($upstreamRemote) {
+    Check-LazarusUpstream
+}
 Check-LazarusOrigin
 
 if ($Check) {
@@ -1498,6 +1589,7 @@ if ($anyUpdated) {
     } else {
         Rebuild-Lazbuild
         Configure-Environment
+        Clean-StalePackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
             $script:LocalBuildProductsRestored = $true
