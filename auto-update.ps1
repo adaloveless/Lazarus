@@ -752,25 +752,28 @@ function Clean-ExternalPackageArtifacts {
 
     try {
         [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
-        foreach ($item in $pkgXml.CONFIG.UserPkgLinks.Item) {
-            $items = if ($item -is [array]) { $item } else { @($item) }
-            foreach ($it in $items) {
-                $file = $it.Filename.GetAttribute("Value")
-                if (-not $file) { continue }
-                if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
-                if ($file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        $userLinks = $pkgXml.CONFIG.UserPkgLinks
+        # packagefiles.xml uses numbered child nodes: <Item1>, <Item2>, ...
+        $itemNodes = $userLinks.ChildNodes | Where-Object { $_.Name -match '^Item\d+$' }
+        foreach ($it in $itemNodes) {
+            $fileNode = $it.SelectSingleNode("Filename")
+            $nameNode = $it.SelectSingleNode("Name")
+            $file = if ($fileNode) { $fileNode.GetAttribute("Value") } else { $null }
+            $pkgName = if ($nameNode) { $nameNode.GetAttribute("Value") } else { "unknown" }
+            if (-not $file) { continue }
+            if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
+            if ($file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
 
-                $pkgDir = Split-Path -Parent $file
-                $libDir = Join-Path $pkgDir "lib"
-                if (-not (Test-Path $libDir)) { continue }
+            $pkgDir = Split-Path -Parent $file
+            $libDir = Join-Path $pkgDir "lib"
+            if (-not (Test-Path $libDir)) { continue }
 
-                $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
-                if ($stale.Count -eq 0) { continue }
+            $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
+            if ($stale.Count -eq 0) { continue }
 
-                Log-Info "Cleaning stale build artifacts in external package: $($it.Name.GetAttribute('Value')) ($($stale.Count) file(s))"
-                foreach ($f in $stale) {
-                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
-                }
+            Log-Info "Cleaning stale build artifacts in external package: $pkgName ($($stale.Count) file(s))"
+            foreach ($f in $stale) {
+                Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
             }
         }
     } catch {
