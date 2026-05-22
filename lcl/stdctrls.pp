@@ -799,10 +799,12 @@ type
     FTextChangedByRealSetText: Boolean;
     FTextChangedLock: Boolean;
     FTextHint: TTranslateString;
+    FVerticalAlignment: TVerticalAlignment;
     procedure ShowEmulatedTextHintIfYouCan;
     procedure ShowEmulatedTextHint;
     procedure HideEmulatedTextHint;
     procedure SetAlignment(const AValue: TAlignment);
+    procedure SetVerticalAlignment(const AValue: TVerticalAlignment);
     function GetCanUndo: Boolean;
     function GetModified: Boolean;
     procedure SetHideSelection(const AValue: Boolean);
@@ -871,6 +873,7 @@ type
     procedure RemoveHandlerOnChange(const AnOnChangeEvent: TNotifyEvent);
   public
     property Alignment: TAlignment read FAlignment write SetAlignment default taLeftJustify;
+    property VerticalAlignment: TVerticalAlignment read FVerticalAlignment write SetVerticalAlignment default taAlignTop;
     property AutoSize default True;
     property BorderStyle default bsSingle;
     property CanUndo: Boolean read GetCanUndo;

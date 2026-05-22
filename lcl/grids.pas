@@ -239,6 +239,8 @@ type
   private
     FGrid: TCustomGrid;
     FCol,FRow:Integer;
+  private
+    function layoutToVertAlign(const layout: TTextLayout): TVerticalAlignment;
   protected
     procedure WndProc(var TheMessage : TLMessage); override;
     procedure Change; override;
@@ -8819,11 +8821,19 @@ var
   PosValid: Boolean;
 
   procedure CalcEditorBounds(aEditor: TWinControl; var refRect: TRect);
+  var
+    handled: Boolean = False;
   begin
-    if (aEditor = FStringEditor) and (EditorBorderStyle = bsNone) then
+    if (aEditor = FStringEditor) and (EditorBorderStyle = bsNone) then begin
       refRect := TWSCustomGridClass(WidgetSetClass).
-        GetEditorBoundsFromCellRect(Canvas, refRect, GetColumnLayout(FCol, False))
-    else
+        GetEditorBoundsFromCellRect(Canvas, refRect, GetColumnLayout(FCol, False));
+      handled := True;
+    end else if (aEditor = FPickListEditor) then begin
+      handled := TWSCustomGridClass(WidgetSetClass).
+        GetPickListEditorBoundsFromCellRect(Canvas, refRect, GetColumnLayout(FCol, False));
+    end;
+
+    if NOT handled then
       AdjustInnerCellRect(refRect);
   end;
 
@@ -10635,6 +10645,21 @@ begin
   end;
 end;
 
+{ TStringCellEditor }
+
+function TStringCellEditor.layoutToVertAlign(
+  const layout: TTextLayout ): TVerticalAlignment;
+begin
+  case layout of
+    tlCenter:
+      Result := taVerticalCenter;
+    tlBottom:
+      Result := taAlignBottom;
+    else
+      Result:= taAlignTop;
+  end;
+end;
+
 procedure TStringCellEditor.WndProc(var TheMessage: TLMessage);
 begin
 	{$IfDef GridTraceMsg}
@@ -10652,8 +10677,6 @@ begin
     end;
   inherited WndProc(TheMessage);
 end;
-
-{ TStringCellEditor }
 
 procedure TStringCellEditor.Change;
 begin
@@ -10797,9 +10820,14 @@ begin
 end;
 
 procedure TStringCellEditor.msg_SetPos(var Msg: TGridMessage);
+var
+  vertAlign: TVerticalAlignment;
+  layout: TTextLayout;
 begin
   FCol := Msg.Col;
   FRow := Msg.Row;
+  layout := FGrid.GetColumnLayout(FCol, False);
+  self.VerticalAlignment := self.layoutToVertAlign(layout);
 end;
 
 procedure TStringCellEditor.msg_GetGrid(var Msg: TGridMessage);
