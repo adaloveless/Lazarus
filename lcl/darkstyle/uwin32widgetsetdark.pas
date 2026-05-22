@@ -345,6 +345,30 @@ begin
   SendMessageW(Window, WM_THEMECHANGED, 0, 0);
 end;
 
+procedure PrepareDarkGroupedChildSizing(const AWinControl: TWinControl);
+var
+  I, ItemMinHeight: Integer;
+  ChildWinControl: TWinControl;
+begin
+  if (AWinControl = nil) or
+     (csDesigning in AWinControl.ComponentState) or
+     not ((AWinControl is TCustomRadioGroup) or
+          (AWinControl is TCustomCheckGroup)) then
+    Exit;
+
+  // Keep native checkbox/radio metrics stable at runtime. The default
+  // shrink mode can leave only the final row compressed after group layout.
+  AWinControl.ChildSizing.ShrinkVertical := crsAnchorAligning;
+  ItemMinHeight := Max(23, Abs(AWinControl.Font.Height) + 8);
+  for I := 0 to AWinControl.ControlCount - 1 do
+    if AWinControl.Controls[I] is TWinControl then
+    begin
+      ChildWinControl := TWinControl(AWinControl.Controls[I]);
+      ChildWinControl.Constraints.MinHeight :=
+        Max(ChildWinControl.Constraints.MinHeight, ItemMinHeight);
+    end;
+end;
+
 procedure SyncDarkGroupChildren(const AWinControl: TWinControl);
 var
   I, ChildTop, MinChildTop, VisibleChildIndex, ItemCount, Columns, Rows,
@@ -364,6 +388,7 @@ begin
   if csDesigning in AWinControl.ComponentState then
     Exit;
 
+  PrepareDarkGroupedChildSizing(AWinControl);
   IsRadio := AWinControl is TCustomRadioGroup;
   if IsRadio then
   begin
@@ -475,7 +500,7 @@ begin
         TargetR.Left := WorkR.Left + Col * CellWidth;
         TargetR.Top := WorkR.Top + Row * CellHeight;
         TargetR.Right := Min(WorkR.Right, TargetR.Left + CellWidth);
-        TargetR.Bottom := Min(WorkR.Bottom, TargetR.Top + CellHeight);
+        TargetR.Bottom := TargetR.Top + CellHeight;
         ChildTop := Max(TargetR.Top, MinChildTop);
         if (ChildWinControl.Left <> TargetR.Left) or
            (ChildWinControl.Top <> ChildTop) or
@@ -1827,6 +1852,7 @@ end;
 class function TWin32WSCustomGroupBoxDark.CreateHandle(
   const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
 begin
+  PrepareDarkGroupedChildSizing(AWinControl);
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
   InstallDarkGroupBoxWndProc(Result);
