@@ -13,6 +13,7 @@ param(
     [switch]$SelfUpdated,
     [switch]$NoLaunch,
     [switch]$AllowPush,
+    [switch]$KeepLocal,
     [switch]$Help
 )
 
@@ -42,6 +43,9 @@ if ($Help) {
     Write-Host "                  Default is no-push (per GOD directive 2026-05-16) -- merge stays local"
     Write-Host "                  to avoid background-process credential-prompt hangs and accidental"
     Write-Host "                  pushes from end-user boxes. BuildMaster ships releases, not clients."
+    Write-Host "  -KeepLocal      Preserve uncommitted changes and untracked files in both repos."
+    Write-Host "                  Use this when developing or testing updater changes so they are"
+    Write-Host "                  not wiped by the pristine-test-env reset."
     Write-Host "  -Help           Show this help"
     Write-Host ""
     Write-Host "Default: pull updates, rebuild lazbuild + IDE if anything changed."
@@ -487,6 +491,7 @@ function Relaunch-IfUpdated {
     if ($FixLpi)       { $relaunchParams['FixLpi']       = $true }
     if ($ForceRebuild) { $relaunchParams['ForceRebuild'] = $true }
     if ($NoLaunch)     { $relaunchParams['NoLaunch']     = $true }
+    if ($KeepLocal)    { $relaunchParams['KeepLocal']    = $true }
     if ($VPDir)        { $relaunchParams['VPDir']        = $VPDir }
 
     $paramSummary = ($relaunchParams.GetEnumerator() | ForEach-Object { "-$($_.Key) $($_.Value)" }) -join ' '
@@ -1435,9 +1440,13 @@ if ($FixLpi) {
     exit 0
 }
 
-Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
-if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
-    Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
+if (-not $KeepLocal) {
+    Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
+    if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
+        Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
+    }
+} else {
+    Log-Info "Keeping local changes (-KeepLocal)"
 }
 
 # Extract VibePascal AFTER wipe: extracted binaries (bin\ppcx64.exe, units\x86_64-win64\*.ppu,

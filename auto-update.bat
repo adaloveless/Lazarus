@@ -15,6 +15,7 @@ REM   -Doctor         Diagnose toolchain + IDE config (read-only)
 REM   -VPDir <path>   Path to VibePascal source
 REM   -NoLaunch       Do not launch the IDE after a successful rebuild
 REM   -AllowPush      Opt-in: push post-upstream-merge to origin/main
+REM   -KeepLocal      Preserve uncommitted changes and untracked files
 REM   -Help           Show full ps1 help
 
 REM --- Close any running Lazarus IDE so the updater can replace its files. ---
