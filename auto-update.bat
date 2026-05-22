@@ -20,8 +20,8 @@ REM   -Help           Show full ps1 help
 REM --- Close any running Lazarus IDE so the updater can replace its files. ---
 REM A running lazarus.exe / startlazarus.exe locks the binaries on Windows, so
 REM the rebuild step fails silently (stale-binary error). Skip the kill for
-REM read-only operations that never touch the installed binaries.
-echo X %* | findstr /i /c:"-Check" /c:"-Doctor" /c:"-Help" /c:"-NoBuild" >nul
+REM operations that never touch the installed binaries.
+echo %* | findstr /i /r /c:"\<-Check\>" /c:"\<-Doctor\>" /c:"\<-Help\>" /c:"\<-NoBuild\>" /c:"\<-Setup\>" /c:"\<-FixLpi\>" /c:"\<-ResetConfig\>" >nul
 if errorlevel 1 (
     echo Closing any running Lazarus IDE so its files can be updated...
     taskkill /F /IM lazarus.exe      >nul 2>&1
