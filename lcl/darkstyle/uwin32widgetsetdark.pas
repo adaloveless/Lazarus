@@ -276,6 +276,7 @@ const
   ID_SUB_SCROLLBAR   = 7;
   DARK_BUTTON_OLD_PROC_PROP = 'LazDarkButtonOldProc';
   DARK_CHECKRADIO_OLD_PROC_PROP = 'LazDarkCheckRadioOldProc';
+  DARK_CHECKRADIO_CALLING_OLD_PROC_PROP = 'LazDarkCheckRadioCallingOldProc';
   DARK_GROUPBOX_OLD_PROC_PROP = 'LazDarkGroupBoxOldProc';
   DARK_GROUPBOX_SYNC_CHILDREN_MSG = WM_APP + 138;
 
@@ -335,6 +336,8 @@ var
                                     dwTextFlags, dwTextFlags2: DWORD; const pRect: TRect): HRESULT; stdcall = nil;
   TrampolineDrawThemeBackground: function(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect; pClipRect: Pointer): HRESULT; stdcall =  nil;
 
+function DarkCheckRadioWndProc(Window: HWND; Msg: UInt;
+  WParam: Windows.WParam; LParam: Windows.LParam): LResult; stdcall; forward;
 procedure InstallDarkCheckRadioWndProc(Window: HWND); forward;
 function GetSysColorBrushDark(nIndex: longint): HBRUSH; stdcall; forward;
 
@@ -1072,10 +1075,17 @@ var
   OldProc: WNDPROC;
 begin
   OldProc := WNDPROC(GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)));
-  if Assigned(OldProc) then
-    Result := CallWindowProcW(OldProc, Window, Msg, WParam, LParam)
-  else
-    Result := WindowProc(Window, Msg, WParam, LParam);
+  if not Assigned(OldProc) or
+     (PtrInt(OldProc) = PtrInt(@DarkCheckRadioWndProc)) or
+     (GetProp(Window, PChar(DARK_CHECKRADIO_CALLING_OLD_PROC_PROP)) <> 0) then
+    Exit(WindowProc(Window, Msg, WParam, LParam));
+
+  SetProp(Window, PChar(DARK_CHECKRADIO_CALLING_OLD_PROC_PROP), THandle(1));
+  try
+    Result := CallWindowProcW(OldProc, Window, Msg, WParam, LParam);
+  finally
+    RemoveProp(Window, PChar(DARK_CHECKRADIO_CALLING_OLD_PROC_PROP));
+  end;
 end;
 
 function DarkCheckRadioWndProc(Window: HWND; Msg: UInt;
@@ -1143,6 +1153,7 @@ begin
     WM_NCDESTROY:
       begin
         Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        RemoveProp(Window, PChar(DARK_CHECKRADIO_CALLING_OLD_PROC_PROP));
         RemoveProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP));
         Exit;
       end;
@@ -1157,6 +1168,8 @@ var
   IsRadio: Boolean;
 begin
   if Window = 0 then
+    Exit;
+  if GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)) <> 0 then
     Exit;
   CurrentProc := GetWindowLongPtrW(Window, GWL_WNDPROC);
   if CurrentProc = PtrInt(@DarkCheckRadioWndProc) then
