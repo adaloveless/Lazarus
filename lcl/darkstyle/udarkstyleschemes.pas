@@ -188,7 +188,7 @@ begin
   DefaultDark.DrawControl.TreeViewExpandSignValue:=      tvestTheme;
   DefaultDark.DrawControl.BorderStyleOverride:=          True;
   DefaultDark.DrawControl.CustomDrawPushButtons:=        True;
-  DefaultDark.DrawControl.CustomDrawComboBoxs:=          False;
+  DefaultDark.DrawControl.CustomDrawComboBoxs:=          True;
   DefaultDark.DrawControl.CustomDrawTreeViews:=          False;
 
   DefaultWhite.SysColor[COLOR_SCROLLBAR]:=               GetSysColor(COLOR_SCROLLBAR);

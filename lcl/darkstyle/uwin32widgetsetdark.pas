@@ -665,6 +665,7 @@ function ShouldForceDarkThemeClass(pszClassList: LPCWSTR): Boolean;
 begin
   Result := (lstrcmpiW(pszClassList, VSCLASS_COMBOBOX) = 0) or
     (lstrcmpiW(pszClassList, VSCLASS_EDIT) = 0) or
+    (lstrcmpiW(pszClassList, 'ListView') = 0) or
     (lstrcmpiW(pszClassList, VSCLASS_SCROLLBAR) = 0);
 end;
 
@@ -2484,6 +2485,9 @@ begin
     TCustomListView(AWinControl).BorderStyle:= bsNone;
   Result:= inherited CreateHandle(AWinControl, P);
   SetWindowSubclass(Result, @ListViewWindowProc, ID_SUB_LISTVIEW, 0);
+  ListView_SetBkColor(Result, SysColor[COLOR_WINDOW]);
+  ListView_SetTextBkColor(Result, SysColor[COLOR_WINDOW]);
+  ListView_SetTextColor(Result, SysColor[COLOR_WINDOWTEXT]);
   EnableDarkStyle(Result);
 end;
 
@@ -2543,6 +2547,33 @@ end;
 
 { TWin32WSCustomComboBoxDark }
 
+procedure PaintDarkComboButton(Window: HWND; DC: HDC);
+var
+  R: TRect;
+  LCanvas: TCanvas;
+  ButtonWidth: Integer;
+begin
+  if not GetClientRect(Window, R) then
+    Exit;
+
+  ButtonWidth := GetSystemMetrics(SM_CXVSCROLL);
+  R.Left := Max(R.Left, R.Right - ButtonWidth - 2);
+  InflateRect(R, -1, -1);
+
+  LCanvas := TCanvas.Create;
+  try
+    LCanvas.Handle := DC;
+    LCanvas.Brush.Color := SysColor[COLOR_WINDOW];
+    LCanvas.FillRect(R);
+    LCanvas.Pen.Color := SysColor[COLOR_BTNHIGHLIGHT];
+    LCanvas.FrameRect(R);
+    DrawDarkScrollBarArrow(LCanvas, R, True, True);
+  finally
+    LCanvas.Handle := 0;
+    LCanvas.Free;
+  end;
+end;
+
 function ComboBoxWindowProc(Window:HWND; Msg:UINT; wParam:Windows.WPARAM;lparam:Windows.LPARAM;uISubClass : UINT_PTR;dwRefData:DWORD_PTR):LRESULT; stdcall;
 var
   DC: HDC;
@@ -2555,6 +2586,23 @@ begin
       DC:= HDC(wParam);
       SetControlColors(ComboBox, DC);
       Exit(LResult(GetControlColorBrush(ComboBox)));
+    end;
+    WM_PAINT:
+    begin
+      Result := DefSubclassProc(Window, Msg, wParam, lParam);
+      DC := GetDC(Window);
+      try
+        PaintDarkComboButton(Window, DC);
+      finally
+        ReleaseDC(Window, DC);
+      end;
+      Exit;
+    end;
+    WM_PRINTCLIENT:
+    begin
+      Result := DefSubclassProc(Window, Msg, wParam, lParam);
+      PaintDarkComboButton(Window, HDC(wParam));
+      Exit;
     end;
   end;
   Result:= DefSubclassProc(Window, Msg, wParam, lParam);
