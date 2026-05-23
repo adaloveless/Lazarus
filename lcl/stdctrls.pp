@@ -1259,6 +1259,7 @@ type
     class function GetControlClassDefaultSize: TSize; override;
     property ParentColor default false;
     procedure WSSetDefault;
+    procedure WSWordWrap;
     procedure WSSetText(const AText: String); override;
     procedure TextChanged; override;
     procedure Loaded; override;

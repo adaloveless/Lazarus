@@ -270,6 +270,7 @@ type
     class function GetDoubleBuffered(const AWinControl: TWinControl): Boolean; override;
     class procedure SetDefault(const AButton: TCustomButton; ADefault: Boolean); override;
     class procedure SetShortCut(const AButton: TCustomButton; const ShortCutK1, ShortCutK2: TShortCut); override;
+    class procedure SetWordWrap(const AButton: TCustomButton; const AValue: Boolean); override;
   end;
 
   { TWin32WSCustomCheckBox }
@@ -2070,6 +2071,21 @@ class procedure TWin32WSButton.SetShortCut(const AButton: TCustomButton;
 begin
   if not WSCheckHandleAllocated(AButton, 'SetShortcut') then Exit;
   // TODO: implement me!
+end;
+
+class procedure TWin32WSButton.SetWordWrap(const AButton: TCustomButton;
+  const AValue: Boolean);
+var
+  WindowStyle: dword;
+begin
+  if not WSCheckHandleAllocated(AButton, 'SetWordWrap') then Exit;
+
+  WindowStyle := GetWindowLong(AButton.Handle, GWL_STYLE);
+  if AValue then
+    WindowStyle := WindowStyle or BS_MULTILINE
+  else
+    WindowStyle := WindowStyle and not BS_MULTILINE;
+  Windows.SendMessage(AButton.Handle, BM_SETSTYLE, WindowStyle, 1);
 end;
 
 { TWin32WSCustomCheckBox }
