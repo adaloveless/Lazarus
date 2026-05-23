@@ -2085,7 +2085,16 @@ begin
     WindowStyle := WindowStyle or BS_MULTILINE
   else
     WindowStyle := WindowStyle and not BS_MULTILINE;
+  // Keep GWL_STYLE in sync so subsequent reads see the new BS_MULTILINE state.
+  SetWindowLong(AButton.Handle, GWL_STYLE, WindowStyle);
   Windows.SendMessage(AButton.Handle, BM_SETSTYLE, WindowStyle, 1);
+  // BM_SETSTYLE marks the BUTTON dirty, but the IDE form designer forces
+  // double-buffered paint in csDesigning (win32callback.inc) and caches the
+  // pre-toggle bitmap until something invalidates the LCL paint pipeline.
+  // Invalidate routes a repaint through the LCL framework so the designer
+  // overlay refreshes the button rect immediately instead of waiting for
+  // the form to be closed and reopened.
+  AButton.Invalidate;
 end;
 
 { TWin32WSCustomCheckBox }
