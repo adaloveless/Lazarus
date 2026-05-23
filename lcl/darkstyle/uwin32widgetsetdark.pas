@@ -1919,11 +1919,8 @@ class function TWin32WSButtonDark.CreateHandle(
 begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
-  if not (csDesigning in AWinControl.ComponentState) then
-  begin
-    InstallDarkButtonWndProc(Result);
-    EnableDarkStyle(Result);
-  end;
+  InstallDarkButtonWndProc(Result);
+  EnableDarkStyle(Result);
 end;
 
 class procedure TWin32WSButtonDark.ShowHide(const AWinControl: TWinControl);

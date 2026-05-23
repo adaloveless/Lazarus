@@ -270,6 +270,7 @@ type
     class function GetDoubleBuffered(const AWinControl: TWinControl): Boolean; override;
     class procedure SetDefault(const AButton: TCustomButton; ADefault: Boolean); override;
     class procedure SetShortCut(const AButton: TCustomButton; const ShortCutK1, ShortCutK2: TShortCut); override;
+    class procedure SetText(const AWinControl: TWinControl; const AText: string); override;
     class procedure SetWordWrap(const AButton: TCustomButton; const AValue: Boolean); override;
   end;
 
@@ -2095,6 +2096,18 @@ begin
   // overlay refreshes the button rect immediately instead of waiting for
   // the form to be closed and reopened.
   AButton.Invalidate;
+end;
+
+class procedure TWin32WSButton.SetText(const AWinControl: TWinControl;
+  const AText: string);
+begin
+  if not WSCheckHandleAllocated(AWinControl, 'SetText') then Exit;
+  inherited SetText(AWinControl, AText);
+  // Standard Win32 buttons usually repaint on SetWindowText, but at design
+  // time the IDE form designer's double-buffered paint path can cache the
+  // old bitmap (especially for BS_MULTILINE).  Force an explicit invalidate
+  // so the caption refresh is visible immediately in the designer.
+  AWinControl.Invalidate;
 end;
 
 { TWin32WSCustomCheckBox }
