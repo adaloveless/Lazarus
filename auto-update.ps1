@@ -353,9 +353,40 @@ function Extract-VPBinaries {
                     if (-not (Test-Path $destPath)) {
                         New-Item -ItemType Directory -Path $destPath -Force | Out-Null
                     }
-                    Copy-Item -Path (Join-Path $_.FullName "*") -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
+                    # Retry copy for locked binaries (e.g. ppcx64.exe still held by a crashed process).
+                    $copyOk = $false
+                    for ($retry = 0; $retry -lt 3; $retry++) {
+                        try {
+                            Copy-Item -Path (Join-Path $_.FullName "*") -Destination $destPath -Recurse -Force -ErrorAction Stop
+                            $copyOk = $true
+                            break
+                        } catch {
+                            if ($retry -lt 2) {
+                                Log-Warn "Copy locked, retrying in 1s... ($($_.Exception.Message))"
+                                Start-Sleep -Seconds 1
+                            }
+                        }
+                    }
+                    if (-not $copyOk) {
+                        Log-Err "Failed to copy $($_.Name) to $destPath after 3 attempts -- file may be locked by a running compiler process"
+                    }
                 } else {
-                    Copy-Item -Path $_.FullName -Destination $destPath -Force
+                    $copyOk = $false
+                    for ($retry = 0; $retry -lt 3; $retry++) {
+                        try {
+                            Copy-Item -Path $_.FullName -Destination $destPath -Force -ErrorAction Stop
+                            $copyOk = $true
+                            break
+                        } catch {
+                            if ($retry -lt 2) {
+                                Log-Warn "Copy locked, retrying in 1s... ($($_.Exception.Message))"
+                                Start-Sleep -Seconds 1
+                            }
+                        }
+                    }
+                    if (-not $copyOk) {
+                        Log-Err "Failed to copy $($_.Name) to $destPath after 3 attempts -- file may be locked by a running compiler process"
+                    }
                 }
             }
         } finally {
@@ -460,6 +491,16 @@ function Wipe-LocalChanges {
     Log-Header "Wiping local changes in $Label (pristine test-env mode)"
     Log-Warn "auto-update.bat discards ALL uncommitted changes and untracked files."
     Log-Warn "If you are a developer with local work, abort NOW (Ctrl-C)."
+
+    # Kill any compiler/build processes that might lock binaries in the repo
+    # before git clean tries to remove them (prevents "Invalid argument" / access-denied).
+    if ($Label -eq "VibePascal") {
+        Get-Process | Where-Object { $_.ProcessName -in @("ppcx64","fpc","make") } | ForEach-Object {
+            Log-Warn "Terminating locked process: $($_.ProcessName) (PID $($_.Id))"
+            Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Milliseconds 500
+    }
 
     $reset = Invoke-Git -WorkDir $RepoDir -GitArgs @("reset", "--hard", "HEAD")
     if ($reset.ExitCode -ne 0) {
@@ -783,7 +824,7 @@ function Clean-StalePackageArtifacts {
                 $libDir = Join-Path $pkgDir "lib"
                 if (-not (Test-Path $libDir)) { continue }
 
-                $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
+                $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.a","*.rsj","*.compiled") -ErrorAction SilentlyContinue)
                 if ($stale.Count -eq 0) { continue }
 
                 Log-Info "Cleaning stale build artifacts in external package: $pkgName ($($stale.Count) file(s))"
@@ -802,7 +843,7 @@ function Clean-StalePackageArtifacts {
             (Get-ChildItem -Path $_.FullName -Recurse -Filter "*.ppu" -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null
         })
         foreach ($libDir in $lazarusLibDirs) {
-            $stale = @(Get-ChildItem -Path $libDir.FullName -Recurse -Include @("*.ppu","*.o","*.rsj") -ErrorAction SilentlyContinue)
+            $stale = @(Get-ChildItem -Path $libDir.FullName -Recurse -Include @("*.ppu","*.o","*.a","*.rsj","*.compiled") -ErrorAction SilentlyContinue)
             if ($stale.Count -gt 0) {
                 Log-Info "Cleaning stale build artifacts in Lazarus lib: $($libDir.FullName) ($($stale.Count) file(s))"
                 foreach ($f in $stale) {
@@ -870,14 +911,25 @@ function Rebuild-IDE {
 
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @addPkgArgs 2>&1 |
-        Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
-    $buildExit = $LASTEXITCODE
+
+    $maxAttempts = 2
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        if ($attempt -gt 1) {
+            Log-Warn "IDE build failed on attempt $($attempt-1); cleaning stale artifacts and retrying..."
+            Clean-StalePackageArtifacts
+            Start-Sleep -Seconds 2
+        }
+        & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @addPkgArgs 2>&1 |
+            Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
+        $buildExit = $LASTEXITCODE
+        if ($buildExit -eq 0) { break }
+    }
+
     $ErrorActionPreference = $prevEAP
     $env:PATH = $oldPath
 
     if ($buildExit -ne 0) {
-        Log-Err "lazarus.exe build failed with exit code $buildExit"
+        Log-Err "lazarus.exe build failed with exit code $buildExit after $maxAttempts attempts"
         return
     }
 

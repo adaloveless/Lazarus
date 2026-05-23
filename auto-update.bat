@@ -27,6 +27,10 @@ if errorlevel 1 (
     echo Closing any running Lazarus IDE so its files can be updated...
     taskkill /F /IM lazarus.exe      >nul 2>&1
     taskkill /F /IM startlazarus.exe >nul 2>&1
+    REM Also kill any running compiler instances -- a crashed or hung ppcx64.exe
+    REM locks its own binary, causing git clean -fdx and tarball extraction to fail.
+    taskkill /F /IM ppcx64.exe       >nul 2>&1
+    taskkill /F /IM fpc.exe          >nul 2>&1
 )
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0auto-update.ps1" %*
