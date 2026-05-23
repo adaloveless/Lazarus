@@ -1063,6 +1063,7 @@ const
   Arrangement: array[TIconArrangement] of DWord = (LVS_ALIGNTOP, LVS_ALIGNLEFT);
 var
   Params: TCreateWindowExParams;
+  ExStyle: Integer;
 begin
   // general initialization of Params
   PrepareCreateWindow(AWinControl, AParams, Params);
@@ -1090,9 +1091,12 @@ begin
   Params.WindowInfo^.needParentPaint := false;
   Params.WindowInfo^.DrawItemHandler := @ListViewDrawItem;
   Result := Params.Window;
+  ExStyle := LVS_EX_SUBITEMIMAGES;
   if TCustomListView(AWinControl).checkboxes
-    then UpdateExStyle(result,lvs_ex_SubitemImages or lvs_Ex_Checkboxes,lvs_ex_SubitemImages or lvs_Ex_Checkboxes) else
-  UpdateExStyle(Result, LVS_EX_SUBITEMIMAGES, LVS_EX_SUBITEMIMAGES);
+    then ExStyle := ExStyle or LVS_EX_CHECKBOXES;
+  if WindowsVersion >= wvVista then
+    ExStyle := ExStyle or LVS_EX_DOUBLEBUFFER;
+  UpdateExStyle(Result, ExStyle, ExStyle);
 end;
 
 class procedure TWin32WSCustomListView.BeginUpdate(const ALV: TCustomListView);

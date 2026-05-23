@@ -275,6 +275,7 @@ const
   ID_SUB_LISTVIEW    = 6;
   ID_SUB_SCROLLBAR   = 7;
   DARK_BUTTON_OLD_PROC_PROP = 'LazDarkButtonOldProc';
+  DARK_BUTTON_HOT_PROP = 'LazDarkButtonHot';
   DARK_CHECKRADIO_OLD_PROC_PROP = 'LazDarkCheckRadioOldProc';
   DARK_CHECKRADIO_CALLING_OLD_PROC_PROP = 'LazDarkCheckRadioCallingOldProc';
   DARK_GROUPBOX_OLD_PROC_PROP = 'LazDarkGroupBoxOldProc';
@@ -734,6 +735,7 @@ var
   Text: UnicodeString;
   State: LRESULT;
   FillColor, BorderColor, TextColor: TColor;
+  Hot: Boolean;
   OldBkMode, YOff: Integer;
   OldTextColor: COLORREF;
   OldPenColor, OldBrushColor: COLORREF;
@@ -747,6 +749,7 @@ begin
 
   GetClientRect(Window, R);
   State := SendMessage(Window, BM_GETSTATE, 0, 0);
+  Hot := IsWindowEnabled(Window) and (GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) <> 0);
 
   FillColor := SysColor[COLOR_BTNFACE];
   BorderColor := SysColor[COLOR_BTNHIGHLIGHT];
@@ -766,6 +769,11 @@ begin
       TextColor := Control.Font.Color;
     if (State and BST_PUSHED) <> 0 then
       FillColor := Darker(FillColor, 120);
+    if Hot and ((State and BST_PUSHED) = 0) then
+    begin
+      FillColor := Lighter(FillColor, 125);
+      BorderColor := Lighter(BorderColor, 135);
+    end;
   end;
 
   OldPen := SelectObject(DC, GetStockObject(DC_PEN));
@@ -845,8 +853,31 @@ function DarkButtonWndProc(Window: HWND; Msg: UInt; WParam: Windows.WParam;
 var
   PS: PAINTSTRUCT;
   DC: HDC;
+  MouseEvent: TTRACKMOUSEEVENT;
 begin
   case Msg of
+    WM_MOUSEMOVE:
+      begin
+        if GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) = 0 then
+        begin
+          SetProp(Window, PChar(DARK_BUTTON_HOT_PROP), THandle(1));
+          MouseEvent := Default(TTRACKMOUSEEVENT);
+          MouseEvent.cbSize := SizeOf(TTRACKMOUSEEVENT);
+          MouseEvent.dwFlags := TME_LEAVE;
+          MouseEvent.hwndTrack := Window;
+          MouseEvent.dwHoverTime := HOVER_DEFAULT;
+          _TrackMouseEvent(@MouseEvent);
+          InvalidateRect(Window, nil, False);
+        end;
+      end;
+    WM_MOUSELEAVE:
+      begin
+        if GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) <> 0 then
+        begin
+          RemoveProp(Window, PChar(DARK_BUTTON_HOT_PROP));
+          InvalidateRect(Window, nil, False);
+        end;
+      end;
     WM_PAINT:
       begin
         DC := BeginPaint(Window, @PS);
@@ -868,6 +899,7 @@ begin
       begin
         Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
         RemoveProp(Window, PChar(DARK_BUTTON_OLD_PROC_PROP));
+        RemoveProp(Window, PChar(DARK_BUTTON_HOT_PROP));
         Exit;
       end;
   end;
