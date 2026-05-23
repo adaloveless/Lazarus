@@ -590,6 +590,24 @@ begin
     (AColor = clBtnFace);
 end;
 
+function ResolveDarkSystemColor(AColor: TColor; ADefaultColorIndex: Integer): TColor;
+begin
+  case AColor of
+    clBtnFace:
+      Result := SysColor[COLOR_BTNFACE];
+    clBtnText:
+      Result := SysColor[COLOR_BTNTEXT];
+    clWindow:
+      Result := SysColor[COLOR_WINDOW];
+    clWindowText:
+      Result := SysColor[COLOR_WINDOWTEXT];
+    clDefault:
+      Result := SysColor[ADefaultColorIndex];
+  else
+    Result := AColor;
+  end;
+end;
+
 procedure SetDarkControlColors(AWinControl: TWinControl);
 
   function ShouldPreserveFontColor: Boolean;
@@ -641,6 +659,13 @@ begin
     AllowDarkModeForWindow(Window, True);
     Window:= 0;
   end;
+end;
+
+function ShouldForceDarkThemeClass(pszClassList: LPCWSTR): Boolean;
+begin
+  Result := (lstrcmpiW(pszClassList, VSCLASS_COMBOBOX) = 0) or
+    (lstrcmpiW(pszClassList, VSCLASS_EDIT) = 0) or
+    (lstrcmpiW(pszClassList, VSCLASS_SCROLLBAR) = 0);
 end;
 
 function HSVToColor(H, S, V: Double): TColor;
@@ -1605,25 +1630,40 @@ procedure SetControlColors(Control: TControl; Canvas: HDC);
 var
   Color: TColor;
 begin
-  if not (csDesigning in Control.ComponentState) then begin
-
-    // Set background color
-    Color:= Control.Color;
-    if Color = clDefault then
-    begin
-      Color:= Control.GetDefaultColor(dctBrush);
-    end;
-    SetBkColor(Canvas, ColorToRGB(Color));
-
-    // Set text color
-    Color:= Control.Font.Color;
-    if Color = clDefault then
-    begin
-      Color:= Control.GetDefaultColor(dctFont);
-    end;
-    SetTextColor(Canvas, ColorToRGB(Color));
-
+  // Set background color
+  Color:= Control.Color;
+  if IsSystemWindowColor(Color) then
+  begin
+    Color:= Control.GetDefaultColor(dctBrush);
   end;
+  Color := ResolveDarkSystemColor(Color, COLOR_BTNFACE);
+  SetBkColor(Canvas, ColorToRGB(Color));
+
+  // Set text color
+  Color:= Control.Font.Color;
+  if IsSystemTextColor(Color) then
+  begin
+    Color:= Control.GetDefaultColor(dctFont);
+  end;
+  Color := ResolveDarkSystemColor(Color, COLOR_BTNTEXT);
+  SetTextColor(Canvas, ColorToRGB(Color));
+end;
+
+function GetControlColorBrush(Control: TWinControl): HBRUSH;
+var
+  Color: TColor;
+begin
+  Color := Control.Color;
+  if IsSystemWindowColor(Color) then
+  begin
+    Color := Control.GetDefaultColor(dctBrush);
+    if Color = clWindow then
+      Result := GetSysColorBrushDark(COLOR_WINDOW)
+    else
+      Result := GetSysColorBrushDark(COLOR_BTNFACE)
+  end
+  else
+    Result := Control.Brush.Reference.Handle;
 end;
 
 { TWin32WSUpDownControlDark }
@@ -2271,11 +2311,8 @@ class function TWin32WSScrollBarDark.CreateHandle(
   const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
 begin
   Result := inherited CreateHandle(AWinControl, AParams);
-  if not (csDesigning in AWinControl.ComponentState) then
-  begin
-    SetWindowSubclass(Result, @ScrollBarDarkWndProc, ID_SUB_SCROLLBAR, 0);
-    EnableDarkStyle(Result);
-  end;
+  SetWindowSubclass(Result, @ScrollBarDarkWndProc, ID_SUB_SCROLLBAR, 0);
+  EnableDarkStyle(Result);
 end;
 
 { TWin32WSCustomTreeViewDark }
@@ -2447,9 +2484,7 @@ begin
     TCustomListView(AWinControl).BorderStyle:= bsNone;
   Result:= inherited CreateHandle(AWinControl, P);
   SetWindowSubclass(Result, @ListViewWindowProc, ID_SUB_LISTVIEW, 0);
-  if not (csDesigning in AWinControl.ComponentState) then begin
-     EnableDarkStyle(Result);
-  end;
+  EnableDarkStyle(Result);
 end;
 
 { TWin32WSCustomEditDark }
@@ -2519,7 +2554,7 @@ begin
       ComboBox:= TCustomComboBox(GetWin32WindowInfo(Window)^.WinControl);
       DC:= HDC(wParam);
       SetControlColors(ComboBox, DC);
-      Exit(LResult(ComboBox.Brush.Reference.Handle));
+      Exit(LResult(GetControlColorBrush(ComboBox)));
     end;
   end;
   Result:= DefSubclassProc(Window, Msg, wParam, lParam);
@@ -2537,16 +2572,18 @@ begin
 
   Result:= inherited CreateHandle(AWinControl, AParams);
 
-  if not (csDesigning in AWinControl.ComponentState) then begin
-    Info.cbSize:= SizeOf(Info);
-    Win32Extra.GetComboBoxInfo(Result, @Info);
-
-    EnableDarkStyle(Info.hwndList);
-
-    AllowDarkModeForWindow(Result, True);
-
-    SetWindowSubclass(Result, @ComboBoxWindowProc, ID_SUB_COMBOBOX, 0);
+  Info.cbSize:= SizeOf(Info);
+  if Win32Extra.GetComboBoxInfo(Result, @Info) then
+  begin
+    if Info.hwndList <> 0 then
+      EnableDarkStyle(Info.hwndList);
+    if Info.hwndItem <> 0 then
+      EnableDarkStyle(Info.hwndItem);
   end;
+
+  AllowDarkModeForWindow(Result, True);
+  SendMessageW(Result, WM_THEMECHANGED, 0, 0);
+  SetWindowSubclass(Result, @ComboBoxWindowProc, ID_SUB_COMBOBOX, 0);
 end;
 
 class function TWin32WSCustomComboBoxDark.GetDefaultColor(
@@ -3932,7 +3969,8 @@ begin
     P:= GetWindowLongPtr(hwnd, GWL_EXSTYLE);
 
     if ((P and WS_EX_CONTEXTHELP = 0) or (lstrcmpiW(pszClassList, VSCLASS_MONTHCAL) = 0))
-       and (lstrcmpiW(pszClassList, VSCLASS_TAB) <> 0) then
+       and (lstrcmpiW(pszClassList, VSCLASS_TAB) <> 0)
+       and not ShouldForceDarkThemeClass(pszClassList) then
     begin
       Result:= TrampolineOpenThemeData(hwnd, pszClassList);
       Exit;
