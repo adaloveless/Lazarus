@@ -239,8 +239,6 @@ type
   private
     FGrid: TCustomGrid;
     FCol,FRow:Integer;
-  private
-    function layoutToVertAlign(const layout: TTextLayout): TVerticalAlignment;
   protected
     procedure WndProc(var TheMessage : TLMessage); override;
     procedure Change; override;
@@ -8841,6 +8839,9 @@ begin
   {$ifdef dbgGrid} DebugLn('Grid.EditorPos INIT');{$endif}
   if HandleAllocated and (FEditor<>nil) then begin
 
+    // Make sure to use the grid font, not that of the title (issue #38203).
+    Canvas.Font:= GetColumnFont(FCol, False);
+
     // send editor position
     Msg.LclMsg.msg:=GM_SETPOS;
     Msg.Grid:=Self;
@@ -8862,9 +8863,6 @@ begin
       // this should avoid range check errors on widgetsets that can't handle
       // high control coords (like GTK2)
       CellR := Bounds(-FEditor.Width-100, -FEditor.Height-100, CellR.Right-CellR.Left, CellR.Bottom-CellR.Top);
-
-    // Make sure to use the grid font, not that of the title (issue #38203).
-    Canvas.Font.Assign(Font);
 
     if FEditorOptions and EO_AUTOSIZE = EO_AUTOSIZE then begin
       CalcEditorBounds(FEditor, CellR);
@@ -10647,19 +10645,6 @@ end;
 
 { TStringCellEditor }
 
-function TStringCellEditor.layoutToVertAlign(
-  const layout: TTextLayout ): TVerticalAlignment;
-begin
-  case layout of
-    tlCenter:
-      Result := taVerticalCenter;
-    tlBottom:
-      Result := taAlignBottom;
-    else
-      Result:= taAlignTop;
-  end;
-end;
-
 procedure TStringCellEditor.WndProc(var TheMessage: TLMessage);
 begin
 	{$IfDef GridTraceMsg}
@@ -10827,7 +10812,7 @@ begin
   FCol := Msg.Col;
   FRow := Msg.Row;
   layout := FGrid.GetColumnLayout(FCol, False);
-  self.VerticalAlignment := self.layoutToVertAlign(layout);
+  self.VerticalAlignment := layout;
 end;
 
 procedure TStringCellEditor.msg_GetGrid(var Msg: TGridMessage);

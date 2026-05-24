@@ -2214,7 +2214,16 @@ begin
   {$ENDIF}
   FillChar(Msg{%H-}, SizeOf(Msg), #0);
   if Event^.focus_change.in_ <> 0 then
-    Msg.Msg := LM_SETFOCUS
+  begin
+    Msg.Msg := LM_SETFOCUS;
+    if (Gtk3WidgetSet.IMContext <> nil) and
+       not Gtk3IsEntry(PGObject(Sender)) and
+       not Gtk3IsTextView(PGObject(Sender)) then
+    begin
+      gtk_im_context_set_client_window(Gtk3WidgetSet.IMContext, Sender^.get_window);
+      gtk_im_context_focus_in(Gtk3WidgetSet.IMContext);
+    end;
+  end
   else
   begin
     if Sender^.get_toplevel^.is_toplevel then
@@ -2225,6 +2234,13 @@ begin
         Exit;
     end;
     Msg.Msg := LM_KILLFOCUS;
+    if (Gtk3WidgetSet.IMContext <> nil) and
+       not Gtk3IsEntry(PGObject(Sender)) and
+       not Gtk3IsTextView(PGObject(Sender)) then
+    begin
+      gtk_im_context_focus_out(Gtk3WidgetSet.IMContext);
+      gtk_im_context_set_client_window(Gtk3WidgetSet.IMContext, nil);
+    end;
   end;
 
   if HasCaret then
@@ -2369,6 +2385,15 @@ begin
   AEvent := Event^.key;
   FillChar(Msg{%H-}, SizeOf(Msg), 0);
   AEventString := AEvent.string_;
+  if AKeyPress and (Gtk3WidgetSet.IMContext <> nil) and
+     not Gtk3IsEntry(PGObject(Sender)) and
+     not Gtk3IsTextView(PGObject(Sender)) then
+  begin
+    Gtk3WidgetSet.IMCommitStr := '';
+    gtk_im_context_filter_keypress(Gtk3WidgetSet.IMContext, PGdkEventKey(Event));
+    if Gtk3WidgetSet.IMCommitStr <> '' then
+      AEventString := Gtk3WidgetSet.IMCommitStr;
+  end;
 
   TempWidget := HwndFromGtkWidget(Sender);
   {$IFDEF GTK3DEBUGKEYPRESS}
@@ -4152,7 +4177,7 @@ begin
   begin
     wtype:=prnt.getType; // parent widget type
     if (wtype<>gtk_fixed_get_type()) and
-       (wtype<>gtk_layout_get_type()) then
+       not Gtk3IsLayout(PGObject(prnt.GetContainerWidget)) then
     begin
       // widget is not on a normal client area. e.g. TPage
       Apoint.X:=0;
@@ -5075,7 +5100,7 @@ begin
   FBorderStyle := bsNone;
 
   FWidgetType := [wtWidget, wtLayout, wtPanel];
-  Result := TGtkLayout.new(nil, nil);
+  Result := PGtkWidget(LCLGtkLayoutNew);
   Result^.set_has_window(True);
   // as GtkFixed have no child control here - nobody triggers resizing
   // GNOME takes care of it, but other WM - not
@@ -5206,7 +5231,7 @@ begin
   FGroupBoxType := gbtGroupBox;
   FWidgetType := [wtWidget, wtLayout, wtGroupBox];
   Result := LCLGtkFrameNew;
-  FCentralWidget := TGtkLayout.new(nil, nil);
+  FCentralWidget := PGtkWidget(LCLGtkLayoutNew);
   PGtkBin(Result)^.add(FCentralWidget);
   FCentralWidget^.set_has_window(True);
   //PGtkFrame(result)^.set_label_align(0.1,0.5);
@@ -7946,7 +7971,7 @@ begin
 
   Result := TGtkBox.new(GTK_ORIENTATION_HORIZONTAL, 0);
   Result^.ref;
-  FCentralWidget := TGtkLayout.new(nil, nil);
+  FCentralWidget := PGtkWidget(LCLGtkLayoutNew);
   FCentralWidget^.set_app_paintable(True);
   PGtkBox(Result)^.pack_start(FCentralWidget, True, True, 0);
   FCentralWidget^.set_has_window(True);
@@ -13228,7 +13253,7 @@ begin
   // calls size_allocate(width,0).
   Result := PGtkScrolledWindow(LCLGtkScrolledWindowNew);
 
-  FCentralWidget := TGtkLayout.new(nil, nil);
+  FCentralWidget := PGtkWidget(LCLGtkLayoutNew);
 
   PGtkScrolledWindow(Result)^.add(FCentralWidget);
 
@@ -14701,7 +14726,7 @@ begin
   g_object_set_data(FScrollWin,'lclscrollingwindow',GPointer(1));
   g_object_set_data(PGObject(FScrollWin), 'lclwidget', Self);
 
-  FCentralWidget := TGtkLayout.new(nil, nil);
+  FCentralWidget := PGtkWidget(LCLGtkLayoutNew);
   FScrollWin^.add(FCentralWidget);
   FScrollWin^.show;
   FBox^.pack_end(FScrollWin, True, True, 0);

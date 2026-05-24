@@ -37,7 +37,7 @@ type
     class function  GetSelStart(const ACustomEdit: TCustomEdit): integer; override;
     class function  GetSelLength(const ACustomEdit: TCustomEdit): integer; override;
     class procedure SetAlignment(const ACustomEdit: TCustomEdit; const NewAlignment: TAlignment); override;
-    class procedure SetVerticalAlignment(const ACustomEdit: TCustomEdit; const AVerticalAlignment: TVerticalAlignment); override;
+    class procedure SetVerticalAlignment(const ACustomEdit: TCustomEdit; const AVerticalAlignment: TTextLayout); override;
 
     {class procedure SetCharCase(const ACustomEdit: TCustomEdit; NewCase: TEditCharCase); override;
     class procedure SetEchoMode(const ACustomEdit: TCustomEdit; NewMode: TEchoMode); override;}
@@ -158,40 +158,6 @@ begin
 end;
 
 
-type
-
-  TCocoaVertAlignTextFieldCell = objcclass( NSTextFieldCell )
-  private
-    _vertAlignment: TVerticalAlignment;
-  public
-    function drawingRectForBounds(theRect: NSRect): NSRect; override;
-  end;
-
-function TCocoaVertAlignTextFieldCell.drawingRectForBounds(theRect: NSRect): NSRect;
-var
-  newRect: NSRect;
-
-  procedure toCenter; inline;
-  begin
-    newRect.origin.y:= (theRect.size.height-cellSize.height)/2;
-    newRect.size.height:= cellSize.height;
-  end;
-
-  procedure toBottom; inline;
-  begin
-    newRect.origin.y:= theRect.size.height-cellSize.height;
-    newRect.size.height:= cellSize.height;
-  end;
-
-begin
-  newRect:= theRect;
-  case _vertAlignment of
-    taVerticalCenter: toCenter;
-    taAlignBottom: toBottom;
-  end;
-  Result:= inherited drawingRectForBounds( newRect );
-end;
-
 procedure SetTextFieldCell( const edit: TCustomEdit ; const field: NSTextField );
 var
   cell: TCocoaVertAlignTextFieldCell;
@@ -199,7 +165,7 @@ begin
   if (field.respondsToSelector(ObjCSelector('cell'))) and Assigned(field.cell) then
   begin
     cell:= TCocoaVertAlignTextFieldCell.new;
-    cell._vertAlignment:= edit.VerticalAlignment;
+    cell.vertAlignment:= edit.VerticalAlignment;
     field.setCell( cell );
     cell.release;
     cell.setWraps(false);
@@ -341,7 +307,7 @@ end;
 
 class procedure TCocoaWSCustomEdit.SetVerticalAlignment(
   const ACustomEdit: TCustomEdit;
-  const AVerticalAlignment: TVerticalAlignment);
+  const AVerticalAlignment: TTextLayout);
 var
   field: NSTextField;
   cell: NSCell;
@@ -352,11 +318,13 @@ begin
   cell:= field.cell;
   if NOT cell.isKindOfClass(TCocoaVertAlignTextFieldCell) then
     Exit;
-  TCocoaVertAlignTextFieldCell(cell)._vertAlignment:= AVerticalAlignment;
+  TCocoaVertAlignTextFieldCell(cell).vertAlignment:= AVerticalAlignment;
+  TCocoaTextControlUtil.setBorderStyle( field, ACustomEdit );
 
   // force cell.drawingRectForBounds() be called
   field.setHidden( NOT field.isHidden );
   field.setHidden( NOT field.isHidden );
+  field.lclInvalidate;
 end;
 
 class procedure TCocoaWSCustomEdit.SetMaxLength(const ACustomEdit: TCustomEdit;
