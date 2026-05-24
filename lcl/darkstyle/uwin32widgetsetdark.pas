@@ -276,6 +276,7 @@ const
   ID_SUB_SCROLLBAR   = 7;
   DARK_BUTTON_OLD_PROC_PROP = 'LazDarkButtonOldProc';
   DARK_BUTTON_HOT_PROP = 'LazDarkButtonHot';
+  DARK_BUTTON_BST_HOT = $0200;
   DARK_CHECKRADIO_OLD_PROC_PROP = 'LazDarkCheckRadioOldProc';
   DARK_CHECKRADIO_CALLING_OLD_PROC_PROP = 'LazDarkCheckRadioCallingOldProc';
   DARK_GROUPBOX_OLD_PROC_PROP = 'LazDarkGroupBoxOldProc';
@@ -895,6 +896,14 @@ begin
       end;
     WM_ERASEBKGND:
       Exit(1);
+    BM_GETSTATE:
+      begin
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        if IsWindowEnabled(Window) and
+           (GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) <> 0) then
+          Result := Result or DARK_BUTTON_BST_HOT;
+        Exit;
+      end;
     WM_NCDESTROY:
       begin
         Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
@@ -1992,8 +2001,8 @@ class function TWin32WSButtonDark.CreateHandle(
 begin
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
-  InstallDarkButtonWndProc(Result);
   EnableDarkStyle(Result);
+  InstallDarkButtonWndProc(Result);
 end;
 
 class procedure TWin32WSButtonDark.ShowHide(const AWinControl: TWinControl);
@@ -2010,8 +2019,8 @@ begin
   Result := inherited CreateHandle(AWinControl, AParams);
   if not (csDesigning in AWinControl.ComponentState) then
   begin
-    InstallDarkButtonWndProc(Result);
     EnableDarkStyle(Result);
+    InstallDarkButtonWndProc(Result);
   end;
 end;
 
