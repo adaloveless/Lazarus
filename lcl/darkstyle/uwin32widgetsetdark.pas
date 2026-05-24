@@ -1162,6 +1162,27 @@ begin
   end;
 end;
 
+procedure InvalidateDarkCheckRadioPlacement(Window: HWND; ARedrawNow: Boolean);
+var
+  Parent: HWND;
+  R: TRect;
+begin
+  if Window = 0 then Exit;
+
+  Parent := GetParent(Window);
+  if (Parent <> 0) and GetWindowRect(Window, R) then
+  begin
+    MapWindowPoints(0, Parent, R, 2);
+    InvalidateRect(Parent, @R, True);
+    if ARedrawNow then
+      RedrawWindow(Parent, nil, 0, RDW_UPDATENOW or RDW_ALLCHILDREN);
+  end;
+
+  InvalidateRect(Window, nil, True);
+  if ARedrawNow then
+    RedrawWindow(Window, nil, 0, RDW_INVALIDATE or RDW_ERASE or RDW_UPDATENOW);
+end;
+
 function CallDarkCheckRadioOldProc(Window: HWND; Msg: UInt;
   WParam: Windows.WParam; LParam: Windows.LParam): LResult;
 var
@@ -1188,6 +1209,21 @@ var
   DC: HDC;
   Control: TWinControl;
 begin
+  case Msg of
+    WM_WINDOWPOSCHANGING:
+      begin
+        InvalidateDarkCheckRadioPlacement(Window, False);
+        Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        Exit;
+      end;
+    WM_WINDOWPOSCHANGED, WM_SIZE, WM_MOVE:
+      begin
+        Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        InvalidateDarkCheckRadioPlacement(Window, True);
+        Exit;
+      end;
+  end;
+
   Control := DarkControlFromWindow(Window);
   if (Msg <> WM_NCDESTROY) and
      (((Control <> nil) and (not Control.Visible)) or
