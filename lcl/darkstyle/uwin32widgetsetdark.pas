@@ -617,7 +617,8 @@ procedure SetDarkControlColors(AWinControl: TWinControl);
   begin
     Result := (AWinControl is TCustomGroupBox) or
       (AWinControl is TCustomCheckBox) or
-      (AWinControl is TCustomEdit);
+      (AWinControl is TCustomEdit) or
+      (AWinControl is TCustomButton);
   end;
 
 begin
