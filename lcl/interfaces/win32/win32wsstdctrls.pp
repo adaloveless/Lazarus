@@ -2145,7 +2145,10 @@ var
   iconWidth: Integer;
   details: TThemedElementDetails;
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // Measure with the LCL Font (what dark-mode renders via Control.Font.Reference.Handle).
+  // WM_GETFONT can mismatch during CreateHandle before WM_SETFONT propagates, clipping
+  // AutoSize-True captions -- observed in dark mode (GOD mpjwe7iz, 2026-05-24).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     if ThemeServices.ThemesEnabled then
     begin
