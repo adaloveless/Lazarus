@@ -341,6 +341,7 @@ var
 function DarkCheckRadioWndProc(Window: HWND; Msg: UInt;
   WParam: Windows.WParam; LParam: Windows.LParam): LResult; stdcall; forward;
 procedure InstallDarkCheckRadioWndProc(Window: HWND); forward;
+procedure InvalidateDarkChildPlacement(Window: HWND; ARedrawNow: Boolean); forward;
 function GetSysColorBrushDark(nIndex: longint): HBRUSH; stdcall; forward;
 
 procedure EnableDarkStyle(Window: HWND);
@@ -857,6 +858,18 @@ var
   MouseEvent: TTRACKMOUSEEVENT;
 begin
   case Msg of
+    WM_WINDOWPOSCHANGING:
+      begin
+        InvalidateDarkChildPlacement(Window, False);
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        Exit;
+      end;
+    WM_WINDOWPOSCHANGED, WM_SIZE, WM_MOVE:
+      begin
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        InvalidateDarkChildPlacement(Window, True);
+        Exit;
+      end;
     WM_MOUSEMOVE:
       begin
         if GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) = 0 then
@@ -1162,7 +1175,7 @@ begin
   end;
 end;
 
-procedure InvalidateDarkCheckRadioPlacement(Window: HWND; ARedrawNow: Boolean);
+procedure InvalidateDarkChildPlacement(Window: HWND; ARedrawNow: Boolean);
 var
   Parent: HWND;
   R: TRect;
@@ -1212,14 +1225,14 @@ begin
   case Msg of
     WM_WINDOWPOSCHANGING:
       begin
-        InvalidateDarkCheckRadioPlacement(Window, False);
+        InvalidateDarkChildPlacement(Window, False);
         Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
         Exit;
       end;
     WM_WINDOWPOSCHANGED, WM_SIZE, WM_MOVE:
       begin
         Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
-        InvalidateDarkCheckRadioPlacement(Window, True);
+        InvalidateDarkChildPlacement(Window, True);
         Exit;
       end;
   end;
