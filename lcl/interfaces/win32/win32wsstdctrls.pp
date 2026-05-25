@@ -2053,6 +2053,43 @@ begin
   Result := GetWin32NativeDoubleBuffered(AWinControl);
 end;
 
+function ButtonCaptionNeedsMultiline(const ACaption: string): Boolean;
+begin
+  Result := (pos(#13, ACaption) <> 0) or (pos(#10, ACaption) <> 0);
+end;
+
+function ButtonNeedsMultilineStyle(const ACaption: string;
+  const AWordWrap: Boolean): Boolean;
+begin
+  Result := AWordWrap or ButtonCaptionNeedsMultiline(ACaption);
+end;
+
+procedure UpdateButtonMultilineStyle(const AButton: TCustomButton;
+  const AUseMultiline: Boolean);
+var
+  WindowStyle, NewWindowStyle: dword;
+begin
+  WindowStyle := GetWindowLong(AButton.Handle, GWL_STYLE);
+  NewWindowStyle := WindowStyle;
+  if AUseMultiline then
+    NewWindowStyle := NewWindowStyle or BS_MULTILINE
+  else
+    NewWindowStyle := NewWindowStyle and not BS_MULTILINE;
+
+  if NewWindowStyle <> WindowStyle then
+  begin
+    SetWindowLong(AButton.Handle, GWL_STYLE, NewWindowStyle);
+    Windows.SendMessage(AButton.Handle, BM_SETSTYLE, NewWindowStyle, 1);
+  end;
+end;
+
+procedure RedrawButtonHandle(const AWinControl: TWinControl);
+begin
+  AWinControl.Invalidate;
+  InvalidateRect(AWinControl.Handle, nil, False);
+  UpdateWindow(AWinControl.Handle);
+end;
+
 class procedure TWin32WSButton.SetDefault(const AButton: TCustomButton; ADefault: Boolean);
 var
   WindowStyle: dword;
@@ -2076,26 +2113,16 @@ end;
 
 class procedure TWin32WSButton.SetWordWrap(const AButton: TCustomButton;
   const AValue: Boolean);
-var
-  WindowStyle: dword;
 begin
   if not WSCheckHandleAllocated(AButton, 'SetWordWrap') then Exit;
 
-  WindowStyle := GetWindowLong(AButton.Handle, GWL_STYLE);
-  if AValue then
-    WindowStyle := WindowStyle or BS_MULTILINE
-  else
-    WindowStyle := WindowStyle and not BS_MULTILINE;
-  // Keep GWL_STYLE in sync so subsequent reads see the new BS_MULTILINE state.
-  SetWindowLong(AButton.Handle, GWL_STYLE, WindowStyle);
-  Windows.SendMessage(AButton.Handle, BM_SETSTYLE, WindowStyle, 1);
+  UpdateButtonMultilineStyle(AButton,
+    ButtonNeedsMultilineStyle(AButton.Caption, AValue));
   // BM_SETSTYLE marks the BUTTON dirty, but the IDE form designer forces
   // double-buffered paint in csDesigning (win32callback.inc) and caches the
   // pre-toggle bitmap until something invalidates the LCL paint pipeline.
-  // Invalidate routes a repaint through the LCL framework so the designer
-  // overlay refreshes the button rect immediately instead of waiting for
-  // the form to be closed and reopened.
-  AButton.Invalidate;
+  // Force an immediate redraw so stale text is not left until hover.
+  RedrawButtonHandle(AButton);
 end;
 
 class procedure TWin32WSButton.SetText(const AWinControl: TWinControl;
@@ -2103,11 +2130,14 @@ class procedure TWin32WSButton.SetText(const AWinControl: TWinControl;
 begin
   if not WSCheckHandleAllocated(AWinControl, 'SetText') then Exit;
   inherited SetText(AWinControl, AText);
+  if AWinControl is TCustomButton then
+    UpdateButtonMultilineStyle(TCustomButton(AWinControl),
+      ButtonNeedsMultilineStyle(AText, TCustomButton(AWinControl).WordWrap));
   // Standard Win32 buttons usually repaint on SetWindowText, but at design
   // time the IDE form designer's double-buffered paint path can cache the
   // old bitmap (especially for BS_MULTILINE).  Force an explicit invalidate
   // so the caption refresh is visible immediately in the designer.
-  AWinControl.Invalidate;
+  RedrawButtonHandle(AWinControl);
 end;
 
 { TWin32WSCustomCheckBox }

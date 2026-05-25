@@ -910,6 +910,15 @@ begin
       end;
     WM_ERASEBKGND:
       Exit(1);
+    WM_SETTEXT, WM_SETFONT, WM_ENABLE, WM_SETFOCUS, WM_KILLFOCUS,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_KEYDOWN, WM_KEYUP, BM_SETSTYLE,
+    BM_SETSTATE:
+      begin
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        InvalidateRect(Window, nil, False);
+        UpdateWindow(Window);
+        Exit;
+      end;
     BM_GETSTATE:
       begin
         Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
