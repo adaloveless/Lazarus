@@ -10109,6 +10109,7 @@ begin
   FButtonEditor.Caption:='...';
   FButtonEditor.Visible:=False;
   FButtonEditor.Width:=25;
+  FButtonEditor.ParentFont := False;
   FButtonEditor.OnClick := @EditButtonClicked;
 
   FStringEditor := TStringCellEditor.Create(nil);
@@ -10117,15 +10118,18 @@ begin
   FStringEditor.Visible:=False;
   FStringEditor.Align:=alNone;
   FStringEditor.BorderStyle := bsNone;
+  FStringEditor.ParentFont := False;
 
   FPicklistEditor := TPickListCellEditor.Create(nil);
   FPickListEditor.Name := 'PickListEditor';
   FPickListEditor.Visible := False;
-  FPickListEditor.AutoSize := false;
+  FPickListEditor.AutoSize := False;
+  FPickListEditor.ParentFont := False;
 
   FButtonStringEditor := TCompositeCellEditor.Create(nil);
   FButtonStringEditor.Name:='ButtonTextEditor';
   FButtonStringEditor.Visible:=False;
+  FButtonStringEditor.ParentFont := False;
   FButtonStringEditor.AddEditor(FStringEditor, alCustom, true);
   FButtonStringEditor.AddEditor(FButtonEditor, alRight, false);
 
@@ -10805,14 +10809,11 @@ begin
 end;
 
 procedure TStringCellEditor.msg_SetPos(var Msg: TGridMessage);
-var
-  vertAlign: TVerticalAlignment;
-  layout: TTextLayout;
 begin
   FCol := Msg.Col;
   FRow := Msg.Row;
-  layout := FGrid.GetColumnLayout(FCol, False);
-  self.VerticalAlignment := layout;
+  self.VerticalAlignment := FGrid.GetColumnLayout(FCol, False);
+  self.Font:= FGrid.Canvas.Font;
 end;
 
 procedure TStringCellEditor.msg_GetGrid(var Msg: TGridMessage);
@@ -13741,6 +13742,9 @@ procedure TPickListCellEditor.msg_SetPos(var Msg: TGridMessage);
 begin
   FCol := Msg.Col;
   FRow := Msg.Row;
+  self.Font:= FGrid.Canvas.Font;
+  if self.Font.Size <> 0 then
+    self.Font.Size:= 0;
 end;
 
 procedure TPickListCellEditor.msg_GetGrid(var Msg: TGridMessage);
