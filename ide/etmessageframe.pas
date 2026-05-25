@@ -1972,7 +1972,9 @@ var
     aRight: Integer;
     LastP: Integer;
     HighlightCol: TColor;
-    HighlightRGB: Longint;
+    {$IFDEF MSWINDOWS}
+    HighlightR, HighlightG, HighlightB: Byte;
+    {$ENDIF}
   begin
     Canvas.Font.Color:=Font.Color;
     TextRect:=ARect;
@@ -1992,11 +1994,10 @@ var
       // Search-match highlight: clHighlight is too bright in dark mode --
       // dim to ~30% so text remains readable against the highlight rectangle.
       if IsDarkModeEnabled then begin
-        HighlightRGB:=ColorToRGB(clHighlight);
-        HighlightCol:=RGBToColor(
-          (Red(HighlightRGB)*30) div 100,
-          (Green(HighlightRGB)*30) div 100,
-          (Blue(HighlightRGB)*30) div 100);
+        RedGreenBlue(ColorToRGB(clHighlight),HighlightR,HighlightG,HighlightB);
+        HighlightCol:=RGBToColor((HighlightR*30) div 100,
+                                 (HighlightG*30) div 100,
+                                 (HighlightB*30) div 100);
       end;
       {$ENDIF}
       LoTxt:=UTF8LowerCase(aTxt);
