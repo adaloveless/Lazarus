@@ -1036,18 +1036,30 @@ function Rebuild-IDE {
     $starterExe = Join-Path $LazarusDir "startlazarus.exe"
     if (-not (Test-Path $starterExe)) {
         Log-Info "Building startlazarus..."
-        $make = Find-Make
-        if ($make) {
+        # Use lazbuild against ide/startlazarus.lpi rather than `make starter`.
+        # `make starter` invokes raw fpc and the project's generated Makefile only
+        # exports static -Fu paths; on fresh extracts where lazbuild built LCL via
+        # the package graph, the Makefile's relative LCL paths don't resolve and
+        # fpc fails with "(10022) Can't find unit InterfaceBase used by Interfaces"
+        # (Bruno/Finn ZENBOOK r19 smoke, 2026-05-25). lazbuild walks the .lpi
+        # RequiredPackages chain (IdePackager -> IdeConfig -> IDEIntf -> LCL) and
+        # consumes the same .ppus the Rebuild-IDE step just produced.
+        $starterLpi = Join-Path $LazarusDir "ide\startlazarus.lpi"
+        if (Test-Path $starterLpi) {
             $prevEAP = $ErrorActionPreference
             $ErrorActionPreference = "Continue"
-            & $make -C $LazarusDir starter `
-                "PP=$VPCompiler" `
-                "FPCDIR=$VPDir" `
-                "OPT=-n @$VPCfgPath" 2>&1 | Where-Object { $_ -match "Linking|Fatal|Error" }
+            & $lazbuildExe --lazarusdir=$LazarusDir --compiler=$VPCompiler --pcp=$envDir --ws=win32 $starterLpi 2>&1 |
+                Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
+            $starterExit = $LASTEXITCODE
             $ErrorActionPreference = $prevEAP
-            if (Test-Path $starterExe) {
-                Log-Ok "startlazarus.exe built"
+            if ($starterExit -eq 0 -and (Test-Path $starterExe)) {
+                $starterSize = (Get-Item $starterExe).Length / 1MB
+                Log-Ok ("startlazarus.exe built ({0:N1} MB)" -f $starterSize)
+            } else {
+                Log-Err "startlazarus.exe build failed (lazbuild exit $starterExit)"
             }
+        } else {
+            Log-Err "ide\startlazarus.lpi not found -- cannot build startlazarus"
         }
     }
 }
