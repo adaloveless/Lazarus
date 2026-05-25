@@ -36,6 +36,7 @@ uses
   // LCL
   Forms, Buttons, ExtCtrls, Controls, LMessages, LCLType, LCLIntf,
   Graphics, Themes, ImgList, Menus, Clipbrd, Dialogs, StdCtrls,
+  {$IFDEF MSWINDOWS}uDarkStyleParams,{$ENDIF}
   // LazUtils
   GraphType, UTF8Process, LazUTF8, LazFileCache, LazFileUtils, IntegerList, LazLoggerBase,
   // SynEdit
@@ -1970,6 +1971,8 @@ var
     aLeft: Integer;
     aRight: Integer;
     LastP: Integer;
+    HighlightCol: TColor;
+    HighlightRGB: Longint;
   begin
     Canvas.Font.Color:=Font.Color;
     TextRect:=ARect;
@@ -1984,13 +1987,25 @@ var
     end else
       Details:=ThemeServices.GetElementDetails(ttItemNormal);
     if LoSearchText<>'' then begin
+      HighlightCol:=clHighlight;
+      {$IFDEF MSWINDOWS}
+      // Search-match highlight: clHighlight is too bright in dark mode --
+      // dim to ~30% so text remains readable against the highlight rectangle.
+      if IsDarkModeEnabled then begin
+        HighlightRGB:=ColorToRGB(clHighlight);
+        HighlightCol:=RGBToColor(
+          (Red(HighlightRGB)*30) div 100,
+          (Green(HighlightRGB)*30) div 100,
+          (Blue(HighlightRGB)*30) div 100);
+      end;
+      {$ENDIF}
       LoTxt:=UTF8LowerCase(aTxt);
       p:=1;
       LastP:=1;
       while p<=length(LoTxt) do begin
         p:=PosEx(LoSearchText,LoTxt,LastP);
         if p<1 then break;
-        Canvas.Brush.Color:=clHighlight;
+        Canvas.Brush.Color:=HighlightCol;
         aLeft:=TextRect.Left+Canvas.TextWidth(copy(ATxt,1,p-1));
         aRight:=aLeft+Canvas.TextWidth(copy(ATxt,p,length(LoSearchText)));
         Canvas.FillRect(aLeft,TextRect.Top+1,aRight,TextRect.Bottom-1);
