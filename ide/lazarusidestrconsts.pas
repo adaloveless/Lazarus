@@ -2829,6 +2829,8 @@ resourcestring
   lisPackageNameContains = 'Package name contains ...';
   lisFRIinCurrentUnit = 'in current unit';
   lisFRIinMainProject = 'in main project';
+  lisFRIinLocalFunction = 'in local function';
+  lisFRIinCurrentMethod = 'in current method';
   lisFRIinProjectPackageOwningCurrentUnit = 'in project/package owning current unit';
   lisFRIinAllOpenPackagesAndProjects = 'in all open packages and projects';
   lisFRIRenameAllReferences = 'Rename all References';
@@ -3544,7 +3546,6 @@ resourcestring
   lisFRIAdditionalFilesToSearchEGPathPasPath2Pp = 'Additional files to '
     +'search (e.g. /path/*.pas;/path2/*.pp)';
   lisFRIFindReferences = 'Find References';
-  lisFRIInvalidIdentifier = 'Invalid Identifier';
   lisFRIRenaming = 'Renaming';
   lisFRISearchInCommentsToo = 'Search in comments too';
   lisFRISearch = 'Search';

@@ -271,6 +271,7 @@ type
     FXorMode: boolean;
     FXorROP: Integer;
     FXorSnapshot: Pcairo_surface_t;
+    FXorRect: TGdkRectangle;
     //Accumulated clip region, mirrors what we set via SetClipRegion/ResetClip.
     //Needed because gdk_cairo_get_clip_rectangle returns only the bounding box,
     //causing ExcludeClipRect accumulation to lose intermediate holes.
@@ -1201,6 +1202,8 @@ begin
   fContext:=ACtx;
   if not Assigned(fContext) then exit(nil);
   Result := fContext.CurrentFont;
+  if (Result <> nil) and (Result <> Self) then
+    Result.fContext := nil;
   fContext.CurrentFont:= Self;
 end;
 
@@ -1395,6 +1398,11 @@ begin
   fContext:=ACtx;
   if not Assigned(ACtx) then exit(nil);
   Result := fContext.CurrentImage;
+  if (Result <> nil) and (Result <> Self) then
+  begin
+    TGtk3Image(Result).UpdatePixbufFromSurface;
+    TGtk3Image(Result).fContext := nil;
+  end;
   fContext.SetImage(Self);
 end;
 
@@ -1535,6 +1543,8 @@ begin
   fContext:=ACtx;
   if not Assigned(fContext) then exit(nil);
   Result := FContext.CurrentPen;
+  if (Result <> nil) and (Result <> Self) then
+    Result.fContext := nil;
   fContext.CurrentPen := Self;
   Self.SetColor(fColor); // update Cairo
 end;
@@ -1615,6 +1625,8 @@ begin
   fContext:=ACtx;
   if not Assigned(fContext) then exit(nil);
   Result := fContext.CurrentBrush;
+  if (Result <> nil) and (Result <> Self) then
+    Result.fContext := nil;
   Self.UpdatePattern(ColorToRGB(FColor));
   fContext.CurrentBrush := Self;
 end;
@@ -1896,6 +1908,7 @@ begin
   end;
 
   gdk_cairo_get_clip_rectangle(FCairo, @R);
+  FXorRect := R;
 
   asx := 1;
   asy := 1;
@@ -1927,7 +1940,7 @@ var
   asx, asy: Double;
 begin
   cairo_surface_flush(xorSurface);
-  gdk_cairo_get_clip_rectangle(FCairo, @R);
+  R := FXorRect;
 
   SrcW := cairo_image_surface_get_width(xorSurface);
   SrcH := cairo_image_surface_get_height(xorSurface);
