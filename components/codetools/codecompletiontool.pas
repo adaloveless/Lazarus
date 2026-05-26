@@ -1274,8 +1274,16 @@ begin
         OtherSectionNode:=nil;
         HeaderNode:=nil;
         ParentNode:=Node;
-      end else if Node.Desc=ctnUnit then begin
+      end else if Node.Desc in [ctnUnit,ctnInitialization,ctnFinalization] then begin
         // the grand children can have a var section
+
+        if Node.Desc in [ctnInitialization,ctnFinalization] then begin
+          // initialization and finalization sections are special cases
+          Node:=FindImplementationNode;
+          if Node=nil then
+            break;
+          ParentNode:=Node;
+        end;
       end else begin
         break;
       end;
@@ -1949,8 +1957,15 @@ var
           OtherSectionNode:=nil;
           HeaderNode:=nil;
           ParentNode:=Node;
-        end else if Node.Desc=ctnUnit then begin
+        end else if Node.Desc in [ctnUnit,ctnInitialization,ctnFinalization] then begin
           // the grand children can have a var section
+          if Node.Desc in [ctnInitialization,ctnFinalization] then begin
+          // initialization and finalization sections are special cases
+          Node:=FindImplementationNode;
+          if Node=nil then
+            break;
+          ParentNode:=Node;
+        end;
         end else begin
           break;
         end;
@@ -1991,7 +2006,7 @@ begin
   {$IFDEF VerboseCompleteLocalVarAssign}
   DebugLn('  CompleteLocalVariableAssignment: A');
   {$ENDIF}
-  if not ((CursorNode.Desc=ctnBeginBlock)
+  if not ((CursorNode.Desc in [ctnBeginBlock,ctnInitialization,ctnFinalization])
           or CursorNode.HasParentOfType(ctnBeginBlock)) then exit;
   CursorNode:=FindDeepestNodeAtPos(CleanCursorPos,true);
 
@@ -2847,7 +2862,7 @@ begin
   {$IFDEF CTDEBUG}
   DebugLn('  CompleteIdentifierByParameter: A');
   {$ENDIF}
-  if not ((CursorNode.Desc=ctnBeginBlock)
+  if not ((CursorNode.Desc in [ctnBeginBlock,ctnInitialization,ctnFinalization])
           or CursorNode.HasParentOfType(ctnBeginBlock)) then exit;
   CursorNode:=FindDeepestNodeAtPos(CleanCursorPos,true);
 

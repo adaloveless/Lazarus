@@ -239,8 +239,6 @@ type
   private
     FGrid: TCustomGrid;
     FCol,FRow:Integer;
-  private
-    function layoutToVertAlign(const layout: TTextLayout): TVerticalAlignment;
   protected
     procedure WndProc(var TheMessage : TLMessage); override;
     procedure Change; override;
@@ -8841,6 +8839,9 @@ begin
   {$ifdef dbgGrid} DebugLn('Grid.EditorPos INIT');{$endif}
   if HandleAllocated and (FEditor<>nil) then begin
 
+    // Make sure to use the grid font, not that of the title (issue #38203).
+    Canvas.Font:= GetColumnFont(FCol, False);
+
     // send editor position
     Msg.LclMsg.msg:=GM_SETPOS;
     Msg.Grid:=Self;
@@ -8862,9 +8863,6 @@ begin
       // this should avoid range check errors on widgetsets that can't handle
       // high control coords (like GTK2)
       CellR := Bounds(-FEditor.Width-100, -FEditor.Height-100, CellR.Right-CellR.Left, CellR.Bottom-CellR.Top);
-
-    // Make sure to use the grid font, not that of the title (issue #38203).
-    Canvas.Font.Assign(Font);
 
     if FEditorOptions and EO_AUTOSIZE = EO_AUTOSIZE then begin
       CalcEditorBounds(FEditor, CellR);
@@ -10111,6 +10109,7 @@ begin
   FButtonEditor.Caption:='...';
   FButtonEditor.Visible:=False;
   FButtonEditor.Width:=25;
+  FButtonEditor.ParentFont := False;
   FButtonEditor.OnClick := @EditButtonClicked;
 
   FStringEditor := TStringCellEditor.Create(nil);
@@ -10119,15 +10118,18 @@ begin
   FStringEditor.Visible:=False;
   FStringEditor.Align:=alNone;
   FStringEditor.BorderStyle := bsNone;
+  FStringEditor.ParentFont := False;
 
   FPicklistEditor := TPickListCellEditor.Create(nil);
   FPickListEditor.Name := 'PickListEditor';
   FPickListEditor.Visible := False;
-  FPickListEditor.AutoSize := false;
+  FPickListEditor.AutoSize := False;
+  FPickListEditor.ParentFont := False;
 
   FButtonStringEditor := TCompositeCellEditor.Create(nil);
   FButtonStringEditor.Name:='ButtonTextEditor';
   FButtonStringEditor.Visible:=False;
+  FButtonStringEditor.ParentFont := False;
   FButtonStringEditor.AddEditor(FStringEditor, alCustom, true);
   FButtonStringEditor.AddEditor(FButtonEditor, alRight, false);
 
@@ -10647,19 +10649,6 @@ end;
 
 { TStringCellEditor }
 
-function TStringCellEditor.layoutToVertAlign(
-  const layout: TTextLayout ): TVerticalAlignment;
-begin
-  case layout of
-    tlCenter:
-      Result := taVerticalCenter;
-    tlBottom:
-      Result := taAlignBottom;
-    else
-      Result:= taAlignTop;
-  end;
-end;
-
 procedure TStringCellEditor.WndProc(var TheMessage: TLMessage);
 begin
 	{$IfDef GridTraceMsg}
@@ -10820,14 +10809,11 @@ begin
 end;
 
 procedure TStringCellEditor.msg_SetPos(var Msg: TGridMessage);
-var
-  vertAlign: TVerticalAlignment;
-  layout: TTextLayout;
 begin
   FCol := Msg.Col;
   FRow := Msg.Row;
-  layout := FGrid.GetColumnLayout(FCol, False);
-  self.VerticalAlignment := self.layoutToVertAlign(layout);
+  self.VerticalAlignment := FGrid.GetColumnLayout(FCol, False);
+  self.Font:= FGrid.Canvas.Font;
 end;
 
 procedure TStringCellEditor.msg_GetGrid(var Msg: TGridMessage);
@@ -13756,6 +13742,9 @@ procedure TPickListCellEditor.msg_SetPos(var Msg: TGridMessage);
 begin
   FCol := Msg.Col;
   FRow := Msg.Row;
+  self.Font:= FGrid.Canvas.Font;
+  if self.Font.Size <> 0 then
+    self.Font.Size:= 0;
 end;
 
 procedure TPickListCellEditor.msg_GetGrid(var Msg: TGridMessage);

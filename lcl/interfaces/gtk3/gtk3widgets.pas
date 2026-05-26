@@ -197,6 +197,7 @@ type
 
     function DeliverMessage(var Msg; const AIsInputEvent: Boolean = False): LRESULT; virtual;
     function GtkEventKey(Sender: PGtkWidget; Event: PGdkEvent; AKeyPress: Boolean): Boolean; virtual; cdecl;
+    procedure DeliverIMCommit(const AStr: string);
     function GtkEventMouse(Sender: PGtkWidget; Event: PGdkEvent): Boolean; virtual; cdecl;
     function GtkEventMouseMove(Sender: PGtkWidget; Event: PGdkEvent): Boolean; virtual; cdecl;
     function GtkEventPaint(Sender: PGtkWidget; AContext: Pcairo_t): Boolean; virtual; cdecl;
@@ -2214,7 +2215,20 @@ begin
   {$ENDIF}
   FillChar(Msg{%H-}, SizeOf(Msg), #0);
   if Event^.focus_change.in_ <> 0 then
-    Msg.Msg := LM_SETFOCUS
+  begin
+    Msg.Msg := LM_SETFOCUS;
+    if (Gtk3WidgetSet.IMContext <> nil) and
+       not Gtk3IsEntry(PGObject(Sender)) and
+       not Gtk3IsTextView(PGObject(Sender)) then
+    begin
+      {$IFDEF GTK3DEBUGKEYPRESS}
+      writeln('GtkEventFocus IN ', dbgsName(LCLObject), ' clientWindow=', PtrUInt(Sender^.get_window), ' toplevelWindow=', PtrUInt(Sender^.get_toplevel^.get_window));
+      {$ENDIF}
+      gtk_im_context_set_client_window(Gtk3WidgetSet.IMContext, Sender^.get_window);
+      gtk_im_context_focus_in(Gtk3WidgetSet.IMContext);
+      Gtk3WidgetSet.IMTarget := Self;
+    end;
+  end
   else
   begin
     if Sender^.get_toplevel^.is_toplevel then
@@ -2225,6 +2239,15 @@ begin
         Exit;
     end;
     Msg.Msg := LM_KILLFOCUS;
+    if (Gtk3WidgetSet.IMContext <> nil) and
+       not Gtk3IsEntry(PGObject(Sender)) and
+       not Gtk3IsTextView(PGObject(Sender)) then
+    begin
+      gtk_im_context_focus_out(Gtk3WidgetSet.IMContext);
+      gtk_im_context_set_client_window(Gtk3WidgetSet.IMContext, nil);
+      if Gtk3WidgetSet.IMTarget = Self then
+        Gtk3WidgetSet.IMTarget := nil;
+    end;
   end;
 
   if HasCaret then
@@ -2337,6 +2360,35 @@ begin
   Gtk3WidgetSet.FLCLCaptureWidget := GetContainerWidget;
 end;
 
+procedure TGtk3Widget.DeliverIMCommit(const AStr: string);
+var
+  UTF8Char: TUTF8Char;
+  CharMsg: TLMChar;
+begin
+  if (AStr = '') or not Assigned(LCLObject) then
+    exit;
+
+  {$IFDEF GTK3DEBUGKEYPRESS}
+  writeln('TGtk3Widget.DeliverIMCommit ', dbgsName(LCLObject), ' str="', AStr, '"');
+  {$ENDIF}
+
+  UTF8Char := AStr;
+  if LCLObject.IntfUTF8KeyPress(UTF8Char, 1, False) then
+    exit;
+
+  FillChar(CharMsg{%H-}, SizeOf(CharMsg), 0);
+  CharMsg.Msg := CN_CHAR;
+  CharMsg.CharCode := Word(AStr[1]);
+  NotifyApplicationUserInput(LCLObject, PLMessage(@CharMsg)^);
+
+  if DeliverMessage(CharMsg, True) <> 0 then
+    exit;
+
+  CharMsg.Msg := LM_CHAR;
+  NotifyApplicationUserInput(LCLObject, PLMessage(@CharMsg)^);
+  DeliverMessage(CharMsg, True);
+end;
+
 function TGtk3Widget.GtkEventKey(Sender: PGtkWidget; Event: PGdkEvent; AKeyPress: Boolean): Boolean;
   cdecl;
 const
@@ -2362,6 +2414,7 @@ var
   TempWidget: HWND;
   {$IFDEF GTK3DEBUGKEYPRESS}
   Info: PTypeInfo;
+  AFiltered: gboolean;
   {$ENDIF}
 begin
   //TODO: finish LCL messaging
@@ -2369,6 +2422,22 @@ begin
   AEvent := Event^.key;
   FillChar(Msg{%H-}, SizeOf(Msg), 0);
   AEventString := AEvent.string_;
+  if AKeyPress and (Gtk3WidgetSet.IMContext <> nil) and
+     not Gtk3IsEntry(PGObject(Sender)) and
+     not Gtk3IsTextView(PGObject(Sender)) then
+  begin
+    Gtk3WidgetSet.IMCommitStr := '';
+    Gtk3WidgetSet.IMInFilter := True;
+    {$IFDEF GTK3DEBUGKEYPRESS}
+    AFiltered := gtk_im_context_filter_keypress(Gtk3WidgetSet.IMContext, PGdkEventKey(Event));
+    writeln('GtkEventKey: filter_keypress=', Ord(AFiltered), ' commitStr="', Gtk3WidgetSet.IMCommitStr, '" keyval=', AEvent.keyval, ' widget=', dbgsName(LCLObject));
+    {$ELSE}
+    gtk_im_context_filter_keypress(Gtk3WidgetSet.IMContext, PGdkEventKey(Event));
+    {$ENDIF}
+    Gtk3WidgetSet.IMInFilter := False;
+    if Gtk3WidgetSet.IMCommitStr <> '' then
+      AEventString := Gtk3WidgetSet.IMCommitStr;
+  end;
 
   TempWidget := HwndFromGtkWidget(Sender);
   {$IFDEF GTK3DEBUGKEYPRESS}
@@ -4152,7 +4221,7 @@ begin
   begin
     wtype:=prnt.getType; // parent widget type
     if (wtype<>gtk_fixed_get_type()) and
-       (wtype<>gtk_layout_get_type()) then
+       not Gtk3IsLayout(PGObject(prnt.GetContainerWidget)) then
     begin
       // widget is not on a normal client area. e.g. TPage
       Apoint.X:=0;
@@ -5075,7 +5144,7 @@ begin
   FBorderStyle := bsNone;
 
   FWidgetType := [wtWidget, wtLayout, wtPanel];
-  Result := TGtkLayout.new(nil, nil);
+  Result := PGtkWidget(LCLGtkLayoutNew);
   Result^.set_has_window(True);
   // as GtkFixed have no child control here - nobody triggers resizing
   // GNOME takes care of it, but other WM - not
@@ -5206,7 +5275,7 @@ begin
   FGroupBoxType := gbtGroupBox;
   FWidgetType := [wtWidget, wtLayout, wtGroupBox];
   Result := LCLGtkFrameNew;
-  FCentralWidget := TGtkLayout.new(nil, nil);
+  FCentralWidget := PGtkWidget(LCLGtkLayoutNew);
   PGtkBin(Result)^.add(FCentralWidget);
   FCentralWidget^.set_has_window(True);
   //PGtkFrame(result)^.set_label_align(0.1,0.5);
@@ -7946,7 +8015,7 @@ begin
 
   Result := TGtkBox.new(GTK_ORIENTATION_HORIZONTAL, 0);
   Result^.ref;
-  FCentralWidget := TGtkLayout.new(nil, nil);
+  FCentralWidget := PGtkWidget(LCLGtkLayoutNew);
   FCentralWidget^.set_app_paintable(True);
   PGtkBox(Result)^.pack_start(FCentralWidget, True, True, 0);
   FCentralWidget^.set_has_window(True);
@@ -8744,6 +8813,9 @@ begin
       Result := RectFromGtkAllocation(AAlloc);
       Types.OffsetRect(Result, -Result.Left, -Result.Top);
       Self.DefaultClientRect := Result;
+      {$IFDEF GTK3DEBUGSIZE}
+      writeln(Format('TGtk3Notebook.getClientRect page=%d/%d pageAllocWxH %dx%d -> ClientRect %s',[ACurrentPage, PGtkNoteBook(GetContainerWidget)^.get_n_pages, AAlloc.width, AAlloc.height, dbgs(Result)]));
+      {$ENDIF}
       {$IFDEF GTK3DEBUGLAYOUT}
       writeln('TGtk3Notebook.GetClientRect(3): Result=',dbgs(Result));
       {$ENDIF}
@@ -9575,6 +9647,8 @@ var
   uWidth, uHeight: guint;
   aCtl: TGtk3Widget;
   ViewportChanged, ClientRectMismatch: boolean;
+  ASW: PGtkScrolledWindow;
+  HPolicy, VPolicy: TGtkPolicyType;
 begin
 
   if not AWidget^.get_mapped then Exit;
@@ -9594,8 +9668,21 @@ begin
   vadj := PGtkScrollable(aWidget)^.get_vadjustment;
 
   aCtl := TGtk3Widget(Data);
-  HSize := Max(AGdkRect^.Width, Round(hAdj^.upper));
-  VSize := Max(AGdkRect^.Height, Round(vAdj^.upper));
+
+  HPolicy := GTK_POLICY_AUTOMATIC;
+  VPolicy := GTK_POLICY_AUTOMATIC;
+  ASW := PGtkScrolledWindow(AWidget^.get_parent);
+  if Gtk3IsScrolledWindow(ASW) then
+    gtk_scrolled_window_get_policy(ASW, @HPolicy, @VPolicy);
+  if HPolicy = GTK_POLICY_NEVER then
+    HSize := AGdkRect^.Width
+  else
+    HSize := Max(AGdkRect^.Width, Round(hAdj^.upper));
+
+  if VPolicy = GTK_POLICY_NEVER then
+    VSize := AGdkRect^.Height
+  else
+    VSize := Max(AGdkRect^.Height, Round(vAdj^.upper));
 
   PGtkLayout(aWidget)^.get_size(@uWidth, @uHeight);
 
@@ -13228,7 +13315,7 @@ begin
   // calls size_allocate(width,0).
   Result := PGtkScrolledWindow(LCLGtkScrolledWindowNew);
 
-  FCentralWidget := TGtkLayout.new(nil, nil);
+  FCentralWidget := PGtkWidget(LCLGtkLayoutNew);
 
   PGtkScrolledWindow(Result)^.add(FCentralWidget);
 
@@ -14701,7 +14788,7 @@ begin
   g_object_set_data(FScrollWin,'lclscrollingwindow',GPointer(1));
   g_object_set_data(PGObject(FScrollWin), 'lclwidget', Self);
 
-  FCentralWidget := TGtkLayout.new(nil, nil);
+  FCentralWidget := PGtkWidget(LCLGtkLayoutNew);
   FScrollWin^.add(FCentralWidget);
   FScrollWin^.show;
   FBox^.pack_end(FScrollWin, True, True, 0);
