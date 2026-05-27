@@ -798,6 +798,79 @@ function Rebuild-Lazbuild {
     Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
 }
 
+function Sanitize-PackageRegistrations {
+    # Strip stale UserPkgLinks from packagefiles.xml that point at OTHER Lazarus
+    # checkouts (typically C:\temp\lazarus-* or sibling worktrees). When such a
+    # link names a core package like LCL or LCLBase, lazbuild --build-ide writes
+    # the stale lib path into idemake.cfg and then loads an outdated themes.ppu
+    # from there, causing inexplicable "no method in ancestor class to be
+    # overridden" errors on freshly-pulled source (seen post-merge 2026-05-27 on
+    # the IsDarkTheme virtual). Also wipe idemake.cfg + staticpackages.inc so
+    # lazbuild regenerates them from the now-clean registrations.
+    $pcpDir = Join-Path $env:LOCALAPPDATA "lazarus"
+    $pkgFilesXml = Join-Path $pcpDir "packagefiles.xml"
+    if (-not (Test-Path $pkgFilesXml)) { return }
+
+    $coreLazPackages = @(
+        "LCL", "LCLBase", "FCL", "IDEIntf", "SynEdit", "CodeTools",
+        "LazUtils", "LazControls", "IdeConfig", "IdePackager", "IdeProject",
+        "IdeDebugger", "IdeUtils", "BuildIntf", "DebuggerIntf",
+        "LazDebuggerIntf", "Printer4Lazarus", "Printer4LazarusStandalone"
+    )
+
+    try {
+        [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
+        $userLinks = $pkgXml.CONFIG.UserPkgLinks
+        if (-not $userLinks) { return }
+
+        $removed = @()
+        # Use LocalName because $_.Name is shadowed by the child <Name> element
+        # via PowerShell's XML property adapter (returns an XmlElement, not the tag).
+        $itemNodes = @($userLinks.ChildNodes | Where-Object { $_.LocalName -match '^Item\d+$' })
+        foreach ($it in $itemNodes) {
+            $fileNode = $it.SelectSingleNode("Filename")
+            $nameNode = $it.SelectSingleNode("Name")
+            $file = if ($fileNode) { $fileNode.GetAttribute("Value") } else { $null }
+            $pkgName = if ($nameNode) { $nameNode.GetAttribute("Value") } else { "" }
+            if (-not $file) { continue }
+            if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
+
+            $reason = $null
+            if ($coreLazPackages -contains $pkgName -and
+                -not $file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $reason = "core package $pkgName pointing outside `$LazarusDir"
+            } elseif (-not (Test-Path $file)) {
+                $reason = "missing file"
+            }
+
+            if ($reason) {
+                $removed += "$pkgName -> $file ($reason)"
+                [void]$userLinks.RemoveChild($it)
+            }
+        }
+
+        if ($removed.Count -gt 0) {
+            $count = [int]$userLinks.GetAttribute("Count")
+            $userLinks.SetAttribute("Count", ($count - $removed.Count).ToString())
+            $pkgXml.Save($pkgFilesXml)
+            foreach ($r in $removed) {
+                Log-Info "Removed stale package registration: $r"
+            }
+            Log-Ok "Sanitized $($removed.Count) stale UserPkgLink(s) from packagefiles.xml"
+        }
+    } catch {
+        Log-Warn "Could not sanitize packagefiles.xml: $_"
+    }
+
+    foreach ($f in @("idemake.cfg", "staticpackages.inc")) {
+        $p = Join-Path $pcpDir $f
+        if (Test-Path $p) {
+            Remove-Item $p -Force -ErrorAction SilentlyContinue
+            Log-Info "Removed stale $f (lazbuild will regenerate)"
+        }
+    }
+}
+
 function Clean-StalePackageArtifacts {
     # Stale .ppu/.o files (compiled with older/different compilers) cause
     # VibePascal ICEs when lazbuild --build-ide= tries to recompile them.
@@ -916,6 +989,7 @@ function Rebuild-IDE {
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         if ($attempt -gt 1) {
             Log-Warn "IDE build failed on attempt $($attempt-1); cleaning stale artifacts and retrying..."
+            Sanitize-PackageRegistrations
             Clean-StalePackageArtifacts
             Start-Sleep -Seconds 2
         }
@@ -1542,6 +1616,7 @@ if ($ResetConfig) {
         Log-Info "-ResetConfig -ForceRebuild: rebuilding lazbuild + IDE after config reset"
         Rebuild-Lazbuild
         Configure-Environment
+        Sanitize-PackageRegistrations
         Clean-StalePackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
@@ -1641,6 +1716,7 @@ if ($anyUpdated) {
     } else {
         Rebuild-Lazbuild
         Configure-Environment
+        Sanitize-PackageRegistrations
         Clean-StalePackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
