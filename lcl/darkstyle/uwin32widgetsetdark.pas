@@ -151,6 +151,9 @@ type
     published
       class function CreateHandle(const AWinControl: TWinControl;
             const AParams: TCreateParams): HWND; override;
+      class procedure GetPreferredSize(const AWinControl: TWinControl;
+            var PreferredWidth, PreferredHeight: integer;
+            WithThemeSpace: Boolean); override;
       class function GetDefaultColor(const AControl: TControl;
             const ADefaultColorType: TDefaultColorType): TColor; override;
       class procedure ShowHide(const AWinControl: TWinControl); override;
@@ -314,6 +317,8 @@ const
 
   MDL_COMBOBOX_BTNDOWN  = #$EE#$A5#$B2; // $E972
 
+  DARK_CHECKRADIO_SYNC_BOUNDS = WM_APP + 806;
+
 type
   TThemeClassMap = specialize TMap<HTHEME, LPCWSTR, specialize TLess<HTHEME>>;
   TThemeWindowMap = specialize TMap<HTHEME, HWND, specialize TLess<HTHEME>>;
@@ -349,6 +354,21 @@ begin
   AllowDarkModeForWindow(Window, True);
   SetWindowTheme(Window, 'DarkMode_Explorer', nil);
   SendMessageW(Window, WM_THEMECHANGED, 0, 0);
+end;
+
+procedure EnableDarkListViewHeader(Window: HWND);
+var
+  Header: HWND;
+begin
+  if Window = 0 then
+    Exit;
+  Header := HWND(SendMessage(Window, LVM_GETHEADER, 0, 0));
+  if Header <> 0 then
+  begin
+    AllowDarkModeForWindow(Header, True);
+    SetWindowTheme(Header, 'ItemsView', nil);
+    SendMessageW(Header, WM_THEMECHANGED, 0, 0);
+  end;
 end;
 
 procedure PrepareDarkGroupedChildSizing(const AWinControl: TWinControl);
@@ -670,6 +690,7 @@ begin
   Result := (lstrcmpiW(pszClassList, VSCLASS_COMBOBOX) = 0) or
     (lstrcmpiW(pszClassList, VSCLASS_EDIT) = 0) or
     (lstrcmpiW(pszClassList, 'ListView') = 0) or
+    (lstrcmpiW(pszClassList, VSCLASS_DARK_HEADER) = 0) or
     (lstrcmpiW(pszClassList, VSCLASS_SCROLLBAR) = 0);
 end;
 
@@ -1056,8 +1077,8 @@ begin
   if (AItemRect.Right <= AItemRect.Left) or (AItemRect.Bottom <= AItemRect.Top) then
     Exit;
 
-  GlyphSize := Max(11, Min(16, AItemRect.Bottom - AItemRect.Top - 6));
-  GlyphR.Left := AItemRect.Left + 2;
+  GlyphSize := Max(11, Min(13, AItemRect.Bottom - AItemRect.Top - 6));
+  GlyphR.Left := AItemRect.Left;
   GlyphR.Top := AItemRect.Top + Max(0, (AItemRect.Bottom - AItemRect.Top - GlyphSize) div 2);
   GlyphR.Right := GlyphR.Left + GlyphSize;
   GlyphR.Bottom := GlyphR.Top + GlyphSize;
@@ -1100,7 +1121,7 @@ begin
   end;
 
   TextR := AItemRect;
-  TextR.Left := GlyphR.Right + 6;
+  TextR.Left := GlyphR.Right + 4;
   OldBkMode := SetBkMode(DC, TRANSPARENT);
   OldTextColor := SetTextColor(DC, ColorToRGB(ATextColor));
   DrawTextW(DC, PWideChar(AText), Length(AText), TextR,
@@ -1206,6 +1227,35 @@ begin
     RedrawWindow(Window, nil, 0, RDW_INVALIDATE or RDW_ERASE or RDW_UPDATENOW);
 end;
 
+function SyncDarkCheckRadioWindowBounds(Window: HWND; Control: TWinControl;
+  ARedrawNow: Boolean): Boolean;
+var
+  Parent: HWND;
+  R: TRect;
+begin
+  Result := False;
+  if (Window = 0) or (Control = nil) or
+     (Control.Width <= 0) or (Control.Height <= 0) then
+    Exit;
+
+  Parent := GetParent(Window);
+  if not GetWindowRect(Window, R) then
+    Exit;
+  if Parent <> 0 then
+    MapWindowPoints(0, Parent, R, 2);
+
+  if (R.Left = Control.Left) and (R.Top = Control.Top) and
+     (R.Right - R.Left = Control.Width) and
+     (R.Bottom - R.Top = Control.Height) then
+    Exit;
+
+  SetWindowPos(Window, 0, Control.Left, Control.Top,
+    Control.Width, Control.Height,
+    SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
+  InvalidateDarkChildPlacement(Window, ARedrawNow);
+  Result := True;
+end;
+
 function CallDarkCheckRadioOldProc(Window: HWND; Msg: UInt;
   WParam: Windows.WParam; LParam: Windows.LParam): LResult;
 var
@@ -1233,6 +1283,12 @@ var
   Control: TWinControl;
 begin
   case Msg of
+    DARK_CHECKRADIO_SYNC_BOUNDS:
+      begin
+        Control := DarkControlFromWindow(Window);
+        SyncDarkCheckRadioWindowBounds(Window, Control, True);
+        Exit(0);
+      end;
     WM_WINDOWPOSCHANGING:
       begin
         InvalidateDarkChildPlacement(Window, False);
@@ -1248,6 +1304,10 @@ begin
   end;
 
   Control := DarkControlFromWindow(Window);
+  if (Control <> nil) and (not IsDarkGroupedDesignItem(Control)) and
+     (Msg in [WM_PAINT, WM_PRINTCLIENT]) then
+    SyncDarkCheckRadioWindowBounds(Window, Control, False);
+
   if (Msg <> WM_NCDESTROY) and
      (((Control <> nil) and (not Control.Visible)) or
       (not IsWindowVisible(Window))) then
@@ -2098,6 +2158,11 @@ begin
   EnableDarkStyle(Result);
   if not IsDarkGroupedDesignItem(AWinControl) then
     InstallDarkCheckRadioWndProc(Result);
+  AWinControl.InvalidatePreferredSize;
+  if AWinControl.AutoSize then
+    AWinControl.AdjustSize;
+  SyncDarkCheckRadioWindowBounds(Result, AWinControl, False);
+  PostMessage(Result, DARK_CHECKRADIO_SYNC_BOUNDS, 0, 0);
   PostDarkGroupedParentSync(AWinControl);
 end;
 
@@ -2105,6 +2170,18 @@ class function TWin32WSCustomCheckBoxDark.GetDefaultColor(
   const AControl: TControl; const ADefaultColorType: TDefaultColorType): TColor;
 begin
   Result := DarkControlDefaultColor(ADefaultColorType);
+end;
+
+class procedure TWin32WSCustomCheckBoxDark.GetPreferredSize(
+  const AWinControl: TWinControl; var PreferredWidth,
+  PreferredHeight: integer; WithThemeSpace: Boolean);
+begin
+  inherited GetPreferredSize(AWinControl, PreferredWidth, PreferredHeight,
+    WithThemeSpace);
+  if PreferredWidth > 0 then
+    Inc(PreferredWidth, 2);
+  if AWinControl.HandleAllocated then
+    PostMessage(AWinControl.Handle, DARK_CHECKRADIO_SYNC_BOUNDS, 0, 0);
 end;
 
 class procedure TWin32WSCustomCheckBoxDark.ShowHide(
@@ -2549,11 +2626,104 @@ end;
 
 { TWin32WSCustomListViewDark }
 
+procedure DrawDarkListViewHeaderBackground(Header: HWND; DC: HDC;
+  const ARect: TRect);
+var
+  R: TRect;
+  OldPen: HGDIOBJ;
+begin
+  R := ARect;
+  if (R.Right <= R.Left) or (R.Bottom <= R.Top) then
+    GetClientRect(Header, R);
+
+  FillGradient(DC, Lighter(SysColor[COLOR_BTNFACE], 124),
+    Lighter(SysColor[COLOR_BTNFACE], 116), R, GRADIENT_FILL_RECT_V);
+
+  OldPen := SelectObject(DC, GetStockObject(DC_PEN));
+  try
+    SetDCPenColor(DC, ColorToRGB(Lighter(SysColor[COLOR_BTNFACE], 131)));
+    MoveToEx(DC, R.Left, R.Top, nil);
+    LineTo(DC, R.Right, R.Top);
+    SetDCPenColor(DC, ColorToRGB(Darker(SysColor[COLOR_BTNFACE], 140)));
+    MoveToEx(DC, R.Left, R.Bottom - 1, nil);
+    LineTo(DC, R.Right, R.Bottom - 1);
+    SetDCPenColor(DC, ColorToRGB(Lighter(SysColor[COLOR_BTNFACE], 101)));
+    MoveToEx(DC, R.Right - 1, R.Top, nil);
+    LineTo(DC, R.Right - 1, R.Bottom);
+  finally
+    SelectObject(DC, OldPen);
+  end;
+end;
+
+procedure DrawDarkListViewHeaderItem(Header: HWND; NMCustomDraw: PNMCustomDraw);
+var
+  Item: HDITEMW;
+  TextBuf: array[0..255] of WideChar;
+  R, TextR: TRect;
+  OldFont: HGDIOBJ;
+  OldBkMode: Integer;
+  OldTextColor: COLORREF;
+  FontHandle: HFONT;
+  TextFlags: UINT;
+begin
+  R := NMCustomDraw^.rc;
+  DrawDarkListViewHeaderBackground(Header, NMCustomDraw^.hdc, R);
+
+  FillChar(TextBuf, SizeOf(TextBuf), 0);
+  FillChar(Item{%H-}, SizeOf(Item), 0);
+  Item.mask := HDI_TEXT or HDI_FORMAT;
+  Item.pszText := @TextBuf[0];
+  Item.cchTextMax := Length(TextBuf);
+  SendMessageW(Header, HDM_GETITEMW, NMCustomDraw^.dwItemSpec, LPARAM(@Item));
+
+  TextR := R;
+  Inc(TextR.Left, 6);
+  Dec(TextR.Right, 6);
+  FontHandle := HFONT(SendMessage(Header, WM_GETFONT, 0, 0));
+  OldFont := 0;
+  if FontHandle <> 0 then
+    OldFont := SelectObject(NMCustomDraw^.hdc, FontHandle);
+  OldBkMode := SetBkMode(NMCustomDraw^.hdc, TRANSPARENT);
+  OldTextColor := SetTextColor(NMCustomDraw^.hdc, ColorToRGB(SysColor[COLOR_BTNTEXT]));
+  TextFlags := DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS;
+  case Item.fmt and (HDF_RIGHT or HDF_CENTER) of
+    HDF_RIGHT: TextFlags := TextFlags or DT_RIGHT;
+    HDF_CENTER: TextFlags := TextFlags or DT_CENTER;
+  else
+    TextFlags := TextFlags or DT_LEFT;
+  end;
+  DrawTextW(NMCustomDraw^.hdc, PWideChar(@TextBuf[0]), -1, TextR, TextFlags);
+  SetTextColor(NMCustomDraw^.hdc, OldTextColor);
+  SetBkMode(NMCustomDraw^.hdc, OldBkMode);
+  if OldFont <> 0 then
+    SelectObject(NMCustomDraw^.hdc, OldFont);
+end;
+
 function ListViewWindowProc(Window: HWND; Msg: UINT; wParam: Windows.WPARAM; lParam: Windows.LPARAM; uISubClass: UINT_PTR; dwRefData: DWORD_PTR): LRESULT; stdcall;
 var NMHdr: PNMHDR; NMCustomDraw: PNMCustomDraw;
 begin
   If Msg = WM_NOTIFY then begin
     NMHdr := PNMHDR(LParam);
+    if (NMHdr^.hwndFrom = HWND(SendMessage(Window, LVM_GETHEADER, 0, 0))) and
+       (NMHdr^.code = NM_CUSTOMDRAW) then
+    begin
+      NMCustomDraw := PNMCustomDraw(LParam);
+      case NMCustomDraw^.dwDrawStage of
+        CDDS_PREPAINT:
+        begin
+          DrawDarkListViewHeaderBackground(NMHdr^.hwndFrom,
+            NMCustomDraw^.hdc, NMCustomDraw^.rc);
+          Result := CDRF_NOTIFYITEMDRAW;
+          exit;
+        end;
+        CDDS_ITEMPREPAINT:
+        begin
+          DrawDarkListViewHeaderItem(NMHdr^.hwndFrom, NMCustomDraw);
+          Result := CDRF_SKIPDEFAULT;
+          exit;
+        end;
+      end;
+    end;
     if NMHdr^.code = NM_CUSTOMDRAW then begin
       NMCustomDraw:= PNMCustomDraw(LParam);
       case NMCustomDraw^.dwDrawStage of
@@ -2570,6 +2740,16 @@ begin
         end;
       end;
     end;
+  end;
+  case Msg of
+    WM_CREATE, WM_SHOWWINDOW, WM_THEMECHANGED, WM_STYLECHANGED,
+    WM_WINDOWPOSCHANGED, LVM_INSERTCOLUMNW, LVM_SETCOLUMNW,
+    LVM_DELETECOLUMN:
+      begin
+        Result := DefSubclassProc(Window, Msg, WParam, LParam);
+        EnableDarkListViewHeader(Window);
+        Exit;
+      end;
   end;
   Result := DefSubclassProc(Window, Msg, WParam, LParam);
 end;
@@ -2589,6 +2769,7 @@ begin
   ListView_SetTextBkColor(Result, SysColor[COLOR_WINDOW]);
   ListView_SetTextColor(Result, SysColor[COLOR_WINDOWTEXT]);
   EnableDarkStyle(Result);
+  EnableDarkListViewHeader(Result);
 end;
 
 { TWin32WSCustomEditDark }
