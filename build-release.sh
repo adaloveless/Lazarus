@@ -622,6 +622,10 @@ restore_staged_mtimes() {
     #   * Source .pas/.lpk mtimes ending up ~5 min newer than .compiled state,
     #     tripping TLazPackageGraph's "source disk file modified" check and
     #     forcing package rebuild from source (Melissa F5, cycle 363).
+    #   * Makefile / Makefile.fpc newer than sibling .compiled. TLazPackageGraph
+    #     treats these as package source files too, so an unrestored mtime forces
+    #     a wasted LazUtils-cascade rebuild on the user's first lazbuild
+    #     (Melissa F8, r20 aarch64-darwin smoke).
     # Restore source-tree mtimes before creating the Darwin .app hardlinks and
     # the tarball, so user-side IDE sees a consistent timeline.
     while IFS= read -r -d '' staged_file; do
@@ -636,7 +640,9 @@ restore_staged_mtimes() {
         -name '*.lpk' -o \
         -name '*.inc' -o \
         -name '*.lpr' -o \
-        -name '*.lfm' \
+        -name '*.lfm' -o \
+        -name 'Makefile' -o \
+        -name 'Makefile.fpc' \
         \) -print0)
 }
 
