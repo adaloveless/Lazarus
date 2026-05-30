@@ -2699,8 +2699,133 @@ begin
     SelectObject(NMCustomDraw^.hdc, OldFont);
 end;
 
+procedure ApplyDarkListViewColors(Window: HWND);
+begin
+  if Window = 0 then
+    Exit;
+  ListView_SetBkColor(Window, SysColor[COLOR_WINDOW]);
+  ListView_SetTextBkColor(Window, SysColor[COLOR_WINDOW]);
+  if IsWindowEnabled(Window) then
+    ListView_SetTextColor(Window, SysColor[COLOR_WINDOWTEXT])
+  else
+    ListView_SetTextColor(Window, SysColor[COLOR_GRAYTEXT]);
+end;
+
+procedure DrawDarkDisabledListViewItemAt(Window: HWND; DC: HDC;
+  ItemIndex: Integer; const AFallbackRect: TRect);
+var
+  Header: HWND;
+  ColumnCount, SubItem: Integer;
+  RowR, ClientR, TextR: TRect;
+  Item: TLVITEMW;
+  TextBuf: array[0..511] of WideChar;
+  FontHandle: HFONT;
+  OldFont: HGDIOBJ;
+  OldBkMode: Integer;
+  OldTextColor: COLORREF;
+  TextFlags: UINT;
+  Message: UINT;
+begin
+  if (Window = 0) or
+     ((GetWindowLong(Window, GWL_STYLE) and LVS_TYPEMASK) <> LVS_REPORT) then
+    Exit;
+
+  Header := HWND(SendMessage(Window, LVM_GETHEADER, 0, 0));
+  ColumnCount := Header_GetItemCount(Header);
+  if ColumnCount < 1 then
+    ColumnCount := 1;
+
+  FillChar(RowR{%H-}, SizeOf(RowR), 0);
+  RowR.Left := LVIR_BOUNDS;
+  if SendMessage(Window, LVM_GETITEMRECT, ItemIndex, LPARAM(@RowR)) = 0 then
+    RowR := AFallbackRect;
+  GetClientRect(Window, ClientR);
+  RowR.Left := ClientR.Left;
+  RowR.Right := ClientR.Right;
+  FillRect(DC, RowR, GetSysColorBrushDark(COLOR_WINDOW));
+
+  FontHandle := HFONT(SendMessage(Window, WM_GETFONT, 0, 0));
+  OldFont := 0;
+  if FontHandle <> 0 then
+    OldFont := SelectObject(DC, FontHandle);
+  OldBkMode := SetBkMode(DC, TRANSPARENT);
+  OldTextColor := SetTextColor(DC, ColorToRGB(SysColor[COLOR_GRAYTEXT]));
+  TextFlags := DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS or DT_NOPREFIX;
+  try
+    for SubItem := 0 to ColumnCount - 1 do
+    begin
+      FillChar(TextR{%H-}, SizeOf(TextR), 0);
+      TextR.Top := SubItem;
+      TextR.Left := LVIR_LABEL;
+      if SubItem = 0 then
+        Message := LVM_GETITEMRECT
+      else
+        Message := LVM_GETSUBITEMRECT;
+      if SendMessage(Window, Message, ItemIndex, LPARAM(@TextR)) = 0 then
+        Continue;
+
+      FillChar(TextBuf, SizeOf(TextBuf), 0);
+      FillChar(Item{%H-}, SizeOf(Item), 0);
+      Item.iSubItem := SubItem;
+      Item.pszText := @TextBuf[0];
+      Item.cchTextMax := Length(TextBuf);
+      SendMessageW(Window, LVM_GETITEMTEXTW, ItemIndex, LPARAM(@Item));
+
+      Inc(TextR.Left, 4);
+      Dec(TextR.Right, 4);
+      DrawTextW(DC, PWideChar(@TextBuf[0]), -1, TextR, TextFlags);
+    end;
+  finally
+    SetTextColor(DC, OldTextColor);
+    SetBkMode(DC, OldBkMode);
+    if OldFont <> 0 then
+      SelectObject(DC, OldFont);
+  end;
+end;
+
+procedure DrawDarkDisabledListViewRows(Window: HWND);
+var
+  DC: HDC;
+  FirstItem, LastItem, ItemIndex, ItemCount, CountPerPage: Integer;
+  R: TRect;
+begin
+  if (Window = 0) or IsWindowEnabled(Window) or
+     ((GetWindowLong(Window, GWL_STYLE) and LVS_TYPEMASK) <> LVS_REPORT) then
+    Exit;
+
+  ItemCount := ListView_GetItemCount(Window);
+  if ItemCount <= 0 then
+    Exit;
+  FirstItem := ListView_GetTopIndex(Window);
+  CountPerPage := ListView_GetCountPerPage(Window);
+  if CountPerPage < 1 then
+    CountPerPage := ItemCount;
+  LastItem := Min(ItemCount - 1, FirstItem + CountPerPage - 1);
+
+  DC := GetDC(Window);
+  if DC = 0 then
+    Exit;
+  try
+    FillChar(R{%H-}, SizeOf(R), 0);
+    for ItemIndex := FirstItem to LastItem do
+      DrawDarkDisabledListViewItemAt(Window, DC, ItemIndex, R);
+  finally
+    ReleaseDC(Window, DC);
+  end;
+end;
+
+procedure DrawDarkDisabledListViewItem(Window: HWND; DrawInfo: PNMLVCustomDraw);
+begin
+  DrawDarkDisabledListViewItemAt(Window, DrawInfo^.nmcd.hdc,
+    DrawInfo^.nmcd.dwItemSpec, DrawInfo^.nmcd.rc);
+end;
+
 function ListViewWindowProc(Window: HWND; Msg: UINT; wParam: Windows.WPARAM; lParam: Windows.LPARAM; uISubClass: UINT_PTR; dwRefData: DWORD_PTR): LRESULT; stdcall;
-var NMHdr: PNMHDR; NMCustomDraw: PNMCustomDraw;
+var
+  NMHdr: PNMHDR;
+  NMCustomDraw: PNMCustomDraw;
+  NMListViewCustomDraw: PNMLVCustomDraw;
+  TextColor: TColor;
 begin
   If Msg = WM_NOTIFY then begin
     NMHdr := PNMHDR(LParam);
@@ -2734,7 +2859,22 @@ begin
         end;
         CDDS_ITEMPREPAINT:
         begin
-          SetTextColor(NMCustomDraw^.hdc , SysColor[COLOR_HIGHLIGHTTEXT]);
+          NMListViewCustomDraw := PNMLVCustomDraw(LParam);
+          if IsWindowEnabled(Window) and
+             ((NMCustomDraw^.uItemState and (CDIS_DISABLED or CDIS_GRAYED)) = 0) then
+            TextColor := SysColor[COLOR_WINDOWTEXT]
+          else
+            TextColor := SysColor[COLOR_GRAYTEXT];
+          NMListViewCustomDraw^.clrText := ColorToRGB(TextColor);
+          NMListViewCustomDraw^.clrTextBk := ColorToRGB(SysColor[COLOR_WINDOW]);
+          SetBkColor(NMCustomDraw^.hdc, ColorToRGB(SysColor[COLOR_WINDOW]));
+          SetTextColor(NMCustomDraw^.hdc, ColorToRGB(TextColor));
+          if not IsWindowEnabled(Window) then
+          begin
+            DrawDarkDisabledListViewItem(Window, NMListViewCustomDraw);
+            Result := CDRF_SKIPDEFAULT;
+            exit;
+          end;
           Result := CDRF_NEWFONT;
           exit;
         end;
@@ -2742,12 +2882,20 @@ begin
     end;
   end;
   case Msg of
+    WM_PAINT:
+      begin
+        Result := DefSubclassProc(Window, Msg, WParam, LParam);
+        DrawDarkDisabledListViewRows(Window);
+        Exit;
+      end;
     WM_CREATE, WM_SHOWWINDOW, WM_THEMECHANGED, WM_STYLECHANGED,
-    WM_WINDOWPOSCHANGED, LVM_INSERTCOLUMNW, LVM_SETCOLUMNW,
+    WM_ENABLE, WM_WINDOWPOSCHANGED, LVM_INSERTCOLUMNW, LVM_SETCOLUMNW,
     LVM_DELETECOLUMN:
       begin
         Result := DefSubclassProc(Window, Msg, WParam, LParam);
+        ApplyDarkListViewColors(Window);
         EnableDarkListViewHeader(Window);
+        InvalidateRect(Window, nil, True);
         Exit;
       end;
   end;
@@ -2765,9 +2913,7 @@ begin
     TCustomListView(AWinControl).BorderStyle:= bsNone;
   Result:= inherited CreateHandle(AWinControl, P);
   SetWindowSubclass(Result, @ListViewWindowProc, ID_SUB_LISTVIEW, 0);
-  ListView_SetBkColor(Result, SysColor[COLOR_WINDOW]);
-  ListView_SetTextBkColor(Result, SysColor[COLOR_WINDOW]);
-  ListView_SetTextColor(Result, SysColor[COLOR_WINDOWTEXT]);
+  ApplyDarkListViewColors(Result);
   EnableDarkStyle(Result);
   EnableDarkListViewHeader(Result);
 end;
@@ -4278,6 +4424,15 @@ begin
     TrampolineDrawThemeBackground(hTheme, hdc, iPartId, iStateId, pRect, pClipRect)
 end;
 
+procedure DrawListView(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect;
+  pClipRect: PRECT);
+begin
+  if (iPartId = LVP_LISTITEM) and (iStateId = LISS_DISABLED) then
+    FillRect(hdc, pRect, GetSysColorBrushDark(COLOR_WINDOW))
+  else
+    TrampolineDrawThemeBackground(hTheme, hdc, iPartId, iStateId, pRect, pClipRect);
+end;
+
 procedure DrawListViewHeader(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect;
   pClipRect: PRECT);
 begin
@@ -4329,9 +4484,7 @@ begin
 
   else if lstrcmpiW(pszClassList, 'ListView') = 0 then
   begin
-    ListView_SetBkColor(hwnd, SysColor[COLOR_WINDOW]);
-    ListView_SetTextBkColor(hwnd, SysColor[COLOR_WINDOW]);
-    ListView_SetTextColor(hwnd, SysColor[COLOR_WINDOWTEXT]);
+    ApplyDarkListViewColors(hwnd);
   end
 
   else if lstrcmpiW(pszClassList, VSCLASS_SCROLLBAR) = 0 then
@@ -4434,6 +4587,9 @@ begin
 
       if SameText(ClassName, VSCLASS_TOOLTIP) then
         OldColor:= SysColor[COLOR_INFOTEXT]
+      else if SameText(ClassName, 'ListView') and
+              (iPartId = LVP_LISTITEM) and (iStateId = LISS_DISABLED) then
+        OldColor:= SysColor[COLOR_GRAYTEXT]
       else if not SameText(ClassName, VSCLASS_DARK_BUTTON) then begin
         OldColor:= SysColor[COLOR_BTNTEXT];
       end;
@@ -4488,6 +4644,10 @@ begin
         else if SameText(ClassName, VSCLASS_DARK_TAB) then
         begin
           DrawTabControl(hTheme, hdc, iPartId, iStateId, pRect, pClipRect);
+        end
+        else if SameText(ClassName, 'ListView') then
+        begin
+          DrawListView(hTheme, hdc, iPartId, iStateId, pRect, pClipRect);
         end
         else if SameText(ClassName, VSCLASS_PROGRESS) or SameText(ClassName, VSCLASS_PROGRESS_INDER) then
         begin
