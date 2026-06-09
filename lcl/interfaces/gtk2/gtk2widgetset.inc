@@ -3397,7 +3397,7 @@ begin
     ADesc.Depth := 32;
     ADesc.BitsPerPixel := 32;
     ADesc.LineEnd := rileDWordBoundary;
-    ADesc.ByteOrder := riboLSBFirst;
+    ADesc.ByteOrder := DefaultByteOrder;
 
     ADesc.RedPrec := 8;
     ADesc.RedShift := 0;
@@ -3415,10 +3415,11 @@ begin
   end
   else
   begin
+    ADesc.Format := ricfRGBA;
     ADesc.Depth := Depth;
     ADesc.BitsPerPixel := 32;
     ADesc.LineEnd := rileDWordBoundary;
-    ADesc.ByteOrder := riboLSBFirst;
+    ADesc.ByteOrder := DefaultByteOrder;
     ADesc.MaskBitsPerPixel := 0;
     ADesc.MaskShift := 0;
     ADesc.MaskLineEnd := rileByteBoundary;
@@ -6021,7 +6022,7 @@ begin
 
           if (Visual <> nil) and (not SystemVisual) then
             gdk_visual_unref(Visual);
-          if Colormap <> nil then
+          if (Colormap <> nil) and (not SystemColormap) then
             gdk_colormap_unref(Colormap);
           {$IFDEF DebugGDKTraps}
           EndGDKErrorTrap;
@@ -6042,7 +6043,7 @@ begin
           {$IFDEF DebugGDKTraps}
           BeginGDKErrorTrap;
           {$ENDIF}
-          If PaletteVisual <> nil then
+          If (PaletteVisual <> nil) and (not SystemPaletteVisual) then
             gdk_visual_unref(PaletteVisual);
           If PaletteColormap <> nil then
             gdk_colormap_unref(PaletteColormap);

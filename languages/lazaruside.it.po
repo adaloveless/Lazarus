@@ -92,24 +92,6 @@ msgstr ""
 msgid "Watchpoint for \"%s\" was triggered %s. Old value \"%s\", New Value \"%s\""
 msgstr ""
 
-#: lazarusidestrconsts.dbgwatchcolorautoopenconsolewindowlinu
-msgid "Auto open console Window (Linux):"
-msgstr ""
-
-#: lazarusidestrconsts.dbgwatchcolornever
-#, fuzzy
-msgctxt "lazarusidestrconsts.dbgwatchcolornever"
-msgid "Never"
-msgstr "Mai"
-
-#: lazarusidestrconsts.dbgwatchcoloronoutputalways
-msgid "On output (always)"
-msgstr ""
-
-#: lazarusidestrconsts.dbgwatchcoloronoutputonceperdebugsessi
-msgid "On output (once per debug session)"
-msgstr ""
-
 #: lazarusidestrconsts.dlfmousepredefinedscheme
 msgid "Use predefined scheme"
 msgstr "Usa schema predefinito"
@@ -1480,8 +1462,16 @@ msgstr "Dwarf con sets"
 #: lazarusidestrconsts.dlgcosymboltypedwarf3
 #, fuzzy
 #| msgid "Dwarf3 (beta)"
-msgid "Dwarf 3 (beta)"
+msgid "Dwarf 3"
 msgstr "Dwarf3 (beta)"
+
+#: lazarusidestrconsts.dlgcosymboltypedwarf4
+msgid "Dwarf 4"
+msgstr ""
+
+#: lazarusidestrconsts.dlgcosymboltypedwarf5
+msgid "Dwarf 5 (FPC 3.3.1)"
+msgstr ""
 
 #: lazarusidestrconsts.dlgcosymboltypestabs
 msgid "Stabs"
@@ -9665,6 +9655,14 @@ msgstr ""
 msgid "Enable Dwarf 3 (-gw3)"
 msgstr ""
 
+#: lazarusidestrconsts.lisenableoptiondwarf4
+msgid "Enable Dwarf 4 (-gw4)"
+msgstr ""
+
+#: lazarusidestrconsts.lisenableoptiondwarf5
+msgid "Enable Dwarf 5 [FPC 3.3.1] (-gw5)"
+msgstr ""
+
 #: lazarusidestrconsts.lisenableoptionxg
 msgid "Enable Option -Xg?"
 msgstr ""
@@ -10551,9 +10549,17 @@ msgstr "Identificatore: %s"
 msgid "in all open packages and projects"
 msgstr "in tutti i pacchetti e i progetti aperti"
 
+#: lazarusidestrconsts.lisfriincurrentmethod
+msgid "in current method"
+msgstr ""
+
 #: lazarusidestrconsts.lisfriincurrentunit
 msgid "in current unit"
 msgstr "nella unit corrente"
+
+#: lazarusidestrconsts.lisfriinlocalfunction
+msgid "in local function"
+msgstr ""
 
 #: lazarusidestrconsts.lisfriinmainproject
 msgid "in main project"
@@ -10562,10 +10568,6 @@ msgstr "nel progetto principale"
 #: lazarusidestrconsts.lisfriinprojectpackageowningcurrentunit
 msgid "in project/package owning current unit"
 msgstr "nel progetto/pacchetto a cui appartiene la unit corrente"
-
-#: lazarusidestrconsts.lisfriinvalididentifier
-msgid "Invalid Identifier"
-msgstr "Identificatore non valido"
 
 #: lazarusidestrconsts.lisfrirenameallreferences
 msgid "Rename all References"

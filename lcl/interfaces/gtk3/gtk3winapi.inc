@@ -1805,7 +1805,7 @@ begin
     GtkDC.LToDX(Right) - GtkDC.LToDX(Left),
     GtkDC.LToDY(Bottom) - GtkDC.LToDY(Top));
   cairo_clip(GtkDC.pcr);
-  Result := SimpleRegion;
+  Result := GetClipBox(dc, nil);
 end;
 
 
@@ -1830,7 +1830,7 @@ begin
     GtkDC.LToDY(Bottom) - GtkDC.LToDY(Top));
   cairo_clip(GtkDC.pcr);
   cairo_set_fill_rule(GtkDC.pcr, SavedRule);
-  Result := SimpleRegion;
+  Result := GetClipBox(dc, nil);
 end;
 
 function TGtk3WidgetSet.ExtCreatePen(dwPenStyle, dwWidth: DWord;
@@ -2342,12 +2342,12 @@ end;
 function TGtk3WidgetSet.GetClipBox(DC: hDC; lpRect: PRect): Longint;
 var
   GtkDC: TGtk3DeviceContext absolute DC;
-  ARect: TGdkRectangle;
-  CRRect: Tcairo_rectangle_int_t;
+  AList: Pcairo_rectangle_list_t;
+  x1, y1, x2, y2: Double;
 begin
   Result := NULLREGION;
   if lpRect <> nil then
-    lpRect^ := Rect(0,0,0,0);
+    lpRect^ := Rect(0, 0, 0, 0);
 
   if not IsValidDC(DC) then
   begin
@@ -2355,28 +2355,34 @@ begin
     exit;
   end;
 
-  //We prefer FClipRegion, which is actually exact accumulated region
-  //from SetClipRegion/ExcludeClipRect over gdk_cairo_get_clip_rectangle
-  //which returns only the bounding box.
-  if GtkDC.ClipRegion <> nil then
+  if not Assigned(GtkDC.pcr) then
+    exit;
+
+  cairo_clip_extents(GtkDC.pcr, @x1, @y1, @x2, @y2);
+  if lpRect <> nil then
   begin
-    cairo_region_get_extents(GtkDC.ClipRegion, @CRRect);
-    if (CRRect.width > 0) and (CRRect.height > 0) then
+    lpRect^ := Rect(Floor(x1), Floor(y1), Ceil(x2), Ceil(y2));
+    lpRect^.Offset(GtkDC.WindowOrg);
+  end;
+
+  AList := cairo_copy_clip_rectangle_list(GtkDC.pcr);
+  if AList <> nil then
+  begin
+    if AList^.status = CAIRO_STATUS_SUCCESS then
     begin
-      lpRect^ := Rect(CRRect.x, CRRect.y, CRRect.x + CRRect.width, CRRect.y + CRRect.height);
-      if cairo_region_num_rectangles(GtkDC.ClipRegion) = 1 then
+      if AList^.num_rectangles <= 0 then
+        Result := NullRegion
+      else
+      if AList^.num_rectangles = 1 then
         Result := SimpleRegion
       else
         Result := ComplexRegion;
-    end;
-  end
-  else
-  begin
-    if gdk_cairo_get_clip_rectangle(GtkDC.pcr, @ARect) then
-    begin
-      lpRect^ := RectFromGdkRect(ARect);
-      Result := SimpleRegion;
-    end;
+    end else
+    if AList^.status = CAIRO_STATUS_CLIP_NOT_REPRESENTABLE then
+      Result := ComplexRegion
+    else
+      Result := ERROR;
+    cairo_rectangle_list_destroy(AList);
   end;
 end;
 
@@ -2626,23 +2632,79 @@ end;
 function TGtk3WidgetSet.GetDpiForMonitor(hmonitor: HMONITOR;
   dpiType: TMonitorDpiType; out dpiX: UINT; out dpiY: UINT): HRESULT;
 var
-  w,w_mm,h,h_mm:gint;
-  rr:double;
-  pscr:PGdkScreen;
-  aMonitorRect: TGdkRectangle;
+  ADisplay: PGdkDisplay;
   AMonitor: PGdkMonitor;
+  AMonitorRect: TGdkRectangle;
+  AWmm, AHmm, AScale, AMonitorIdx, ANMon: gint;
+  AScreenDpi: gdouble;
+  AFallback: UINT;
 begin
-  (*  MONITOR_DPI_TYPE = (
-    MDT_EFFECTIVE_DPI = 0,
-    MDT_ANGULAR_DPI = 1,
-    MDT_RAW_DPI = 2,
-    MDT_DEFAULT = MDT_EFFECTIVE_DPI);
-  TMonitorDpiType = MONITOR_DPI_TYPE;
-  *)
-  // MDT_EFFECTIVE_DPI
-  dpiX := Round(gdk_screen_get_resolution(gdk_screen_get_default));
-  dpiY := dpiX;
-  Result := 0;
+  Result := S_OK;
+  AScreenDpi := gdk_screen_get_resolution(gdk_screen_get_default);
+
+  if AScreenDpi > 0 then
+    AFallback := Round(AScreenDpi)
+  else
+    AFallback := 96;
+
+  dpiX := AFallback;
+  dpiY := AFallback;
+
+  if hmonitor = 0 then
+    exit;
+
+  AMonitorIdx := Integer(hmonitor) - 1;
+  ADisplay := gdk_display_get_default;
+
+  if ADisplay = nil then
+    exit;
+
+  ANMon := gdk_display_get_n_monitors(ADisplay);
+  if (AMonitorIdx < 0) or (AMonitorIdx >= ANMon) then
+  begin
+    Result := S_FALSE;
+    exit;
+  end;
+
+  AMonitor := gdk_display_get_monitor(ADisplay, AMonitorIdx);
+  if AMonitor = nil then
+  begin
+    Result := S_FALSE;
+    exit;
+  end;
+
+  AScale := gdk_monitor_get_scale_factor(AMonitor);
+  if AScale < 1 then
+    AScale := 1;
+
+  case dpiType of
+    MDT_RAW_DPI:
+    begin
+      gdk_monitor_get_geometry(AMonitor, @AMonitorRect);
+      AWmm := gdk_monitor_get_width_mm(AMonitor);
+      AHmm := gdk_monitor_get_height_mm(AMonitor);
+      if AWmm > 0 then
+        dpiX := Round(AMonitorRect.width * AScale * 25.4 / AWmm)
+      else
+        dpiX := 96;
+      if AHmm > 0 then
+        dpiY := Round(AMonitorRect.height * AScale * 25.4 / AHmm)
+      else
+        dpiY := 96;
+    end;
+    MDT_EFFECTIVE_DPI, MDT_ANGULAR_DPI:
+    begin
+      if AScreenDpi > 0 then
+      begin
+        dpiX := Round(AScreenDpi);
+        dpiY := dpiX;
+      end else
+      begin
+        dpiX := 96 * AScale;
+        dpiY := dpiX;
+      end;
+    end;
+  end;
 end;
 
 function TGtk3WidgetSet.GetFocus: HWND;
@@ -2653,6 +2715,10 @@ var
   AHandle: TGtk3Window;
   AWindow: PGtkWindow;
   AActiveWindow: HWND;
+  AMDIWidget: PGtkWidget;
+  AMDIHandle: HWND;
+  AMDIControl: TWinControl;
+  AFocusedForm: TCustomForm;
 begin
   AWidget := nil;
 
@@ -2679,6 +2745,39 @@ begin
           AWidget := PGtkWindow(g_list_nth(AList, i)^.data)^.get_focus;
           if AWidget <> nil then
             break;
+        end;
+      end;
+    end;
+    g_list_free(AList);
+  end;
+
+  if (AWidget = nil) and IsWayland and Assigned(Screen.FocusedForm) and
+     (Screen.FocusedForm.FormStyle = fsMDIChild) then
+  begin
+    AFocusedForm := Screen.FocusedForm;
+    AList := gtk_window_list_toplevels;
+    for i := 0 to g_list_length(AList) - 1 do
+    begin
+      if Gtk3IsGtkWindow(PGObject(g_list_nth(AList, i)^.data)) then
+      begin
+        AWindow := PGtkWindow(g_list_nth(AList, i)^.data);
+        if AWindow^.is_active then
+        begin
+          AMDIWidget := AWindow^.get_focus;
+          if AMDIWidget <> nil then
+          begin
+            AMDIHandle := HwndFromGtkWidget(AMDIWidget);
+            if AMDIHandle <> 0 then
+            begin
+              AMDIControl := TWinControl(TGtk3Widget(AMDIHandle).LCLObject);
+              if Assigned(AMDIControl) and
+                 (GetParentForm(AMDIControl) = AFocusedForm) then
+              begin
+                AWidget := AMDIWidget;
+                break;
+              end;
+            end;
+          end;
         end;
       end;
     end;
@@ -5198,14 +5297,35 @@ end;
 
 function TGtk3WidgetSet.SetSysColors(cElements: Integer; const lpaElements;
   const lpaRgbValues): Boolean;
+var
+  n: Integer;
+  Element: LongInt;
 begin
-  Result:=inherited SetSysColors(cElements, lpaElements, lpaRgbValues);
-end;
+  Result := False;
 
-function TGtk3WidgetSet.SetTextCharacterExtra(DC: hdc; nCharExtra: Integer
-  ): Integer;
-begin
-  Result:=inherited SetTextCharacterExtra(DC, nCharExtra);
+  if cElements > MAX_SYS_COLORS then
+    exit;
+
+  for n := 0 to cElements - 1 do
+  begin
+    Element := PInteger(@lpaElements)[n];
+    if (Element > MAX_SYS_COLORS) or (Element < 0) then
+      exit;
+    SysColorMap[Element] := PDword(@lpaRgbValues)[n];
+  end;
+
+  Graphics.UpdateHandleObjects(True);
+
+  FreeSysColorBrushes;
+  for n := Low(FSysColorBrushes) to High(FSysColorBrushes) do
+    FSysColorBrushes[n] := HBRUSH(-1);
+
+  for n := 0 to Screen.CustomFormCount - 1 do
+    if Screen.CustomForms[n].HandleAllocated then
+      Screen.CustomForms[n].Invalidate;
+
+  //TODO: send WM_SYSCOLORCHANGE
+  Result := True;
 end;
 
 function TGtk3WidgetSet.SetTextColor(DC: HDC; Color: TColorRef): TColorRef;

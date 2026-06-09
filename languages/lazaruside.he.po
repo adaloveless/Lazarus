@@ -85,24 +85,6 @@ msgstr ""
 msgid "Watchpoint for \"%s\" was triggered %s. Old value \"%s\", New Value \"%s\""
 msgstr ""
 
-#: lazarusidestrconsts.dbgwatchcolorautoopenconsolewindowlinu
-msgid "Auto open console Window (Linux):"
-msgstr ""
-
-#: lazarusidestrconsts.dbgwatchcolornever
-#, fuzzy
-msgctxt "lazarusidestrconsts.dbgwatchcolornever"
-msgid "Never"
-msgstr "אף פעם"
-
-#: lazarusidestrconsts.dbgwatchcoloronoutputalways
-msgid "On output (always)"
-msgstr ""
-
-#: lazarusidestrconsts.dbgwatchcoloronoutputonceperdebugsessi
-msgid "On output (once per debug session)"
-msgstr ""
-
 #: lazarusidestrconsts.dlfmousepredefinedscheme
 msgid "Use predefined scheme"
 msgstr "השתמש בסכמה מוגדרת מראש"
@@ -1493,7 +1475,15 @@ msgid "Dwarf 2 with sets"
 msgstr ""
 
 #: lazarusidestrconsts.dlgcosymboltypedwarf3
-msgid "Dwarf 3 (beta)"
+msgid "Dwarf 3"
+msgstr ""
+
+#: lazarusidestrconsts.dlgcosymboltypedwarf4
+msgid "Dwarf 4"
+msgstr ""
+
+#: lazarusidestrconsts.dlgcosymboltypedwarf5
+msgid "Dwarf 5 (FPC 3.3.1)"
 msgstr ""
 
 #: lazarusidestrconsts.dlgcosymboltypestabs
@@ -9877,6 +9867,14 @@ msgstr ""
 msgid "Enable Dwarf 3 (-gw3)"
 msgstr ""
 
+#: lazarusidestrconsts.lisenableoptiondwarf4
+msgid "Enable Dwarf 4 (-gw4)"
+msgstr ""
+
+#: lazarusidestrconsts.lisenableoptiondwarf5
+msgid "Enable Dwarf 5 [FPC 3.3.1] (-gw5)"
+msgstr ""
+
 #: lazarusidestrconsts.lisenableoptionxg
 msgid "Enable Option -Xg?"
 msgstr ""
@@ -10766,9 +10764,17 @@ msgstr "מזהה: %s"
 msgid "in all open packages and projects"
 msgstr "בכל החבילות והפרוייקטים הפתוחים"
 
+#: lazarusidestrconsts.lisfriincurrentmethod
+msgid "in current method"
+msgstr ""
+
 #: lazarusidestrconsts.lisfriincurrentunit
 msgid "in current unit"
 msgstr "ביחידה הנוכחית"
+
+#: lazarusidestrconsts.lisfriinlocalfunction
+msgid "in local function"
+msgstr ""
 
 #: lazarusidestrconsts.lisfriinmainproject
 msgid "in main project"
@@ -10777,10 +10783,6 @@ msgstr "בפרויקט הראשי"
 #: lazarusidestrconsts.lisfriinprojectpackageowningcurrentunit
 msgid "in project/package owning current unit"
 msgstr "בפרוייקט/חבילה להם שייכת היחידה"
-
-#: lazarusidestrconsts.lisfriinvalididentifier
-msgid "Invalid Identifier"
-msgstr "מזהה לא חוקי"
 
 #: lazarusidestrconsts.lisfrirenameallreferences
 msgid "Rename all References"

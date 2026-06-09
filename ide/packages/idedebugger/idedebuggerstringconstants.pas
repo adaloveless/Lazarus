@@ -179,6 +179,16 @@ resourcestring
 
   // Terminal Output
   lisDbgTerminal = 'Console In/Output';
+  lisDecorations = 'Decorations';
+  lisLineNumbers = 'Line numbers';
+  lisC1AsC0Underbar = 'C1 as C0 + Underbar';
+  lisOutputStyle = 'Output Style';
+  lisUnformatted = 'Unformatted';
+  lisC0AsControlPictures = 'C0 as Control Pictures';
+  lisC0AsISO2047 = 'C0 as ISO 2047';
+  lisHexASCII = 'Hex + ASCII';
+  lisLineLimit = 'Line limit';
+  lisRawOutput = 'Raw Output';
 
   // Call Stack Dialog
   lisCurrent = 'Select as context';
@@ -609,6 +619,11 @@ resourcestring
     +'settings which list to use are always stored in the session.';
   DbgOptExclRtUseTheIDEGlobalListOfExcl = 'Use the IDE global list of exclusions';
   DbgOptExclRtUseTheProjectListOfExclus = 'Use the project list of exclusions';
+
+  DbgWatchColorAutoOpenConsoleWindowLinu = 'Auto open console Window (Linux):';
+  DbgWatchColorNever = 'Never';
+  DbgWatchColorOnOutputOncePerDebugSessi = 'On output (once per debug session)';
+  DbgWatchColorOnOutputAlways = 'On output (always)';
 
 implementation
 

@@ -89,24 +89,6 @@ msgstr "Точка спостереження для \"%s\" поза облас�
 msgid "Watchpoint for \"%s\" was triggered %s. Old value \"%s\", New Value \"%s\""
 msgstr "Точку спостереження для \"%s\" перемкнуто %s. Старе значення \"%s\", нове значення \"%s\""
 
-#: lazarusidestrconsts.dbgwatchcolorautoopenconsolewindowlinu
-msgid "Auto open console Window (Linux):"
-msgstr ""
-
-#: lazarusidestrconsts.dbgwatchcolornever
-#, fuzzy
-msgctxt "lazarusidestrconsts.dbgwatchcolornever"
-msgid "Never"
-msgstr "Ніколи"
-
-#: lazarusidestrconsts.dbgwatchcoloronoutputalways
-msgid "On output (always)"
-msgstr ""
-
-#: lazarusidestrconsts.dbgwatchcoloronoutputonceperdebugsessi
-msgid "On output (once per debug session)"
-msgstr ""
-
 #: lazarusidestrconsts.dlfmousepredefinedscheme
 msgid "Use predefined scheme"
 msgstr "Попередньо визначена схема"
@@ -1441,8 +1423,18 @@ msgid "Dwarf 2 with sets"
 msgstr "Dwarf 2 зі множинами"
 
 #: lazarusidestrconsts.dlgcosymboltypedwarf3
-msgid "Dwarf 3 (beta)"
+#, fuzzy
+#| msgid "Dwarf 3 (beta)"
+msgid "Dwarf 3"
 msgstr "Dwarf 3 (бета)"
+
+#: lazarusidestrconsts.dlgcosymboltypedwarf4
+msgid "Dwarf 4"
+msgstr ""
+
+#: lazarusidestrconsts.dlgcosymboltypedwarf5
+msgid "Dwarf 5 (FPC 3.3.1)"
+msgstr ""
 
 #: lazarusidestrconsts.dlgcosymboltypestabs
 msgid "Stabs"
@@ -9513,6 +9505,14 @@ msgstr "Увімкнути Dwarf 2 з підтримкою множин"
 msgid "Enable Dwarf 3 (-gw3)"
 msgstr "Увімкнути Dwarf 3 (-gw3)"
 
+#: lazarusidestrconsts.lisenableoptiondwarf4
+msgid "Enable Dwarf 4 (-gw4)"
+msgstr ""
+
+#: lazarusidestrconsts.lisenableoptiondwarf5
+msgid "Enable Dwarf 5 [FPC 3.3.1] (-gw5)"
+msgstr ""
+
 #: lazarusidestrconsts.lisenableoptionxg
 msgid "Enable Option -Xg?"
 msgstr "Увімкнути параметр -Xg?"
@@ -10395,9 +10395,17 @@ msgstr "Ідентифікатор: %s"
 msgid "in all open packages and projects"
 msgstr "у всіх відкритих пакунках і проєктах"
 
+#: lazarusidestrconsts.lisfriincurrentmethod
+msgid "in current method"
+msgstr ""
+
 #: lazarusidestrconsts.lisfriincurrentunit
 msgid "in current unit"
 msgstr "в поточному модулі"
+
+#: lazarusidestrconsts.lisfriinlocalfunction
+msgid "in local function"
+msgstr ""
 
 #: lazarusidestrconsts.lisfriinmainproject
 msgid "in main project"
@@ -10406,10 +10414,6 @@ msgstr "в головному проєкті"
 #: lazarusidestrconsts.lisfriinprojectpackageowningcurrentunit
 msgid "in project/package owning current unit"
 msgstr "у проєкті/пакунку, що містить цей модуль"
-
-#: lazarusidestrconsts.lisfriinvalididentifier
-msgid "Invalid Identifier"
-msgstr "Некоректний ідентифікатор"
 
 #: lazarusidestrconsts.lisfrirenameallreferences
 msgid "Rename all References"

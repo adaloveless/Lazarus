@@ -1274,8 +1274,16 @@ begin
         OtherSectionNode:=nil;
         HeaderNode:=nil;
         ParentNode:=Node;
-      end else if Node.Desc=ctnUnit then begin
+      end else if Node.Desc in [ctnUnit,ctnInitialization,ctnFinalization] then begin
         // the grand children can have a var section
+
+        if Node.Desc in [ctnInitialization,ctnFinalization] then begin
+          // initialization and finalization sections are special cases
+          Node:=FindImplementationNode;
+          if Node=nil then
+            break;
+          ParentNode:=Node;
+        end;
       end else begin
         break;
       end;
@@ -1949,8 +1957,15 @@ var
           OtherSectionNode:=nil;
           HeaderNode:=nil;
           ParentNode:=Node;
-        end else if Node.Desc=ctnUnit then begin
+        end else if Node.Desc in [ctnUnit,ctnInitialization,ctnFinalization] then begin
           // the grand children can have a var section
+          if Node.Desc in [ctnInitialization,ctnFinalization] then begin
+          // initialization and finalization sections are special cases
+          Node:=FindImplementationNode;
+          if Node=nil then
+            break;
+          ParentNode:=Node;
+        end;
         end else begin
           break;
         end;
@@ -1991,7 +2006,7 @@ begin
   {$IFDEF VerboseCompleteLocalVarAssign}
   DebugLn('  CompleteLocalVariableAssignment: A');
   {$ENDIF}
-  if not ((CursorNode.Desc=ctnBeginBlock)
+  if not ((CursorNode.Desc in [ctnBeginBlock,ctnInitialization,ctnFinalization])
           or CursorNode.HasParentOfType(ctnBeginBlock)) then exit;
   CursorNode:=FindDeepestNodeAtPos(CleanCursorPos,true);
 
@@ -2663,25 +2678,34 @@ type
       if ProcNode=nil then exit;
       if (ProcNode.FirstChild=nil) then exit;
       if (ProcNode.FirstChild.FirstChild=nil) then exit;
-      if (ProcNode.FirstChild.ChildCount<N+1) then exit;
       i:=0;
-      Node:=ProcNode.FirstChild.FirstChild;
+      Node:=Tool.GetFirstParameterNode(ProcNode);
+      while Node<>nil do begin // count parameters
+        inc(i);
+        Node:=Node.NextBrother;
+      end;
+
+      if i < N+1 then // N - parameter index 0-based
+        exit;  // procs with shorter param list ignored
+
+      i:=0;
+      Node:=Tool.GetFirstParameterNode(ProcNode);
       while (Node<>nil) and (i<N) do begin
         Node:=Node.NextBrother;
         inc(i);
       end;
 
-      rec.Tool.MoveCursorToNodeStart(Node);
+      Tool.MoveCursorToNodeStart(Node);
       i:=0;
       repeat
-        rec.Tool.ReadNextAtom;
-        if rec.Tool.CurPos.Flag = cafColon then begin // type name starts after
-          rec.Tool.ReadNextAtom;
-          i:=rec.Tool.CurPos.StartPos;
+        Tool.ReadNextAtom;
+        if Tool.CurPos.Flag = cafColon then begin // type name starts after
+          Tool.ReadNextAtom;
+          i:=Tool.CurPos.StartPos;
           break;
         end;
-        if (rec.Tool.CurPos.Flag = cafSemicolon) or
-        (rec.Tool.CurPos.EndPos>=rec.Tool.SrcLen) then begin //failure
+        if (Tool.CurPos.Flag = cafSemicolon) or
+        (Tool.CurPos.EndPos>=Tool.SrcLen) then begin //failure
           i:=-1;
           break;
         end;
@@ -2838,7 +2862,7 @@ begin
   {$IFDEF CTDEBUG}
   DebugLn('  CompleteIdentifierByParameter: A');
   {$ENDIF}
-  if not ((CursorNode.Desc=ctnBeginBlock)
+  if not ((CursorNode.Desc in [ctnBeginBlock,ctnInitialization,ctnFinalization])
           or CursorNode.HasParentOfType(ctnBeginBlock)) then exit;
   CursorNode:=FindDeepestNodeAtPos(CleanCursorPos,true);
 
@@ -10110,6 +10134,7 @@ begin
         // we have a codetool error, let's try to find the assignment in any case
         LastCodeToolsErrorCleanPos := CurPos.StartPos;
         LastCodeToolsError := ECodeToolError.Create(E.Sender,E.Id,E.Message);
+        raise;
       end else
         raise;
     end;
