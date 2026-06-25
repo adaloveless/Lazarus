@@ -2636,8 +2636,8 @@ begin
   if (R.Right <= R.Left) or (R.Bottom <= R.Top) then
     GetClientRect(Header, R);
 
-  FillGradient(DC, Lighter(SysColor[COLOR_BTNFACE], 124),
-    Lighter(SysColor[COLOR_BTNFACE], 116), R, GRADIENT_FILL_RECT_V);
+  FillGradient(DC, Lighter(SysColor[COLOR_BTNFACE], 128),
+    Darker(SysColor[COLOR_BTNFACE], 108), R, GRADIENT_FILL_RECT_V);
 
   OldPen := SelectObject(DC, GetStockObject(DC_PEN));
   try
@@ -4199,6 +4199,7 @@ procedure DrawPushButton(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; c
   pClipRect: PRECT);
 var
   LCanvas: TCanvas;
+  TopColor, BottomColor, BorderColor: TColor;
 begin
   LCanvas:= TCanvas.Create;
   try
@@ -4206,21 +4207,55 @@ begin
 
     LCanvas.Brush.Style:= bsClear;
 
-    if iStateId in [PBS_NORMAL,PBS_DEFAULTED,PBS_DEFAULTED_ANIMATING] then begin
-      LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
-      LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
-    end else if iStateId in [PBS_HOT] then begin
-      LCanvas.Brush.Color:= SysColor[COLOR_BTNHIGHLIGHT];
-      LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
-    end else if iStateId in [PBS_PRESSED] then begin
-      LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
-      LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+    if IsDarkModeEnabled then
+    begin
+      case iStateId of
+        PBS_NORMAL, PBS_DEFAULTED, PBS_DEFAULTED_ANIMATING:
+          begin
+            TopColor := Lighter(SysColor[COLOR_BTNFACE], 115);
+            BottomColor := Darker(SysColor[COLOR_BTNFACE], 115);
+            BorderColor := Lighter(SysColor[COLOR_BTNHIGHLIGHT], 120);
+          end;
+        PBS_HOT:
+          begin
+            TopColor := Lighter(SysColor[COLOR_BTNFACE], 135);
+            BottomColor := Lighter(SysColor[COLOR_BTNFACE], 110);
+            BorderColor := Lighter(SysColor[COLOR_BTNHIGHLIGHT], 140);
+          end;
+        PBS_PRESSED:
+          begin
+            TopColor := Darker(SysColor[COLOR_BTNFACE], 110);
+            BottomColor := Darker(SysColor[COLOR_BTNFACE], 130);
+            BorderColor := Darker(SysColor[COLOR_BTNHIGHLIGHT], 120);
+          end;
+      else
+        begin
+          TopColor := SysColor[COLOR_3DDKSHADOW];
+          BottomColor := SysColor[COLOR_3DDKSHADOW];
+          BorderColor := SysColor[COLOR_BTNHIGHLIGHT];
+        end;
+      end;
+      FillGradient(hdc, TopColor, BottomColor, pRect, GRADIENT_FILL_RECT_V);
+      LCanvas.Pen.Color := BorderColor;
+      LCanvas.Brush.Style := bsClear;
+      LCanvas.RoundRect(pRect, 10, 10);
     end else begin
-      LCanvas.Brush.Color:= SysColor[COLOR_3DDKSHADOW];
-      LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
-    end;
+      if iStateId in [PBS_NORMAL,PBS_DEFAULTED,PBS_DEFAULTED_ANIMATING] then begin
+        LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
+        LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+      end else if iStateId in [PBS_HOT] then begin
+        LCanvas.Brush.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+        LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+      end else if iStateId in [PBS_PRESSED] then begin
+        LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
+        LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+      end else begin
+        LCanvas.Brush.Color:= SysColor[COLOR_3DDKSHADOW];
+        LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+      end;
 
-    LCanvas.RoundRect(pRect, 10, 10);
+      LCanvas.RoundRect(pRect, 10, 10);
+    end;
   finally
     LCanvas.Handle:= 0;
     LCanvas.Free;
@@ -4351,7 +4386,20 @@ begin
           InflateRect(ARect, -1, -1);
           LCanvas.Brush.Color:= Lighter(AColor, 176);
         end;
-        LCanvas.FillRect(ARect);
+        if IsDarkModeEnabled then
+        begin
+          if (iStateId <> TIS_SELECTED) then
+          begin
+            if iStateId <> TIS_HOT then
+              FillGradient(hdc, Lighter(AColor, 130), Darker(AColor, 110), ARect, GRADIENT_FILL_RECT_V)
+            else
+              FillGradient(hdc, Lighter(AColor, 160), Lighter(AColor, 115), ARect, GRADIENT_FILL_RECT_V);
+          end
+          else
+            FillGradient(hdc, Lighter(AColor, 150), AColor, ARect, GRADIENT_FILL_RECT_V);
+        end
+        else
+          LCanvas.FillRect(ARect);
         LCanvas.Pen.Color:= ALight;
 
         if iPartId in [TABP_TOPTABITEMLEFTEDGE, TABP_TOPTABITEMBOTHEDGE] then
@@ -4436,7 +4484,11 @@ end;
 procedure DrawListViewHeader(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect;
   pClipRect: PRECT);
 begin
-  DrawThemeBackgroundDark(Win32Theme.Theme[teListView], hdc, iPartId, iStateId, pRect, pClipRect);
+  if IsDarkModeEnabled then
+    FillGradient(hdc, Lighter(SysColor[COLOR_BTNFACE], 128),
+      Darker(SysColor[COLOR_BTNFACE], 108), pRect, GRADIENT_FILL_RECT_V)
+  else
+    DrawThemeBackgroundDark(Win32Theme.Theme[teListView], hdc, iPartId, iStateId, pRect, pClipRect);
 end;
 function InterceptOpenNCThemeData(hwnd: hwnd; pszClassList: LPCWSTR): hTheme; stdcall;
 begin
