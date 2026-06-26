@@ -1,9 +1,15 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: \n"
+"POT-Creation-Date: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: Karl-Michael Schindler <tonne1.schindler@web.de>\n"
+"Language-Team: \n"
+"Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 3.9\n"
 
 #: ideconfstrconsts.dlgfilterfpcmessagefile
 msgid "FPC message file"
@@ -74,7 +80,7 @@ msgstr "Fehler"
 #: ideconfstrconsts.lischeckifpackagecreatesppuchecknothingdeletesthisfil
 #, object-pascal-format
 msgid ". Check if package %s creates %s.ppu, check nothing deletes this file and check that no two packages have access to the unit source."
-msgstr ". Prüfen, ob Package %s die %s.ppu erzeugt, nichts prüfen löscht diese Datei und prüft, daß keine zwei Packages Zugriff auf die Unit-Quellen haben."
+msgstr ". Prüfen, ob Package %s die %s.ppu erzeugt, ob nichts prüfen diese Datei löscht, und dass keine zwei Packages Zugriff auf die Unit-Quellen haben."
 
 #: ideconfstrconsts.lischeckifpackageisinthedependencies
 #, object-pascal-format
@@ -144,7 +150,7 @@ msgstr "Komponentenname \"%s\" ist ein Pascal-Schlüsselwort."
 #: ideconfstrconsts.liscomponentnameisnotavalididentifier
 #, object-pascal-format
 msgid "Component name \"%s\" is not a valid identifier"
-msgstr "Der Komponentenname \"%s\" ist als Bezeichner ungültig."
+msgstr "Der Komponentenname \"%s\" ist als Bezeichner ungültig"
 
 #: ideconfstrconsts.lisconfigdirectory
 msgid "Lazarus config directory"
@@ -450,7 +456,7 @@ msgstr "Make nicht gefunden"
 
 #: ideconfstrconsts.lismakesureallppufilesofapackageareinitsoutputdirecto
 msgid "Make sure all ppu files of a package are in its output directory."
-msgstr "Stellen Sie sicher, daß alle .ppu-Dateien eines Packages sich in dessem Ausgabeverzeichnis befinden."
+msgstr "Stellen Sie sicher, dass alle .ppu-Dateien eines Packages sich in dessem Ausgabeverzeichnis befinden."
 
 #: ideconfstrconsts.lismissingdirectory
 #, object-pascal-format
@@ -481,7 +487,7 @@ msgstr "(neues Projekt)"
 
 #: ideconfstrconsts.lisnotecouldnotcreatedefinetemplateforfreepascal
 msgid "NOTE: Could not create Define Template for Free Pascal Sources"
-msgstr "Hinweis: Kann definiertes Template für Free Pascal Quellenverzeichnis nicht finden"
+msgstr "Hinweis: Kann Definitions-Template für Free Pascal Quellen nicht erzeugen"
 
 #: ideconfstrconsts.lisnotecouldnotcreatedefinetemplateforlazarussources
 msgid "NOTE: Could not create Define Template for Lazarus Sources"
@@ -558,7 +564,7 @@ msgstr "Pfad zum Make-Programm"
 
 #: ideconfstrconsts.lispkgmangunabletocreatedirectory
 msgid "Unable to create directory"
-msgstr "Unfähig, das Verzeichnis anzulegen"
+msgstr "Kann das Verzeichnis nicht erzeugen"
 
 #: ideconfstrconsts.lispkgmangunabletodeletefile
 #, object-pascal-format
@@ -704,7 +710,7 @@ msgstr ""
 #: ideconfstrconsts.listheprojectusestargetosandcputhesystemppuforthistar
 #, object-pascal-format
 msgid "The project uses target OS=%s and CPU=%s.%sThe system.ppu for this target was not found in the FPC binary directories.%sMake sure fpc is installed correctly for this target and the fpc.cfg contains the right directories."
-msgstr "Das Projekt nutzt die Ziele OS=%s und CPU=%s.%sDie system.ppu für dieses Ziel wurde nicht in den Binärverzeichnissen von FPC gefunden. %sStellen Sie sicher, daß fpc für diese Zielplattform richtig installiert ist und daß die fpc.cfg die richtigen Verzeichnisangaben enthält."
+msgstr "Das Projekt nutzt die Ziele OS=%s und CPU=%s.%sDie system.ppu für dieses Ziel wurde nicht in den Binärverzeichnissen von FPC gefunden. %sStellen Sie sicher, dass fpc für diese Zielplattform richtig installiert ist und dass die fpc.cfg die richtigen Verzeichnisangaben enthält."
 
 #: ideconfstrconsts.listhereisafilewiththesamenameandasimilarextension
 #, object-pascal-format
@@ -790,7 +796,7 @@ msgstr "Kann Verzeichnis \"%s\" nicht erzeugen."
 
 #: ideconfstrconsts.lisunabletocreatefile
 msgid "Unable to create file"
-msgstr "Unfähig, die Datei anzulegen"
+msgstr "Kann Datei nicht erzeugen"
 
 #: ideconfstrconsts.lisunabletocreatefile2
 #, object-pascal-format
@@ -800,17 +806,17 @@ msgstr "Kann Datei \"%s\" nicht erzeugen"
 #: ideconfstrconsts.lisunabletocreatefile3
 #, object-pascal-format
 msgid "Unable to create file%s\"%s\""
-msgstr "Kann Datei%s\"%s\" nicht anlegen"
+msgstr "Kann Datei%s\"%s\" nicht erzeugen"
 
 #: ideconfstrconsts.lisunabletocreatelinkwithtarget
 #, object-pascal-format
 msgid "Unable to create link \"%s\" with target \"%s\""
-msgstr "Kann den Link \"%s\" zum Ziel \"%s\" nicht anlegen"
+msgstr "Kann Link \"%s\" zum Ziel \"%s\" nicht erzeugen"
 
 #: ideconfstrconsts.lisunabletodeleteambiguousfile
 #, object-pascal-format
 msgid "Unable to delete ambiguous file \"%s\""
-msgstr "Kann die unklare Datei \"%s\" nicht löschen"
+msgstr "Kann unklare Datei \"%s\" nicht löschen"
 
 #: ideconfstrconsts.lisunabletoexecute
 #, object-pascal-format
@@ -824,17 +830,17 @@ msgstr "kann Datei %s: %s nicht laden"
 
 #: ideconfstrconsts.lisunabletoreadfile
 msgid "Unable to read file"
-msgstr "Die Datei kann nicht gelesen werden"
+msgstr "Kann Datei nicht lesen"
 
 #: ideconfstrconsts.lisunabletoreadfile2
 #, object-pascal-format
 msgid "Unable to read file \"%s\"."
-msgstr "Die Datei \"%s\" kann nicht gelesen werden."
+msgstr "Kann Datei \"%s\" nicht lesen."
 
 #: ideconfstrconsts.lisunabletoreadfileerror
 #, object-pascal-format
 msgid "Unable to read file \"%s\"%sError: %s"
-msgstr "Die Datei \"%s\" kann nicht gelesen werden.%sFehler: %s"
+msgstr "Kann Datei \"%s\" nicht lesen.%sFehler: %s"
 
 #: ideconfstrconsts.lisunabletoreadprocessexitstatus
 msgid "unable to read process ExitStatus"
@@ -843,7 +849,7 @@ msgstr ""
 #: ideconfstrconsts.lisunabletoremoveoldbackupfile
 #, object-pascal-format
 msgid "Unable to remove old backup file \"%s\"!"
-msgstr "Die alte Sicherungsdatei \"%s\" kann nicht gelöscht werden!"
+msgstr "Kann alte Sicherungsdatei \"%s\" nicht löschen!"
 
 #: ideconfstrconsts.lisunabletorenameambiguousfileto
 #, object-pascal-format
@@ -852,17 +858,17 @@ msgstr "Kann die unklare Datei \"%s\"%snicht nach \"%s\" umbenennen."
 
 #: ideconfstrconsts.lisunabletorenamefile
 msgid "Unable to rename file"
-msgstr "Kann die Datei nicht umbennen"
+msgstr "Kann Datei nicht umbennen"
 
 #: ideconfstrconsts.lisunabletorenamefileto
 #, object-pascal-format
 msgid "Unable to rename file \"%s\" to \"%s\"!"
-msgstr "Die Datei \"%s\" kann nicht in \"%s\" umbenannt werden."
+msgstr "Kann Datei \"%s\" nicht in \"%s\" umbenennen!"
 
 #: ideconfstrconsts.lisunabletorenamefileto2
 #, object-pascal-format
 msgid "Unable to rename file \"%s\"%sto \"%s\"."
-msgstr "Die Datei  \"%s\"%s kann nicht in \"%s\" umbenannt werden."
+msgstr "Kann Datei  \"%s\"%s nicht in \"%s\" umbenennen."
 
 #: ideconfstrconsts.lisunabletowrite2
 #, object-pascal-format
@@ -871,7 +877,7 @@ msgstr "Kann Datei \"%s\" nicht schreiben"
 
 #: ideconfstrconsts.lisunabletowritefile
 msgid "Unable to write file"
-msgstr "Kann die Datei nicht schreiben"
+msgstr "Kann Datei nicht schreiben"
 
 #: ideconfstrconsts.lisunabletowritefile2
 #, object-pascal-format
@@ -881,7 +887,7 @@ msgstr "Kann Datei \"%s\" nicht schreiben."
 #: ideconfstrconsts.lisunabletowritefileerror
 #, object-pascal-format
 msgid "Unable to write file \"%s\"%sError: %s"
-msgstr "Kann die Datei \"%s\"nicht schreiben%sFehler: %s"
+msgstr "Kann Datei \"%s\"nicht schreiben%sFehler: %s"
 
 #: ideconfstrconsts.lisunabletowritetofile2
 #, object-pascal-format
@@ -891,7 +897,7 @@ msgstr "Kann nicht in Datei \"%s\" schreiben."
 #: ideconfstrconsts.lisunabletowritexmlstreamtoerror
 #, object-pascal-format
 msgid "Unable to write xml stream to %s%sError: %s"
-msgstr "Kann XML-Stream nicht in %s%s schreiben. Fehler: %S"
+msgstr "Kann XML-Stream nicht in %s%s schreiben. Fehler: %s"
 
 #: ideconfstrconsts.lisunusualcompilerfilenameusuallyitstartswithfpcppcor
 msgid "Unusual compiler file name. Usually it starts with fpc, ppc or ppcross."

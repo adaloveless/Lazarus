@@ -3503,7 +3503,12 @@ begin
     exit;
   if (TypeNode.FirstChild.Desc in AllClasses)
   and (TypeNode.FirstChild.SubDesc and ctnsForwardDeclaration>0) then
+    Result:=true else
+  if (TypeNode.Desc in [ctnProcedure, ctnProcedureHead]) and
+    (TypeNode.SubDesc and ctnsForwardDeclaration>0) and
+    (TypeNode.SubDesc and ctnsIsExternal=0) then
     Result:=true;
+
 end;
 
 function TPascalReaderTool.FindForwardTypeNode(TypeNode: TCodeTreeNode;

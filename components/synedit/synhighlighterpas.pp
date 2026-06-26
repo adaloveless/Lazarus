@@ -56,7 +56,8 @@ uses
   SysUtils, Classes, fgl, Registry, Graphics, Generics.Defaults, SynEditHighlighterFoldBase,
   SynEditMiscProcs, SynEditTypes, SynEditHighlighter, SynEditTextBase, SynEditStrConst,
   SynEditMiscClasses, LazLoggerBase, LazEditMiscProcs, LazEditHighlighterUtils,
-  LazEditTextAttributes, LazEditHighlighter, LazEditFoldHighlighter;
+  LazEditTextAttributes, LazEditHighlighter, LazEditFoldHighlighter,
+  LazEditHighlighterFoldNodeHighlighter;
 
 type
   TSynPasStringMode = (spsmDefault, spsmStringOnly, spsmNone);
@@ -1084,9 +1085,8 @@ type
       LevelChanged: Boolean); override;
 
     // Info about Folds
-    function CreateFoldNodeInfoList: TLazSynFoldNodeInfoList; override;
     procedure ScanFoldNodeInfo(); override;
-    procedure DoInitNode(var Node: TSynFoldNodeInfo;
+    procedure DoInitNode(var Node: TLazEditFoldNodeInfo;
                        //EndOffs: Integer;
                        FinishingABlock: Boolean;
                        ABlockType: Pointer; aActions: TSynFoldActions;
@@ -4795,7 +4795,7 @@ procedure TSynPasSyn.BraceOpenProc;
   end;
 
 var
-  nd: PSynFoldNodeInfo;
+  nd: PLazEditFoldNodeInfo;
 begin
   Include(FTokenExtraAttribs, eaPartTokenNotAtEnd); // BorProc/DirectiveProc; will clear this, if it reaches the end
   if (Run < fLineLen-1) and (LinePtr[Run+1] = '$') then begin
@@ -7490,7 +7490,7 @@ end;
 function TSynPasSyn.FoldLineLength(ALineIndex, FoldIndex: Integer): integer;
 var
   atype : Integer;
-  node: TSynFoldNodeInfo;
+  node: TLazEditFoldNodeInfo;
 begin
   node := FoldNodeInfo[ALineIndex].NodeInfoEx(FoldIndex, [sfaOpenFold, sfaFold]);
   if sfaInvalid in node.FoldAction then exit(-1);
@@ -7515,7 +7515,7 @@ end;
 function TSynPasSyn.FoldEndLine(ALineIndex, FoldIndex: Integer): integer;
 var
   lvl, cnt, atype : Integer;
-  node: TSynFoldNodeInfo;
+  node: TLazEditFoldNodeInfo;
 begin
   node := FoldNodeInfo[ALineIndex].NodeInfoEx(FoldIndex, [sfaOpenFold, sfaFold]);
   if sfaInvalid in node.FoldAction then exit(-1);
@@ -7568,7 +7568,7 @@ begin
 end;
 
 
-procedure TSynPasSyn.DoInitNode(var Node: TSynFoldNodeInfo;
+procedure TSynPasSyn.DoInitNode(var Node: TLazEditFoldNodeInfo;
   FinishingABlock: Boolean; ABlockType: Pointer; aActions: TSynFoldActions;
   AIsFold: Boolean);
 var
@@ -7603,7 +7603,7 @@ begin
     if (PasBlockType in [cfbtProcedure, cfbtAnonymousProcedure]) then begin
       t := FFoldConfig[ord(cfbtTopBeginEnd)];
       if t.Enabled and (sfaOutline in t.FoldActions) then
-        aActions := aActions + [sfaOutlineKeepLevel,sfaOutlineNoColor];
+        aActions := aActions + [sfaOutlineKeepLevel];
     end;
 
     //if (PasBlockType in [cfbtProcedure, cfbtAnonymousProcedure]) and (InProcLevel > 0) then //nested
@@ -7614,9 +7614,6 @@ begin
       if t.Enabled and (sfaOutline in t.FoldActions) then
         Include( aActions, sfaOutlineMergeParent);
     end;
-
-   // if (PasBlockType in [cfbtIfThen, cfbtClass,cfbtRecord]) then
-    //  aActions := aActions + [sfaOutlineNoLine];
   end;
 
   Node.LineIndex := LineIndex;
@@ -7672,7 +7669,7 @@ end;
 procedure TSynPasSyn.StartCustomCodeFoldBlock(ABlockType: TPascalCodeFoldBlockType);
 var
   act: TSynFoldActions;
-  nd: TSynFoldNodeInfo;
+  nd: TLazEditFoldNodeInfo;
   FoldBlock, BlockEnabled: Boolean;
   ConfigP: PSynCustomFoldConfig;
 begin
@@ -7704,7 +7701,7 @@ end;
 procedure TSynPasSyn.EndCustomCodeFoldBlock(ABlockType: TPascalCodeFoldBlockType);
 var
   act: TSynFoldActions;
-  nd: TSynFoldNodeInfo;
+  nd: TLazEditFoldNodeInfo;
   FoldBlock, BlockEnabled: Boolean;
   ConfigP: PSynCustomFoldConfig;
 begin
@@ -7782,14 +7779,9 @@ begin
   // nothing
 end;
 
-function TSynPasSyn.CreateFoldNodeInfoList: TLazSynFoldNodeInfoList;
-begin
-  Result := TLazSynFoldNodeInfoList.Create;
-end;
-
 procedure TSynPasSyn.ScanFoldNodeInfo();
 var
-  nd: PSynFoldNodeInfo;
+  nd: PLazEditFoldNodeInfo;
   i: Integer;
 begin
   fStringLen := 0;
@@ -7827,7 +7819,7 @@ var
   p: PtrInt;
   FoldBlock, BlockEnabled: Boolean;
   act: TSynFoldActions;
-  nd: TSynFoldNodeInfo;
+  nd: TLazEditFoldNodeInfo;
   ConfigP: PSynCustomFoldConfig;
 begin
   if rsSkipAllPasBlocks in fRange then exit(False);
@@ -7861,7 +7853,7 @@ var
   DecreaseLevel, BlockEnabled: Boolean;
   act: TSynFoldActions;
   BlockType: TPascalCodeFoldBlockType;
-  nd: TSynFoldNodeInfo;
+  nd: TLazEditFoldNodeInfo;
   ConfigP: PSynCustomFoldConfig;
 begin
   Exclude(fRange, rsSkipAllPasBlocks);
@@ -7930,7 +7922,7 @@ end;
 procedure TSynPasSyn.EndPascalCodeFoldBlockLastLine;
 var
   i: Integer;
-  nd: PSynFoldNodeInfo;
+  nd: PLazEditFoldNodeInfo;
 begin
   if IsCollectingNodeInfo then
     i := CollectingNodeInfoList.CountAll;

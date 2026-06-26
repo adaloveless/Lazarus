@@ -425,17 +425,11 @@ begin
   AListView := TGtk3ListView.Create(AWinControl, AParams);
   if TLVHack(AWinControl).ViewStyle = vsSmallIcon then
   begin
-    if Assigned(TLVHack(AWinControl).SmallImages) then
-      AListView.setItemWidth(TLVHack(AWinControl).SmallImages.Width)
-    else
-      AListView.setItemWidth(0);
+    AListView.setItemWidth(TLVHack(AWinControl).SmallImagesWidth);
   end else
   if TLVHack(AWinControl).ViewStyle = vsIcon then
   begin
-    if Assigned(TLVHack(AWinControl).LargeImages) then
-      AListView.setItemWidth(TLVHack(AWinControl).LargeImages.Width)
-    else
-      AListView.setItemWidth(0);
+    AListView.setItemWidth(TLVHack(AWinControl).LargeImagesWidth);
   end else
   if TLVHack(AWinControl).ViewStyle = vsList then
   begin
@@ -645,6 +639,9 @@ const
     GTK_SELECTION_SINGLE {1} ,
     GTK_SELECTION_MULTIPLE {3}
   );
+var
+  AW: PGtkWidget;
+  AAlloc: TGtkAllocation;
 begin
   case AProp of
     lvpAutoArrange:
@@ -720,8 +717,17 @@ begin
       if TGtk3ListView(ALV.Handle).IsTreeView then
       begin
         //Delphi docs: To use columns in a list view, the ViewStyle property must be set to vsReport.
-        PGtkTreeView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.set_headers_visible(AIsSet and (TLVHack(ALV).ViewStyle = vsReport));
-        PGtkTreeView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.resize_children;
+        AW := PGtkWidget(TGtk3ListView(ALV.Handle).GetContainerWidget);
+        PGtkTreeView(AW)^.set_headers_visible(AIsSet and (TLVHack(ALV).ViewStyle = vsReport));
+        if (gtk_widget_get_allocated_height(AW) <= 1) and (ALV.Height > 1) then
+        begin
+          AAlloc.x := 0;
+          AAlloc.y := 0;
+          AAlloc.width := ALV.Width;
+          AAlloc.height := ALV.Height;
+          gtk_widget_size_allocate(AW, @AAlloc);
+        end;
+        PGtkTreeView(AW)^.resize_children;
       end;
     end;
     lvpShowWorkAreas:
@@ -1713,7 +1719,10 @@ begin
 
   ANoteBook^.show_all;
   ANoteBook^.set_allocation(@Alloc);
-  ANoteBook^.set_show_tabs(True);
+  if (AWinControl is TCustomTabControl) and not TCustomTabControl(AWinControl).ShowTabs then
+    ANoteBook^.set_show_tabs(False)
+  else
+    ANoteBook^.set_show_tabs(True);
   AWindow^.realize;
   AWindow^.show_all;
   APage^.get_allocation(@Alloc);

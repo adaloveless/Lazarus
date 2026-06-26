@@ -232,7 +232,7 @@ type
     function EndOfSourceExpected: boolean;
     // read functions
     function ReadTilProcedureHeadEnd(ParseAttr: TParseProcHeadAttributes;
-        var HasForwardModifier: boolean): boolean;
+        var HasForwardModifier, IsExternal: boolean): boolean;
     function ReadConstant(ExceptionOnError, Extract: boolean;
         const Attr: TProcHeadAttributes): boolean;
     function ReadParamType(ExceptionOnError, Extract: boolean;
@@ -1331,7 +1331,7 @@ function TPascalParserTool.KeyWordFuncClassMethod: boolean;
    compilerproc[:name]
    }
 var
-  HasForwardModifier, IsGeneric: boolean;
+  HasForwardModifier, IsGeneric, IsExternal: boolean;
   ParseAttr: TParseProcHeadAttributes;
 begin
   if (CurNode.Desc in AllClassSubSections)
@@ -1382,7 +1382,7 @@ begin
     ReadGenericParamList(IsGeneric,true);
   if (CurPos.Flag<>cafPoint) or (pphIsOperator in ParseAttr) then begin
     // read rest
-    ReadTilProcedureHeadEnd(ParseAttr,HasForwardModifier);
+    ReadTilProcedureHeadEnd(ParseAttr,HasForwardModifier,IsExternal);
   end else begin
     // Method resolution clause (e.g. function Intf.Method = Method_Name)
     CurNode.Parent.Desc:=ctnMethodMap;
@@ -1844,7 +1844,7 @@ end;
 
 function TPascalParserTool.ReadTilProcedureHeadEnd(
   ParseAttr: TParseProcHeadAttributes;
-  var HasForwardModifier: boolean): boolean;
+  var HasForwardModifier, IsExternal: boolean): boolean;
 { parse parameter list, result type, of object, method specifiers
 
  examples:
@@ -1899,6 +1899,7 @@ begin
   //'Method=',IsMethod,', Function=',IsFunction,', Type=',IsType);
   Result:=true;
   HasForwardModifier:=false;
+  IsExternal:=false;
 
   if CurPos.Flag=cafRoundBracketOpen then begin
     Attr:=[];
@@ -2003,6 +2004,7 @@ begin
         ReadConstant(true,false,[]);
     end else if UpAtomIs('EXTERNAL') or UpAtomIs('WEAKEXTERNAL') or UpAtomIs('PUBLIC') then begin
       HasForwardModifier:=UpAtomIs('EXTERNAL') or UpAtomIs('WEAKEXTERNAL');
+      IsExternal:=HasForwardModifier;
       ReadNextAtom;
       if CurPos.Flag<>cafSemicolon then begin
         if not UpAtomIs('NAME') then
@@ -2965,7 +2967,7 @@ function TPascalParserTool.KeyWordFuncProc: boolean;
 // class function/procedure
 // generic function/procedure
 var
-  HasForwardModifier, IsClassProc: boolean;
+  HasForwardModifier, IsClassProc, IsExternal: boolean;
   ProcNode: TCodeTreeNode;
   ParseAttr: TParseProcHeadAttributes;
   StartPos: Integer;
@@ -3022,9 +3024,11 @@ begin
   end;
   // read rest of procedure head
   HasForwardModifier:=false;
-  ReadTilProcedureHeadEnd(ParseAttr,HasForwardModifier);
+  ReadTilProcedureHeadEnd(ParseAttr,HasForwardModifier,IsExternal);
   if HasForwardModifier then
     ProcNode.SubDesc:=ctnsForwardDeclaration;
+  if IsExternal then
+    ProcNode.SubDesc:= ProcNode.SubDesc or ctnsIsExternal;
   // close head
   CurNode.EndPos:=CurPos.EndPos;
   EndChildNode;

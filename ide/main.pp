@@ -12938,7 +12938,7 @@ begin
           Project1.MainUnitInfo.Modified:=true;
         end else begin
           DoJumpToCodeToolBossError;
-          Result:=mrCancel;
+          // this does not stop adding the unit to the project, keep Result=mrOk
         end;
       end;
     end;

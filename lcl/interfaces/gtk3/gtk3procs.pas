@@ -279,6 +279,9 @@ const
     ( target:'text/plain';    flags:0; info:0 ),
     ( target:'text/uri-list'; flags:0; info:0 ));
 
+  LCL_GTK_PRIORITY_RESIZE = G_PRIORITY_HIGH_IDLE + 10; //110
+
+
 function G_OBJECT_TYPE_NAME(AWidget: PGObject): string;
 
 function Gtk3IsObject(AWidget: PGObject): GBoolean;
@@ -402,6 +405,7 @@ procedure Gtk3StorePendingOuterSize(ACtl: TWinControl; AW, AH: Integer);
 function  Gtk3TakePendingOuterSize(ACtl: TWinControl; out AW, AH: Integer): Boolean;
 procedure Gtk3RemoveFromResizeQueue(ALCLObject: TWinControl);
 procedure Gtk3DrainResizeQueue;
+procedure Gtk3ScheduleDrainResizeQueue;
 {$ENDIF GTK3USEDEFERREDRESIZING}
 
 
@@ -1955,14 +1959,19 @@ begin
         AY := 0;
         ARootWin := gdk_get_default_root_window;
         ADeepestWin := ARootWin;
-        AChild := gdk_window_get_device_position(ADeepestWin, APointer, @AX, @AY, nil);
-        while Assigned(AChild) do
-        begin
-          ADeepestWin := AChild;
+        gdk_error_trap_push;
+        try
           AChild := gdk_window_get_device_position(ADeepestWin, APointer, @AX, @AY, nil);
+          while Assigned(AChild) do
+          begin
+            ADeepestWin := AChild;
+            AChild := gdk_window_get_device_position(ADeepestWin, APointer, @AX, @AY, nil);
+          end;
+          if ADeepestWin <> ARootWin then
+            gdk_window_set_cursor(ADeepestWin, AGdkCursor);
+        finally
+          gdk_error_trap_pop_ignored;
         end;
-        if ADeepestWin <> ARootWin then
-          gdk_window_set_cursor(ADeepestWin, AGdkCursor);
       end;
     end;
   end;
@@ -2237,6 +2246,17 @@ begin
       Break;
     end;
   end;
+end;
+
+function Gtk3DrainResizeIdleCB({%H-}AData: gpointer): gboolean; cdecl;
+begin
+  Gtk3DrainResizeQueue;
+  Result := gboolean(0);
+end;
+
+procedure Gtk3ScheduleDrainResizeQueue;
+begin
+  g_idle_add_full(LCL_GTK_PRIORITY_RESIZE, TGSourceFunc(@Gtk3DrainResizeIdleCB), nil, nil);
 end;
 
 procedure Gtk3DrainResizeQueue;

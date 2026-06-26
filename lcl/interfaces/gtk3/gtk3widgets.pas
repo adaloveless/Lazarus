@@ -125,6 +125,7 @@ type
     procedure SetStyleContext({%H-}AValue: PGtkStyleContext);
     class function DrawWidget(AWidget: PGtkWidget; AContext: Pcairo_t; Data: gpointer): gboolean; cdecl; static;
     class procedure MapWidget(AWidget: PGtkWidget; Data: gPointer); cdecl; static; {GtkWindow never sends this signal !}
+    class procedure UnMapWidget(AWidget: PGtkWidget; Data: gPointer); cdecl; static;
     class function MouseEnterNotify(aWidget: PGtkWidget; aEvent: PGdkEventCrossing; aData: gpointer): gboolean; cdecl; static;
     class function MouseLeaveNotify(aWidget: PGtkWidget; aEvent: PGdkEventCrossing; aData: gpointer): gboolean; cdecl; static;
     class function Gtk3PopupMenuCB(AWidget: PGtkWidget; AData: gpointer): gboolean; cdecl; static;
@@ -771,6 +772,7 @@ type
       AData: GPointer); cdecl; static;
   private
     FPreselectedIndices: TFPList;
+    FIconViewSelOld: array of Boolean;
     FImages: TFPList;
     FIsTreeView: Boolean;
     FViewStyle: TViewStyle;
@@ -1154,6 +1156,7 @@ type
     class procedure MDILayoutSizeAllocate(AWidget: PGtkWidget; AAlloc: PGdkRectangle; AData: gpointer); cdecl; static;
   strict private
     class function WindowMapEvent(awidget:PGtkWindow;AEvent: PGdkEventAny; adata: gpointer): gboolean; cdecl; static; //uses lcl-window-first-map data.
+    class function WindowUnMapEvent(awidget:PGtkWindow;AEvent: PGdkEventAny; adata: gpointer): gboolean; cdecl; static;
     class function WindowMoveEvent(awidget: PGtkWindow; AEvent: PGdkEventConfigure; adata: gpointer): gboolean; cdecl; static;
     class procedure WindowSizeAllocate(AWidget: PGtkWidget; AGdkRect: PGdkRectangle; Data: gpointer); cdecl; static;
     {$IFDEF GTK3USEDEFERREDRESIZING}
@@ -1162,6 +1165,7 @@ type
     class function WindowStateSignal(AWidget: PGtkWidget; AEvent: PGdkEvent; AData: gPointer): gboolean; cdecl; static;
     class procedure WaylandPopupSetFocus(AWindow: PGtkWindow; AWidget: PGtkWidget;
       AData: gpointer); cdecl; static;
+    class procedure WaylandAnnounceCSD(AWidget: PGtkWidget; AData: gpointer); cdecl; static;
     class function DeferredResizeCB(data: gpointer): gboolean; cdecl; static;
     class function MenuBarEnterNotify(AWidget: PGtkWidget; AEvent: PGdkEventCrossing; AData: gpointer): gboolean; cdecl; static;
   protected
@@ -1343,6 +1347,10 @@ type
 const
   LISTVIEW_DEFAULT_COLUMN = 1;
   GTKMINIMUMSIZE = 16;
+
+//gdb callable debug resolver. PGtkWidget -> LCL name/bounds/parent.
+// Usage in gdb:  call eg (void) Gtk3DbgWidget((void*)0xfbe920)
+procedure Gtk3DbgWidget(AWidget: PGtkWidget); cdecl;
 
 implementation
 
@@ -1708,6 +1716,38 @@ begin
     g_object_set_data(AWindow,'lclwidget', TGtk3Widget(Data));
   if (AWindow <> nil) and AWidget^.get_has_window then
     gdk_window_set_events(AWindow, GDK_DEFAULT_EVENTS_MASK);
+end;
+
+class procedure TGtk3Widget.UnMapWidget(AWidget: PGtkWidget; Data: gPointer); cdecl;
+begin
+  TGtk3Widget(Data).WidgetMapped := False;
+end;
+
+procedure Gtk3DbgWidget(AWidget: PGtkWidget); cdecl;
+var
+  W: TGtk3Widget;
+  S: string;
+begin
+  if AWidget = nil then
+  begin
+    DebugLn('Gtk3DbgWidget: AWidget=nil');
+    exit;
+  end;
+  S := 'Gtk3DbgWidget ' + dbgs(Pointer(AWidget)) + ' gtk=' + Get3WidgetClassName(AWidget);
+  W := TGtk3Widget(HwndFromGtkWidget(AWidget));
+  if W = nil then
+    DebugLn(S + ' lcl=<no TGtk3Widget>')
+  else
+  if W.LCLObject = nil then
+    DebugLn(S + ' wrap=' + W.ClassName + ' lcl=<TGtk3Widget without LCLObject>')
+  else
+  begin
+    S := S + ' wrap=' + W.ClassName + ' lcl=' + dbgsName(W.LCLObject) +
+      ' bounds=' + dbgs(W.LCLObject.BoundsRect);
+    if Assigned(W.LCLObject.Parent) then
+      S := S + ' parent=' + dbgsName(W.LCLObject.Parent);
+    DebugLn(S);
+  end;
 end;
 
 function SubtractScroll(AWidget: PGtkWidget; APosition: TPoint): TPoint;
@@ -2218,6 +2258,7 @@ var
   LContainer, LWidget: PGtkWidget;
   LWidgetType: TGtk3WidgetTypes;
   LIsCombo: Boolean;
+  LClientWindow: PGdkWindow;
 begin
   {$IF DEFINED(GTK3DEBUGEVENTS) OR DEFINED(GTK3DEBUGFOCUS)}
   DebugLn('TGtk3Widget.GtkEventFocus ',dbgsName(LCLObject),' FocusIn ',dbgs(Event^.focus_change.in_ <> 0));
@@ -2230,12 +2271,19 @@ begin
        not Gtk3IsEntry(PGObject(Sender)) and
        not Gtk3IsTextView(PGObject(Sender)) then
     begin
-      {$IFDEF GTK3DEBUGKEYPRESS}
-      writeln('GtkEventFocus IN ', dbgsName(LCLObject), ' clientWindow=', PtrUInt(Sender^.get_window), ' toplevelWindow=', PtrUInt(Sender^.get_toplevel^.get_window));
-      {$ENDIF}
-      gtk_im_context_set_client_window(Gtk3WidgetSet.IMContext, Sender^.get_window);
-      gtk_im_context_focus_in(Gtk3WidgetSet.IMContext);
-      Gtk3WidgetSet.IMTarget := Self;
+      if gtk_widget_get_realized(Sender) then
+        LClientWindow := Sender^.get_window
+      else
+        LClientWindow := nil;
+      if LClientWindow <> nil then
+      begin
+        {$IFDEF GTK3DEBUGKEYPRESS}
+        writeln('GtkEventFocus IN ', dbgsName(LCLObject), ' clientWindow=', PtrUInt(LClientWindow), ' toplevelWindow=', PtrUInt(Sender^.get_toplevel^.get_window));
+        {$ENDIF}
+        gtk_im_context_set_client_window(Gtk3WidgetSet.IMContext, LClientWindow);
+        gtk_im_context_focus_in(Gtk3WidgetSet.IMContext);
+        Gtk3WidgetSet.IMTarget := Self;
+      end;
     end;
   end
   else
@@ -2551,10 +2599,10 @@ var
   IsArrowKey: Boolean;
   IsEditableWidget: Boolean;
   TextBeforeKey: String;
+  AFiltered: gboolean;
   {$IFDEF GTK3DEBUGKEYPRESS}
   TempWidget: HWND;
   Info: PTypeInfo;
-  AFiltered: gboolean;
   {$ENDIF}
 begin
   //TODO: finish LCL messaging
@@ -2568,15 +2616,16 @@ begin
   begin
     Gtk3WidgetSet.IMCommitStr := '';
     Gtk3WidgetSet.IMInFilter := True;
-    {$IFDEF GTK3DEBUGKEYPRESS}
     AFiltered := gtk_im_context_filter_keypress(Gtk3WidgetSet.IMContext, PGdkEventKey(Event));
+    {$IFDEF GTK3DEBUGKEYPRESS}
     writeln('GtkEventKey: filter_keypress=', Ord(AFiltered), ' commitStr="', Gtk3WidgetSet.IMCommitStr, '" keyval=', AEvent.keyval, ' widget=', dbgsName(LCLObject));
-    {$ELSE}
-    gtk_im_context_filter_keypress(Gtk3WidgetSet.IMContext, PGdkEventKey(Event));
     {$ENDIF}
     Gtk3WidgetSet.IMInFilter := False;
     if Gtk3WidgetSet.IMCommitStr <> '' then
-      AEventString := Gtk3WidgetSet.IMCommitStr;
+      AEventString := Gtk3WidgetSet.IMCommitStr
+    else
+    if AFiltered then
+      exit(True);
   end;
 
   {$IFDEF GTK3DEBUGKEYPRESS}
@@ -3455,6 +3504,7 @@ var
   AList: TList;
   ATemp: PGtkWidget;
   ATopLevel: PGtkWidget;
+  AFocus: PGtkWidget;
   I: Integer;
 begin
   {$IFDEF GTK3USEDEFERREDRESIZING}
@@ -3496,9 +3546,13 @@ begin
     else
     begin
       ATopLevel := PGtkWidget(ATemp)^.get_toplevel;
-      if (ATopLevel <> nil) and Gtk3IsGtkWindow(ATopLevel) and
-         (PGtkWindow(ATopLevel)^.get_focus = PGtkWidget(ATemp)) then
-        PGtkWindow(ATopLevel)^.set_focus(nil);
+      if (ATopLevel <> nil) and Gtk3IsGtkWindow(ATopLevel) then
+      begin
+        AFocus := PGtkWindow(ATopLevel)^.get_focus;
+        if (AFocus = PGtkWidget(ATemp)) or
+           ((AFocus <> nil) and PGtkWidget(AFocus)^.is_ancestor(PGtkWidget(ATemp))) then
+          PGtkWindow(ATopLevel)^.set_focus(nil);
+      end;
     end;
     ATemp^.destroy_;
     {$IFDEF GTK3DEBUGCORE}
@@ -3835,6 +3889,7 @@ begin
   g_signal_connect_data(FWidget,'hide', TGCallback(@WidgetHide), Self, nil, G_CONNECT_DEFAULT);
   g_signal_connect_data(FWidget,'show', TGCallback(@WidgetShow), Self, nil, G_CONNECT_DEFAULT);
   g_signal_connect_data(FWidget,'map', TGCallback(@MapWidget), Self, nil, G_CONNECT_DEFAULT);
+  g_signal_connect_data(FWidget,'unmap', TGCallback(@UnMapWidget), Self, nil, G_CONNECT_DEFAULT);
   ConnectSizeAllocateSignal(FWidget);
   if IsDesigning then
   begin
@@ -4097,6 +4152,8 @@ var
   Alloc: TGtkAllocation;
   CurW, CurH: gint;
   SizeMsg: TLMSize;
+  AllocRect: TGdkRectangle;
+  PrefMinW, PrefMinH, PrefNat: gint;
 begin
   if (Widget=nil) then
     exit;
@@ -4204,7 +4261,23 @@ begin
     ;
 
     if Widget^.get_visible then
-      Widget^.size_allocate(@ARect)
+    begin
+      AllocRect := ARect;
+      if (AllocRect.width > 0) and (AllocRect.height > 0) and
+         ((AllocRect.width < 32) or (AllocRect.height < 32)) then
+      begin
+        PrefMinW := 0;
+        PrefMinH := 0;
+        PrefNat := 0;
+        Widget^.get_preferred_width(@PrefMinW, @PrefNat);
+        Widget^.get_preferred_height(@PrefMinH, @PrefNat);
+        if PrefMinW > AllocRect.width then
+          AllocRect.width := PrefMinW;
+        if PrefMinH > AllocRect.height then
+          AllocRect.height := PrefMinH;
+      end;
+      Widget^.size_allocate(@AllocRect);
+    end
     else
     if Widget^.is_toplevel or (wtNotebook in WidgetType) then
       Widget^.set_allocation(@Alloc);
@@ -8060,13 +8133,10 @@ begin
     // .DoAdjustClientRectChange instead, because GtkLayout size IS actually changed.
     if not ACtl.InUpdate and Assigned(ACtl.LCLObject.Parent) then
     begin
+      ACtl.LCLObject.InvalidateClientRectCache(True);
       {$IFDEF GTK3USEDEFERREDRESIZING}
-      if Gtk3WidgetSet.IsWayland then
-        ACtl.LCLObject.InvalidateClientRectCache(True);
       Gtk3SaveClientSizeNotification(ACtl.LCLObject.Parent);
       {$ELSE}
-      if Gtk3WidgetSet.IsWayland then
-        ACtl.LCLObject.InvalidateClientRectCache(True);
       ACtl.LCLObject.Parent.DoAdjustClientRectChange(True);
       {$ENDIF GTK3USEDEFERREDRESIZING}
     end;
@@ -9810,7 +9880,8 @@ begin
   if not Gtk3IsScrolledWindow(AScrollWin) or IsDesigning then
     exit;
   AScrollWin^.get_policy(@APolicyH, @APolicyV);
-  AScrollWin^.set_policy(AValue, APolicyV);
+  if APolicyH <> AValue then
+    AScrollWin^.set_policy(AValue, APolicyV);
 end;
 
 procedure TGtk3ScrollableWin.SetVScrollBarPolicy(AValue: TGtkPolicyType);
@@ -9822,7 +9893,8 @@ begin
   if not Gtk3IsScrolledWindow(AScrollWin) or IsDesigning then
     exit;
   AScrollWin^.get_policy(@APolicyH, @APolicyV);
-  AScrollWin^.set_policy(APolicyH, AValue);
+  if APolicyV <> AValue then
+    AScrollWin^.set_policy(APolicyH, AValue);
 end;
 
 class procedure TGtk3ScrollableWin.ScrolledLayoutSizeAllocate(
@@ -11510,51 +11582,66 @@ class function TGtk3ListView.selection_changed(AIconView: PGtkIconView;
   aData: gPointer): gboolean; cdecl;
 var
   pl, tmp: PGList;
-  pndx: PGint;
-  i, cnt: gint;
+  i, ItemCount, N, Indices: Integer;
   Msg: TLMNotify;
   NM: TNMListView;
   ctl: TGtk3ListView;
+  NewSel, OldSel: array of Boolean;
+  WasSel, IsSel: Boolean;
 begin
   Result := gtk_false;
   ctl := TGtk3ListView(aData);
-  pl := PGtkIconView(ctl.GetContainerWidget)^.get_selected_items();
+  if (ctl = nil) or ctl.InUpdate or (ctl.LCLObject = nil) then
+    exit;
 
-  if Assigned(pl) then
+  ItemCount := TCustomListView(ctl.LCLObject).Items.Count;
+  SetLength(NewSel, ItemCount);
+
+  pl := PGtkIconView(AIconView)^.get_selected_items();
+  tmp := pl;
+  while Assigned(tmp) do
   begin
-    try
-      tmp := pl;
-      while Assigned(tmp) do
-      begin
-        pndx := PGtkTreePath(tmp^.data)^.get_indices_with_depth(@cnt);
-        // lv := TListView(ctl.LCLObject);
-        ctl.BeginUpdate;
-        try
-          for i := 0 to cnt - 1 do
-          begin
-            FillChar(Msg{%H-}, SizeOf(Msg), 0);
-            Msg.Msg := CN_NOTIFY;
-            FillChar(NM{%H-}, SizeOf(NM), 0);
-            NM.hdr.hwndfrom := HWND(ctl);
-            NM.hdr.code := LVN_ITEMCHANGED;
-            NM.iItem := {%H-}PtrInt(pndx^);
-            NM.iSubItem := 0;
-            NM.uNewState := LVIS_SELECTED;
-            NM.uChanged := LVIF_STATE;
-            Msg.NMHdr := @NM.hdr;
-            ctl.DeliverMessage(Msg);
-            inc(pndx);
-          end;
-        finally
-          ctl.EndUpdate;
-        end;
-        gtk_tree_path_free(PGtkTreePath(tmp^.data));
+    Indices := gtk_tree_path_get_indices(PGtkTreePath(tmp^.data))^;
+    if (Indices >= 0) and (Indices < ItemCount) then
+      NewSel[Indices] := True;
+    gtk_tree_path_free(PGtkTreePath(tmp^.data));
+    tmp := tmp^.next;
+  end;
+  if Assigned(pl) then
+    g_list_free(pl);
 
-        tmp := tmp^.next;
-      end;
-    finally
-      g_list_free(pl);
+  OldSel := ctl.FIconViewSelOld;
+  N := ItemCount;
+  if Length(OldSel) > N then
+    N := Length(OldSel);
+
+  ctl.FIconViewSelOld := Copy(NewSel, 0, Length(NewSel));
+
+  ctl.BeginUpdate;
+  try
+    for i := 0 to N - 1 do
+    begin
+      WasSel := (i < Length(OldSel)) and OldSel[i];
+      IsSel := (i < Length(NewSel)) and NewSel[i];
+      if WasSel = IsSel then
+        continue;
+      FillChar(Msg{%H-}, SizeOf(Msg), 0);
+      Msg.Msg := CN_NOTIFY;
+      FillChar(NM{%H-}, SizeOf(NM), 0);
+      NM.hdr.hwndfrom := HWND(ctl);
+      NM.hdr.code := LVN_ITEMCHANGED;
+      NM.iItem := i;
+      NM.iSubItem := 0;
+      if IsSel then
+        NM.uNewState := LVIS_SELECTED
+      else
+        NM.uOldState := LVIS_SELECTED;
+      NM.uChanged := LVIF_STATE;
+      Msg.NMHdr := @NM.hdr;
+      ctl.DeliverMessage(Msg);
     end;
+  finally
+    ctl.EndUpdate;
   end;
 end;
 
@@ -11943,9 +12030,13 @@ var
   AModel: PGtkTreeModel;
   Iter: TGtkTreeIter;
   NewIndex: Integer;
-  bmp:TBitmap;
-  pxb:PGdkPixbuf;
-  w,h: gint;
+  bmp: TBitmap;
+  pxb: PGdkPixbuf;
+  w, h: gint;
+  ALV: TCustomListViewHack;
+  ImgIdx: Integer;
+  ImgList: TCustomImageList;
+  ImgWidth: Integer;
 begin
   if not IsWidgetOK then
     exit;
@@ -11964,26 +12055,52 @@ begin
       [0, Pointer(AItem), -1])
   else
   begin
-    bmp:=TBitmap.Create;
-    if Assigned(TListView(LCLObject).LargeImages) then
-      TListView(LCLObject).LargeImages.GetBitmap(AIndex,bmp)
+    ALV := TCustomListViewHack(LCLObject);
+    ImgIdx := AItem.ImageIndex;
+    pxb := nil;
+    if Assigned(FImages) and (ImgIdx >= 0) and (ImgIdx < FImages.Count) then
+      pxb := PGdkPixbuf(FImages[ImgIdx])
     else
     begin
-      gtk_icon_size_lookup(Ord(GTK_ICON_SIZE_LARGE_TOOLBAR), @w, @h);
-      bmp.SetSize(w, h);
+      if ALV.ViewStyle = vsIcon then
+      begin
+        ImgList := ALV.LargeImages;
+        ImgWidth := ALV.LargeImagesWidth;
+      end else
+      begin
+        ImgList := ALV.SmallImages;
+        ImgWidth := ALV.SmallImagesWidth;
+      end;
+      bmp := TBitmap.Create;
+      try
+        if Assigned(ImgList) and (ImgIdx >= 0) and (ImgIdx < ImgList.Count) then
+          ImgList.ResolutionForPPI[ImgWidth, ALV.Font.PixelsPerInch, ALV.GetCanvasScaleFactor].Resolution.GetBitmap(ImgIdx, bmp)
+        else
+        begin
+          gtk_icon_size_lookup(Ord(GTK_ICON_SIZE_LARGE_TOOLBAR), @w, @h);
+          bmp.SetSize(w, h);
+        end;
+        pxb := TGtk3Image(bmp.Handle).Handle^.copy;
+        {$IFDEF DEBUGVERZIJA}
+        DebugLn(['ItemInsert fallback: item=',AIndex,' imgidx=',ImgIdx,' w=',bmp.Width,' h=',bmp.Height]);
+        {$ENDIF}
+      finally
+        bmp.Free;
+      end;
+      gtk_list_store_insert_with_values(PGtkListStore(AModel), @Iter, NewIndex,
+        [0, Pointer(AItem),
+         1, PChar(AItem.Caption),
+         2, pxb, -1]);
+      g_object_unref(pxb);
+      exit;
     end;
-    pxb:=TGtk3Image(bmp.Handle).Handle^.copy;
+    {$IFDEF DEBUGVERZIJA}
+    DebugLn(['ItemInsert FImages: item=',AIndex,' imgidx=',ImgIdx,' w=',pxb^.get_width,' h=',pxb^.get_height]);
+    {$ENDIF}
     gtk_list_store_insert_with_values(PGtkListStore(AModel), @Iter, NewIndex,
       [0, Pointer(AItem),
        1, PChar(AItem.Caption),
-       2, pxb, -1] );
-    // list_store takes ownership, so unref and ref again.
-    g_object_unref(pxb);
-    if not Assigned(FImages) then
-      FImages := TFPList.Create;
-    g_object_ref(pxb);
-    FImages.Add(pxb);
-    bmp.Free;
+       2, pxb, -1]);
   end;
 end;
 
@@ -12008,9 +12125,13 @@ var
   ItemRect: TGdkRectangle;
   AModel: PGtkTreeModel;
   Iter: TGtkTreeIter;
-  bmp:TBitmap;
-  pxb:PGdkPixbuf;
-  w,h: gint;
+  bmp: TBitmap;
+  pxb: PGdkPixbuf;
+  w, h: gint;
+  ALV: TCustomListViewHack;
+  ImgIdx: Integer;
+  ImgList: TCustomImageList;
+  ImgWidth: Integer;
 begin
   if IsTreeView then
   begin
@@ -12020,32 +12141,55 @@ begin
   end else
   begin
     Path := gtk_tree_path_new_from_indices(AIndex, [-1]);
-    AModel:=PGtkIconView(GetContainerWidget)^.get_model;
-    AModel^.get_iter(@iter,path);
-
-    bmp := TBitmap.Create;
-    if (TCustomListViewHack(LCLObject).ViewStyle = vsIcon) and Assigned(TCustomListViewHack(LCLObject).LargeImages) then
-      TCustomListViewHack(LCLObject).LargeImages.GetBitmap(AItem.ImageIndex, bmp)
-    else
-    if (TCustomListViewHack(LCLObject).ViewStyle = vsSmallIcon) and Assigned(TCustomListViewHack(LCLObject).SmallImages) then
-      TCustomListViewHack(LCLObject).SmallImages.GetBitmap(AItem.ImageIndex, bmp)
-    else
+    AModel := PGtkIconView(GetContainerWidget)^.get_model;
+    AModel^.get_iter(@iter, path);
+    ALV := TCustomListViewHack(LCLObject);
+    ImgIdx := AItem.ImageIndex;
+    pxb := nil;
+    if Assigned(FImages) and (ImgIdx >= 0) and (ImgIdx < FImages.Count) then
     begin
-      gtk_icon_size_lookup(Ord(GTK_ICON_SIZE_LARGE_TOOLBAR), @w, @h);
-      bmp.SetSize(w, h);
+      pxb := PGdkPixbuf(FImages[ImgIdx]);
+      {$IFDEF DEBUGVERZIJA}
+      DebugLn(['UpdateItem FImages: item=',AIndex,' imgidx=',ImgIdx,' w=',pxb^.get_width,' h=',pxb^.get_height]);
+      {$ENDIF}
+      gtk_list_store_set(PGtkListStore(AModel), @Iter,
+        [0, Pointer(AItem),
+         1, PChar(AItem.Caption),
+         2, pxb, -1]);
+    end else
+    begin
+      if ALV.ViewStyle = vsIcon then
+      begin
+        ImgList := ALV.LargeImages;
+        ImgWidth := ALV.LargeImagesWidth;
+      end else
+      begin
+        ImgList := ALV.SmallImages;
+        ImgWidth := ALV.SmallImagesWidth;
+      end;
+      bmp := TBitmap.Create;
+      try
+        if Assigned(ImgList) and (ImgIdx >= 0) and (ImgIdx < ImgList.Count) then
+          ImgList.ResolutionForPPI[ImgWidth, ALV.Font.PixelsPerInch, ALV.GetCanvasScaleFactor].Resolution.GetBitmap(ImgIdx, bmp)
+        else
+        begin
+          gtk_icon_size_lookup(Ord(GTK_ICON_SIZE_LARGE_TOOLBAR), @w, @h);
+          bmp.SetSize(w, h);
+        end;
+        pxb := TGtk3Image(bmp.Handle).Handle^.copy;
+        {$IFDEF DEBUGVERZIJA}
+        DebugLn(['UpdateItem fallback: item=',AIndex,' imgidx=',ImgIdx,' w=',bmp.Width,' h=',bmp.Height]);
+        {$ENDIF}
+        gtk_list_store_set(PGtkListStore(AModel), @Iter,
+          [0, Pointer(AItem),
+           1, PChar(AItem.Caption),
+           2, pxb, -1]);
+        g_object_unref(pxb);
+      finally
+        bmp.Free;
+      end;
     end;
-    pxb := TGtk3Image(Bmp.Handle).Handle^.copy;
-    gtk_list_store_set(PGtkListStore(AModel), @Iter,
-      [0, Pointer(AItem),
-       1, PChar(AItem.Caption),
-       2, pxb, -1] );
-    g_object_unref(pxb);
-    if not Assigned(FImages) then
-      FImages := TFPList.Create;
-    g_object_ref(pxb);
-    FImages.Add(pxb);
     gtk_tree_path_free(Path);
-    bmp.Free;
   end;
 end;
 
@@ -14657,6 +14801,12 @@ begin
   Result := gtk_false;
 end;
 
+class function TGtk3Window.WindowUnMapEvent(awidget: PGtkWindow; AEvent: PGdkEventAny; adata: gpointer): gboolean; cdecl;
+begin
+  TGtk3Widget(AData).WidgetMapped := False;
+  Result := gtk_false;
+end;
+
 class function TGtk3Window.WindowMoveEvent(awidget: PGtkWindow; AEvent: PGdkEventConfigure; adata: gpointer): gboolean; cdecl;
 var
   MoveMsg: TLMMove;
@@ -14698,12 +14848,32 @@ end;
 {$IFDEF GTK3USEDEFERREDRESIZING}
 class procedure TGtk3Window.WindowSizeAllocateAfter(AWidget: PGtkWidget;
   AGdkRect: PGdkRectangle; Data: gpointer); cdecl;
+var
+  Clock: PGdkFrameClock;
+  Counter, LastCounter, RetryCnt: PtrInt;
 begin
-  //match gtk2 size queue
-  if AWidget = nil then ;
-  if AGdkRect = nil then ;
   if Data = nil then ;
-  Gtk3DrainResizeQueue;
+  if AWidget = nil then
+    Exit;
+  if AGdkRect = nil then ;
+  Clock := gtk_widget_get_frame_clock(AWidget);
+  if Assigned(Clock) then
+    Counter := PtrInt(gdk_frame_clock_get_frame_counter(Clock))
+  else
+    Counter := 0;
+  LastCounter := PtrInt(g_object_get_data(PGObject(AWidget), 'lcl-wsaa-frame'));
+  RetryCnt := PtrInt(g_object_get_data(PGObject(AWidget), 'lcl-wsaa-retry'));
+  if Counter <> LastCounter then
+  begin
+    RetryCnt := 0;
+    g_object_set_data(PGObject(AWidget), 'lcl-wsaa-frame', Pointer(Counter));
+  end;
+  Inc(RetryCnt);
+  g_object_set_data(PGObject(AWidget), 'lcl-wsaa-retry', Pointer(RetryCnt));
+  if RetryCnt <= 2 then
+    Gtk3DrainResizeQueue
+  else
+    Gtk3ScheduleDrainResizeQueue;
 end;
 {$ENDIF}
 
@@ -14711,6 +14881,7 @@ procedure TGtk3Window.ConnectSizeAllocateSignal(ToWidget:PGtkWidget);
 begin
   g_signal_connect_data(ToWidget,'size-allocate',TGCallback(@WindowSizeAllocate), Self, nil, G_CONNECT_DEFAULT);
   g_signal_connect_data(ToWidget,'map-event',TGCallback(@WindowMapEvent), Self, nil, G_CONNECT_DEFAULT);
+  g_signal_connect_data(ToWidget,'unmap-event',TGCallback(@WindowUnMapEvent), Self, nil, G_CONNECT_DEFAULT);
   g_signal_connect_data(ToWidget,'configure-event',TGCallback(@WindowMoveEvent), Self, nil, G_CONNECT_DEFAULT);
   if Assigned(FCentralWidget) then
     g_signal_connect_data(FCentralWidget,'size-allocate',TGCallback(@ScrolledLayoutSizeAllocate), Self, nil, G_CONNECT_DEFAULT);
@@ -14989,12 +15160,16 @@ begin
       FWidgetType := [wtWidget, wtLayout, wtScrollingWin, wtScrollingWinControl, wtWindow];
   end else
   begin
-    Result := PGtkScrolledWindow(LCLGtkScrolledWindowNew); // PGtkScrolledWindow(TGtkScrolledWindow.new(nil, nil));
-    PGtkScrolledWindow(Result)^.set_policy(GTK_POLICY_NEVER, GTK_POLICY_NEVER);
     if wtMDIChild in FWidgetType then
-      FWidgetType := [wtWidget, wtLayout, wtScrollingWin, wtScrollingWinControl, wtMDIChild]
-    else
+    begin
+      Result := PGtkScrolledWindow(LCLGtkScrolledWindowNew); // PGtkScrolledWindow(TGtkScrolledWindow.new(nil, nil));
+      PGtkScrolledWindow(Result)^.set_policy(GTK_POLICY_NEVER, GTK_POLICY_NEVER);
+      FWidgetType := [wtWidget, wtLayout, wtScrollingWin, wtScrollingWinControl, wtMDIChild];
+    end else
+    begin
+      Result := TGtkEventBox.new;
       FWidgetType := [wtWidget, wtLayout, wtScrollingWin, wtScrollingWinControl];
+    end;
   end;
   if (Params.Caption = '') and (LCLObject is TCustomForm) then
     Text := TCustomForm(LCLObject).Caption
@@ -15659,12 +15834,31 @@ begin
   end;
 end;
 
+class procedure TGtk3Window.WaylandAnnounceCSD(AWidget: PGtkWidget;
+  AData: gpointer); cdecl;
+var
+  AWindow: PGdkWindow;
+begin
+  AWindow := AWidget^.get_window;
+  if not Gtk3IsGdkWindow(AWindow) then
+    exit;
+  gdk_wayland_window_announce_csd(AWindow);
+end;
+
 procedure TGtk3Window.InitializeWidget;
 begin
   inherited InitializeWidget;
   if GTK3WidgetSet.IsWayland and (wtWindow in FWidgetType) then
     g_signal_connect_data(PGtkWidget(FWidget), 'set-focus',
       TGCallback(@WaylandPopupSetFocus), Self, nil, G_CONNECT_DEFAULT);
+  if GTK3WidgetSet.IsWayland and (wtWindow in FWidgetType) and
+     (LCLObject is TCustomForm) and (TCustomForm(LCLObject).BorderStyle = bsNone) then
+  begin
+    g_signal_connect_data(PGtkWidget(FWidget), 'realize',
+      TGCallback(@WaylandAnnounceCSD), Self, nil, [G_CONNECT_AFTER]);
+    if FWidget^.get_realized then
+      WaylandAnnounceCSD(PGtkWidget(FWidget), Self);
+  end;
   if not IsDesigning then
   begin
     g_signal_connect_data(gtk_scrolled_window_get_hscrollbar(GetScrolledWindow), 'change-value',
@@ -15909,10 +16103,14 @@ begin
     PGtkWidget(FMenuBar)^.set_size_request(1, -1);
 
     g_object_set_data(Widget,'lclmenubar',GPointer(1));
-    ABox := PGtkBox(PGtkWindow(Widget)^.get_child);
-    ABox^.pack_start(FMenuBar, False, False, 0);
-    g_signal_connect_data(PGObject(FMenuBar), 'enter-notify-event',
-      TGCallback(@MenuBarEnterNotify), Self, nil, G_CONNECT_DEFAULT);
+    if not (Assigned(LCLObject) and (csDesigning in LCLObject.ComponentState)
+      and Assigned(LCLObject.Parent)) then
+    begin
+      ABox := PGtkBox(PGtkWindow(Widget)^.get_child);
+      ABox^.pack_start(FMenuBar, False, False, 0);
+      g_signal_connect_data(PGObject(FMenuBar), 'enter-notify-event',
+        TGCallback(@MenuBarEnterNotify), Self, nil, G_CONNECT_DEFAULT);
+    end;
   end;
   Result := FMenuBar;
 end;
@@ -16637,7 +16835,7 @@ function TGtk3DesignWidget.CreateWidget(const Params: TCreateParams
   ): PGtkWidget;
 begin
   Result := inherited CreateWidget(Params);
-  gtk_widget_set_has_window(Widget, True);
+  gtk_widget_set_has_window(Result, True);
   gtk_widget_set_has_window(GetContainerWidget, True);
 end;
 
