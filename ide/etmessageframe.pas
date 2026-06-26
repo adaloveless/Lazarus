@@ -35,8 +35,7 @@ uses
   Math, StrUtils, Classes, SysUtils, AVL_Tree,
   // LCL
   Forms, Buttons, ExtCtrls, Controls, LMessages, LCLType, LCLIntf,
-  Graphics, Themes, ImgList, Menus, Clipbrd, Dialogs, StdCtrls,
-  {$IFDEF MSWINDOWS}uDarkStyleParams,{$ENDIF}
+  Graphics, GraphUtil, Themes, ImgList, Menus, Clipbrd, Dialogs, StdCtrls,
   // LazUtils
   GraphType, UTF8Process, LazUTF8, LazFileCache, LazFileUtils, IntegerList, LazLoggerBase,
   // SynEdit
@@ -1963,6 +1962,11 @@ var
 
   procedure DrawText(ARect: TRect; aTxt: string; IsSelected: boolean;
     TxtColor: TColor);
+  const
+    // Minimum HSL-lightness gap (0..255) enforced between the search-match
+    // highlight fill and the text painted over it, so highlighted text stays
+    // readable in light mode, dark mode, and on coloured message lines.
+    MinHighlightContrast = 125;
   var
     Details: TThemedElementDetails;
     TextRect: TRect;
@@ -1972,9 +1976,9 @@ var
     aRight: Integer;
     LastP: Integer;
     HighlightCol: TColor;
-    {$IFDEF MSWINDOWS}
-    HighlightR, HighlightG, HighlightB: Byte;
-    {$ENDIF}
+    EffTxtCol: TColor;
+    HlH, HlL, HlS, TxH, TxL, TxS: Byte;
+    NewL: Integer;
   begin
     Canvas.Font.Color:=Font.Color;
     TextRect:=ARect;
@@ -1989,17 +1993,37 @@ var
     end else
       Details:=ThemeServices.GetElementDetails(ttItemNormal);
     if LoSearchText<>'' then begin
-      HighlightCol:=clHighlight;
-      {$IFDEF MSWINDOWS}
-      // Search-match highlight: clHighlight is too bright in dark mode --
-      // dim to ~30% so text remains readable against the highlight rectangle.
-      if IsDarkModeEnabled then begin
-        RedGreenBlue(ColorToRGB(clHighlight),HighlightR,HighlightG,HighlightB);
-        HighlightCol:=RGBToColor((HighlightR*30) div 100,
-                                 (HighlightG*30) div 100,
-                                 (HighlightB*30) div 100);
+      // Determine the colour the matched text will actually be painted in, so
+      // the highlight rectangle can be contrast-checked against it.
+      if TxtColor=clDefault then
+        EffTxtCol:=Font.Color
+      else
+        EffTxtCol:=TxtColor;
+      if EffTxtCol=clDefault then
+        EffTxtCol:=clWindowText;
+      // Enforce a readable HSL-lightness separation between the search-match
+      // highlight fill and the text drawn over it. A fixed clHighlight (or a
+      // fixed dim of it) washes the text out whenever their lightness is close
+      // -- bright clHighlight under light text in dark mode, or a dimmed
+      // highlight under a dark-coloured message line. Check the HSL lightness
+      // gap and, if too small, reverse the highlight's lightness to the
+      // opposite side of the text (preserving hue/saturation) until the
+      // contrast is guaranteed.
+      ColorToHLS(ColorToRGB(clHighlight),HlH,HlL,HlS);
+      ColorToHLS(ColorToRGB(EffTxtCol),TxH,TxL,TxS);
+      if Abs(Integer(HlL)-Integer(TxL))>=MinHighlightContrast then
+        HighlightCol:=clHighlight
+      else begin
+        if TxL>=128 then
+          NewL:=Integer(TxL)-MinHighlightContrast
+        else
+          NewL:=Integer(TxL)+MinHighlightContrast;
+        if NewL<0 then
+          NewL:=0
+        else if NewL>255 then
+          NewL:=255;
+        HighlightCol:=HLStoColor(HlH,Byte(NewL),HlS);
       end;
-      {$ENDIF}
       LoTxt:=UTF8LowerCase(aTxt);
       p:=1;
       LastP:=1;
