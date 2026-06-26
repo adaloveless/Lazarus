@@ -3242,8 +3242,6 @@ begin
 end;
 
 function TFpValueDwarfEnum.GetAsInteger: Int64;
-var
-  Size: TFpDbgValueSize;
 begin
   Result := Int64(GetAsCardinal);
 end;
@@ -3930,9 +3928,6 @@ begin
 end;
 
 procedure TFpValueDwarfProperty.SetStructureValue(AValue: TFpValueDwarf);
-var
-  t: TFpSymbolDwarfType;
-  d: TFpValueConstAddress;
 begin
   inherited SetStructureValue(AValue);
   UpdateGetterValue;
@@ -6948,8 +6943,6 @@ end;
 function TFpSymbolDwarfDataProperty.GetGetterStructSymbol: TFpSymbolDwarfType;
 var
   InfoEntry: TDwarfInformationEntry;
-  FwdInfoPtr: Pointer;
-  FwdCompUint: TDwarfCompilationUnit;
   r: TFpSymbolDwarf;
 begin
   Result := FStructSym;
@@ -8305,9 +8298,6 @@ begin
 end;
 
 function TFpSymbolDwarfTypeProc.ParamCount: integer;
-var
-  InfoEntry: TDwarfInformationEntry;
-  i: Integer;
 begin
   Result := FParamCnt;
   if Result >= 0 then

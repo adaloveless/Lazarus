@@ -138,6 +138,10 @@ msgstr "Nome:"
 msgid "Please choose the formatter to add."
 msgstr "Por favor, escolha o formatador a adicionar."
 
+#: idedebuggerstringconstants.dbgwatchcolorautoopenconsolewindowlinu
+msgid "Auto open console Window (Linux):"
+msgstr ""
+
 #: idedebuggerstringconstants.dbgwatchcolordisabled
 msgctxt "idedebuggerstringconstants.dbgwatchcolordisabled"
 msgid "Disabled"
@@ -155,6 +159,20 @@ msgstr "Erro"
 #: idedebuggerstringconstants.dbgwatchcolorevaluating
 msgid "Evaluating"
 msgstr "A avaliar"
+
+#: idedebuggerstringconstants.dbgwatchcolornever
+#, fuzzy
+msgctxt "idedebuggerstringconstants.dbgwatchcolornever"
+msgid "Never"
+msgstr "Nunca"
+
+#: idedebuggerstringconstants.dbgwatchcoloronoutputalways
+msgid "On output (always)"
+msgstr ""
+
+#: idedebuggerstringconstants.dbgwatchcoloronoutputonceperdebugsessi
+msgid "On output (once per debug session)"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgwatchcolors
 msgid "Watches/Locals"
@@ -189,7 +207,7 @@ msgstr "Tamanho máximo de texto"
 
 #: idedebuggerstringconstants.dispformatarrayhidelentoggle
 msgid "Hide \"Len\", if ..."
-msgstr "Ocultar «Len», se..."
+msgstr "Ocultar \"Len\", se..."
 
 #: idedebuggerstringconstants.dispformatarraynavautohide
 msgid "Auto-hide"
@@ -279,6 +297,7 @@ msgid "Dynamic"
 msgstr "Dinãmico"
 
 #: idedebuggerstringconstants.dispformatdlgarraycombinenone
+msgctxt "idedebuggerstringconstants.dispformatdlgarraycombinenone"
 msgid "Never"
 msgstr "Nunca"
 
@@ -1054,12 +1073,12 @@ msgstr "Instance"
 #: idedebuggerstringconstants.drsuseinstanceclasshint
 msgctxt "idedebuggerstringconstants.drsuseinstanceclasshint"
 msgid "Use Instance class type"
-msgstr "Utilizar o tipo de classe «Instance»"
+msgstr "Utilizar o tipo de classe \"Instance\""
 
 #: idedebuggerstringconstants.drsuseinstanceclasstype
 msgctxt "idedebuggerstringconstants.drsuseinstanceclasstype"
 msgid "Use Instance class type"
-msgstr "Utilizar o tipo de classe «Instance»"
+msgstr "Utilizar o tipo de classe \"Instance\""
 
 #: idedebuggerstringconstants.drswatchsplitterinspect
 msgctxt "idedebuggerstringconstants.drswatchsplitterinspect"
@@ -1244,7 +1263,7 @@ msgstr "Página acima"
 #: idedebuggerstringconstants.liscurrent
 msgctxt "lazarusidestrconsts.liscurrent"
 msgid "Select as context"
-msgstr "Selecionar como contexto"
+msgstr "Seleccionar como contexto"
 
 #: idedebuggerstringconstants.lisdadattach
 msgid "Attach"

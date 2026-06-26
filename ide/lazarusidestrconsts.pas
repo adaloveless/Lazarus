@@ -1822,14 +1822,14 @@ resourcestring
   dlgEditExportBackColor = 'Use Background color in HTML export';
   dlgBookmarkSetScroll = 'Restore scroll position for bookmarks';
   dlgUndoLimit = 'Undo limit';
-  dlgMarginGutter = 'Margin and gutter';
+  dlgGeneral = 'General';
+  dlgGutter = 'Gutter';
   dlgVisibleRightMargin = 'Visible right margin';
   dlgVisibleGutter = 'Visible gutter';
   dlgGutterSeparatorIndex = 'Gutter separator index';
   dlgShowLineNumbers = 'Show line numbers';
   dlgShowCompilingLineNumbers = 'Show line numbers';
   dlgRightMargin = 'Right margin';
-  dlgGutter = 'Gutter';
   dlgGutterColor = 'Gutter Color';
   dlgDefaultEditorFont='Default editor font';
   dlgEditorFontSize = 'Editor font size';
@@ -2371,7 +2371,9 @@ resourcestring
   dlgCOSymbolTypeStabs = 'Stabs';
   dlgCOSymbolTypeDwarf2 = 'Dwarf 2';
   dlgCOSymbolTypeDwarf2Set = 'Dwarf 2 with sets';
-  dlgCOSymbolTypeDwarf3 = 'Dwarf 3 (beta)';
+  dlgCOSymbolTypeDwarf3 = 'Dwarf 3';
+  dlgCOSymbolTypeDwarf4 = 'Dwarf 4';
+  dlgCOSymbolTypeDwarf5 = 'Dwarf 5 (FPC 3.3.1)';
   dlgLNumsBct = 'Display line numbers in run-time error backtraces';
   dlgCOHeaptrc = 'Use Heaptrc unit (check for mem-leaks)';
   dlgCOTrashVariables = 'Trash variables';
@@ -4042,6 +4044,8 @@ resourcestring
   lisEnableOptionDwarf2 = 'Enable Dwarf 2 (-gw)';
   lisEnableOptionDwarf2Sets = 'Enable Dwarf 2 with sets';
   lisEnableOptionDwarf3 = 'Enable Dwarf 3 (-gw3)';
+  lisEnableOptionDwarf4 = 'Enable Dwarf 4 (-gw4)';
+  lisEnableOptionDwarf5 = 'Enable Dwarf 5 [FPC 3.3.1] (-gw5)';
 
   lisTheProjectDoesNotUseDwarf_TaskDlg_Caption = 'Running your application with debugger';
   lisTheProjectDoesNotUseDwarf_TaskDlg_Title = 'Choose Debug Information format';
@@ -6234,10 +6238,6 @@ resourcestring
   lisWhenOpeningASymlinkFileOpenTheTargetFileTheSymlink = 'When opening a symlink file, open the '
     +'target file, the symlink file, or ask';
   lisWhenOpeningSymlink = 'When opening a Symlink';
-  DbgWatchColorAutoOpenConsoleWindowLinu = 'Auto open console Window (Linux):';
-  DbgWatchColorNever = 'Never';
-  DbgWatchColorOnOutputOncePerDebugSessi = 'On output (once per debug session)';
-  DbgWatchColorOnOutputAlways = 'On output (always)';
 
 implementation
 

@@ -270,6 +270,7 @@ type
     FCanvasScaleFactor: double;
     FXorMode: boolean;
     FXorROP: Integer;
+    FRop2: Integer;
     FXorSnapshot: Pcairo_surface_t;
     FXorRect: TGdkRectangle;
     //Accumulated clip region, mirrors what we set via SetClipRegion/ResetClip.
@@ -563,16 +564,6 @@ begin
   else
     DebugLn(AMethodName + ' Error - invalid bitmap ' + AParamName + ' = ' +
       DbgS(ABitmap) + '!');
-end;
-
-procedure TColorToRGB(AColor: TColor; out R, G, B: double);
-var
-  ARGB: TColorRef;
-begin
-  ARGB := ColorToRGB(AColor);
-  R := (ARGB and $FF) / 255;
-  G := ((ARGB shr 8) and $FF) / 255;
-  B := ((ARGB shr 16) and $FF) / 255;
 end;
 
 {Map winapi ROP to Tcairo_operator_t}
@@ -1125,6 +1116,10 @@ var
   Weight: TPangoWeight;
   inkRect: TPangoRectangle;
   APangoMetrics: PPangoFontMetrics;
+  ADefDesc: PPangoFontDescription;
+  AOwnsDesc: Boolean;
+  ADpi: gdouble;
+  APx: Integer;
 begin
   inherited Create;
   FLogFont := ALogFont;
@@ -1147,7 +1142,36 @@ begin
   end;
   FFontName := FHandle^.get_family;
   if ALogFont.lfHeight <> 0 then
-    FHandle^.set_absolute_size(Abs(ALogFont.lfHeight) * PANGO_SCALE);
+    FHandle^.set_absolute_size(Abs(ALogFont.lfHeight) * PANGO_SCALE)
+  else
+  if FHandle^.get_size = 0 then
+  begin
+    AOwnsDesc := False;
+    if Gtk3WidgetSet.DefaultAppFontName <> '' then
+    begin
+      ADefDesc := pango_font_description_from_string(PgChar(Gtk3WidgetSet.DefaultAppFontName));
+      AOwnsDesc := True;
+    end else
+      ADefDesc := pango_context_get_font_description(AContext);
+    if (ADefDesc <> nil) and (ADefDesc^.get_size > 0) then
+    begin
+      if ADefDesc^.get_size_is_absolute then
+        FHandle^.set_absolute_size(ADefDesc^.get_size)
+      else
+        FHandle^.set_size(ADefDesc^.get_size);
+    end;
+    if AOwnsDesc and (ADefDesc <> nil) then
+      ADefDesc^.free;
+  end;
+  if (ALogFont.lfHeight = 0) and (FHandle^.get_size > 0) and
+     (not FHandle^.get_size_is_absolute) then
+  begin
+    ADpi := gdk_screen_get_resolution(gdk_screen_get_default);
+    if ADpi <= 0 then
+      ADpi := 96;
+    APx := Round((FHandle^.get_size / PANGO_SCALE) * ADpi / 72.0);
+    FHandle^.set_absolute_size(APx * PANGO_SCALE);
+  end;
   if ALogFont.lfItalic > 0 then
     FHandle^.set_style(PANGO_STYLE_ITALIC);
   if Stretch <> PANGO_STRETCH_NORMAL then
@@ -1736,7 +1760,7 @@ function DebugColor(AColor: TColor): string;
 var
   R, G, B: double;
 begin
-  TColorToRGB(AColor, R, G, B);
+  ColorToCairoRGB(AColor, R, G, B);
   Result := Format('DebugColor: R %2.2n G %2.2n B %2.2n',[R, G, B]);
 end;
 
@@ -1813,6 +1837,7 @@ procedure TGtk3DeviceContext.SetRasterOp(AValue: integer);
 var
   AMap: Tcairo_operator_t;
 begin
+  FRop2 := AValue;
   if (not FXorMode) and (MapCairoRasterOpToRasterOp(cairo_get_operator(pcr)) = AValue) then
     exit;
   if FXorMode and ((AValue <> R2_XORPEN) and (AValue <> R2_NOTXORPEN)) then
@@ -2509,6 +2534,17 @@ begin
       if not FXorMode then
         cairo_set_operator(pcr, CAIRO_OPERATOR_DIFFERENCE);
   end;
+
+  if not FXorMode then
+    case FRop2 of
+      R2_BLACK: SetSourceColor(clBlack);
+      R2_WHITE: SetSourceColor(clWhite);
+      R2_NOT:
+        begin
+          SetSourceColor(clWhite);
+          cairo_set_operator(pcr, CAIRO_OPERATOR_DIFFERENCE);
+        end;
+    end;
 
   if FCurrentPen.Cosmetic then
     cairo_set_line_width(pcr, 1.0)
@@ -3281,13 +3317,16 @@ procedure TGtk3DeviceContext.drawImage1(targetRect: PRect; image: PGdkPixBuf;
 var
   M: Tcairo_matrix_t;
   MaskSurface: Pcairo_surface_t;
+  MaskPattern: Pcairo_pattern_t;
+  DstW, DstH: Double;
+  SrcW, SrcH: Double;
 
   function BuildMaskA8: Pcairo_surface_t;
   var
-    MaskW, MaskH, MaskInStride, MaskOutStride: gint;
+    MaskW, MaskH, MaskInStride, MaskOutStride, MaskCols: gint;
     MaskInPixels, MaskOutPixels: PByte;
     InRow, OutRow: PByte;
-    X, Y, ByteIdx, BitIdx: Integer;
+    X, Y, ByteIdx, BitIdx, BytesPerPix: Integer;
     Bit: Byte;
   begin
     Result := nil;
@@ -3297,7 +3336,17 @@ var
     MaskInStride := mask^.get_rowstride;
     MaskInPixels := PByte(mask^.get_pixels);
     MaskH := mask^.get_height;
-    MaskW := MaskInStride * 8;
+    MaskCols := mask^.get_width;
+
+    if (MaskCols > 1) and (MaskInStride div MaskCols >= 1) then
+    begin
+      BytesPerPix := MaskInStride div MaskCols;
+      MaskW := MaskCols;
+    end else
+    begin
+      BytesPerPix := 0;
+      MaskW := MaskInStride * 8;
+    end;
 
     if MaskW > Image^.get_width then
       MaskW := Image^.get_width;
@@ -3321,17 +3370,28 @@ var
     begin
       InRow := MaskInPixels + Y * MaskInStride;
       OutRow := MaskOutPixels + Y * MaskOutStride;
-      for X := 0 to MaskW - 1 do
+      if BytesPerPix > 0 then
       begin
-        ByteIdx := X shr 3;
-        BitIdx := 7 - (X and 7);
-        Bit := (InRow[ByteIdx] shr BitIdx) and 1;
-        if Bit = 0 then
-          OutRow[X] := $FF
-        else
-          OutRow[X] := $00;
+        for X := 0 to MaskW - 1 do
+          if InRow[X * BytesPerPix] >= 128 then
+            OutRow[X] := $00
+          else
+            OutRow[X] := $FF;
+      end else
+      begin
+        for X := 0 to MaskW - 1 do
+        begin
+          ByteIdx := X shr 3;
+          BitIdx := 7 - (X and 7);
+          Bit := (InRow[ByteIdx] shr BitIdx) and 1;
+          if Bit = 0 then
+            OutRow[X] := $FF
+          else
+            OutRow[X] := $00;
+        end;
       end;
     end;
+
     cairo_surface_mark_dirty(Result);
   end;
 
@@ -3349,31 +3409,32 @@ begin
   with targetRect^ do
     cairo_rectangle(pcr, LToDX(Left), LToDY(Top), LToDX(Right) - LToDX(Left), LToDY(Bottom) - LToDY(Top));
 
+  DstW := LToDX(targetRect^.Right) - LToDX(targetRect^.Left);
+  DstH := LToDY(targetRect^.Bottom) - LToDY(targetRect^.Top);
+  SrcW := sourceRect^.Right - sourceRect^.Left;
+  SrcH := sourceRect^.Bottom - sourceRect^.Top;
+
   cairo_matrix_init_identity(@M);
   cairo_matrix_translate(@M, SourceRect^.Left, SourceRect^.Top);
-  cairo_matrix_scale(@M,
-    (sourceRect^.Right - sourceRect^.Left) / (LToDX(targetRect^.Right) - LToDX(targetRect^.Left)),
-    (sourceRect^.Bottom - sourceRect^.Top) / (LToDY(targetRect^.Bottom) - LToDY(targetRect^.Top))
-  );
+  cairo_matrix_scale(@M, SrcW / DstW, SrcH / DstH);
   cairo_matrix_translate(@M, -LToDX(targetRect^.Left), -LToDY(targetRect^.Top));
 
   cairo_pattern_set_matrix(cairo_get_source(pcr), @M);
 
   //Use NEAREST filter for 1:1 scale to prevent bilinear blur
-  if ((sourceRect^.Right - sourceRect^.Left) = (targetRect^.Right - targetRect^.Left)) and
-     ((sourceRect^.Bottom - sourceRect^.Top) = (targetRect^.Bottom - targetRect^.Top)) then
+  if (SrcW = DstW) and (SrcH = DstH) then
     cairo_pattern_set_filter(cairo_get_source(pcr), CAIRO_FILTER_NEAREST);
 
   cairo_clip(pcr);
   if Assigned(mask) then
   begin
-    //we must build cairo compatible mask, issue #42260 contains
-    //bitmaps examples.
     MaskSurface := BuildMaskA8;
     if MaskSurface <> nil then
     begin
-      cairo_mask_surface(pcr, MaskSurface,
-        LToDX(targetRect^.Left), LToDY(targetRect^.Top));
+      MaskPattern := cairo_pattern_create_for_surface(MaskSurface);
+      cairo_pattern_set_matrix(MaskPattern, @M);
+      cairo_mask(pcr, MaskPattern);
+      cairo_pattern_destroy(MaskPattern);
       cairo_surface_destroy(MaskSurface);
     end else
       cairo_paint(pcr);
@@ -3745,7 +3806,7 @@ begin
     cairo_matrix_init_identity(@PatMatrix);
     cairo_pattern_set_matrix(CurrentBrush.brush_pattern, @PatMatrix);
     cairo_save(pcr);
-    TColorToRGB(FCurrentTextColor, MonoR, MonoG, MonoB);
+    ColorToCairoRGB(TColor(FCurrentTextColor), MonoR, MonoG, MonoB);
     cairo_set_source_rgba(pcr, MonoR, MonoG, MonoB, cMonoPatternAlpha);
     cairo_rectangle(pcr, DevX, DevY, DevW, DevH);
     cairo_clip(pcr);
@@ -4237,7 +4298,7 @@ procedure TGtk3DeviceContext.SetSourceColor(AColor: TColor);
 var
   R, G, B: double;
 begin
-  TColorToRGB(AColor, R, G, B);
+  ColorToCairoRGB(AColor, R, G, B);
   cairo_set_source_rgb(pcr, R, G, B);
 end;
 

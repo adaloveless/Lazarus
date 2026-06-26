@@ -368,7 +368,7 @@ begin
   popupWatchFormatPresets.Caption := liswlQuickFormat;
 
   actToggleInspectSite.Caption:= liswlInspectPane;
-  actToggleInspectSite.ImageIndex := IDEImages.LoadImage('debugger_inspect');
+  actToggleInspectSite.ImageIndex := IDEImages.LoadImage('TListBox');
 
   actAddWatchPoint.Caption := lisWatchToWatchPoint;
 
@@ -380,8 +380,11 @@ begin
   actCopyAll.Caption      := lisLocalsDlgCopyAll;
 
   actInspect.Caption := lisInspect;
+  actInspect.ImageIndex := IDEImages.LoadImage('debugger_inspect');
   actEvaluate.Caption := lisEvaluateModify;
+  actEvaluate.ImageIndex := IDEImages.LoadImage('debugger_evaluate');
   actMemView.Caption := lisMenuViewMemViewer;
+  actMemView.ImageIndex := IDEImages.LoadImage('debugger_mem_viewer');
 
   btnShowDataAddr.ImageIndex := IDEImages.LoadImage('address');
   tbWordWrap.ImageIndex := IDEImages.LoadImage('line_wrap');
@@ -683,9 +686,6 @@ begin
 
   if Source = tvWatches then begin
     if (not (FWatchesInView is TCurrentWatches)) or (GetSelectedSnapshot <> nil) then
-      exit;
-
-    if (Target = nil) then
       exit;
 
     Nodes := tvWatches.GetSortedSelection(True);

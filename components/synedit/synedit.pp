@@ -2589,7 +2589,6 @@ begin
   FPaintArea.DisplayView := FTheLinesView.DisplayView;
 
   Color := clWhite;
-  Font.OnChange := @FontChanged; // already set by inherited
   Font.Assign(fFontDummy);
   ParentFont := False;
   ParentColor := False;
@@ -5316,6 +5315,9 @@ begin
   end;
 
   if (sfMarkupMgrWaitingForHandle in fStateFlags) then begin
+    ScanRanges;
+    if sfAfterLoadFromFileNeeded in fStateFlags then
+      AfterLoadFromFile;
     FMarkupManager.DecPaintLock;
     Exclude(fStateFlags, sfMarkupMgrWaitingForHandle);
   end;

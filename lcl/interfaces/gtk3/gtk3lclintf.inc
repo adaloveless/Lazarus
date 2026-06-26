@@ -176,7 +176,7 @@ end;
 function TGtk3WidgetSet.ExtUTF8Out(DC: HDC; X, Y: Integer; Options: Longint;
   Rect: PRect; Str: PChar; Count: Longint; Dx: PInteger): Boolean;
 begin
-  // all fonts are UTF-8 under gtk2 => no mapping needed
+  // all fonts are UTF-8 under gtk3 => no mapping needed
   Result:=ExtTextOut(DC,X,Y,Options,Rect,Str,Count,Dx);
 end;
 
@@ -300,31 +300,30 @@ begin
     else if desc.BitsPerPixel = 16 then
     begin
       DbgS('Bit depth not implemented '+inttostr(desc.BitsPerPixel));
-    end
-    else if (desc.BitsPerPixel = 24) and ((Ridx <> 0) or (Gidx <> 1) or (Bidx <> 2) or (AIdx <> 3)) then
+    end else
+    if desc.BitsPerPixel = 24 then
     begin
-      // put components in right order
+      Src1BitStride := GetBytesPerLine(Desc.Width, 24, Desc.LineEnd);
+      ARowStride := PtrUInt(Desc.Width) * 4;
+      FreeMem(NewData);
+      NewData := AllocMem(ARowStride * Desc.Height);
+      SrcRowPtr := ARawImage.Data;
       DstRowPtr := NewData;
-      SrcRowPtr := ArawImage.Data;
-      y := Desc.Height;
-      while y > 0 do
+      for y := 0 to Integer(Desc.Height) - 1 do
       begin
         Src := SrcRowPtr;
         Dst := DstRowPtr;
-        x := Desc.Width;
-        while x > 0 do
+        for x := 0 to Integer(Desc.Width) - 1 do
         begin
-          Dst[0] := Src[Ridx];
-          Dst[1] := Src[Gidx];
-          Dst[2] := Src[Bidx];
-
+          Dst[Ridx] := Src[0];
+          Dst[Gidx] := Src[1];
+          Dst[Bidx] := Src[2];
+          Dst[3] := $FF;
           Inc(Src, 3);
-          Inc(Dst, 3);
-          Dec(x);
+          Inc(Dst, 4);
         end;
-        Inc(SrcRowPtr, ARowstride);
-        Inc(DstRowPtr, ARowstride);
-        Dec(y);
+        Inc(SrcRowPtr, Src1BitStride);
+        Inc(DstRowPtr, ARowStride);
       end;
     end else
     if (Ridx <> 0) or (Gidx <> 1) or (Bidx <> 2) or (AIdx <> 3) then
@@ -389,7 +388,7 @@ begin
   case Desc.BitsPerPixel of
     1: ImageFormat := CAIRO_FORMAT_ARGB32;
     8: ImageFormat := CAIRO_FORMAT_A8;
-    24: ImageFormat := CAIRO_FORMAT_RGB24;
+    24: ImageFormat := CAIRO_FORMAT_ARGB32;
     32: ImageFormat := CAIRO_FORMAT_ARGB32;
   else
     Exit(False);
@@ -407,14 +406,13 @@ begin
 
   if (ARawImage.Mask <> nil) and (ARawImage.MaskSize > 0) then
   begin
-    //Compute correct 1-bit mask row stride matching the description
     ARowStride := GetBytesPerLine(Desc.Width, 1, Desc.MaskLineEnd);
-    //Allocate and copy only the actual 1-bit mask data
-    NewData := GetMem(ARowStride * Desc.Height);
-    if ARowStride * PtrUInt(Desc.Height) <= ARawImage.MaskSize then
+    NewData := AllocMem(ARowStride * Desc.Height);
+    if ARawImage.MaskSize >= ARowStride * PtrUInt(Desc.Height) then
       Move(ARawImage.Mask^, NewData^, ARowStride * Desc.Height)
     else
-      FillChar(NewData^, ARowStride * Desc.Height, $00);
+    if ARawImage.MaskSize > 0 then
+      Move(ARawImage.Mask^, NewData^, ARawImage.MaskSize);
     //Store as width=1, height=H, rowstride=MaskRowStride RGBA pixbuf.
     //numBytes = ARowStride * H = exact 1-bit data size, so RawImage_FromBitmap
     //copies the right amount and GetMask_Generic reads correct bit values.
@@ -452,6 +450,9 @@ const
 //============================
 var
   Image: TGtk3Image absolute ABitmap;
+  AAlphaPtr: PByte;
+  APos, ANumBytes: PtrUInt;
+  AAllOpaque: Boolean;
 
 begin
   Result := False;
@@ -506,38 +507,39 @@ begin
       end;
     32:
       begin
-        ADesc.AlphaPrec := 8;
+        Image.UpdatePixbufFromSurface;
+        AAllOpaque := False;
+        if (Image.bits <> nil) and (Image.numBytes > 0) then
+        begin
+          AAllOpaque := True;
+          ANumBytes := Image.numBytes;
+          AAlphaPtr := Image.bits;
+          Inc(AAlphaPtr, 3);
+          APos := 3;
+          while APos < ANumBytes do
+          begin
+            if AAlphaPtr^ <> 255 then
+            begin
+              AAllOpaque := False;
+              break;
+            end;
+            Inc(AAlphaPtr, 4);
+            Inc(APos, 4);
+          end;
+        end;
+        if AAllOpaque then
+          ADesc.Depth := 24
+        else
+          ADesc.AlphaPrec := 8;
         ADesc.RedPrec := 8;
         ADesc.GreenPrec := 8;
         ADesc.BluePrec := 8;
-
         ADesc.AlphaShift := 24;
-        ADesc.RedShift := 0;
+        ADesc.RedShift := 16;
         ADesc.GreenShift := 8;
-        ADesc.BlueShift := 16;
+        ADesc.BlueShift := 0;
       end;
   end;
-  (*
-  if not IsValidGDIObject(ABitmap)
-  then begin
-    DebugLn('WARNING: [TGtk3WidgetSet.GetBitmapRawImageDescription] invalid Bitmap!');
-    exit;
-  end;
-
-  case GDIObject^.GDIBitmapType of
-    gbBitmap:
-      Result := RawImage_DescriptionFromDrawable(ADesc,
-        GdiObject^.GDIBitmapObject, False);
-    gbPixmap:
-      Result := RawImage_DescriptionFromDrawable(ADesc,
-        GdiObject^.GDIPixmapObject.Image, GdiObject^.GDIPixmapObject.Mask <> nil);
-    gbPixbuf:
-      Result := RawImage_DescriptionFromPixbuf(ADesc, GdiObject^.GDIPixbufObject);
-  else
-    DebugLn('WARNING: [TGtk3WidgetSet.RawImage_DescriptionFromBitmap] Unknown GDIBitmapType');
-    Exit;
-  end;
-  *)
 end;
 
 {------------------------------------------------------------------------------
@@ -842,17 +844,18 @@ function TGtk3WidgetSet.RawImage_QueryDescription(AFlags: TRawImageQueryFlags; v
 begin
   Result := inherited RawImage_QueryDescription(AFlags, ADesc);
   if ADesc.BitsPerPixel > 8 then
-    ADesc.BitsPerPixel := 32
+  begin
+    ADesc.BitsPerPixel := 32;
+    ADesc.RedPrec := 8;
+    ADesc.GreenPrec := 8;
+    ADesc.BluePrec := 8;
+    ADesc.RedShift := 16;
+    ADesc.GreenShift := 8;
+    ADesc.BlueShift := 0;
+  end
   else
   if ADesc.BitsPerPixel > 1 then
-    ADesc.BitsPerPixel := 8
-  else
-  if ADesc.BitsPerPixel = 32 then
-  begin
-    ADesc.Depth := 32;
-    ADesc.AlphaPrec := 8;
-    ADesc.AlphaShift := 24;
-  end;
+    ADesc.BitsPerPixel := 8;
 end;
 
 {------------------------------------------------------------------------------
@@ -868,8 +871,15 @@ var
   WorkImage, WorkMask: TGtk3Image;
   R: TRect;
   Width, Height: Integer;
-  //InvertPixels: Boolean;
-  //Px: Cardinal;
+  AHasAlpha: Boolean;
+  AAlphaPtr: PByte;
+  APos, ANumBytes: PtrUInt;
+  AMaskRowStride: PtrUInt;
+  AMaskData: PByte;
+  AMaskSrc: PByte;
+  x, y: Integer;
+  AByte: Byte;
+  ASwapPtr: PByte;
 begin
   Result := false;
 
@@ -915,28 +925,91 @@ begin
   Desc.Height := WorkImage.height;
 
   Image.UpdatePixbufFromSurface;
-  // copy data
   ARawImage.DataSize := WorkImage.numBytes;
   ReAllocMem(ARawImage.Data, ARawImage.DataSize);
 
   if ARawImage.DataSize > 0 then
+  begin
     Move(WorkImage.bits^, ARawImage.Data^, ARawImage.DataSize);
+    if Desc.BitsPerPixel = 32 then
+    begin
+      ASwapPtr := ARawImage.Data;
+      APos := 0;
+      while APos + 3 < ARawImage.DataSize do
+      begin
+        AByte := ASwapPtr[0];
+        ASwapPtr[0] := ASwapPtr[2];
+        ASwapPtr[2] := AByte;
+        Inc(ASwapPtr, 4);
+        Inc(APos, 4);
+      end;
+    end;
+  end;
 
-  if WorkMask <> nil then
+  AHasAlpha := False;
+  if (WorkMask <> nil) and (Desc.AlphaPrec > 0) and
+    (Desc.BitsPerPixel = 32) and (WorkImage.bits <> nil) then
+  begin
+
+    ANumBytes := WorkImage.numBytes;
+    AAlphaPtr := WorkImage.bits;
+
+    Inc(AAlphaPtr, 3);
+    APos := 3;
+
+    while APos < ANumBytes do
+    begin
+      if AAlphaPtr^ <> 255 then
+      begin
+        AHasAlpha := True;
+        break;
+      end;
+      Inc(AAlphaPtr, 4);
+      Inc(APos, 4);
+    end;
+
+  end;
+
+  if (WorkMask <> nil) and not AHasAlpha then
   begin
     Desc.MaskLineEnd := rileDWordBoundary;
     Desc.MaskBitOrder := riboReversedBits;
     Desc.MaskBitsPerPixel := 1;
-    ARawImage.MaskSize := WorkMask.numBytes;
-    ReAllocMem(ARawImage.Mask, ARawImage.MaskSize);
-    if ARawImage.MaskSize > 0 then
+
+    if WorkMask.width > 1 then
     begin
-      if (WorkMask.bits<>nil) and (ARawImage.Mask<>nil) then
-      Move(WorkMask.bits^, ARawImage.Mask^, ARawImage.MaskSize);
-      // if InvertPixels then
-      //  WorkMask.invertPixels(QImageInvertRGB);
+      AMaskRowStride := GetBytesPerLine(Width, 1, rileDWordBoundary);
+      ARawImage.MaskSize := AMaskRowStride * PtrUInt(Height);
+      ReAllocMem(ARawImage.Mask, ARawImage.MaskSize);
+      if (ARawImage.Mask <> nil) and (WorkMask.bits <> nil) then
+      begin
+        FillChar(ARawImage.Mask^, ARawImage.MaskSize, 0);
+        AMaskData := ARawImage.Mask;
+        for y := 0 to Height - 1 do
+        begin
+          AMaskSrc := WorkMask.bits;
+          Inc(AMaskSrc, PtrUInt(y) * PtrUInt(WorkMask.bytesPerLine));
+          for x := 0 to Width - 1 do
+          begin
+            if AMaskSrc[x * 4] <> 0 then
+            begin
+              AByte := $80 shr (x and 7);
+              AMaskData[PtrUInt(y) * AMaskRowStride + PtrUInt(x shr 3)] :=
+                AMaskData[PtrUInt(y) * AMaskRowStride + PtrUInt(x shr 3)] or AByte;
+            end;
+          end;
+        end;
+      end;
+    end else
+    begin
+      ARawImage.MaskSize := WorkMask.numBytes;
+      ReAllocMem(ARawImage.Mask, ARawImage.MaskSize);
+      if (ARawImage.MaskSize > 0) and (WorkMask.bits <> nil) and (ARawImage.Mask <> nil) then
+        Move(WorkMask.bits^, ARawImage.Mask^, ARawImage.MaskSize);
     end;
-  end;
+
+  end else
+    Desc.MaskBitsPerPixel := 0;
 
   if WorkImage <> Image then
     WorkImage.Free;
