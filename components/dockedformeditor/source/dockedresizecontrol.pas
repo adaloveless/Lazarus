@@ -29,7 +29,7 @@ type
 
   { TResizeControl }
 
-  TResizeControl = class(TWinControl)
+  TResizeControl = class(TPanel)
   private
     FBitmapBarActive: TBitmap;
     FBitmapBarInactive: TBitmap;
@@ -361,6 +361,9 @@ constructor TResizeControl.Create(TheOwner: TComponent);
 begin
   inherited Create(TheOwner);
 
+  BevelOuter := bvNone;
+  BorderStyle := bsNone;
+  Caption := '';
   FResizeContainer := TResizeContainer.Create(Self);
   FResizeContainer.ResizeGrips.OnMouseDown := @SizerMouseDown;
   FResizeContainer.ResizeGrips.OnMouseMove := @SizerMouseMove;

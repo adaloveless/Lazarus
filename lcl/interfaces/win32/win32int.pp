@@ -449,6 +449,10 @@ begin
   if Assigned(g_GetDpiForWindow) then
     Result := g_GetDpiForWindow(hwnd)
   else
+    Result := 0;
+  // g_GetDpiForWindow returns 0 for an invalid window; a zero DPI cascades into
+  // divide-by-zero in DPI scaling. Fall back to the guarded ScreenInfo value.
+  if Result=0 then
     Result := ScreenInfo.PixelsPerInchX;
 end;
 

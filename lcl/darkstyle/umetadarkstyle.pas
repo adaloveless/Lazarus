@@ -10,37 +10,55 @@ interface
 {$IFDEF WINDOWS}
 uses
     uDarkStyleParams,
-    {$IF DEFINED(LCLWIN32) OR DEFINED(LCLQT5) OR DEFINED(LCLQT6)}
     uDarkStyle,
-    {$ENDIF}
-    {$IFDEF LCLWIN32}
-    uWin32WidgetSetDark,
-    {$ENDIF}
     uDarkStyleSchemesLoader;
+
+type
+  TApplyMetaDarkStyleHandler = procedure(const CS: TDSColors);
+  TMetaDarkFormChangedHandler = procedure(Form: TObject);
 {$ENDIF}
 
 {$IFDEF WINDOWS}
 procedure ApplyMetaDarkStyle(const CS:TDSColors);
+procedure RegisterMetaDarkStyleHandlers(AApply: TApplyMetaDarkStyleHandler;
+  AFormChanged: TMetaDarkFormChangedHandler);
 {$ENDIF}
 procedure MetaDarkFormChanged(Form: TObject);
 
 implementation
 
 {$IFDEF WINDOWS}
+var
+  ApplyMetaDarkStyleHandler: TApplyMetaDarkStyleHandler = nil;
+  MetaDarkFormChangedHandler: TMetaDarkFormChangedHandler = nil;
+
+procedure RegisterMetaDarkStyleHandlers(AApply: TApplyMetaDarkStyleHandler;
+  AFormChanged: TMetaDarkFormChangedHandler);
+begin
+  ApplyMetaDarkStyleHandler := AApply;
+  MetaDarkFormChangedHandler := AFormChanged;
+end;
+{$ENDIF}
+
+{$IFDEF WINDOWS}
 procedure ApplyMetaDarkStyle(const CS:TDSColors);
 begin
-  {$IF DEFINED(LCLWIN32) OR DEFINED(LCLQT5) OR DEFINED(LCLQT6)}
   InitDarkMode;
-  {$IFDEF LCLWIN32}
-  Initialize(CS);
+  if Assigned(ApplyMetaDarkStyleHandler) then
+    ApplyMetaDarkStyleHandler(CS)
+  {$IF DEFINED(LCLQT5) OR DEFINED(LCLQT6)}
+  else
+    ApplyDarkStyle
   {$ENDIF}
-  ApplyDarkStyle;
-  {$ENDIF}
+  ;
 end;
 {$ENDIF}
 
 procedure MetaDarkFormChanged(Form: TObject);
 begin
-  {$IFDEF LCLWIN32}DarkFormChanged(Form);{$ENDIF}
+  {$IFDEF WINDOWS}
+  if Assigned(MetaDarkFormChangedHandler) then
+    MetaDarkFormChangedHandler(Form);
+  {$ENDIF}
 end;
 end.

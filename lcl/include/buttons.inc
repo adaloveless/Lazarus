@@ -138,6 +138,19 @@ begin
   FModalResult:=AValue;
 end;
 
+procedure TCustomButton.SetWordWrap(AValue: Boolean);
+begin
+  if FWordWrap = AValue then Exit;
+  FWordWrap := AValue;
+  WSWordWrap;
+end;
+
+procedure TCustomButton.WSWordWrap;
+begin
+  if HandleAllocated then
+    TWSButtonClass(WidgetSetClass).SetWordWrap(Self, FWordWrap);
+end;
+
 procedure TCustomButton.ExecuteDefaultAction;
 begin
   if FActive or FDefault then

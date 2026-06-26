@@ -182,7 +182,7 @@ type
 
   { TResizeFormContainer }
 
-  TResizeFormContainer = class(TWinControl)
+  TResizeFormContainer = class(TPanel)
   protected
     procedure AlignControls(AControl: TControl; var RemainingClientRect: TRect); override;
   end;
@@ -217,6 +217,13 @@ type
   end;
 
 implementation
+
+procedure ConfigureDockedPanel(AControl: TPanel);
+begin
+  AControl.BevelOuter := bvNone;
+  AControl.BorderStyle := bsNone;
+  AControl.Caption := '';
+end;
 
 { TGrip }
 
@@ -617,14 +624,17 @@ begin
   FFakeMenu.AutoSize := True;
   FFakeMenu.Indent := 0;
 
-  FFormClient := TWinControl.Create(Parent);
+  FFormClient := TPanel.Create(Parent);
+  ConfigureDockedPanel(TPanel(FFormClient));
   FFormClient.ControlStyle:= FFormClient.ControlStyle + [csOpaque];
   FFormClient.Parent := Parent;
 
   FFormContainer := TResizeFormContainer.Create(FFormClient);
+  ConfigureDockedPanel(FFormContainer);
   FFormContainer.Parent := FFormClient;
 
-  FAnchorContainer := TWinControl.Create(Parent);
+  FAnchorContainer := TPanel.Create(Parent);
+  ConfigureDockedPanel(TPanel(FAnchorContainer));
   FAnchorContainer.Visible := False;
   FAnchorContainer.Parent := Parent;
 end;

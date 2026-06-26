@@ -31,7 +31,10 @@ function TMonitor.GetPixelsPerInch: Integer;
 var
   X, Y: UINT;
 begin
-  if WidgetSet.GetDpiForMonitor(FHandle, MDT_EFFECTIVE_DPI, X, Y)=S_OK then
+  // GetDpiForMonitor can return S_OK with a zero DPI on some RDP / multi-monitor
+  // setups; a zero here cascades into divide-by-zero in DPI scaling. Fall back to
+  // Screen.PixelsPerInch (guarded non-zero at widgetset init) when that happens.
+  if (WidgetSet.GetDpiForMonitor(FHandle, MDT_EFFECTIVE_DPI, X, Y)=S_OK) and (X>0) then
     Result := X
   else
     Result := Screen.PixelsPerInch;

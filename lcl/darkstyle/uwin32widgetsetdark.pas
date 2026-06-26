@@ -52,12 +52,13 @@ implementation
 
 uses
   Classes, SysUtils, Win32Int, WSLCLClasses, Forms, Windows, Win32Proc, Menus,
-  LCLType, Win32WSComCtrls, ComCtrls, LMessages, Win32WSStdCtrls,
+  LCLType, Win32WSComCtrls, ComCtrls, ToolWin, LMessages, Win32WSStdCtrls,
   WSStdCtrls, Win32WSControls, StdCtrls, WSControls, Graphics, Themes, LazUTF8,
   UxTheme, Win32Themes, ExtCtrls, WSMenus, JwaWinGDI, FPImage, Math, uDarkStyle,
-  WSComCtrls, CommCtrl, uImport, WSForms, Win32WSButtons, Buttons, Win32Extra,
-  Win32WSForms, Win32WSSpin, Spin, Win32WSMenus, Dialogs, GraphUtil,
-  gmap, gutil, TmSchema, InterfaceBase;
+  WSComCtrls, CommCtrl, uImport, WSForms, Win32WSButtons, WSButtons, Buttons, Win32Extra,
+  Win32WSForms, Win32WSSpin, Spin, Win32WSMenus, Win32WSExtCtrls, WSExtCtrls,
+  Dialogs, GraphUtil,
+  gmap, gutil, TmSchema, InterfaceBase, uMetaDarkStyle;
 
 type
   TWinControlDark = class(TWinControl);
@@ -73,6 +74,30 @@ type
             const AParams: TCreateParams): HWND; override;
     end;
 
+    { TWin32WSScrollBarDark }
+
+    TWin32WSScrollBarDark = class(TWin32WSScrollBar)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+    end;
+
+    { TWin32WSCustomTreeViewDark }
+
+    TWin32WSCustomTreeViewDark = class(TWin32WSCustomTreeView)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+    end;
+
+    { TWin32WSCustomSplitterDark }
+
+    TWin32WSCustomSplitterDark = class(TWin32WSCustomSplitter)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+    end;
+
     { TWin32WSStatusBarDark }
 
     TWin32WSStatusBarDark = class(TWin32WSStatusBar)
@@ -81,9 +106,105 @@ type
             const AParams: TCreateParams): HWND; override;
     end;
 
+    { TWin32WSCustomGroupBoxDark }
+
+    TWin32WSCustomGroupBoxDark = class(TWin32WSCustomGroupBox)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+      class function GetDefaultColor(const AControl: TControl;
+            const ADefaultColorType: TDefaultColorType): TColor; override;
+      class procedure ShowHide(const AWinControl: TWinControl); override;
+    end;
+
+    { TWin32WSCustomRadioGroupDark }
+
+    TWin32WSCustomRadioGroupDark = class(TWin32WSCustomGroupBoxDark)
+    end;
+
+    { TWin32WSCustomCheckGroupDark }
+
+    TWin32WSCustomCheckGroupDark = class(TWin32WSCustomGroupBoxDark)
+    end;
+
+    { TWin32WSButtonDark }
+
+    TWin32WSButtonDark = class(TWin32WSButton)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+      class procedure ShowHide(const AWinControl: TWinControl); override;
+    end;
+
+    { TWin32WSBitBtnDark }
+
+    TWin32WSBitBtnDark = class(TWin32WSBitBtn)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+      class procedure ShowHide(const AWinControl: TWinControl); override;
+    end;
+
+    { TWin32WSCustomCheckBoxDark }
+
+    TWin32WSCustomCheckBoxDark = class(TWin32WSCustomCheckBox)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+      class procedure GetPreferredSize(const AWinControl: TWinControl;
+            var PreferredWidth, PreferredHeight: integer;
+            WithThemeSpace: Boolean); override;
+      class function GetDefaultColor(const AControl: TControl;
+            const ADefaultColorType: TDefaultColorType): TColor; override;
+      class procedure ShowHide(const AWinControl: TWinControl); override;
+    end;
+
+    { TWin32WSRadioButtonDark }
+
+    TWin32WSRadioButtonDark = class(TWin32WSRadioButton)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+      class function GetDefaultColor(const AControl: TControl;
+            const ADefaultColorType: TDefaultColorType): TColor; override;
+      class procedure ShowHide(const AWinControl: TWinControl); override;
+    end;
+
+    { TWin32WSCustomPageDark }
+
+    TWin32WSCustomPageDark = class(TWin32WSCustomPage)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+      class function GetDefaultColor(const AControl: TControl;
+            const ADefaultColorType: TDefaultColorType): TColor; override;
+      class procedure ShowHide(const AWinControl: TWinControl); override;
+    end;
+
+    { TWin32WSCustomTabControlDark }
+
+    TWin32WSCustomTabControlDark = class(TWin32WSCustomTabControl)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+      class function GetDefaultColor(const AControl: TControl;
+            const ADefaultColorType: TDefaultColorType): TColor; override;
+      class procedure ShowHide(const AWinControl: TWinControl); override;
+    end;
+
     { TWin32WSCustomComboBoxDark }
 
     TWin32WSCustomComboBoxDark = class(TWin32WSCustomComboBox)
+    published
+      class function CreateHandle(const AWinControl: TWinControl;
+            const AParams: TCreateParams): HWND; override;
+      class function GetDefaultColor(const AControl: TControl;
+            const ADefaultColorType: TDefaultColorType): TColor; override;
+    end;
+
+    { TWin32WSCustomEditDark }
+
+    TWin32WSCustomEditDark = class(TWin32WSCustomEdit)
     published
       class function CreateHandle(const AWinControl: TWinControl;
             const AParams: TCreateParams): HWND; override;
@@ -155,6 +276,14 @@ const
   ID_SUB_STATUSBAR   = 4;
   ID_SUB_TRACKBAR    = 5;
   ID_SUB_LISTVIEW    = 6;
+  ID_SUB_SCROLLBAR   = 7;
+  DARK_BUTTON_OLD_PROC_PROP = 'LazDarkButtonOldProc';
+  DARK_BUTTON_HOT_PROP = 'LazDarkButtonHot';
+  DARK_BUTTON_BST_HOT = $0200;
+  DARK_CHECKRADIO_OLD_PROC_PROP = 'LazDarkCheckRadioOldProc';
+  DARK_CHECKRADIO_CALLING_OLD_PROC_PROP = 'LazDarkCheckRadioCallingOldProc';
+  DARK_GROUPBOX_OLD_PROC_PROP = 'LazDarkGroupBoxOldProc';
+  DARK_GROUPBOX_SYNC_CHILDREN_MSG = WM_APP + 138;
 
 const
   themelib = 'uxtheme.dll';
@@ -188,11 +317,15 @@ const
 
   MDL_COMBOBOX_BTNDOWN  = #$EE#$A5#$B2; // $E972
 
+  DARK_CHECKRADIO_SYNC_BOUNDS = WM_APP + 806;
+
 type
   TThemeClassMap = specialize TMap<HTHEME, LPCWSTR, specialize TLess<HTHEME>>;
+  TThemeWindowMap = specialize TMap<HTHEME, HWND, specialize TLess<HTHEME>>;
 
 var
   ThemeClass: TThemeClassMap = nil;
+  ThemeWindow: TThemeWindowMap = nil;
   Win32Theme: TWin32ThemeServices;
   OldUpDownWndProc: Windows.WNDPROC;
   CustomFormWndProc: Windows.WNDPROC;
@@ -210,11 +343,250 @@ var
                                     dwTextFlags, dwTextFlags2: DWORD; const pRect: TRect): HRESULT; stdcall = nil;
   TrampolineDrawThemeBackground: function(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect; pClipRect: Pointer): HRESULT; stdcall =  nil;
 
+function DarkCheckRadioWndProc(Window: HWND; Msg: UInt;
+  WParam: Windows.WParam; LParam: Windows.LParam): LResult; stdcall; forward;
+procedure InstallDarkCheckRadioWndProc(Window: HWND); forward;
+procedure InvalidateDarkChildPlacement(Window: HWND; ARedrawNow: Boolean); forward;
+function GetSysColorBrushDark(nIndex: longint): HBRUSH; stdcall; forward;
+
 procedure EnableDarkStyle(Window: HWND);
 begin
   AllowDarkModeForWindow(Window, True);
   SetWindowTheme(Window, 'DarkMode_Explorer', nil);
   SendMessageW(Window, WM_THEMECHANGED, 0, 0);
+end;
+
+procedure EnableDarkListViewHeader(Window: HWND);
+var
+  Header: HWND;
+begin
+  if Window = 0 then
+    Exit;
+  Header := HWND(SendMessage(Window, LVM_GETHEADER, 0, 0));
+  if Header <> 0 then
+  begin
+    AllowDarkModeForWindow(Header, True);
+    SetWindowTheme(Header, 'ItemsView', nil);
+    SendMessageW(Header, WM_THEMECHANGED, 0, 0);
+  end;
+end;
+
+procedure PrepareDarkGroupedChildSizing(const AWinControl: TWinControl);
+var
+  I, ItemMinHeight: Integer;
+  ChildWinControl: TWinControl;
+begin
+  if (AWinControl = nil) or
+     (csDesigning in AWinControl.ComponentState) or
+     not ((AWinControl is TCustomRadioGroup) or
+          (AWinControl is TCustomCheckGroup)) then
+    Exit;
+
+  // Keep native checkbox/radio metrics stable at runtime. The default
+  // shrink mode can leave only the final row compressed after group layout.
+  AWinControl.ChildSizing.ShrinkVertical := crsAnchorAligning;
+  ItemMinHeight := Max(23, Abs(AWinControl.Font.Height) + 8);
+  for I := 0 to AWinControl.ControlCount - 1 do
+    if AWinControl.Controls[I] is TWinControl then
+    begin
+      ChildWinControl := TWinControl(AWinControl.Controls[I]);
+      ChildWinControl.Constraints.MinHeight :=
+        Max(ChildWinControl.Constraints.MinHeight, ItemMinHeight);
+    end;
+end;
+
+procedure SyncDarkGroupChildren(const AWinControl: TWinControl);
+var
+  I, ChildTop, MinChildTop, VisibleChildIndex, ItemCount, Columns, Rows,
+    Row, Col, CellWidth, CellHeight, ItemHeight, Margin, BottomMargin: Integer;
+  Child: TControl;
+  ChildR, WorkR, TargetR: TRect;
+  ChildWinControl: TWinControl;
+  DC: HDC;
+  TM: Windows.TextMetric;
+  OldFont: HGDIOBJ;
+  ColumnLayout: TColumnLayout;
+  IsRadio: Boolean;
+begin
+  if not ((AWinControl is TCustomRadioGroup) or
+          (AWinControl is TCustomCheckGroup)) then
+    Exit;
+  if csDesigning in AWinControl.ComponentState then
+    Exit;
+
+  PrepareDarkGroupedChildSizing(AWinControl);
+  IsRadio := AWinControl is TCustomRadioGroup;
+  if IsRadio then
+  begin
+    ItemCount := TCustomRadioGroup(AWinControl).Items.Count;
+    Columns := Max(1, Min(TCustomRadioGroup(AWinControl).Columns,
+      Max(1, ItemCount)));
+    Rows := Max(1, TCustomRadioGroup(AWinControl).Rows);
+    ColumnLayout := TCustomRadioGroup(AWinControl).ColumnLayout;
+  end
+  else
+  begin
+    ItemCount := TCustomCheckGroup(AWinControl).Items.Count;
+    Columns := Max(1, Min(TCustomCheckGroup(AWinControl).Columns,
+      Max(1, ItemCount)));
+    Rows := Max(1, TCustomCheckGroup(AWinControl).Rows);
+    ColumnLayout := TCustomCheckGroup(AWinControl).ColumnLayout;
+  end;
+  if ItemCount = 0 then
+    Exit;
+
+  if (AWinControl.Color = clDefault) or (AWinControl.Color = clWindow) or
+     (AWinControl.Color = clBtnFace) then
+  begin
+    AWinControl.Color := SysColor[COLOR_BTNFACE];
+    AWinControl.Brush.Color := SysColor[COLOR_BTNFACE];
+  end;
+  if (AWinControl.Font.Color = clDefault) or
+     (AWinControl.Font.Color = clBtnText) or
+     (AWinControl.Font.Color = clWindowText) then
+    AWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
+
+  MinChildTop := 18;
+  ItemHeight := 24;
+  if AWinControl.HandleAllocated then
+  begin
+    DC := Windows.GetDC(AWinControl.Handle);
+    if DC <> 0 then
+    try
+      OldFont := SelectObject(DC, AWinControl.Font.Reference.Handle);
+      try
+        TM := Default(Windows.TextMetric);
+        if Windows.GetTextMetrics(DC, TM) then
+        begin
+          MinChildTop := Max(MinChildTop, TM.tmHeight + 4);
+          ItemHeight := Max(20, TM.tmHeight + 8);
+        end;
+      finally
+        if OldFont <> 0 then
+          SelectObject(DC, OldFont);
+      end;
+    finally
+      Windows.ReleaseDC(AWinControl.Handle, DC);
+    end;
+  end;
+
+  Margin := Max(6, AWinControl.ChildSizing.LeftRightSpacing);
+  BottomMargin := Max(6, AWinControl.ChildSizing.TopBottomSpacing);
+  WorkR := AWinControl.ClientRect;
+  Inc(WorkR.Left, Margin);
+  Dec(WorkR.Right, Margin);
+  WorkR.Top := MinChildTop;
+  Dec(WorkR.Bottom, BottomMargin);
+
+  if ColumnLayout = clHorizontalThenVertical then
+    Rows := Max(1, ((ItemCount - 1) div Columns) + 1)
+  else
+    Columns := Max(1, ((ItemCount - 1) div Rows) + 1);
+
+  CellWidth := Max(1, (WorkR.Right - WorkR.Left) div Columns);
+  CellHeight := Max(ItemHeight, (WorkR.Bottom - WorkR.Top) div Rows);
+  VisibleChildIndex := -1;
+  for I := 0 to AWinControl.ControlCount - 1 do
+  begin
+    Child := AWinControl.Controls[I];
+    if (Child is TWinControl) and Child.Visible then
+    begin
+      Inc(VisibleChildIndex);
+      if VisibleChildIndex >= ItemCount then
+        Continue;
+
+      ChildWinControl := TWinControl(Child);
+      ChildWinControl.BorderSpacing.CellAlignHorizontal := ccaFill;
+      ChildWinControl.BorderSpacing.CellAlignVertical := ccaFill;
+      if (ChildWinControl.Color = clDefault) or
+         (ChildWinControl.Color = clWindow) or
+         (ChildWinControl.Color = clBtnFace) then
+      begin
+        ChildWinControl.Color := SysColor[COLOR_BTNFACE];
+        ChildWinControl.Brush.Color := SysColor[COLOR_BTNFACE];
+      end;
+      if (ChildWinControl.Font.Color = clDefault) or
+         (ChildWinControl.Font.Color = clBtnText) or
+         (ChildWinControl.Font.Color = clWindowText) then
+        ChildWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
+      if ChildWinControl.HandleAllocated then
+      begin
+        EnableDarkStyle(ChildWinControl.Handle);
+        InstallDarkCheckRadioWndProc(ChildWinControl.Handle);
+        if ColumnLayout = clHorizontalThenVertical then
+        begin
+          Row := VisibleChildIndex div Columns;
+          Col := VisibleChildIndex mod Columns;
+        end
+        else
+        begin
+          Row := VisibleChildIndex mod Rows;
+          Col := VisibleChildIndex div Rows;
+        end;
+        TargetR.Left := WorkR.Left + Col * CellWidth;
+        TargetR.Top := WorkR.Top + Row * CellHeight;
+        TargetR.Right := Min(WorkR.Right, TargetR.Left + CellWidth);
+        TargetR.Bottom := TargetR.Top + CellHeight;
+        ChildTop := Max(TargetR.Top, MinChildTop);
+        if (ChildWinControl.Left <> TargetR.Left) or
+           (ChildWinControl.Top <> ChildTop) or
+           (ChildWinControl.Width <> TargetR.Right - TargetR.Left) or
+           (ChildWinControl.Height <> TargetR.Bottom - ChildTop) then
+          ChildWinControl.SetBounds(TargetR.Left, ChildTop,
+            TargetR.Right - TargetR.Left, TargetR.Bottom - ChildTop);
+        GetWindowRect(ChildWinControl.Handle, ChildR);
+        MapWindowPoints(0, AWinControl.Handle, ChildR, 2);
+        if (ChildR.Left <> TargetR.Left) or (ChildR.Top <> ChildTop) or
+           (ChildR.Right <> TargetR.Right) or
+           (ChildR.Bottom <> TargetR.Bottom) then
+          SetWindowPos(ChildWinControl.Handle, 0, TargetR.Left, ChildTop,
+            TargetR.Right - TargetR.Left, TargetR.Bottom - ChildTop,
+            SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
+        if ChildWinControl.HandleAllocated then
+        begin
+          EnableDarkStyle(ChildWinControl.Handle);
+          InstallDarkCheckRadioWndProc(ChildWinControl.Handle);
+        end;
+        InvalidateRect(ChildWinControl.Handle, nil, True);
+        RedrawWindow(ChildWinControl.Handle, nil, 0,
+          RDW_INVALIDATE or RDW_ERASE or RDW_UPDATENOW);
+      end;
+    end;
+  end;
+end;
+
+procedure HideDarkGroupedDesignChildren(const AWinControl: TWinControl);
+var
+  I: Integer;
+  ChildWinControl: TWinControl;
+begin
+  if not ((AWinControl is TCustomRadioGroup) or
+          (AWinControl is TCustomCheckGroup)) then
+    Exit;
+  if not (csDesigning in AWinControl.ComponentState) then
+    Exit;
+
+  for I := 0 to AWinControl.ControlCount - 1 do
+    if AWinControl.Controls[I] is TWinControl then
+    begin
+      ChildWinControl := TWinControl(AWinControl.Controls[I]);
+      if ChildWinControl.HandleAllocated then
+        ShowWindow(ChildWinControl.Handle, SW_HIDE);
+    end;
+end;
+
+procedure PostDarkGroupedParentSync(const AWinControl: TWinControl);
+var
+  ParentControl: TWinControl;
+begin
+  if (AWinControl = nil) or (AWinControl.Parent = nil) then
+    Exit;
+  ParentControl := AWinControl.Parent;
+  if not ((ParentControl is TCustomRadioGroup) or
+          (ParentControl is TCustomCheckGroup)) then
+    Exit;
+  if ParentControl.HandleAllocated then
+    PostMessage(ParentControl.Handle, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
 end;
 
 procedure TryEnforceDarkStyleForCtrl(AWinControl:TWinControl);
@@ -224,8 +596,84 @@ begin
        if (AWinControl Is TCustomMemo) then
           (AWinControl As TCustomMemo).BorderStyle := bsNone;
      AWinControl.Color := clWindow;
+     AWinControl.Font.Color := clWindowText;
      EnableDarkStyle(AWinControl.Handle);
   end;
+end;
+
+function IsSystemTextColor(AColor: TColor): Boolean;
+begin
+  Result := (AColor = clDefault) or (AColor = clBtnText) or
+    (AColor = clWindowText);
+end;
+
+function IsSystemWindowColor(AColor: TColor): Boolean;
+begin
+  Result := (AColor = clDefault) or (AColor = clWindow) or
+    (AColor = clBtnFace);
+end;
+
+function ResolveDarkSystemColor(AColor: TColor; ADefaultColorIndex: Integer): TColor;
+begin
+  case AColor of
+    clBtnFace:
+      Result := SysColor[COLOR_BTNFACE];
+    clBtnText:
+      Result := SysColor[COLOR_BTNTEXT];
+    clWindow:
+      Result := SysColor[COLOR_WINDOW];
+    clWindowText:
+      Result := SysColor[COLOR_WINDOWTEXT];
+    clDefault:
+      Result := SysColor[ADefaultColorIndex];
+  else
+    Result := AColor;
+  end;
+end;
+
+procedure SetDarkControlColors(AWinControl: TWinControl);
+
+  function ShouldPreserveFontColor: Boolean;
+  begin
+    Result := (AWinControl is TCustomGroupBox) or
+      (AWinControl is TCustomCheckBox) or
+      (AWinControl is TCustomEdit) or
+      (AWinControl is TCustomButton);
+  end;
+
+begin
+  if (AWinControl <> nil) and not (csDesigning in AWinControl.ComponentState) then
+  begin
+    AWinControl.Color := SysColor[COLOR_BTNFACE];
+    AWinControl.Brush.Color := SysColor[COLOR_BTNFACE];
+    if IsSystemTextColor(AWinControl.Font.Color) or not ShouldPreserveFontColor then
+      AWinControl.Font.Color := SysColor[COLOR_BTNTEXT];
+  end;
+end;
+
+function DarkControlDefaultColor(const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  case ADefaultColorType of
+    dctBrush: Result := SysColor[COLOR_BTNFACE];
+    dctFont: Result := SysColor[COLOR_BTNTEXT];
+  else
+    Result := clDefault;
+  end;
+end;
+
+function DarkWindowDefaultColor(const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  case ADefaultColorType of
+    dctBrush: Result := SysColor[COLOR_WINDOW];
+    dctFont: Result := SysColor[COLOR_WINDOWTEXT];
+  else
+    Result := clDefault;
+  end;
+end;
+
+procedure DarkWin32ShowHide(AWinControl: TWinControl);
+begin
+  TWin32WSWinControl.ShowHide(AWinControl);
 end;
 
 procedure AllowDarkStyle(var Window: HWND);
@@ -235,6 +683,15 @@ begin
     AllowDarkModeForWindow(Window, True);
     Window:= 0;
   end;
+end;
+
+function ShouldForceDarkThemeClass(pszClassList: LPCWSTR): Boolean;
+begin
+  Result := (lstrcmpiW(pszClassList, VSCLASS_COMBOBOX) = 0) or
+    (lstrcmpiW(pszClassList, VSCLASS_EDIT) = 0) or
+    (lstrcmpiW(pszClassList, 'ListView') = 0) or
+    (lstrcmpiW(pszClassList, VSCLASS_DARK_HEADER) = 0) or
+    (lstrcmpiW(pszClassList, VSCLASS_SCROLLBAR) = 0);
 end;
 
 function HSVToColor(H, S, V: Double): TColor;
@@ -292,6 +749,981 @@ begin
   V := (V * 100) / Factor;
 
   Result:= HSVToColor(H, S, V);
+end;
+
+procedure DrawDarkPushButtonWindow(Window: HWND; DC: HDC);
+var
+  Info: PWin32WindowInfo;
+  Control: TWinControl;
+  R, CalcR, DrawR: TRect;
+  Text: UnicodeString;
+  State: LRESULT;
+  FillColor, BorderColor, TextColor: TColor;
+  Hot: Boolean;
+  OldBkMode, YOff: Integer;
+  OldTextColor: COLORREF;
+  OldPenColor, OldBrushColor: COLORREF;
+  OldPen, OldBrush, OldFont: HGDIOBJ;
+  FontHandle: HFONT;
+begin
+  Info := GetWin32WindowInfo(Window);
+  Control := nil;
+  if Assigned(Info) then
+    Control := Info^.WinControl;
+
+  GetClientRect(Window, R);
+  State := SendMessage(Window, BM_GETSTATE, 0, 0);
+  Hot := IsWindowEnabled(Window) and (GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) <> 0);
+
+  FillColor := SysColor[COLOR_BTNFACE];
+  BorderColor := SysColor[COLOR_BTNHIGHLIGHT];
+  if not IsWindowEnabled(Window) then
+  begin
+    FillColor := SysColor[COLOR_3DDKSHADOW];
+    TextColor := SysColor[COLOR_GRAYTEXT];
+  end
+  else
+  begin
+    TextColor := SysColor[COLOR_BTNTEXT];
+    // Honor an explicitly-chosen button font color (e.g. a red "Stop" caption).
+    // A non-system Font.Color means the app deliberately set it; without this
+    // the dark scheme always overrode it to COLOR_BTNTEXT. Uses the same
+    // IsSystemTextColor idiom this unit applies elsewhere for dark text colors.
+    if Assigned(Control) and (not IsSystemTextColor(Control.Font.Color)) then
+      TextColor := Control.Font.Color;
+    if (State and BST_PUSHED) <> 0 then
+      FillColor := Darker(FillColor, 120);
+    if Hot and ((State and BST_PUSHED) = 0) then
+    begin
+      FillColor := Lighter(FillColor, 125);
+      BorderColor := Lighter(BorderColor, 135);
+    end;
+  end;
+
+  OldPen := SelectObject(DC, GetStockObject(DC_PEN));
+  OldBrush := SelectObject(DC, GetStockObject(DC_BRUSH));
+  OldPenColor := SetDCPenColor(DC, ColorToRGB(BorderColor));
+  OldBrushColor := SetDCBrushColor(DC, ColorToRGB(FillColor));
+  Windows.RoundRect(DC, R.Left, R.Top, R.Right, R.Bottom, 8, 8);
+  SetDCPenColor(DC, OldPenColor);
+  SetDCBrushColor(DC, OldBrushColor);
+  SelectObject(DC, OldBrush);
+  SelectObject(DC, OldPen);
+
+  InflateRect(R, -6, -2);
+  if (State and BST_PUSHED) <> 0 then
+    OffsetRect(R, 1, 1);
+
+  if Assigned(Control) then
+  begin
+    Text := UTF8ToUTF16(Control.Caption);
+    FontHandle := Control.Font.Reference.Handle;
+  end
+  else
+  begin
+    SetLength(Text, GetWindowTextLengthW(Window));
+    if Length(Text) > 0 then
+      SetLength(Text, GetWindowTextW(Window, PWideChar(Text), Length(Text) + 1));
+    FontHandle := HFONT(SendMessage(Window, WM_GETFONT, 0, 0));
+  end;
+
+  OldFont := 0;
+  if FontHandle <> 0 then
+    OldFont := SelectObject(DC, FontHandle);
+  OldBkMode := SetBkMode(DC, TRANSPARENT);
+  OldTextColor := SetTextColor(DC, ColorToRGB(TextColor));
+  // Word-wrap long captions: measure the caption single-line; if it is wider
+  // than the available client rect, draw it multi-line, vertically centered via
+  // a DT_CALCRECT height offset (DT_VCENTER is invalid with DT_WORDBREAK).
+  // Captions that fit keep the existing single-line centered draw.
+  CalcR := R;
+  DrawTextW(DC, PWideChar(Text), Length(Text), CalcR,
+    DT_CENTER or DT_SINGLELINE or DT_CALCRECT);
+  if (Length(Text) > 0) and ((CalcR.Right - CalcR.Left) > (R.Right - R.Left)) then
+  begin
+    CalcR := R;
+    DrawTextW(DC, PWideChar(Text), Length(Text), CalcR,
+      DT_CENTER or DT_WORDBREAK or DT_CALCRECT);
+    YOff := ((R.Bottom - R.Top) - (CalcR.Bottom - CalcR.Top)) div 2;
+    if YOff < 0 then YOff := 0;
+    DrawR := R;
+    DrawR.Top := R.Top + YOff;
+    DrawTextW(DC, PWideChar(Text), Length(Text), DrawR,
+      DT_CENTER or DT_WORDBREAK);
+  end
+  else
+    DrawTextW(DC, PWideChar(Text), Length(Text), R,
+      DT_CENTER or DT_VCENTER or DT_SINGLELINE or DT_END_ELLIPSIS);
+  SetTextColor(DC, OldTextColor);
+  SetBkMode(DC, OldBkMode);
+  if OldFont <> 0 then
+    SelectObject(DC, OldFont);
+end;
+
+function CallDarkButtonOldProc(Window: HWND; Msg: UInt; WParam: Windows.WParam;
+  LParam: Windows.LParam): LResult;
+var
+  OldProc: WNDPROC;
+begin
+  OldProc := WNDPROC(GetProp(Window, PChar(DARK_BUTTON_OLD_PROC_PROP)));
+  if Assigned(OldProc) then
+    Result := CallWindowProcW(OldProc, Window, Msg, WParam, LParam)
+  else
+    Result := WindowProc(Window, Msg, WParam, LParam);
+end;
+
+function DarkButtonWndProc(Window: HWND; Msg: UInt; WParam: Windows.WParam;
+  LParam: Windows.LParam): LResult; stdcall;
+var
+  PS: PAINTSTRUCT;
+  DC: HDC;
+  MouseEvent: TTRACKMOUSEEVENT;
+begin
+  case Msg of
+    WM_WINDOWPOSCHANGING:
+      begin
+        InvalidateDarkChildPlacement(Window, False);
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        Exit;
+      end;
+    WM_WINDOWPOSCHANGED, WM_SIZE, WM_MOVE:
+      begin
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        InvalidateDarkChildPlacement(Window, True);
+        Exit;
+      end;
+    WM_MOUSEMOVE:
+      begin
+        if GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) = 0 then
+        begin
+          SetProp(Window, PChar(DARK_BUTTON_HOT_PROP), THandle(1));
+          MouseEvent := Default(TTRACKMOUSEEVENT);
+          MouseEvent.cbSize := SizeOf(TTRACKMOUSEEVENT);
+          MouseEvent.dwFlags := TME_LEAVE;
+          MouseEvent.hwndTrack := Window;
+          MouseEvent.dwHoverTime := HOVER_DEFAULT;
+          _TrackMouseEvent(@MouseEvent);
+          InvalidateRect(Window, nil, False);
+        end;
+      end;
+    WM_MOUSELEAVE:
+      begin
+        if GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) <> 0 then
+        begin
+          RemoveProp(Window, PChar(DARK_BUTTON_HOT_PROP));
+          InvalidateRect(Window, nil, False);
+        end;
+      end;
+    WM_PAINT:
+      begin
+        DC := BeginPaint(Window, @PS);
+        try
+          DrawDarkPushButtonWindow(Window, DC);
+        finally
+          EndPaint(Window, @PS);
+        end;
+        Exit(0);
+      end;
+    WM_PRINTCLIENT:
+      begin
+        DrawDarkPushButtonWindow(Window, HDC(WParam));
+        Exit(0);
+      end;
+    WM_ERASEBKGND:
+      Exit(1);
+    WM_SETTEXT, WM_SETFONT, WM_ENABLE, WM_SETFOCUS, WM_KILLFOCUS,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_KEYDOWN, WM_KEYUP, BM_SETSTYLE,
+    BM_SETSTATE:
+      begin
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        InvalidateRect(Window, nil, False);
+        UpdateWindow(Window);
+        Exit;
+      end;
+    BM_GETSTATE:
+      begin
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        if IsWindowEnabled(Window) and
+           (GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) <> 0) then
+          Result := Result or DARK_BUTTON_BST_HOT;
+        Exit;
+      end;
+    WM_NCDESTROY:
+      begin
+        Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+        RemoveProp(Window, PChar(DARK_BUTTON_OLD_PROC_PROP));
+        RemoveProp(Window, PChar(DARK_BUTTON_HOT_PROP));
+        Exit;
+      end;
+  end;
+
+  Result := CallDarkButtonOldProc(Window, Msg, WParam, LParam);
+end;
+
+procedure InstallDarkButtonWndProc(Window: HWND);
+var
+  OldProc: LONG_PTR;
+begin
+  if Window = 0 then
+    Exit;
+  if GetProp(Window, PChar(DARK_BUTTON_OLD_PROC_PROP)) <> 0 then
+    Exit;
+  OldProc := SetWindowLongPtrW(Window, GWL_WNDPROC, PtrInt(@DarkButtonWndProc));
+  if OldProc <> 0 then
+    SetProp(Window, PChar(DARK_BUTTON_OLD_PROC_PROP), THandle(OldProc));
+end;
+
+function DarkControlFromWindow(Window: HWND): TWinControl;
+var
+  Info: PWin32WindowInfo;
+
+  function IsLiveWindowControl(AControl: TWinControl): Boolean;
+  begin
+    Result := False;
+    try
+      if (AControl = nil) or (PPointer(AControl)^ = nil) then
+        Exit;
+      if (AControl.WidgetSetClass = nil) or
+         (csDestroying in AControl.ComponentState) or
+         (not AControl.HandleAllocated) or
+         (HWND(AControl.Handle) <> Window) then
+        Exit;
+      Result := True;
+    except
+      Result := False;
+    end;
+  end;
+
+begin
+  Result := nil;
+  if Window = 0 then
+    Exit;
+
+  Result := FindControl(Window);
+  if IsLiveWindowControl(Result) then
+    Exit;
+  Result := nil;
+
+  Info := GetWin32WindowInfo(Window);
+  if Assigned(Info) and IsLiveWindowControl(Info^.WinControl) then
+    Result := Info^.WinControl;
+
+  if (Result = nil) and
+     IsLiveWindowControl(TWinControl(GetProp(Window, PChar('WinControl')))) then
+    Result := TWinControl(GetProp(Window, PChar('WinControl')));
+end;
+
+function DarkWindowHasLiveVisibleControl(Window: HWND): Boolean;
+var
+  Control: TWinControl;
+begin
+  Control := DarkControlFromWindow(Window);
+  Result := (Control <> nil) and Control.Visible and IsWindowVisible(Window);
+end;
+
+function IsDarkGroupedDesignItem(const AWinControl: TWinControl): Boolean;
+begin
+  Result := False;
+  try
+    if (AWinControl = nil) or not (csDesigning in AWinControl.ComponentState) then
+      Exit;
+    Result := (AWinControl.Parent is TCustomRadioGroup) or
+      (AWinControl.Parent is TCustomCheckGroup);
+  except
+    Result := True;
+  end;
+end;
+
+function DarkControlTextColor(Window: HWND; ADefaultColor: TColor): TColor;
+var
+  Control: TWinControl;
+begin
+  Result := ADefaultColor;
+  Control := DarkControlFromWindow(Window);
+  if Control <> nil then
+  begin
+    Result := Control.Font.Color;
+    if IsSystemTextColor(Result) then
+      Result := Control.GetDefaultColor(dctFont);
+  end;
+  if Result = clDefault then
+    Result := ADefaultColor;
+end;
+
+function DarkGroupedItemTextColor(const AWinControl: TWinControl;
+  const AEnabled: Boolean): TColor;
+begin
+  if not AEnabled then
+    Exit(SysColor[COLOR_GRAYTEXT]);
+
+  Result := AWinControl.Font.Color;
+  if IsSystemTextColor(Result) then
+    Result := AWinControl.GetDefaultColor(dctFont);
+  if Result = clDefault then
+    Result := SysColor[COLOR_BTNTEXT];
+end;
+
+procedure DrawDarkGroupedItem(DC: HDC; const AItemRect: TRect;
+  const AText: UnicodeString; const AChecked, AEnabled, AIsRadio: Boolean;
+  const ATextColor: TColor);
+var
+  GlyphR, DotR, TextR: TRect;
+  GlyphSize, MidY: Integer;
+  OldPen, OldBrush: HGDIOBJ;
+  OldTextColor: COLORREF;
+  OldBkMode: Integer;
+  BorderColor: TColor;
+begin
+  if (AItemRect.Right <= AItemRect.Left) or (AItemRect.Bottom <= AItemRect.Top) then
+    Exit;
+
+  GlyphSize := Max(11, Min(13, AItemRect.Bottom - AItemRect.Top - 6));
+  GlyphR.Left := AItemRect.Left;
+  GlyphR.Top := AItemRect.Top + Max(0, (AItemRect.Bottom - AItemRect.Top - GlyphSize) div 2);
+  GlyphR.Right := GlyphR.Left + GlyphSize;
+  GlyphR.Bottom := GlyphR.Top + GlyphSize;
+
+  if AEnabled then
+    BorderColor := SysColor[COLOR_BTNTEXT]
+  else
+    BorderColor := SysColor[COLOR_GRAYTEXT];
+
+  OldPen := SelectObject(DC, GetStockObject(DC_PEN));
+  OldBrush := SelectObject(DC, GetStockObject(DC_BRUSH));
+  try
+    SetDCPenColor(DC, ColorToRGB(BorderColor));
+    SetDCBrushColor(DC, ColorToRGB(SysColor[COLOR_BTNFACE]));
+    if AIsRadio then
+    begin
+      Ellipse(DC, GlyphR.Left, GlyphR.Top, GlyphR.Right, GlyphR.Bottom);
+      if AChecked then
+      begin
+        DotR := GlyphR;
+        InflateRect(DotR, -4, -4);
+        SetDCBrushColor(DC, ColorToRGB(BorderColor));
+        Ellipse(DC, DotR.Left, DotR.Top, DotR.Right, DotR.Bottom);
+      end;
+    end
+    else
+    begin
+      Rectangle(DC, GlyphR.Left, GlyphR.Top, GlyphR.Right, GlyphR.Bottom);
+      if AChecked then
+      begin
+        MidY := GlyphR.Top + (GlyphR.Bottom - GlyphR.Top) div 2;
+        MoveToEx(DC, GlyphR.Left + 3, MidY, nil);
+        LineTo(DC, GlyphR.Left + 6, GlyphR.Bottom - 4);
+        LineTo(DC, GlyphR.Right - 3, GlyphR.Top + 3);
+      end;
+    end;
+  finally
+    SelectObject(DC, OldBrush);
+    SelectObject(DC, OldPen);
+  end;
+
+  TextR := AItemRect;
+  TextR.Left := GlyphR.Right + 4;
+  OldBkMode := SetBkMode(DC, TRANSPARENT);
+  OldTextColor := SetTextColor(DC, ColorToRGB(ATextColor));
+  DrawTextW(DC, PWideChar(AText), Length(AText), TextR,
+    DT_LEFT or DT_SINGLELINE or DT_VCENTER);
+  SetTextColor(DC, OldTextColor);
+  SetBkMode(DC, OldBkMode);
+end;
+
+function IsDarkCheckRadioWindow(Window: HWND; out AIsRadio: Boolean): Boolean;
+const
+  DarkBSTypeMask = $0000000F;
+  DarkBSCheckBox = $00000002;
+  DarkBSAutoCheckBox = $00000003;
+  DarkBSRadioButton = $00000004;
+  DarkBS3State = $00000005;
+  DarkBSAuto3State = $00000006;
+  DarkBSAutoRadioButton = $00000009;
+var
+  Style, ButtonStyle: PtrUInt;
+begin
+  AIsRadio := False;
+  Style := PtrUInt(GetWindowLongPtrW(Window, GWL_STYLE));
+  ButtonStyle := Style and DarkBSTypeMask;
+  AIsRadio := ButtonStyle in [DarkBSRadioButton, DarkBSAutoRadioButton];
+  Result := AIsRadio or (ButtonStyle in [DarkBSCheckBox, DarkBSAutoCheckBox,
+    DarkBS3State, DarkBSAuto3State]);
+  if Result and ((Style and BS_PUSHLIKE) <> 0) then
+    Result := False;
+end;
+
+procedure DrawDarkCheckRadioWindow(Window: HWND; DC: HDC);
+var
+  R: TRect;
+  Text: UnicodeString;
+  Control: TWinControl;
+  FontHandle, OldFont: HGDIOBJ;
+  Brush: HBRUSH;
+  CheckState: LRESULT;
+  IsRadio, Checked, Enabled: Boolean;
+  TextColor: TColor;
+begin
+  if not IsDarkCheckRadioWindow(Window, IsRadio) then
+    Exit;
+
+  GetClientRect(Window, R);
+  Brush := CreateSolidBrush(ColorToRGB(SysColor[COLOR_BTNFACE]));
+  try
+    FillRect(DC, R, Brush);
+  finally
+    DeleteObject(Brush);
+  end;
+
+  Control := DarkControlFromWindow(Window);
+  if Control <> nil then
+  begin
+    Text := UTF8ToUTF16(Control.Caption);
+    FontHandle := Control.Font.Reference.Handle;
+  end
+  else
+  begin
+    SetLength(Text, GetWindowTextLengthW(Window));
+    if Length(Text) > 0 then
+      SetLength(Text, GetWindowTextW(Window, PWideChar(Text), Length(Text) + 1));
+    FontHandle := HFONT(SendMessage(Window, WM_GETFONT, 0, 0));
+  end;
+
+  OldFont := 0;
+  if FontHandle <> 0 then
+    OldFont := SelectObject(DC, FontHandle);
+  try
+    CheckState := SendMessage(Window, BM_GETCHECK, 0, 0);
+    Checked := CheckState = BST_CHECKED;
+    Enabled := IsWindowEnabled(Window);
+    if Enabled then
+      TextColor := DarkControlTextColor(Window, SysColor[COLOR_BTNTEXT])
+    else
+      TextColor := SysColor[COLOR_GRAYTEXT];
+    DrawDarkGroupedItem(DC, R, Text, Checked, Enabled, IsRadio, TextColor);
+  finally
+    if OldFont <> 0 then
+      SelectObject(DC, OldFont);
+  end;
+end;
+
+procedure InvalidateDarkChildPlacement(Window: HWND; ARedrawNow: Boolean);
+var
+  Parent: HWND;
+  R: TRect;
+begin
+  if Window = 0 then Exit;
+
+  Parent := GetParent(Window);
+  if (Parent <> 0) and GetWindowRect(Window, R) then
+  begin
+    MapWindowPoints(0, Parent, R, 2);
+    InvalidateRect(Parent, @R, True);
+    if ARedrawNow then
+      RedrawWindow(Parent, nil, 0, RDW_UPDATENOW or RDW_ALLCHILDREN);
+  end;
+
+  InvalidateRect(Window, nil, True);
+  if ARedrawNow then
+    RedrawWindow(Window, nil, 0, RDW_INVALIDATE or RDW_ERASE or RDW_UPDATENOW);
+end;
+
+function SyncDarkCheckRadioWindowBounds(Window: HWND; Control: TWinControl;
+  ARedrawNow: Boolean): Boolean;
+var
+  Parent: HWND;
+  R: TRect;
+begin
+  Result := False;
+  if (Window = 0) or (Control = nil) or
+     (Control.Width <= 0) or (Control.Height <= 0) then
+    Exit;
+
+  Parent := GetParent(Window);
+  if not GetWindowRect(Window, R) then
+    Exit;
+  if Parent <> 0 then
+    MapWindowPoints(0, Parent, R, 2);
+
+  if (R.Left = Control.Left) and (R.Top = Control.Top) and
+     (R.Right - R.Left = Control.Width) and
+     (R.Bottom - R.Top = Control.Height) then
+    Exit;
+
+  SetWindowPos(Window, 0, Control.Left, Control.Top,
+    Control.Width, Control.Height,
+    SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
+  InvalidateDarkChildPlacement(Window, ARedrawNow);
+  Result := True;
+end;
+
+function CallDarkCheckRadioOldProc(Window: HWND; Msg: UInt;
+  WParam: Windows.WParam; LParam: Windows.LParam): LResult;
+var
+  OldProc: WNDPROC;
+begin
+  OldProc := WNDPROC(GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)));
+  if not Assigned(OldProc) or
+     (PtrInt(OldProc) = PtrInt(@DarkCheckRadioWndProc)) or
+     (GetProp(Window, PChar(DARK_CHECKRADIO_CALLING_OLD_PROC_PROP)) <> 0) then
+    Exit(WindowProc(Window, Msg, WParam, LParam));
+
+  SetProp(Window, PChar(DARK_CHECKRADIO_CALLING_OLD_PROC_PROP), THandle(1));
+  try
+    Result := CallWindowProcW(OldProc, Window, Msg, WParam, LParam);
+  finally
+    RemoveProp(Window, PChar(DARK_CHECKRADIO_CALLING_OLD_PROC_PROP));
+  end;
+end;
+
+function DarkCheckRadioWndProc(Window: HWND; Msg: UInt;
+  WParam: Windows.WParam; LParam: Windows.LParam): LResult; stdcall;
+var
+  PS: PAINTSTRUCT;
+  DC: HDC;
+  Control: TWinControl;
+begin
+  case Msg of
+    DARK_CHECKRADIO_SYNC_BOUNDS:
+      begin
+        Control := DarkControlFromWindow(Window);
+        SyncDarkCheckRadioWindowBounds(Window, Control, True);
+        Exit(0);
+      end;
+    WM_WINDOWPOSCHANGING:
+      begin
+        InvalidateDarkChildPlacement(Window, False);
+        Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        Exit;
+      end;
+    WM_WINDOWPOSCHANGED, WM_SIZE, WM_MOVE:
+      begin
+        Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        InvalidateDarkChildPlacement(Window, True);
+        Exit;
+      end;
+  end;
+
+  Control := DarkControlFromWindow(Window);
+  if (Control <> nil) and (not IsDarkGroupedDesignItem(Control)) and
+     (Msg in [WM_PAINT, WM_PRINTCLIENT]) then
+    SyncDarkCheckRadioWindowBounds(Window, Control, False);
+
+  if (Msg <> WM_NCDESTROY) and
+     (((Control <> nil) and (not Control.Visible)) or
+      (not IsWindowVisible(Window))) then
+  begin
+    case Msg of
+      WM_PAINT, WM_PRINTCLIENT, WM_ERASEBKGND:
+        Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+    end;
+    if Control <> nil then
+      Exit(CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam))
+    else
+      Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+  end;
+
+  if (Control <> nil) and IsDarkGroupedDesignItem(Control) then
+  begin
+    case Msg of
+      WM_PAINT, WM_PRINTCLIENT, WM_ERASEBKGND:
+        Exit(0);
+      WM_SETTEXT, WM_SETFONT, WM_ENABLE, WM_SETFOCUS, WM_KILLFOCUS,
+      WM_LBUTTONDOWN, WM_LBUTTONUP, WM_KEYDOWN, WM_KEYUP, WM_CHAR,
+      WM_DEADCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_SYSCHAR,
+      WM_SYSDEADCHAR, BM_SETCHECK, BM_SETSTATE:
+        Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+    end;
+  end;
+
+  case Msg of
+    WM_PAINT:
+      begin
+        DC := BeginPaint(Window, @PS);
+        try
+          DrawDarkCheckRadioWindow(Window, DC);
+        finally
+          EndPaint(Window, @PS);
+        end;
+        Exit(0);
+      end;
+    WM_PRINTCLIENT:
+      begin
+        DrawDarkCheckRadioWindow(Window, HDC(WParam));
+        Exit(0);
+      end;
+    WM_ERASEBKGND:
+      Exit(1);
+    WM_SETTEXT, WM_SETFONT, WM_ENABLE, WM_SETFOCUS, WM_KILLFOCUS,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_KEYDOWN, WM_KEYUP, BM_SETCHECK,
+    BM_SETSTATE:
+      begin
+        Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        RedrawWindow(Window, nil, 0,
+          RDW_INVALIDATE or RDW_ERASE or RDW_UPDATENOW);
+        Exit;
+      end;
+    WM_NCDESTROY:
+      begin
+        Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+        RemoveProp(Window, PChar(DARK_CHECKRADIO_CALLING_OLD_PROC_PROP));
+        RemoveProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP));
+        Exit;
+      end;
+  end;
+
+  Result := CallDarkCheckRadioOldProc(Window, Msg, WParam, LParam);
+end;
+
+procedure InstallDarkCheckRadioWndProc(Window: HWND);
+var
+  CurrentProc, OldProc: LONG_PTR;
+  IsRadio: Boolean;
+begin
+  if Window = 0 then
+    Exit;
+  if GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)) <> 0 then
+    Exit;
+  CurrentProc := GetWindowLongPtrW(Window, GWL_WNDPROC);
+  if CurrentProc = PtrInt(@DarkCheckRadioWndProc) then
+    Exit;
+  if not IsDarkCheckRadioWindow(Window, IsRadio) then
+    Exit;
+  OldProc := SetWindowLongPtrW(Window, GWL_WNDPROC, PtrInt(@DarkCheckRadioWndProc));
+  if OldProc <> 0 then
+  begin
+    if GetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP)) <> 0 then
+      RemoveProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP));
+    SetProp(Window, PChar(DARK_CHECKRADIO_OLD_PROC_PROP), THandle(OldProc));
+  end;
+end;
+
+procedure DrawDarkGroupedControlItems(DC: HDC; const AWinControl: TWinControl;
+  const AClientRect, ACaptionRect: TRect);
+var
+  RadioGroup: TCustomRadioGroup;
+  CheckGroup: TCustomCheckGroup;
+  Button: TControl;
+  Items: TStrings;
+  ColumnLayout: TColumnLayout;
+  I, ChildIndex, VisibleChildIndex, ItemCount, Columns, Rows, Row, Col,
+    CellWidth, CellHeight, ItemHeight, ItemTop: Integer;
+  ItemR, WorkR: TRect;
+  IsRadio, Checked, Enabled: Boolean;
+  Text: UnicodeString;
+  TM: Windows.TextMetric;
+begin
+  if (AWinControl = nil) or not (csDesigning in AWinControl.ComponentState) then
+    Exit;
+
+  IsRadio := AWinControl is TCustomRadioGroup;
+  if IsRadio then
+  begin
+    RadioGroup := TCustomRadioGroup(AWinControl);
+    Items := RadioGroup.Items;
+    ItemCount := Items.Count;
+    Columns := Max(1, Min(RadioGroup.Columns, Max(1, ItemCount)));
+    Rows := Max(1, RadioGroup.Rows);
+    ColumnLayout := RadioGroup.ColumnLayout;
+  end
+  else if AWinControl is TCustomCheckGroup then
+  begin
+    CheckGroup := TCustomCheckGroup(AWinControl);
+    Items := CheckGroup.Items;
+    ItemCount := Items.Count;
+    Columns := Max(1, Min(CheckGroup.Columns, Max(1, ItemCount)));
+    Rows := Max(1, CheckGroup.Rows);
+    ColumnLayout := CheckGroup.ColumnLayout;
+  end
+  else
+    Exit;
+
+  if ItemCount = 0 then
+    Exit;
+
+  FillChar(TM{%H-}, SizeOf(TM), 0);
+  if Windows.GetTextMetrics(DC, TM) then
+    ItemHeight := Max(20, TM.tmHeight + 8)
+  else
+    ItemHeight := 24;
+
+  WorkR := AClientRect;
+  Inc(WorkR.Left, 10);
+  Dec(WorkR.Right, 8);
+  ItemTop := Max(18, ACaptionRect.Bottom + 2);
+  WorkR.Top := ItemTop;
+  Dec(WorkR.Bottom, 6);
+
+  if ColumnLayout = clHorizontalThenVertical then
+    Rows := Max(1, ((ItemCount - 1) div Columns) + 1)
+  else
+    Columns := Max(1, ((ItemCount - 1) div Rows) + 1);
+
+  CellWidth := Max(1, (WorkR.Right - WorkR.Left) div Columns);
+  CellHeight := Max(ItemHeight, (WorkR.Bottom - WorkR.Top) div Rows);
+
+  for I := 0 to ItemCount - 1 do
+  begin
+    Button := nil;
+    VisibleChildIndex := -1;
+    for ChildIndex := 0 to AWinControl.ControlCount - 1 do
+    begin
+      if not AWinControl.Controls[ChildIndex].Visible then
+        Continue;
+      Inc(VisibleChildIndex);
+      if VisibleChildIndex = I then
+      begin
+        Button := AWinControl.Controls[ChildIndex];
+        Break;
+      end;
+    end;
+
+    if IsRadio then
+    begin
+      RadioGroup := TCustomRadioGroup(AWinControl);
+      Checked := RadioGroup.ItemIndex = I;
+    end
+    else
+      Checked := (Button is TCheckBox) and TCheckBox(Button).Checked;
+
+    if ColumnLayout = clHorizontalThenVertical then
+    begin
+      Row := I div Columns;
+      Col := I mod Columns;
+    end
+    else
+    begin
+      Row := I mod Rows;
+      Col := I div Rows;
+    end;
+
+    ItemR.Left := WorkR.Left + Col * CellWidth;
+    ItemR.Top := WorkR.Top + Row * CellHeight;
+    ItemR.Right := Min(WorkR.Right, ItemR.Left + CellWidth);
+    ItemR.Bottom := Min(WorkR.Bottom, ItemR.Top + CellHeight);
+    Text := UTF8ToUTF16(Items[I]);
+    Enabled := AWinControl.Enabled and ((Button = nil) or Button.Enabled);
+    DrawDarkGroupedItem(DC, ItemR, Text, Checked, Enabled, IsRadio,
+      DarkGroupedItemTextColor(AWinControl, Enabled));
+  end;
+end;
+
+procedure DrawDarkGroupBoxWindow(Window: HWND; DC: HDC);
+var
+  R, BorderR, TextR: TRect;
+  Text: UnicodeString;
+  Control: TWinControl;
+  FontHandle, OldFont, OldPen, OldBrush: HGDIOBJ;
+  OldBkMode: Integer;
+  OldTextColor: COLORREF;
+  Brush: HBRUSH;
+  TextColor: TColor;
+
+  procedure ExcludeChildWindows;
+  var
+    Child: HWND;
+    ChildR: TRect;
+    I: Integer;
+    ChildWinControl: TWinControl;
+  begin
+    Child := GetWindow(Window, GW_CHILD);
+    while Child <> 0 do
+    begin
+      if IsWindowVisible(Child) and GetWindowRect(Child, ChildR) then
+      begin
+        MapWindowPoints(0, Window, ChildR, 2);
+        ExcludeClipRect(DC, ChildR.Left, ChildR.Top, ChildR.Right, ChildR.Bottom);
+      end;
+      Child := GetWindow(Child, GW_HWNDNEXT);
+    end;
+
+    if Control = nil then
+      Exit;
+    for I := 0 to Control.ControlCount - 1 do
+      if Control.Controls[I] is TWinControl then
+      begin
+        ChildWinControl := TWinControl(Control.Controls[I]);
+        if ChildWinControl.HandleAllocated and ChildWinControl.Visible and
+           IsWindowVisible(ChildWinControl.Handle) and
+           GetWindowRect(ChildWinControl.Handle, ChildR) then
+        begin
+          MapWindowPoints(0, Window, ChildR, 2);
+          ExcludeClipRect(DC, ChildR.Left, ChildR.Top, ChildR.Right, ChildR.Bottom);
+        end;
+      end;
+  end;
+begin
+  Control := DarkControlFromWindow(Window);
+  if Control <> nil then
+    HideDarkGroupedDesignChildren(Control);
+
+  GetClientRect(Window, R);
+  ExcludeChildWindows;
+  Brush := CreateSolidBrush(ColorToRGB(SysColor[COLOR_BTNFACE]));
+  try
+    FillRect(DC, R, Brush);
+  finally
+    DeleteObject(Brush);
+  end;
+
+  if Control <> nil then
+  begin
+    Text := UTF8ToUTF16(Control.Caption);
+    FontHandle := Control.Font.Reference.Handle;
+  end
+  else
+  begin
+    SetLength(Text, GetWindowTextLengthW(Window));
+    if Length(Text) > 0 then
+      SetLength(Text, GetWindowTextW(Window, PWideChar(Text), Length(Text) + 1));
+    FontHandle := HFONT(SendMessage(Window, WM_GETFONT, 0, 0));
+  end;
+
+  OldFont := 0;
+  if FontHandle <> 0 then
+    OldFont := SelectObject(DC, FontHandle);
+
+  OldBkMode := SetBkMode(DC, TRANSPARENT);
+  TextR := R;
+  Inc(TextR.Left, 8);
+  Dec(TextR.Right, 8);
+  TextR.Bottom := TextR.Top;
+  DrawTextW(DC, PWideChar(Text), Length(Text), TextR,
+    DT_LEFT or DT_SINGLELINE or DT_CALCRECT);
+
+  BorderR := R;
+  Inc(BorderR.Top, Max(1, (TextR.Bottom - TextR.Top) div 2));
+  Dec(BorderR.Right);
+  Dec(BorderR.Bottom);
+
+  OldPen := SelectObject(DC, GetStockObject(DC_PEN));
+  OldBrush := SelectObject(DC, GetStockObject(HOLLOW_BRUSH));
+  SetDCPenColor(DC, ColorToRGB(SysColor[COLOR_BTNHIGHLIGHT]));
+  RoundRect(DC, BorderR.Left, BorderR.Top, BorderR.Right, BorderR.Bottom, 8, 8);
+  SelectObject(DC, OldBrush);
+  SelectObject(DC, OldPen);
+
+  Brush := CreateSolidBrush(ColorToRGB(SysColor[COLOR_BTNFACE]));
+  try
+    FillRect(DC, TextR, Brush);
+  finally
+    DeleteObject(Brush);
+  end;
+
+  TextColor := DarkControlTextColor(Window, SysColor[COLOR_BTNTEXT]);
+  OldTextColor := SetTextColor(DC, ColorToRGB(TextColor));
+  DrawTextW(DC, PWideChar(Text), Length(Text), TextR,
+    DT_LEFT or DT_SINGLELINE or DT_END_ELLIPSIS);
+  SetTextColor(DC, OldTextColor);
+  DrawDarkGroupedControlItems(DC, Control, R, TextR);
+  SetBkMode(DC, OldBkMode);
+  if OldFont <> 0 then
+    SelectObject(DC, OldFont);
+end;
+
+function CallDarkGroupBoxOldProc(Window: HWND; Msg: UInt;
+  WParam: Windows.WParam; LParam: Windows.LParam): LResult;
+var
+  OldProc: WNDPROC;
+begin
+  OldProc := WNDPROC(GetProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP)));
+  if Assigned(OldProc) then
+    Result := CallWindowProcW(OldProc, Window, Msg, WParam, LParam)
+  else
+    Result := WindowProc(Window, Msg, WParam, LParam);
+end;
+
+function DarkGroupBoxWndProc(Window: HWND; Msg: UInt;
+  WParam: Windows.WParam; LParam: Windows.LParam): LResult; stdcall;
+var
+  PS: PAINTSTRUCT;
+  DC: HDC;
+  Control: TWinControl;
+begin
+  Control := DarkControlFromWindow(Window);
+  if (Msg <> WM_NCDESTROY) and
+     ((Control = nil) or (not Control.Visible) or
+      (not IsWindowVisible(Window))) then
+  begin
+    case Msg of
+      WM_PAINT, WM_PRINTCLIENT, WM_ERASEBKGND:
+        Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+    end;
+    if Control <> nil then
+      Exit(CallDarkGroupBoxOldProc(Window, Msg, WParam, LParam))
+    else
+      Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+  end;
+
+  case Msg of
+    DARK_GROUPBOX_SYNC_CHILDREN_MSG:
+      begin
+        if Control <> nil then
+        begin
+          SyncDarkGroupChildren(Control);
+          InvalidateRect(Window, nil, True);
+        end;
+        Exit(0);
+      end;
+    WM_CTLCOLORSTATIC, WM_CTLCOLORBTN:
+      begin
+        DC := HDC(WParam);
+        SetBkColor(DC, ColorToRGB(SysColor[COLOR_BTNFACE]));
+        SetTextColor(DC, ColorToRGB(SysColor[COLOR_BTNTEXT]));
+        SetBkMode(DC, TRANSPARENT);
+        Exit(LResult(GetSysColorBrushDark(COLOR_BTNFACE)));
+      end;
+    WM_SIZE, WM_WINDOWPOSCHANGED:
+      begin
+        Result := CallDarkGroupBoxOldProc(Window, Msg, WParam, LParam);
+        Control := DarkControlFromWindow(Window);
+        if (Control is TCustomRadioGroup) or (Control is TCustomCheckGroup) then
+          PostMessage(Window, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
+        Exit;
+      end;
+    WM_PAINT:
+      begin
+        DC := BeginPaint(Window, @PS);
+        try
+          DrawDarkGroupBoxWindow(Window, DC);
+        finally
+          EndPaint(Window, @PS);
+        end;
+        Exit(0);
+      end;
+    WM_PRINTCLIENT:
+      begin
+        DrawDarkGroupBoxWindow(Window, HDC(WParam));
+        Exit(0);
+      end;
+    WM_ERASEBKGND:
+      Exit(1);
+    WM_NCDESTROY:
+      begin
+        Result := CallDarkGroupBoxOldProc(Window, Msg, WParam, LParam);
+        RemoveProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP));
+        Exit;
+      end;
+  end;
+
+  Result := CallDarkGroupBoxOldProc(Window, Msg, WParam, LParam);
+end;
+
+procedure InstallDarkGroupBoxWndProc(Window: HWND);
+var
+  CurrentProc, OldProc: LONG_PTR;
+begin
+  if Window = 0 then
+    Exit;
+  CurrentProc := GetWindowLongPtrW(Window, GWL_WNDPROC);
+  if CurrentProc = PtrInt(@DarkGroupBoxWndProc) then
+    Exit;
+  OldProc := SetWindowLongPtrW(Window, GWL_WNDPROC, PtrInt(@DarkGroupBoxWndProc));
+  if OldProc <> 0 then
+  begin
+    if GetProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP)) <> 0 then
+      RemoveProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP));
+    SetProp(Window, PChar(DARK_GROUPBOX_OLD_PROC_PROP), THandle(OldProc));
+  end;
 end;
 
 {
@@ -359,25 +1791,40 @@ procedure SetControlColors(Control: TControl; Canvas: HDC);
 var
   Color: TColor;
 begin
-  if not (csDesigning in Control.ComponentState) then begin
-
-    // Set background color
-    Color:= Control.Color;
-    if Color = clDefault then
-    begin
-      Color:= Control.GetDefaultColor(dctBrush);
-    end;
-    SetBkColor(Canvas, ColorToRGB(Color));
-
-    // Set text color
-    Color:= Control.Font.Color;
-    if Color = clDefault then
-    begin
-      Color:= Control.GetDefaultColor(dctFont);
-    end;
-    SetTextColor(Canvas, ColorToRGB(Color));
-
+  // Set background color
+  Color:= Control.Color;
+  if IsSystemWindowColor(Color) then
+  begin
+    Color:= Control.GetDefaultColor(dctBrush);
   end;
+  Color := ResolveDarkSystemColor(Color, COLOR_BTNFACE);
+  SetBkColor(Canvas, ColorToRGB(Color));
+
+  // Set text color
+  Color:= Control.Font.Color;
+  if IsSystemTextColor(Color) then
+  begin
+    Color:= Control.GetDefaultColor(dctFont);
+  end;
+  Color := ResolveDarkSystemColor(Color, COLOR_BTNTEXT);
+  SetTextColor(Canvas, ColorToRGB(Color));
+end;
+
+function GetControlColorBrush(Control: TWinControl): HBRUSH;
+var
+  Color: TColor;
+begin
+  Color := Control.Color;
+  if IsSystemWindowColor(Color) then
+  begin
+    Color := Control.GetDefaultColor(dctBrush);
+    if Color = clWindow then
+      Result := GetSysColorBrushDark(COLOR_WINDOW)
+    else
+      Result := GetSysColorBrushDark(COLOR_BTNFACE)
+  end
+  else
+    Result := Control.Brush.Reference.Handle;
 end;
 
 { TWin32WSUpDownControlDark }
@@ -529,7 +1976,10 @@ begin
       Exit(1);
     end;
     else begin
-      Result:= CallWindowProc(OldUpDownWndProc, Window, Msg, WParam, LParam);
+      if Assigned(OldUpDownWndProc) and (Pointer(OldUpDownWndProc) <> Pointer(@UpDownWndProc)) then
+        Result:= CallWindowProc(OldUpDownWndProc, Window, Msg, WParam, LParam)
+      else
+        Result:= DefWindowProcW(Window, Msg, WParam, LParam);
     end;
   end;
 end;
@@ -637,6 +2087,178 @@ begin
   end;
 end;
 
+{ TWin32WSCustomGroupBoxDark }
+
+class function TWin32WSCustomGroupBoxDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  PrepareDarkGroupedChildSizing(AWinControl);
+  SetDarkControlColors(AWinControl);
+  Result := inherited CreateHandle(AWinControl, AParams);
+  InstallDarkGroupBoxWndProc(Result);
+  EnableDarkStyle(Result);
+  if (AWinControl is TCustomRadioGroup) or (AWinControl is TCustomCheckGroup) then
+    PostMessage(Result, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
+end;
+
+class function TWin32WSCustomGroupBoxDark.GetDefaultColor(
+  const AControl: TControl; const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  Result := DarkControlDefaultColor(ADefaultColorType);
+end;
+
+class procedure TWin32WSCustomGroupBoxDark.ShowHide(
+  const AWinControl: TWinControl);
+begin
+  DarkWin32ShowHide(AWinControl);
+end;
+
+{ TWin32WSButtonDark }
+
+class function TWin32WSButtonDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  SetDarkControlColors(AWinControl);
+  Result := inherited CreateHandle(AWinControl, AParams);
+  EnableDarkStyle(Result);
+  InstallDarkButtonWndProc(Result);
+end;
+
+class procedure TWin32WSButtonDark.ShowHide(const AWinControl: TWinControl);
+begin
+  DarkWin32ShowHide(AWinControl);
+end;
+
+{ TWin32WSBitBtnDark }
+
+class function TWin32WSBitBtnDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  SetDarkControlColors(AWinControl);
+  Result := inherited CreateHandle(AWinControl, AParams);
+  if not (csDesigning in AWinControl.ComponentState) then
+  begin
+    EnableDarkStyle(Result);
+    InstallDarkButtonWndProc(Result);
+  end;
+end;
+
+class procedure TWin32WSBitBtnDark.ShowHide(const AWinControl: TWinControl);
+begin
+  DarkWin32ShowHide(AWinControl);
+end;
+
+{ TWin32WSCustomCheckBoxDark }
+
+class function TWin32WSCustomCheckBoxDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  SetDarkControlColors(AWinControl);
+  Result := inherited CreateHandle(AWinControl, AParams);
+  EnableDarkStyle(Result);
+  if not IsDarkGroupedDesignItem(AWinControl) then
+    InstallDarkCheckRadioWndProc(Result);
+  AWinControl.InvalidatePreferredSize;
+  if AWinControl.AutoSize then
+    AWinControl.AdjustSize;
+  SyncDarkCheckRadioWindowBounds(Result, AWinControl, False);
+  PostMessage(Result, DARK_CHECKRADIO_SYNC_BOUNDS, 0, 0);
+  PostDarkGroupedParentSync(AWinControl);
+end;
+
+class function TWin32WSCustomCheckBoxDark.GetDefaultColor(
+  const AControl: TControl; const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  Result := DarkControlDefaultColor(ADefaultColorType);
+end;
+
+class procedure TWin32WSCustomCheckBoxDark.GetPreferredSize(
+  const AWinControl: TWinControl; var PreferredWidth,
+  PreferredHeight: integer; WithThemeSpace: Boolean);
+begin
+  inherited GetPreferredSize(AWinControl, PreferredWidth, PreferredHeight,
+    WithThemeSpace);
+  if PreferredWidth > 0 then
+    Inc(PreferredWidth, 2);
+  if AWinControl.HandleAllocated then
+    PostMessage(AWinControl.Handle, DARK_CHECKRADIO_SYNC_BOUNDS, 0, 0);
+end;
+
+class procedure TWin32WSCustomCheckBoxDark.ShowHide(
+  const AWinControl: TWinControl);
+begin
+  DarkWin32ShowHide(AWinControl);
+end;
+
+{ TWin32WSRadioButtonDark }
+
+class function TWin32WSRadioButtonDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  SetDarkControlColors(AWinControl);
+  Result := inherited CreateHandle(AWinControl, AParams);
+  EnableDarkStyle(Result);
+  if not IsDarkGroupedDesignItem(AWinControl) then
+    InstallDarkCheckRadioWndProc(Result);
+  PostDarkGroupedParentSync(AWinControl);
+end;
+
+class function TWin32WSRadioButtonDark.GetDefaultColor(
+  const AControl: TControl; const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  Result := DarkControlDefaultColor(ADefaultColorType);
+end;
+
+class procedure TWin32WSRadioButtonDark.ShowHide(
+  const AWinControl: TWinControl);
+begin
+  DarkWin32ShowHide(AWinControl);
+end;
+
+{ TWin32WSCustomPageDark }
+
+class function TWin32WSCustomPageDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  SetDarkControlColors(AWinControl);
+  Result := inherited CreateHandle(AWinControl, AParams);
+  EnableDarkStyle(Result);
+end;
+
+class function TWin32WSCustomPageDark.GetDefaultColor(const AControl: TControl;
+  const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  Result := DarkControlDefaultColor(ADefaultColorType);
+end;
+
+class procedure TWin32WSCustomPageDark.ShowHide(
+  const AWinControl: TWinControl);
+begin
+  DarkWin32ShowHide(AWinControl);
+end;
+
+{ TWin32WSCustomTabControlDark }
+
+class function TWin32WSCustomTabControlDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  SetDarkControlColors(AWinControl);
+  Result := inherited CreateHandle(AWinControl, AParams);
+  EnableDarkStyle(Result);
+end;
+
+class function TWin32WSCustomTabControlDark.GetDefaultColor(
+  const AControl: TControl; const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  Result := DarkControlDefaultColor(ADefaultColorType);
+end;
+
+class procedure TWin32WSCustomTabControlDark.ShowHide(
+  const AWinControl: TWinControl);
+begin
+  DarkWin32ShowHide(AWinControl);
+end;
+
 { TWin32WSPopupMenuDark }
 
 class procedure TWin32WSPopupMenuDark.Popup(const APopupMenu: TPopupMenu;
@@ -676,6 +2298,215 @@ begin
   if not (csDesigning in AWinControl.ComponentState) then begin
      EnableDarkStyle(Result);
   end;
+end;
+
+{ TWin32WSScrollBarDark }
+
+procedure DrawDarkScrollBarArrow(ACanvas: TCanvas; const ARect: TRect;
+  AVertical, AForward: Boolean);
+var
+  CenterX, CenterY, Size: Integer;
+  Points: array[0..2] of TPoint;
+
+  procedure SetPoint(AIndex, X, Y: Integer);
+  begin
+    Points[AIndex].X := X;
+    Points[AIndex].Y := Y;
+  end;
+
+begin
+  CenterX := (ARect.Left + ARect.Right) div 2;
+  CenterY := (ARect.Top + ARect.Bottom) div 2;
+  Size := Max(3, Min(ARect.Width, ARect.Height) div 4);
+
+  if AVertical then
+  begin
+    if AForward then
+    begin
+      SetPoint(0, CenterX - Size, CenterY - Size div 2);
+      SetPoint(1, CenterX + Size, CenterY - Size div 2);
+      SetPoint(2, CenterX, CenterY + Size);
+    end
+    else
+    begin
+      SetPoint(0, CenterX - Size, CenterY + Size div 2);
+      SetPoint(1, CenterX + Size, CenterY + Size div 2);
+      SetPoint(2, CenterX, CenterY - Size);
+    end;
+  end
+  else
+  begin
+    if AForward then
+    begin
+      SetPoint(0, CenterX - Size div 2, CenterY - Size);
+      SetPoint(1, CenterX - Size div 2, CenterY + Size);
+      SetPoint(2, CenterX + Size, CenterY);
+    end
+    else
+    begin
+      SetPoint(0, CenterX + Size div 2, CenterY - Size);
+      SetPoint(1, CenterX + Size div 2, CenterY + Size);
+      SetPoint(2, CenterX - Size, CenterY);
+    end;
+  end;
+
+  ACanvas.Brush.Color := SysColor[COLOR_GRAYTEXT];
+  ACanvas.Pen.Color := ACanvas.Brush.Color;
+  ACanvas.Polygon(Points);
+end;
+
+procedure PaintDarkScrollBar(Window: HWND; DC: HDC);
+const
+  MinThumbSize = 10;
+var
+  Info: PWin32WindowInfo;
+  R, FirstButtonRect, SecondButtonRect, TrackRect, ThumbRect: TRect;
+  ACanvas: TCanvas;
+  IsVertical: Boolean;
+  ArrowLength, TrackLength, ThumbLength, ThumbTravel, ThumbOffset: Integer;
+  MinScroll, MaxScroll, ScrollRange, PageSize, MaxPosition, PositionRange,
+  ScrollPos: Integer;
+begin
+  GetClientRect(Window, @R);
+  if (R.Width <= 0) or (R.Height <= 0) then
+    Exit;
+
+  IsVertical := (GetWindowLongPtr(Window, GWL_STYLE) and SBS_VERT) <> 0;
+  Info := GetWin32WindowInfo(Window);
+  if Assigned(Info) and (Info^.WinControl is TCustomScrollBar) then
+  begin
+    IsVertical := TCustomScrollBar(Info^.WinControl).Kind = sbVertical;
+    MinScroll := TCustomScrollBar(Info^.WinControl).Min;
+    MaxScroll := TCustomScrollBar(Info^.WinControl).Max;
+    PageSize := TCustomScrollBar(Info^.WinControl).PageSize;
+    ScrollPos := TCustomScrollBar(Info^.WinControl).Position;
+  end
+  else
+  begin
+    MinScroll := 0;
+    MaxScroll := 100;
+    PageSize := 10;
+    ScrollPos := 0;
+  end;
+
+  if IsVertical then
+  begin
+    ArrowLength := Min(GetSystemMetrics(SM_CYVSCROLL), R.Height div 2);
+    FirstButtonRect := Classes.Rect(R.Left, R.Top, R.Right, R.Top + ArrowLength);
+    SecondButtonRect := Classes.Rect(R.Left, R.Bottom - ArrowLength, R.Right, R.Bottom);
+    TrackRect := Classes.Rect(R.Left, FirstButtonRect.Bottom, R.Right, SecondButtonRect.Top);
+    TrackLength := TrackRect.Height;
+  end
+  else
+  begin
+    ArrowLength := Min(GetSystemMetrics(SM_CXHSCROLL), R.Width div 2);
+    FirstButtonRect := Classes.Rect(R.Left, R.Top, R.Left + ArrowLength, R.Bottom);
+    SecondButtonRect := Classes.Rect(R.Right - ArrowLength, R.Top, R.Right, R.Bottom);
+    TrackRect := Classes.Rect(FirstButtonRect.Right, R.Top, SecondButtonRect.Left, R.Bottom);
+    TrackLength := TrackRect.Width;
+  end;
+
+  ScrollRange := Max(1, MaxScroll - MinScroll + 1);
+  PageSize := Max(0, PageSize);
+  if (PageSize > 0) and (TrackLength > 0) then
+    ThumbLength := MulDiv(TrackLength, Min(PageSize, ScrollRange), ScrollRange)
+  else
+    ThumbLength := MinThumbSize;
+  ThumbLength := Max(MinThumbSize, Min(TrackLength, ThumbLength));
+
+  MaxPosition := MaxScroll - Max(PageSize - 1, 0);
+  if MaxPosition < MinScroll then
+    MaxPosition := MinScroll;
+  ScrollPos := Max(MinScroll, Min(ScrollPos, MaxPosition));
+  PositionRange := MaxPosition - MinScroll;
+  ThumbTravel := Max(0, TrackLength - ThumbLength);
+  if PositionRange > 0 then
+    ThumbOffset := MulDiv(ScrollPos - MinScroll, ThumbTravel, PositionRange)
+  else
+    ThumbOffset := 0;
+
+  if IsVertical then
+    ThumbRect := Classes.Rect(TrackRect.Left, TrackRect.Top + ThumbOffset, TrackRect.Right,
+      TrackRect.Top + ThumbOffset + ThumbLength)
+  else
+    ThumbRect := Classes.Rect(TrackRect.Left + ThumbOffset, TrackRect.Top,
+      TrackRect.Left + ThumbOffset + ThumbLength, TrackRect.Bottom);
+
+  ACanvas := TCanvas.Create;
+  try
+    ACanvas.Handle := DC;
+    ACanvas.Brush.Color := SysColor[COLOR_BTNSHADOW];
+    ACanvas.Pen.Color := ACanvas.Brush.Color;
+    ACanvas.FillRect(R);
+
+    ACanvas.Brush.Color := SysColor[COLOR_BTNFACE];
+    ACanvas.FillRect(FirstButtonRect);
+    ACanvas.FillRect(SecondButtonRect);
+
+    ACanvas.Brush.Color := RGBToColor(77, 77, 77);
+    ACanvas.Pen.Color := SysColor[COLOR_BTNHIGHLIGHT];
+    ACanvas.Rectangle(ThumbRect);
+
+    DrawDarkScrollBarArrow(ACanvas, FirstButtonRect, IsVertical, False);
+    DrawDarkScrollBarArrow(ACanvas, SecondButtonRect, IsVertical, True);
+  finally
+    ACanvas.Handle := 0;
+    ACanvas.Free;
+  end;
+end;
+
+function ScrollBarDarkWndProc(Window: HWND; Msg: UINT; wParam: Windows.WPARAM;
+  lParam: Windows.LPARAM; uISubClass: UINT_PTR; dwRefData: DWORD_PTR): LRESULT; stdcall;
+var
+  PS: TPaintStruct;
+  DC: HDC;
+begin
+  case Msg of
+    WM_ERASEBKGND:
+      Exit(1);
+    WM_PAINT:
+      begin
+        DC := BeginPaint(Window, @PS);
+        try
+          PaintDarkScrollBar(Window, DC);
+        finally
+          EndPaint(Window, @PS);
+        end;
+        Exit(0);
+      end;
+    WM_ENABLE, WM_SIZE, $00E0, $00E2, $00E6, $00E9:
+      begin
+        Result := DefSubclassProc(Window, Msg, WParam, LParam);
+        InvalidateRect(Window, nil, False);
+        Exit;
+      end;
+  end;
+
+  Result := DefSubclassProc(Window, Msg, WParam, LParam);
+end;
+
+class function TWin32WSScrollBarDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  Result := inherited CreateHandle(AWinControl, AParams);
+  SetWindowSubclass(Result, @ScrollBarDarkWndProc, ID_SUB_SCROLLBAR, 0);
+  EnableDarkStyle(Result);
+end;
+
+{ TWin32WSCustomTreeViewDark }
+
+class function TWin32WSCustomTreeViewDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  Result := TWin32WSWinControlDark.CreateHandle(AWinControl, AParams);
+end;
+
+{ TWin32WSCustomSplitterDark }
+
+class function TWin32WSCustomSplitterDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+begin
+  Result := TWin32WSWinControlDark.CreateHandle(AWinControl, AParams);
 end;
 
 { TWin32WSCustomFormDark }
@@ -731,8 +2562,6 @@ end;
 
 class function TWin32WSCustomFormDark.CreateHandle(
   const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
-var
-  Info: PWin32WindowInfo;
 begin
   if not (csDesigning in AWinControl.ComponentState) then begin
     AWinControl.DoubleBuffered:= True;
@@ -742,11 +2571,11 @@ begin
 
   Result:= inherited CreateHandle(AWinControl, AParams);
 
-    Info:= GetWin32WindowInfo(Result);
-
-    Info^.DefWndProc:= @WindowProc;
-
-    CustomFormWndProc:= Windows.WNDPROC(SetWindowLongPtrW(Result, GWL_WNDPROC, LONG_PTR(@FormWndProc2)));
+  if Result <> 0 then
+  begin
+    AllowDarkModeForWindow(Result, True);
+    RefreshTitleBarThemeColor(Result);
+  end;
 
   if not (csDesigning in AWinControl.ComponentState) then begin
     AWinControl.Color:= SysColor[COLOR_BTNFACE];
@@ -797,11 +2626,229 @@ end;
 
 { TWin32WSCustomListViewDark }
 
+procedure DrawDarkListViewHeaderBackground(Header: HWND; DC: HDC;
+  const ARect: TRect);
+var
+  R: TRect;
+  OldPen: HGDIOBJ;
+begin
+  R := ARect;
+  if (R.Right <= R.Left) or (R.Bottom <= R.Top) then
+    GetClientRect(Header, R);
+
+  FillGradient(DC, Lighter(SysColor[COLOR_BTNFACE], 128),
+    Darker(SysColor[COLOR_BTNFACE], 108), R, GRADIENT_FILL_RECT_V);
+
+  OldPen := SelectObject(DC, GetStockObject(DC_PEN));
+  try
+    SetDCPenColor(DC, ColorToRGB(Lighter(SysColor[COLOR_BTNFACE], 131)));
+    MoveToEx(DC, R.Left, R.Top, nil);
+    LineTo(DC, R.Right, R.Top);
+    SetDCPenColor(DC, ColorToRGB(Darker(SysColor[COLOR_BTNFACE], 140)));
+    MoveToEx(DC, R.Left, R.Bottom - 1, nil);
+    LineTo(DC, R.Right, R.Bottom - 1);
+    SetDCPenColor(DC, ColorToRGB(Lighter(SysColor[COLOR_BTNFACE], 101)));
+    MoveToEx(DC, R.Right - 1, R.Top, nil);
+    LineTo(DC, R.Right - 1, R.Bottom);
+  finally
+    SelectObject(DC, OldPen);
+  end;
+end;
+
+procedure DrawDarkListViewHeaderItem(Header: HWND; NMCustomDraw: PNMCustomDraw);
+var
+  Item: HDITEMW;
+  TextBuf: array[0..255] of WideChar;
+  R, TextR: TRect;
+  OldFont: HGDIOBJ;
+  OldBkMode: Integer;
+  OldTextColor: COLORREF;
+  FontHandle: HFONT;
+  TextFlags: UINT;
+begin
+  R := NMCustomDraw^.rc;
+  DrawDarkListViewHeaderBackground(Header, NMCustomDraw^.hdc, R);
+
+  FillChar(TextBuf, SizeOf(TextBuf), 0);
+  FillChar(Item{%H-}, SizeOf(Item), 0);
+  Item.mask := HDI_TEXT or HDI_FORMAT;
+  Item.pszText := @TextBuf[0];
+  Item.cchTextMax := Length(TextBuf);
+  SendMessageW(Header, HDM_GETITEMW, NMCustomDraw^.dwItemSpec, LPARAM(@Item));
+
+  TextR := R;
+  Inc(TextR.Left, 6);
+  Dec(TextR.Right, 6);
+  FontHandle := HFONT(SendMessage(Header, WM_GETFONT, 0, 0));
+  OldFont := 0;
+  if FontHandle <> 0 then
+    OldFont := SelectObject(NMCustomDraw^.hdc, FontHandle);
+  OldBkMode := SetBkMode(NMCustomDraw^.hdc, TRANSPARENT);
+  OldTextColor := SetTextColor(NMCustomDraw^.hdc, ColorToRGB(SysColor[COLOR_BTNTEXT]));
+  TextFlags := DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS;
+  case Item.fmt and (HDF_RIGHT or HDF_CENTER) of
+    HDF_RIGHT: TextFlags := TextFlags or DT_RIGHT;
+    HDF_CENTER: TextFlags := TextFlags or DT_CENTER;
+  else
+    TextFlags := TextFlags or DT_LEFT;
+  end;
+  DrawTextW(NMCustomDraw^.hdc, PWideChar(@TextBuf[0]), -1, TextR, TextFlags);
+  SetTextColor(NMCustomDraw^.hdc, OldTextColor);
+  SetBkMode(NMCustomDraw^.hdc, OldBkMode);
+  if OldFont <> 0 then
+    SelectObject(NMCustomDraw^.hdc, OldFont);
+end;
+
+procedure ApplyDarkListViewColors(Window: HWND);
+begin
+  if Window = 0 then
+    Exit;
+  ListView_SetBkColor(Window, SysColor[COLOR_WINDOW]);
+  ListView_SetTextBkColor(Window, SysColor[COLOR_WINDOW]);
+  if IsWindowEnabled(Window) then
+    ListView_SetTextColor(Window, SysColor[COLOR_WINDOWTEXT])
+  else
+    ListView_SetTextColor(Window, SysColor[COLOR_GRAYTEXT]);
+end;
+
+procedure DrawDarkDisabledListViewItemAt(Window: HWND; DC: HDC;
+  ItemIndex: Integer; const AFallbackRect: TRect);
+var
+  Header: HWND;
+  ColumnCount, SubItem: Integer;
+  RowR, ClientR, TextR: TRect;
+  Item: TLVITEMW;
+  TextBuf: array[0..511] of WideChar;
+  FontHandle: HFONT;
+  OldFont: HGDIOBJ;
+  OldBkMode: Integer;
+  OldTextColor: COLORREF;
+  TextFlags: UINT;
+  Message: UINT;
+begin
+  if (Window = 0) or
+     ((GetWindowLong(Window, GWL_STYLE) and LVS_TYPEMASK) <> LVS_REPORT) then
+    Exit;
+
+  Header := HWND(SendMessage(Window, LVM_GETHEADER, 0, 0));
+  ColumnCount := Header_GetItemCount(Header);
+  if ColumnCount < 1 then
+    ColumnCount := 1;
+
+  FillChar(RowR{%H-}, SizeOf(RowR), 0);
+  RowR.Left := LVIR_BOUNDS;
+  if SendMessage(Window, LVM_GETITEMRECT, ItemIndex, LPARAM(@RowR)) = 0 then
+    RowR := AFallbackRect;
+  GetClientRect(Window, ClientR);
+  RowR.Left := ClientR.Left;
+  RowR.Right := ClientR.Right;
+  FillRect(DC, RowR, GetSysColorBrushDark(COLOR_WINDOW));
+
+  FontHandle := HFONT(SendMessage(Window, WM_GETFONT, 0, 0));
+  OldFont := 0;
+  if FontHandle <> 0 then
+    OldFont := SelectObject(DC, FontHandle);
+  OldBkMode := SetBkMode(DC, TRANSPARENT);
+  OldTextColor := SetTextColor(DC, ColorToRGB(SysColor[COLOR_GRAYTEXT]));
+  TextFlags := DT_SINGLELINE or DT_VCENTER or DT_END_ELLIPSIS or DT_NOPREFIX;
+  try
+    for SubItem := 0 to ColumnCount - 1 do
+    begin
+      FillChar(TextR{%H-}, SizeOf(TextR), 0);
+      TextR.Top := SubItem;
+      TextR.Left := LVIR_LABEL;
+      if SubItem = 0 then
+        Message := LVM_GETITEMRECT
+      else
+        Message := LVM_GETSUBITEMRECT;
+      if SendMessage(Window, Message, ItemIndex, LPARAM(@TextR)) = 0 then
+        Continue;
+
+      FillChar(TextBuf, SizeOf(TextBuf), 0);
+      FillChar(Item{%H-}, SizeOf(Item), 0);
+      Item.iSubItem := SubItem;
+      Item.pszText := @TextBuf[0];
+      Item.cchTextMax := Length(TextBuf);
+      SendMessageW(Window, LVM_GETITEMTEXTW, ItemIndex, LPARAM(@Item));
+
+      Inc(TextR.Left, 4);
+      Dec(TextR.Right, 4);
+      DrawTextW(DC, PWideChar(@TextBuf[0]), -1, TextR, TextFlags);
+    end;
+  finally
+    SetTextColor(DC, OldTextColor);
+    SetBkMode(DC, OldBkMode);
+    if OldFont <> 0 then
+      SelectObject(DC, OldFont);
+  end;
+end;
+
+procedure DrawDarkDisabledListViewRows(Window: HWND);
+var
+  DC: HDC;
+  FirstItem, LastItem, ItemIndex, ItemCount, CountPerPage: Integer;
+  R: TRect;
+begin
+  if (Window = 0) or IsWindowEnabled(Window) or
+     ((GetWindowLong(Window, GWL_STYLE) and LVS_TYPEMASK) <> LVS_REPORT) then
+    Exit;
+
+  ItemCount := ListView_GetItemCount(Window);
+  if ItemCount <= 0 then
+    Exit;
+  FirstItem := ListView_GetTopIndex(Window);
+  CountPerPage := ListView_GetCountPerPage(Window);
+  if CountPerPage < 1 then
+    CountPerPage := ItemCount;
+  LastItem := Min(ItemCount - 1, FirstItem + CountPerPage - 1);
+
+  DC := GetDC(Window);
+  if DC = 0 then
+    Exit;
+  try
+    FillChar(R{%H-}, SizeOf(R), 0);
+    for ItemIndex := FirstItem to LastItem do
+      DrawDarkDisabledListViewItemAt(Window, DC, ItemIndex, R);
+  finally
+    ReleaseDC(Window, DC);
+  end;
+end;
+
+procedure DrawDarkDisabledListViewItem(Window: HWND; DrawInfo: PNMLVCustomDraw);
+begin
+  DrawDarkDisabledListViewItemAt(Window, DrawInfo^.nmcd.hdc,
+    DrawInfo^.nmcd.dwItemSpec, DrawInfo^.nmcd.rc);
+end;
+
 function ListViewWindowProc(Window: HWND; Msg: UINT; wParam: Windows.WPARAM; lParam: Windows.LPARAM; uISubClass: UINT_PTR; dwRefData: DWORD_PTR): LRESULT; stdcall;
-var NMHdr: PNMHDR; NMCustomDraw: PNMCustomDraw;
+var
+  NMHdr: PNMHDR;
+  NMCustomDraw: PNMCustomDraw;
+  NMListViewCustomDraw: PNMLVCustomDraw;
+  TextColor: TColor;
 begin
   If Msg = WM_NOTIFY then begin
     NMHdr := PNMHDR(LParam);
+    if (NMHdr^.hwndFrom = HWND(SendMessage(Window, LVM_GETHEADER, 0, 0))) and
+       (NMHdr^.code = NM_CUSTOMDRAW) then
+    begin
+      NMCustomDraw := PNMCustomDraw(LParam);
+      case NMCustomDraw^.dwDrawStage of
+        CDDS_PREPAINT:
+        begin
+          DrawDarkListViewHeaderBackground(NMHdr^.hwndFrom,
+            NMCustomDraw^.hdc, NMCustomDraw^.rc);
+          Result := CDRF_NOTIFYITEMDRAW;
+          exit;
+        end;
+        CDDS_ITEMPREPAINT:
+        begin
+          DrawDarkListViewHeaderItem(NMHdr^.hwndFrom, NMCustomDraw);
+          Result := CDRF_SKIPDEFAULT;
+          exit;
+        end;
+      end;
+    end;
     if NMHdr^.code = NM_CUSTOMDRAW then begin
       NMCustomDraw:= PNMCustomDraw(LParam);
       case NMCustomDraw^.dwDrawStage of
@@ -812,12 +2859,45 @@ begin
         end;
         CDDS_ITEMPREPAINT:
         begin
-          SetTextColor(NMCustomDraw^.hdc , SysColor[COLOR_HIGHLIGHTTEXT]);
+          NMListViewCustomDraw := PNMLVCustomDraw(LParam);
+          if IsWindowEnabled(Window) and
+             ((NMCustomDraw^.uItemState and (CDIS_DISABLED or CDIS_GRAYED)) = 0) then
+            TextColor := SysColor[COLOR_WINDOWTEXT]
+          else
+            TextColor := SysColor[COLOR_GRAYTEXT];
+          NMListViewCustomDraw^.clrText := ColorToRGB(TextColor);
+          NMListViewCustomDraw^.clrTextBk := ColorToRGB(SysColor[COLOR_WINDOW]);
+          SetBkColor(NMCustomDraw^.hdc, ColorToRGB(SysColor[COLOR_WINDOW]));
+          SetTextColor(NMCustomDraw^.hdc, ColorToRGB(TextColor));
+          if not IsWindowEnabled(Window) then
+          begin
+            DrawDarkDisabledListViewItem(Window, NMListViewCustomDraw);
+            Result := CDRF_SKIPDEFAULT;
+            exit;
+          end;
           Result := CDRF_NEWFONT;
           exit;
         end;
       end;
     end;
+  end;
+  case Msg of
+    WM_PAINT:
+      begin
+        Result := DefSubclassProc(Window, Msg, WParam, LParam);
+        DrawDarkDisabledListViewRows(Window);
+        Exit;
+      end;
+    WM_CREATE, WM_SHOWWINDOW, WM_THEMECHANGED, WM_STYLECHANGED,
+    WM_ENABLE, WM_WINDOWPOSCHANGED, LVM_INSERTCOLUMNW, LVM_SETCOLUMNW,
+    LVM_DELETECOLUMN:
+      begin
+        Result := DefSubclassProc(Window, Msg, WParam, LParam);
+        ApplyDarkListViewColors(Window);
+        EnableDarkListViewHeader(Window);
+        InvalidateRect(Window, nil, True);
+        Exit;
+      end;
   end;
   Result := DefSubclassProc(Window, Msg, WParam, LParam);
 end;
@@ -833,9 +2913,39 @@ begin
     TCustomListView(AWinControl).BorderStyle:= bsNone;
   Result:= inherited CreateHandle(AWinControl, P);
   SetWindowSubclass(Result, @ListViewWindowProc, ID_SUB_LISTVIEW, 0);
-  if not (csDesigning in AWinControl.ComponentState) then begin
-     EnableDarkStyle(Result);
+  ApplyDarkListViewColors(Result);
+  EnableDarkStyle(Result);
+  EnableDarkListViewHeader(Result);
+end;
+
+{ TWin32WSCustomEditDark }
+
+class function TWin32WSCustomEditDark.CreateHandle(
+  const AWinControl: TWinControl; const AParams: TCreateParams): HWND;
+var
+  P: TCreateParams;
+begin
+  P := AParams;
+  if not (csDesigning in AWinControl.ComponentState) then
+  begin
+    if DrawControl.BorderStyleOverride then
+      TCustomEdit(AWinControl).BorderStyle := bsNone;
+    P.ExStyle := P.ExStyle and not WS_EX_CLIENTEDGE;
+    if IsSystemWindowColor(AWinControl.Color) then
+      AWinControl.Color := SysColor[COLOR_WINDOW];
+    AWinControl.Brush.Color := AWinControl.Color;
+    if IsSystemTextColor(AWinControl.Font.Color) then
+      AWinControl.Font.Color := SysColor[COLOR_WINDOWTEXT];
   end;
+
+  Result := inherited CreateHandle(AWinControl, P);
+  EnableDarkStyle(Result);
+end;
+
+class function TWin32WSCustomEditDark.GetDefaultColor(
+  const AControl: TControl; const ADefaultColorType: TDefaultColorType): TColor;
+begin
+  Result := DarkWindowDefaultColor(ADefaultColorType);
 end;
 
 { TWin32WSCustomMemoDark }
@@ -864,6 +2974,33 @@ end;
 
 { TWin32WSCustomComboBoxDark }
 
+procedure PaintDarkComboButton(Window: HWND; DC: HDC);
+var
+  R: TRect;
+  LCanvas: TCanvas;
+  ButtonWidth: Integer;
+begin
+  if not GetClientRect(Window, R) then
+    Exit;
+
+  ButtonWidth := GetSystemMetrics(SM_CXVSCROLL);
+  R.Left := Max(R.Left, R.Right - ButtonWidth - 2);
+  InflateRect(R, -1, -1);
+
+  LCanvas := TCanvas.Create;
+  try
+    LCanvas.Handle := DC;
+    LCanvas.Brush.Color := SysColor[COLOR_WINDOW];
+    LCanvas.FillRect(R);
+    LCanvas.Pen.Color := SysColor[COLOR_BTNHIGHLIGHT];
+    LCanvas.FrameRect(R);
+    DrawDarkScrollBarArrow(LCanvas, R, True, True);
+  finally
+    LCanvas.Handle := 0;
+    LCanvas.Free;
+  end;
+end;
+
 function ComboBoxWindowProc(Window:HWND; Msg:UINT; wParam:Windows.WPARAM;lparam:Windows.LPARAM;uISubClass : UINT_PTR;dwRefData:DWORD_PTR):LRESULT; stdcall;
 var
   DC: HDC;
@@ -875,7 +3012,24 @@ begin
       ComboBox:= TCustomComboBox(GetWin32WindowInfo(Window)^.WinControl);
       DC:= HDC(wParam);
       SetControlColors(ComboBox, DC);
-      Exit(LResult(ComboBox.Brush.Reference.Handle));
+      Exit(LResult(GetControlColorBrush(ComboBox)));
+    end;
+    WM_PAINT:
+    begin
+      Result := DefSubclassProc(Window, Msg, wParam, lParam);
+      DC := GetDC(Window);
+      try
+        PaintDarkComboButton(Window, DC);
+      finally
+        ReleaseDC(Window, DC);
+      end;
+      Exit;
+    end;
+    WM_PRINTCLIENT:
+    begin
+      Result := DefSubclassProc(Window, Msg, wParam, lParam);
+      PaintDarkComboButton(Window, HDC(wParam));
+      Exit;
     end;
   end;
   Result:= DefSubclassProc(Window, Msg, wParam, lParam);
@@ -893,16 +3047,18 @@ begin
 
   Result:= inherited CreateHandle(AWinControl, AParams);
 
-  if not (csDesigning in AWinControl.ComponentState) then begin
-    Info.cbSize:= SizeOf(Info);
-    Win32Extra.GetComboBoxInfo(Result, @Info);
-
-    EnableDarkStyle(Info.hwndList);
-
-    AllowDarkModeForWindow(Result, True);
-
-    SetWindowSubclass(Result, @ComboBoxWindowProc, ID_SUB_COMBOBOX, 0);
+  Info.cbSize:= SizeOf(Info);
+  if Win32Extra.GetComboBoxInfo(Result, @Info) then
+  begin
+    if Info.hwndList <> 0 then
+      EnableDarkStyle(Info.hwndList);
+    if Info.hwndItem <> 0 then
+      EnableDarkStyle(Info.hwndItem);
   end;
+
+  AllowDarkModeForWindow(Result, True);
+  SendMessageW(Result, WM_THEMECHANGED, 0, 0);
+  SetWindowSubclass(Result, @ComboBoxWindowProc, ID_SUB_COMBOBOX, 0);
 end;
 
 class function TWin32WSCustomComboBoxDark.GetDefaultColor(
@@ -1055,7 +3211,7 @@ begin
       OldColor:= SysColor[COLOR_GRAYTEXT]
     else
       OldColor:= SysColor[COLOR_BTNTEXT]
-  end else
+  end else if (hTheme <> Win32Theme.Theme[teButton]) then
     OldColor:= SysColor[COLOR_BTNTEXT];
 
   OldColor:= SetTextColor(hdc, OldColor);
@@ -1351,6 +3507,42 @@ end;
 var
   __CreateWindowExW: function(dwExStyle: DWORD; lpClassName: LPCWSTR; lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint; nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU; hInstance: HINST; lpParam: LPVOID): HWND; stdcall;
 
+function _CreateWindowExW(dwExStyle: DWORD; lpClassName: LPCWSTR;
+  lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint;
+  nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU;
+  hInstance: HINST; lpParam: LPVOID): HWND; stdcall; forward;
+
+procedure EnsureCreateWindowExWTrampoline;
+var
+  hModule: THandle;
+begin
+  if Assigned(__CreateWindowExW) and (Pointer(__CreateWindowExW) <> Pointer(@_CreateWindowExW)) then
+    Exit;
+
+  hModule:= GetModuleHandle(user32);
+  if hModule <> 0 then
+    Pointer(__CreateWindowExW):= GetProcAddress(hModule, 'CreateWindowExW');
+end;
+
+procedure HookCreateWindowExW(pFunction: PPointer);
+var
+  OldFunction: Pointer;
+begin
+  if not Assigned(pFunction) then
+    Exit;
+
+  if Pointer(pFunction^) = Pointer(@_CreateWindowExW) then
+  begin
+    EnsureCreateWindowExWTrampoline;
+    Exit;
+  end;
+
+  OldFunction:= ReplaceImportFunction(pFunction, @_CreateWindowExW);
+  if (OldFunction <> nil) and (OldFunction <> Pointer(@_CreateWindowExW)) then
+    Pointer(__CreateWindowExW):= OldFunction;
+  EnsureCreateWindowExWTrampoline;
+end;
+
 function _DrawEdge(hdc: HDC; var qrc: TRect; edge: UINT; grfFlags: UINT): BOOL; stdcall;
 var
   Original: HGDIOBJ;
@@ -1488,25 +3680,13 @@ begin
   end;
 end;
 
-const
-  ClassNameW: PWideChar = 'TCustomForm';
-  ClassNameTC: PWideChar = 'TTOTAL_CMD'; // for compatibility with plugins
-
 function _CreateWindowExW(dwExStyle: DWORD; lpClassName: LPCWSTR; lpWindowName: LPCWSTR; dwStyle: DWORD; X: longint; Y: longint; nWidth: longint; nHeight: longint; hWndParent: HWND; hMenu: HMENU; hInstance: HINST; lpParam: LPVOID): HWND; stdcall;
-var
-  AParams: PNCCreateParams absolute lpParam;
 begin
-  if Assigned(AParams) and (AParams^.WinControl is TCustomForm) then
-  begin
-    if (hWndParent = 0) and AParams^.WinControl.ClassNameIs('TfrmMain') then
-      lpClassName:= ClassNameTC
-    else begin
-      lpClassName:= ClassNameW;
-    end;
-  end else begin
-    dwExStyle:= dwExStyle or WS_EX_CONTEXTHELP;
-  end;
-  Result:= __CreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+  EnsureCreateWindowExWTrampoline;
+  if Assigned(__CreateWindowExW) and (Pointer(__CreateWindowExW) <> Pointer(@_CreateWindowExW)) then
+    Result:= __CreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam)
+  else
+    Result:= 0;
 end;
 
 function TaskDialogIndirectDark(const pTaskConfig: PTASKDIALOGCONFIG; pnButton: PInteger; pnRadioButton: PInteger; pfVerificationFlagChecked: PBOOL): HRESULT; stdcall;
@@ -1567,11 +3747,15 @@ end;
 procedure SubClassUpDown;
 var
   Window: HWND;
+  CurrentWndProc: Windows.WNDPROC;
 begin
   Window:= CreateWindowW(UPDOWN_CLASSW, nil, 0, 0, 0, 200, 20, 0, 0, HINSTANCE, nil);
-  OldUpDownWndProc:= Windows.WNDPROC(GetClassLongPtr(Window, GCLP_WNDPROC));
-
-  SetClassLongPtr(Window, GCLP_WNDPROC, LONG_PTR(@UpDownWndProc));
+  CurrentWndProc:= Windows.WNDPROC(GetClassLongPtr(Window, GCLP_WNDPROC));
+  if Assigned(CurrentWndProc) and (Pointer(CurrentWndProc) <> Pointer(@UpDownWndProc)) then
+  begin
+    OldUpDownWndProc:= CurrentWndProc;
+    SetClassLongPtr(Window, GCLP_WNDPROC, LONG_PTR(@UpDownWndProc));
+  end;
   DestroyWindow(Window);
 end;
 
@@ -1591,6 +3775,12 @@ begin
     Exit;
   if Form is TForm then
     ScreenFormEvent(nil,nil,Form as TForm);
+end;
+
+procedure ApplyWin32MetaDarkStyle(const CS: TDSColors);
+begin
+  Initialize(CS);
+  ApplyDarkStyle;
 end;
 
 {
@@ -1616,6 +3806,44 @@ begin
 
   with TWinControl.Create(nil) do Free;
   RegisterWSComponent(TWinControl, TWin32WSWinControlDark);
+  RegisterWSComponent(TCustomControl, TWin32WSWinControlDark);
+  RegisterWSComponent(TToolWindow, TWin32WSWinControlDark);
+
+  WSStdCtrls.RegisterCustomScrollBar;
+  RegisterWSComponent(TCustomScrollBar, TWin32WSScrollBarDark);
+
+  WSComCtrls.RegisterCustomTreeView;
+  RegisterWSComponent(TCustomTreeView, TWin32WSCustomTreeViewDark);
+
+  WSExtCtrls.RegisterCustomSplitter;
+  RegisterWSComponent(TCustomSplitter, TWin32WSCustomSplitterDark);
+
+  WSStdCtrls.RegisterCustomGroupBox;
+  RegisterWSComponent(TCustomGroupBox, TWin32WSCustomGroupBoxDark);
+
+  WSExtCtrls.RegisterCustomRadioGroup;
+  RegisterWSComponent(TCustomRadioGroup, TWin32WSCustomRadioGroupDark);
+
+  WSExtCtrls.RegisterCustomCheckGroup;
+  RegisterWSComponent(TCustomCheckGroup, TWin32WSCustomCheckGroupDark);
+
+  WSStdCtrls.RegisterCustomButton;
+  RegisterWSComponent(TCustomButton, TWin32WSButtonDark);
+
+  WSButtons.RegisterCustomBitBtn;
+  RegisterWSComponent(TCustomBitBtn, TWin32WSBitBtnDark);
+
+  WSStdCtrls.RegisterCustomCheckBox;
+  RegisterWSComponent(TCustomCheckBox, TWin32WSCustomCheckBoxDark);
+
+  WSStdCtrls.RegisterRadioButton;
+  RegisterWSComponent(TRadioButton, TWin32WSRadioButtonDark);
+
+  ComCtrls.RegisterCustomPage;
+  RegisterWSComponent(TCustomPage, TWin32WSCustomPageDark);
+
+  ComCtrls.RegisterCustomTabControl;
+  RegisterWSComponent(TCustomTabControl, TWin32WSCustomTabControlDark);
 
   WSComCtrls.RegisterStatusBar;
   RegisterWSComponent(TStatusBar, TWin32WSStatusBarDark);
@@ -1624,6 +3852,7 @@ begin
   RegisterWSComponent(TCustomComboBox, TWin32WSCustomComboBoxDark);
 
   WSStdCtrls.RegisterCustomEdit;
+  RegisterWSComponent(TCustomEdit, TWin32WSCustomEditDark);
 
   WSStdCtrls.RegisterCustomMemo;
   RegisterWSComponent(TCustomMemo, TWin32WSCustomMemoDark);
@@ -1652,8 +3881,6 @@ begin
   DrawThemeText:= @DrawThemeTextDark;
   DrawThemeBackground:= @DrawThemeBackgroundDark;
 
-  DefaultWindowInfo.DefWndProc:= @WindowProc;
-
   TaskDialogIndirect:= @TaskDialogIndirectDark;
 
   Win32Theme:= TWin32ThemeServices(ThemeServices);
@@ -1661,8 +3888,6 @@ end;
 
 function FormWndProc(Window: HWnd; Msg: UInt; WParam: Windows.WParam;
     LParam: Windows.LParam): LResult; stdcall;
-var
-  Info: PWin32WindowInfo;
 begin
   if Msg = WM_CREATE then
   begin
@@ -1671,12 +3896,7 @@ begin
   end
   else if (Msg = WM_SETFONT) then
   begin
-    Info := GetWin32WindowInfo(Window);
-    if Assigned(Info) then
-    begin
-     Info^.DefWndProc:= @WindowProc;
-    end;
-    Result:= CallWindowProc(@WindowProc, Window, Msg, WParam, LParam);
+    Result:= DefWindowProcW(Window, Msg, WParam, LParam);
     Exit;
   end;
   Result:= DefWindowProcW(Window, Msg, WParam, LParam);
@@ -1692,7 +3912,7 @@ begin
   try
     LCanvas.Handle:= HDC;
 
-    LCanvas.Brush.Color:= clBtnFace;
+    LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
     LCanvas.FillRect(pRect);
 
     AStyle:= LCanvas.TextStyle;
@@ -1741,7 +3961,7 @@ begin
     LCanvas.Handle:= HDC;
 
     // Draw border
-    LCanvas.Brush.Style:= bsClear;
+    LCanvas.Brush.Style:= bsSolid;
 
     case iStateId of
       ETS_NORMAL:LCanvas.Pen.Color:= SysColor[COLOR_GRAYTEXT];
@@ -1979,6 +4199,7 @@ procedure DrawPushButton(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; c
   pClipRect: PRECT);
 var
   LCanvas: TCanvas;
+  TopColor, BottomColor, BorderColor: TColor;
 begin
   LCanvas:= TCanvas.Create;
   try
@@ -1986,21 +4207,55 @@ begin
 
     LCanvas.Brush.Style:= bsClear;
 
-    if iStateId in [PBS_NORMAL,PBS_DEFAULTED,PBS_DEFAULTED_ANIMATING] then begin
-      LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
-      LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
-    end else if iStateId in [PBS_HOT] then begin
-      LCanvas.Brush.Color:= SysColor[COLOR_BTNHIGHLIGHT];
-      LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
-    end else if iStateId in [PBS_PRESSED] then begin
-      LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
-      LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+    if IsDarkModeEnabled then
+    begin
+      case iStateId of
+        PBS_NORMAL, PBS_DEFAULTED, PBS_DEFAULTED_ANIMATING:
+          begin
+            TopColor := Lighter(SysColor[COLOR_BTNFACE], 115);
+            BottomColor := Darker(SysColor[COLOR_BTNFACE], 115);
+            BorderColor := Lighter(SysColor[COLOR_BTNHIGHLIGHT], 120);
+          end;
+        PBS_HOT:
+          begin
+            TopColor := Lighter(SysColor[COLOR_BTNFACE], 135);
+            BottomColor := Lighter(SysColor[COLOR_BTNFACE], 110);
+            BorderColor := Lighter(SysColor[COLOR_BTNHIGHLIGHT], 140);
+          end;
+        PBS_PRESSED:
+          begin
+            TopColor := Darker(SysColor[COLOR_BTNFACE], 110);
+            BottomColor := Darker(SysColor[COLOR_BTNFACE], 130);
+            BorderColor := Darker(SysColor[COLOR_BTNHIGHLIGHT], 120);
+          end;
+      else
+        begin
+          TopColor := SysColor[COLOR_3DDKSHADOW];
+          BottomColor := SysColor[COLOR_3DDKSHADOW];
+          BorderColor := SysColor[COLOR_BTNHIGHLIGHT];
+        end;
+      end;
+      FillGradient(hdc, TopColor, BottomColor, pRect, GRADIENT_FILL_RECT_V);
+      LCanvas.Pen.Color := BorderColor;
+      LCanvas.Brush.Style := bsClear;
+      LCanvas.RoundRect(pRect, 10, 10);
     end else begin
-      LCanvas.Brush.Color:= SysColor[COLOR_3DDKSHADOW];
-      LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
-    end;
+      if iStateId in [PBS_NORMAL,PBS_DEFAULTED,PBS_DEFAULTED_ANIMATING] then begin
+        LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
+        LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+      end else if iStateId in [PBS_HOT] then begin
+        LCanvas.Brush.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+        LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+      end else if iStateId in [PBS_PRESSED] then begin
+        LCanvas.Brush.Color:= SysColor[COLOR_BTNFACE];
+        LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+      end else begin
+        LCanvas.Brush.Color:= SysColor[COLOR_3DDKSHADOW];
+        LCanvas.Pen.Color:= SysColor[COLOR_BTNHIGHLIGHT];
+      end;
 
-    LCanvas.RoundRect(pRect, 10, 10);
+      LCanvas.RoundRect(pRect, 10, 10);
+    end;
   finally
     LCanvas.Handle:= 0;
     LCanvas.Free;
@@ -2131,7 +4386,20 @@ begin
           InflateRect(ARect, -1, -1);
           LCanvas.Brush.Color:= Lighter(AColor, 176);
         end;
-        LCanvas.FillRect(ARect);
+        if IsDarkModeEnabled then
+        begin
+          if (iStateId <> TIS_SELECTED) then
+          begin
+            if iStateId <> TIS_HOT then
+              FillGradient(hdc, Lighter(AColor, 130), Darker(AColor, 110), ARect, GRADIENT_FILL_RECT_V)
+            else
+              FillGradient(hdc, Lighter(AColor, 160), Lighter(AColor, 115), ARect, GRADIENT_FILL_RECT_V);
+          end
+          else
+            FillGradient(hdc, Lighter(AColor, 150), AColor, ARect, GRADIENT_FILL_RECT_V);
+        end
+        else
+          LCanvas.FillRect(ARect);
         LCanvas.Pen.Color:= ALight;
 
         if iPartId in [TABP_TOPTABITEMLEFTEDGE, TABP_TOPTABITEMBOTHEDGE] then
@@ -2204,10 +4472,23 @@ begin
     TrampolineDrawThemeBackground(hTheme, hdc, iPartId, iStateId, pRect, pClipRect)
 end;
 
+procedure DrawListView(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect;
+  pClipRect: PRECT);
+begin
+  if (iPartId = LVP_LISTITEM) and (iStateId = LISS_DISABLED) then
+    FillRect(hdc, pRect, GetSysColorBrushDark(COLOR_WINDOW))
+  else
+    TrampolineDrawThemeBackground(hTheme, hdc, iPartId, iStateId, pRect, pClipRect);
+end;
+
 procedure DrawListViewHeader(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; const pRect: TRect;
   pClipRect: PRECT);
 begin
-  DrawThemeBackgroundDark(Win32Theme.Theme[teListView], hdc, iPartId, iStateId, pRect, pClipRect);
+  if IsDarkModeEnabled then
+    FillGradient(hdc, Lighter(SysColor[COLOR_BTNFACE], 128),
+      Darker(SysColor[COLOR_BTNFACE], 108), pRect, GRADIENT_FILL_RECT_V)
+  else
+    DrawThemeBackgroundDark(Win32Theme.Theme[teListView], hdc, iPartId, iStateId, pRect, pClipRect);
 end;
 function InterceptOpenNCThemeData(hwnd: hwnd; pszClassList: LPCWSTR): hTheme; stdcall;
 begin
@@ -2223,7 +4504,9 @@ begin
   begin
     P:= GetWindowLongPtr(hwnd, GWL_EXSTYLE);
 
-    if (P and WS_EX_CONTEXTHELP = 0) or (lstrcmpiW(pszClassList, VSCLASS_MONTHCAL) = 0) then
+    if ((P and WS_EX_CONTEXTHELP = 0) or (lstrcmpiW(pszClassList, VSCLASS_MONTHCAL) = 0))
+       and (lstrcmpiW(pszClassList, VSCLASS_TAB) <> 0)
+       and not ShouldForceDarkThemeClass(pszClassList) then
     begin
       Result:= TrampolineOpenThemeData(hwnd, pszClassList);
       Exit;
@@ -2253,9 +4536,7 @@ begin
 
   else if lstrcmpiW(pszClassList, 'ListView') = 0 then
   begin
-    ListView_SetBkColor(hwnd, SysColor[COLOR_WINDOW]);
-    ListView_SetTextBkColor(hwnd, SysColor[COLOR_WINDOW]);
-    ListView_SetTextColor(hwnd, SysColor[COLOR_WINDOWTEXT]);
+    ApplyDarkListViewColors(hwnd);
   end
 
   else if lstrcmpiW(pszClassList, VSCLASS_SCROLLBAR) = 0 then
@@ -2266,6 +4547,8 @@ begin
 
   Result:= TrampolineOpenThemeData(hwnd, pszClassList);
   ThemeClass.Insert(Result, pszClassList);
+  if hwnd <> 0 then
+    ThemeWindow.Insert(Result, hwnd);
 end;
 
 function InterceptDrawThemeText(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Integer; pszText: LPCWSTR; iCharCount: Integer;
@@ -2273,7 +4556,78 @@ function InterceptDrawThemeText(hTheme: HTHEME; hdc: HDC; iPartId, iStateId: Int
 var
   OldColor: COLORREF;
   ClassName: LPCWSTR;
+
+  function ControlFromDC: TWinControl;
+  var
+    Window: HWND;
+    Info: PWin32WindowInfo;
+  begin
+    Result := nil;
+    Window := WindowFromDC(hdc);
+    if Window = 0 then
+      Exit;
+
+    Info := GetWin32WindowInfo(Window);
+    if Assigned(Info) then
+      Result := Info^.WinControl;
+
+    if Result = nil then
+      Result := TWinControl(GetProp(Window, PChar('WinControl')));
+  end;
+
+  function ControlFromTheme: TWinControl;
+  var
+    Window: HWND;
+    Info: PWin32WindowInfo;
+  begin
+    Result := nil;
+    if not Assigned(ThemeWindow) then
+      Exit;
+    if not ThemeWindow.TryGetValue(hTheme, Window) then
+      Exit;
+
+    Info := GetWin32WindowInfo(Window);
+    if Assigned(Info) then
+      Result := Info^.WinControl;
+
+    if Result = nil then
+      Result := TWinControl(GetProp(Window, PChar('WinControl')));
+  end;
+
+  function ThemedButtonTextColor(ACurrentColor: COLORREF): COLORREF;
+  var
+    Control: TWinControl;
+    FontColor: TColor;
+  begin
+    if ((iPartId = BP_CHECKBOX) and
+        (iStateId in [CBS_UNCHECKEDDISABLED, CBS_CHECKEDDISABLED, CBS_MIXEDDISABLED])) or
+       ((iPartId = BP_RADIOBUTTON) and
+        (iStateId in [RBS_UNCHECKEDDISABLED, RBS_CHECKEDDISABLED])) or
+       ((iPartId = BP_GROUPBOX) and (iStateId = GBS_DISABLED)) or
+       ((iPartId = BP_PUSHBUTTON) and (iStateId = PBS_DISABLED)) then
+      Exit(SysColor[COLOR_GRAYTEXT]);
+
+    if iPartId in [BP_CHECKBOX, BP_RADIOBUTTON, BP_GROUPBOX] then
+    begin
+      Control := ControlFromTheme;
+      if Control = nil then
+        Control := ControlFromDC;
+      if Control <> nil then
+      begin
+        FontColor := Control.Font.Color;
+        if IsSystemTextColor(FontColor) then
+          FontColor := Control.GetDefaultColor(dctFont);
+        if FontColor <> clDefault then
+          Exit(ColorToRGB(FontColor));
+      end;
+
+      Exit(SysColor[COLOR_BTNTEXT]);
+    end;
+
+    Result := ACurrentColor;
+  end;
 begin
+  OldColor:= GetTextColor(hdc);
   if Assigned(ThemeClass) then
     if ThemeClass.TryGetValue(hTheme, ClassName) then
     begin
@@ -2285,24 +4639,15 @@ begin
 
       if SameText(ClassName, VSCLASS_TOOLTIP) then
         OldColor:= SysColor[COLOR_INFOTEXT]
-      else begin
+      else if SameText(ClassName, 'ListView') and
+              (iPartId = LVP_LISTITEM) and (iStateId = LISS_DISABLED) then
+        OldColor:= SysColor[COLOR_GRAYTEXT]
+      else if not SameText(ClassName, VSCLASS_DARK_BUTTON) then begin
         OldColor:= SysColor[COLOR_BTNTEXT];
       end;
 
       if SameText(ClassName, VSCLASS_DARK_BUTTON) then
-      begin
-        if (iPartId = BP_CHECKBOX) and (iStateId in [CBS_UNCHECKEDDISABLED, CBS_CHECKEDDISABLED, CBS_MIXEDDISABLED]) then
-          OldColor:= SysColor[COLOR_GRAYTEXT]
-        else if (iPartId = BP_RADIOBUTTON) and (iStateId in [RBS_UNCHECKEDDISABLED, RBS_CHECKEDDISABLED]) then
-          OldColor:= SysColor[COLOR_GRAYTEXT]
-        else if (iPartId = BP_GROUPBOX) and (iStateId = GBS_DISABLED) then
-          OldColor:= SysColor[COLOR_GRAYTEXT]
-        else if (iPartId = BP_PUSHBUTTON) then
-        begin
-          Result:= TrampolineDrawThemeText(hTheme, hdc, iPartId, iStateId, pszText, iCharCount, dwTextFlags, dwTextFlags2, pRect);
-          Exit;
-        end;
-      end;
+        OldColor := ThemedButtonTextColor(OldColor);
 
       OldColor:= SetTextColor(hdc, OldColor);
       SetBkMode(hdc, TRANSPARENT);
@@ -2351,6 +4696,10 @@ begin
         else if SameText(ClassName, VSCLASS_DARK_TAB) then
         begin
           DrawTabControl(hTheme, hdc, iPartId, iStateId, pRect, pClipRect);
+        end
+        else if SameText(ClassName, 'ListView') then
+        begin
+          DrawListView(hTheme, hdc, iPartId, iStateId, pRect, pClipRect);
         end
         else if SameText(ClassName, VSCLASS_PROGRESS) or SameText(ClassName, VSCLASS_PROGRESS_INDER) then
         begin
@@ -2469,10 +4818,8 @@ begin
 
   InitializeColors(CS);
 
-  WinRegister(ClassNameW);
-  WinRegister(ClassNameTC);
-
   ThemeClass:= TThemeClassMap.Create;
+  ThemeWindow:= TThemeWindowMap.Create;
 
   hModule:= GetModuleHandle(gdi32);
   Pointer(DeleteObjectOld):= GetProcAddress(hModule, 'DeleteObject');
@@ -2486,15 +4833,11 @@ begin
   if Assigned(pLibrary) then
   begin
     hModule:= GetModuleHandle(user32);
-
     pFunction:= FindImportFunction(pLibrary, GetProcAddress(hModule, 'CreateWindowExW'));
     // UPX purpose
     if pFunction=nil then
       pFunction := FindIATEntry(@Windows.CreateWindowExW);
-    if Assigned(pFunction) then
-    begin
-      Pointer(__CreateWindowExW):= ReplaceImportFunction(pFunction, @_CreateWindowExW);
-    end;
+    HookCreateWindowExW(pFunction);
     pFunction:= FindImportFunction(pLibrary, GetProcAddress(hModule, 'DrawEdge'));
     // UPX purpose
     if pFunction=nil then
@@ -2524,8 +4867,7 @@ begin
   begin
     // UPX purpose
     pFunction := FindIATEntry(@Windows.CreateWindowExW);
-    if Assigned(pFunction) then
-      Pointer(__CreateWindowExW):= ReplaceImportFunction(pFunction, @_CreateWindowExW);
+    HookCreateWindowExW(pFunction);
     pFunction := FindIATEntry(@Windows.DrawEdge);
     if Assigned(pFunction) then
       ReplaceImportFunction(pFunction, @_DrawEdge);
@@ -2601,8 +4943,11 @@ begin
 end;
 
 initialization
+  RegisterMetaDarkStyleHandlers(@ApplyWin32MetaDarkStyle, @DarkFormChanged);
 finalization
+  RegisterMetaDarkStyleHandlers(nil, nil);
   if Assigned(ThemeClass) then
     FreeAndNil(ThemeClass);
+  if Assigned(ThemeWindow) then
+    FreeAndNil(ThemeWindow);
 end.
-

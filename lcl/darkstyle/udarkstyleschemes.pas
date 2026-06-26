@@ -38,12 +38,21 @@ procedure LoadLResources;
 procedure LoadPath(APath,AMask:string);
 
 implementation
-// Windows in implementation-uses shadows LCLIntf.GetSysColor with the WinAPI
-// version below; LCLIntf.GetSysColor dispatches through WidgetSet which is
-// still nil when our init fires (Forms.pp pulls us in before Interfaces
-// creates the widgetset). Bypass avoids the AV at startup.
+// Defaults populate via WidgetSet-dispatched GetSysColor (LCLIntf.GetSysColor
+// is the visible binding inside InitializeDefaultColors). Forms.pp pulls this
+// unit into the impl-uses chain BEFORE Interfaces.initialization creates the
+// WidgetSet, so initializing defaults eagerly in this unit's initialization
+// would AV (see cycle 335 #200). Defer init until the first public-API entry
+// instead — by then user code is running and the WidgetSet exists. Avoids the
+// cycle 341 `uses Windows` impl-shadow workaround and the FindClose scope-
+// overlap class of bugs it introduced (cycle 341 #203).
 uses
-  uDarkStyleSchemesLoader{$IFDEF MSWINDOWS}, Windows{$ENDIF};
+  uDarkStyleSchemesLoader;
+
+var
+  ColorsInitialized: Boolean = False;
+
+procedure EnsureColorsInitialized; forward;
 
 function SchameName2SchameID(AName:TSchemeName):TSchemeKey;inline;
 begin
@@ -68,6 +77,7 @@ var
   ps:PTSchemeData;
   UCName:string;
 begin
+  EnsureColorsInitialized;
   UCName:=UpperCase(AName);
   if UCName='DARK' then
     result:=DefaultDark
@@ -111,6 +121,7 @@ var
   DSC:TDSColors;
   i:integer;
 begin
+  EnsureColorsInitialized;
   for i:=0 to LazarusResources.Count-1 do begin
     r:=LazarusResources.Items[i];
     if UpperCase(r.ValueType)=DSColorsTypeName then
@@ -125,6 +136,7 @@ var
   DSC:TDSColors;
   sr: TSearchRec;
 begin
+  EnsureColorsInitialized;
   if FindFirst(APath+'/*',faAnyFile,sr) = 0 then begin
     repeat
       if (sr.Name <> '.') and (sr.Name <> '..') then begin
@@ -175,8 +187,8 @@ begin
   DefaultDark.DrawControl.TreeViewExpandSignOverride:=   False;
   DefaultDark.DrawControl.TreeViewExpandSignValue:=      tvestTheme;
   DefaultDark.DrawControl.BorderStyleOverride:=          True;
-  DefaultDark.DrawControl.CustomDrawPushButtons:=        False;
-  DefaultDark.DrawControl.CustomDrawComboBoxs:=          False;
+  DefaultDark.DrawControl.CustomDrawPushButtons:=        True;
+  DefaultDark.DrawControl.CustomDrawComboBoxs:=          True;
   DefaultDark.DrawControl.CustomDrawTreeViews:=          False;
 
   DefaultWhite.SysColor[COLOR_SCROLLBAR]:=               GetSysColor(COLOR_SCROLLBAR);
@@ -220,8 +232,15 @@ begin
   DefaultWhite.DrawControl.CustomDrawTreeViews:=         True;
 end;
 
+procedure EnsureColorsInitialized;
+begin
+  if not ColorsInitialized then begin
+    InitializeDefaultColors;
+    ColorsInitialized := True;
+  end;
+end;
+
 initialization
-  InitializeDefaultColors;
 finalization
   if Schemes<>nil then
     Schemes.Destroy;

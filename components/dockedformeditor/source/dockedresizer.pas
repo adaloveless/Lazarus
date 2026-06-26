@@ -31,7 +31,7 @@ type
 
   { TResizer }
 
-  TResizer = class(TWinControl)
+  TResizer = class(TPanel)
   private
     FDesignScroll: array[0..1] of Boolean;
     FDesignForm: TDesignForm;
@@ -195,6 +195,9 @@ constructor TResizer.Create(TheOwner: TWinControl);
 begin
   inherited Create(TheOwner);
 
+  BevelOuter := bvNone;
+  BorderStyle := bsNone;
+  Caption := '';
   Align := alClient;
   FPostponedAdjustResizeControl := False;
   FScrollPos := Point(0, 0);

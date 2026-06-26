@@ -65,7 +65,10 @@ uses
   Splash,
   Main,
   LazDebuggerFpLldb, LazDebuggerFp, laz.virtualtreeview_package,
-  LazControlDsgn, metadarkstyledsgn,
+  LazControlDsgn
+  {$IFDEF MSWINDOWS}
+  ,metadarkstyledsgn
+  {$ENDIF},
   // use the custom IDE static packages AFTER 'main'
   {$IFDEF AddStaticPkgs}
   // In case you get duplicate identifier errors in the uses clause,

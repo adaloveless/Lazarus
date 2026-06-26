@@ -811,6 +811,7 @@ var
   LSelectedControl: TControl;
 begin
   {$IFDEF DEBUGDOCKEDFORMEDITOR} DebugLn('TDockedMainIDE.OnDesignSetSelection'); {$ENDIF}
+  LSelectedControl := nil;
   LDesignForm := DesignForms.Find(FormEditingHook.GetCurrentDesigner);
   if LDesignForm = nil then Exit;
   if (ASelection.Count = 1) and (ASelection[0] is TControl) then

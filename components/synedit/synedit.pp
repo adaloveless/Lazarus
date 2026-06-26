@@ -150,7 +150,7 @@ const
   // SynDefaultFont is determined in InitSynDefaultFont()
   SynDefaultFontName:    String       = '';
   SynDefaultFontHeight:  Integer      = 13;
-  SynDefaultFontSize:    Integer      = 10;
+  SynDefaultFontSize:    Integer      = 14;
   SynDefaultFontPitch:   TFontPitch   = fpFixed;
   SynDefaultFontQuality: TFontQuality = fqNonAntialiased;
 

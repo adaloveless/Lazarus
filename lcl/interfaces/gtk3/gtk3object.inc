@@ -12,8 +12,6 @@ type
     function DeliverMessage(var Msg; const AIsInputEvent: Boolean=False): LRESULT; override;
   end;
 
-  TApplicationAccess = class(TApplication);
-
   constructor TGtk3ToolWnd.Create(AWndMethod: TWndMethod);
   begin
     CreateFrom(nil, nil);
@@ -520,44 +518,43 @@ begin
   g_object_unref(CssProvider);
 end;
 
-function Gtk3RefreshThemeIdle(AData: gpointer): gboolean; cdecl;
-var
-  AList, AItem: PGList;
-  i: Integer;
-begin
-  ReleaseAllStyles;
-  GetStyleWidget(lgsButton);
-  GetStyleWidget(lgsWindow);
-  GetStyleWidget(lgsMemo);
-  for i := Low(Gtk3WidgetSet.FSysColorBrushes) to High(Gtk3WidgetSet.FSysColorBrushes) do
-    if (Gtk3WidgetSet.FSysColorBrushes[i] <> HBRUSH(-1)) and (Gtk3WidgetSet.FSysColorBrushes[i] <> 0) then
-    begin
-      TGtk3Brush(Gtk3WidgetSet.FSysColorBrushes[i]).Context := nil;
-      TGtk3Brush(Gtk3WidgetSet.FSysColorBrushes[i]).Color := SysColorMap[i];
-    end;
-  Gtk3WidgetSet.LoadThemeMetrics;
-  AList := gtk_window_list_toplevels;
-  AItem := AList;
-  while AItem <> nil do
+procedure TGtk3WidgetSet.AppInit(var ScreenInfo: TScreenInfo);
+
+  procedure StripArrowBindingsFromClass(AClassType: TGType);
+  var
+    AClass: PGTypeClass;
+    ABindingSet: PGtkBindingSet;
   begin
-    if Gtk3IsWidget(PGObject(AItem^.data)) then
-    begin
-      gtk_widget_queue_resize(PGtkWidget(AItem^.data));
-      gtk_widget_queue_draw(PGtkWidget(AItem^.data));
-    end;
-    AItem := AItem^.next;
+    AClass := g_type_class_ref(AClassType);
+    if AClass = nil then
+      exit;
+    ABindingSet := gtk_binding_set_by_class(AClass);
+    if ABindingSet = nil then
+      exit;
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Up, []);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Up, [GDK_CONTROL_MASK]);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Down, []);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Down, [GDK_CONTROL_MASK]);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Left, []);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Left, [GDK_CONTROL_MASK]);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Right, []);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Right, [GDK_CONTROL_MASK]);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Up, []);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Up, [GDK_CONTROL_MASK]);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Down, []);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Down, [GDK_CONTROL_MASK]);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Left, []);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Left, [GDK_CONTROL_MASK]);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Right, []);
+    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Right, [GDK_CONTROL_MASK]);
   end;
-  if AList <> nil then
-    g_list_free(AList);
-  Result := gtk_false;
-end;
 
-procedure Gtk3ThemeNameNotify(AObject: PGObject; APSpec: gpointer; AData: gpointer); cdecl;
-begin
-  g_idle_add(@Gtk3RefreshThemeIdle, nil);
-end;
-
-procedure TGtk3WidgetSet.LoadThemeMetrics;
+  procedure DisableContainerArrowBindings;
+  begin
+    StripArrowBindingsFromClass(gtk_container_get_type);
+    StripArrowBindingsFromClass(gtk_window_get_type);
+    StripArrowBindingsFromClass(gtk_scrolled_window_get_type);
+  end;
 
   procedure QueryIndicatorBoxSize(out W, H: gint);
   var
@@ -607,18 +604,40 @@ procedure TGtk3WidgetSet.LoadThemeMetrics;
   end;
 
 var
+  ScreenDC: HDC;
   menuBar: PGtkMenuBar;
   menuItem: PGtkMenuItem;
   checkBox: PGtkCheckButton;
   scrollBarV: PGtkScrollbar;
   scrollBarH: PGtkScrollbar;
-  MinH, PrefH: gint;
+  MinH,PrefH:gint;
   IndW, IndH: gint;
-  window: PGtkWindow;
-  box: PGtkBox;
-  header: PGtkHeaderBar;
+  window:PGtkWindow;
+  box:PGtkBox;
+  header:PGtkHeaderBar;
 begin
+  DisableContainerArrowBindings;
+  {$IFDEF GTK3DEBUGCORE}
+  DebugLn('TGtk3WidgetSet.AppInit');
+  {$ENDIF}
+  ScreenDC := GetDC(0);
+  try
+    ScreenInfo.PixelsPerInchX := Round(gdk_screen_get_resolution(gdk_screen_get_default));
+    // GetDeviceCaps(ScreenDC, LOGPIXELSX);
+    ScreenInfo.PixelsPerInchY := Round(gdk_screen_get_resolution(gdk_screen_get_default));
+    // GetDeviceCaps(ScreenDC, LOGPIXELSY);
+    if ScreenInfo.PixelsPerInchX <= 0 then
+      ScreenInfo.PixelsPerInchX := 96;
+    if ScreenInfo.PixelsPerInchY <= 0 then
+      ScreenInfo.PixelsPerInchY := 96;
+    ScreenInfo.ColorDepth := GetDeviceCaps(ScreenDC, BITSPIXEL);
+  finally
+    ReleaseDC(0, ScreenDC);
+  end;
+
+  //load needed metrics to the FSystemMetricsList before Application.MainForm is created.
   window := gtk_window_new(GTK_WINDOW_TOPLEVEL);
+  //no flashing
   gtk_window_set_decorated(window, False);
   gtk_widget_set_app_paintable(window, gtk_true);
   gtk_widget_set_size_request(window, 1, 1);
@@ -626,6 +645,7 @@ begin
   box := gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
   gtk_container_add(Window, box);
 
+  //now menubar, checkboxes, scrollbar
   menuBar := gtk_menu_bar_new;
   menuItem := gtk_menu_item_new_with_label('');
   menuBar^.append(menuItem);
@@ -644,6 +664,11 @@ begin
 
   gtk_widget_show_all(window);
 
+  // This is usually not needed, but in case metrics aren't created properly
+  // try to uncomment those 2 lines below.
+  // while (gtk_events_pending()) do
+  //  gtk_main_iteration();
+
   menuBar^.get_preferred_height(@MinH, @PrefH);
   FSystemMetricsList.Items[SM_CYMENU] := Max(MinH, PrefH);
 
@@ -651,6 +676,7 @@ begin
   FSystemMetricsList.Items[SM_CYMENUSIZE] := Max(MinH, PrefH);
   menuItem^.get_preferred_width(@MinH, @PrefH);
   FSystemMetricsList.Items[SM_CXMENUSIZE] := Max(MinH, PrefH);
+
 
   QueryIndicatorBoxSize(IndW, IndH);
   FSystemMetricsList.Items[SM_CXMENUCHECK] := IndW;
@@ -664,6 +690,8 @@ begin
   FSystemMetricsList.Items[SM_CXVSCROLL] := Max(MinH, PrefH) + 2;
   FSystemMetricsList.Items[SM_CYVSCROLL] := FSystemMetricsList.Items[SM_CXVSCROLL];
 
+  //loading distance between scrollbars in corner, since
+  //gtk3 does not have corner widget, we set it via css.
   if OverlayScrolling then
     ApplyCustomScrollbarStyles(Max(0, Floor(PrefH / 2) - 1));
 
@@ -673,69 +701,7 @@ begin
   FSystemMetricsList.Items[SM_CYCAPTION] := Max(MinH, PrefH);
 
   gtk_widget_destroy(window);
-end;
-
-procedure TGtk3WidgetSet.AppInit(var ScreenInfo: TScreenInfo);
-
-  procedure StripArrowBindingsFromClass(AClassType: TGType);
-  var
-    AClass: PGTypeClass;
-    ABindingSet: PGtkBindingSet;
-  begin
-    AClass := g_type_class_ref(AClassType);
-    if AClass = nil then
-      exit;
-    ABindingSet := gtk_binding_set_by_class(AClass);
-    if ABindingSet = nil then
-      exit;
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Up, []);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Up, [GDK_CONTROL_MASK]);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Down, []);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Down, [GDK_CONTROL_MASK]);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Left, []);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Left, [GDK_CONTROL_MASK]);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Right, []);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_Right, [GDK_CONTROL_MASK]);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Up, []);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Up, [GDK_CONTROL_MASK]);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Down, []);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Down, [GDK_CONTROL_MASK]);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Left, []);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Left, [GDK_CONTROL_MASK]);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Right, []);
-    gtk_binding_entry_remove(ABindingSet, GDK_KEY_KP_Right, [GDK_CONTROL_MASK]);
-  end;
-
-  procedure DisableContainerArrowBindings;
-  begin
-    StripArrowBindingsFromClass(gtk_container_get_type);
-    StripArrowBindingsFromClass(gtk_window_get_type);
-    StripArrowBindingsFromClass(gtk_scrolled_window_get_type);
-  end;
-
-var
-  ScreenDC: HDC;
-begin
-  DisableContainerArrowBindings;
-  {$IFDEF GTK3DEBUGCORE}
-  DebugLn('TGtk3WidgetSet.AppInit');
-  {$ENDIF}
-  ScreenDC := GetDC(0);
-  try
-    ScreenInfo.PixelsPerInchX := Round(gdk_screen_get_resolution(gdk_screen_get_default));
-    // GetDeviceCaps(ScreenDC, LOGPIXELSX);
-    ScreenInfo.PixelsPerInchY := Round(gdk_screen_get_resolution(gdk_screen_get_default));
-    // GetDeviceCaps(ScreenDC, LOGPIXELSY);
-    ScreenInfo.ColorDepth := GetDeviceCaps(ScreenDC, BITSPIXEL);
-  finally
-    ReleaseDC(0, ScreenDC);
-  end;
-
-  LoadThemeMetrics;
   InitGtk3KeyboardTables;
-
-  g_signal_connect_data(PGObject(gtk_settings_get_default), 'notify::gtk-theme-name',
-    TGCallback(@Gtk3ThemeNameNotify), nil, nil, G_CONNECT_DEFAULT);
 end;
 
 procedure TGtk3WidgetSet.LoadCSSTheme;
@@ -821,11 +787,7 @@ begin
   DebugLn('TGtk3WidgetSet.AppProcessMessages');
   {$ENDIF}
   while g_main_context_pending(nil) do
-  begin
     g_main_context_iteration(nil, False);
-    if TApplicationAccess(Application).HasAsyncCallQueued then
-      Break;
-  end;
   {$IFDEF GTK3USEDEFERREDRESIZING}
   Gtk3DrainResizeQueue;
   {$ENDIF GTK3USEDEFERREDRESIZING}
@@ -1104,12 +1066,10 @@ function TGtk3WidgetSet.CreateTimer(Interval: integer; TimerFunc: TWSTimerProc
 var
   TimerInfo: PGtkITimerinfo;
 begin
-  if not Assigned(TimerFunc)
+  if ((Interval < 1) or (not Assigned(TimerFunc)))
   then
     Result := 0
   else begin
-    if Interval < 1 then
-      Interval := 1;
     New(TimerInfo);
     FillByte(TimerInfo^,SizeOf(TGtkITimerinfo),0);
     TimerInfo^.TimerFunc := TimerFunc;

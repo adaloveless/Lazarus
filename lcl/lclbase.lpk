@@ -9,7 +9,7 @@
       <Version Value="11"/>
       <SearchPaths>
         <IncludeFiles Value="include"/>
-        <OtherUnitFiles Value="forms;widgetset;darkstyle"/>
+        <OtherUnitFiles Value="forms;widgetset"/>
         <UnitOutputDirectory Value="units/$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
       <Conditionals Value="if SrcOS&lt;>&apos;win&apos; then
@@ -1216,18 +1216,8 @@
         <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>
-        <Filename Value="darkstyle/uimport.pas"/>
-        <UnitName Value="uImport"/>
-        <AddToUsesPkgSection Value="False"/>
-      </Item>
-      <Item>
         <Filename Value="darkstyle/umetadarkstyle.pas"/>
         <UnitName Value="uMetaDarkStyle"/>
-        <AddToUsesPkgSection Value="False"/>
-      </Item>
-      <Item>
-        <Filename Value="darkstyle/uwin32widgetsetdark.pas"/>
-        <UnitName Value="uWin32WidgetSetDark"/>
         <AddToUsesPkgSection Value="False"/>
       </Item>
       <Item>

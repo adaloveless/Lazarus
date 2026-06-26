@@ -233,6 +233,7 @@ type
   published
     class procedure SetDefault(const AButton: TCustomButton; ADefault: Boolean); virtual;
     class procedure SetShortCut(const AButton: TCustomButton; const ShortCutK1, ShortCutK2: TShortCut); virtual;
+    class procedure SetWordWrap(const AButton: TCustomButton; const AValue: Boolean); virtual;
   end;
   TWSButtonClass = class of TWSButton;
 
@@ -725,6 +726,10 @@ end;
 class procedure TWSButton.SetShortCut(const AButton: TCustomButton;
   const ShortCutK1, ShortCutK2: TShortCut);
 begin;
+end;
+
+class procedure TWSButton.SetWordWrap(const AButton: TCustomButton; const AValue: Boolean);
+begin
 end;
 
 { TWSCustomCheckBox }

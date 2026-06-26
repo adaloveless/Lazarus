@@ -105,6 +105,7 @@ procedure AddToChangedMenus(Window: HWnd);
 procedure RedrawMenus;
 function MeasureTextForWnd(const AWindow: HWND; Text: string; var Width, Height: integer): boolean;
 function MeasureText(const AWinControl: TWinControl; Text: string; var Width, Height: integer): boolean;
+function MeasureTextForControl(const AWinControl: TWinControl; Text: string; var Width, Height: integer): boolean;
 function GetControlText(AHandle: HWND): string;
 
 procedure FillRawImageDescriptionColors(var ADesc: TRawImageDescription);
@@ -1100,6 +1101,54 @@ end;
 function MeasureText(const AWinControl: TWinControl; Text: string; var Width, Height: integer): boolean;
 begin
   Result := MeasureTextForWnd(AWinControl.Handle, Text, Width, Height);
+end;
+
+function MeasureTextForControl(const AWinControl: TWinControl; Text: string; var Width, Height: integer): boolean;
+// Measures with the LCL Font.Reference.Handle (matching what the dark-mode
+// WndProc actually renders with), falling back to WM_GETFONT if the LCL font
+// handle is 0. Use this for AutoSize/GetPreferredSize on widgets whose dark
+// path renders via Control.Font (e.g., TCheckBox / TRadioButton via
+// DrawDarkCheckRadioWindow) so the measurement matches the painted glyphs.
+var
+  textSize: Windows.SIZE = (cx: 0; cy: 0);
+  canvasHandle: HDC;
+  oldFontHandle, newFontHandle: HFONT;
+  style: PtrInt;
+  isMultiLine: Boolean;
+  flags: Integer;
+  R: TRect;
+begin
+  canvasHandle := Windows.GetDC(AWinControl.Handle);
+  newFontHandle := AWinControl.Font.Reference.Handle;
+  if newFontHandle = 0 then
+    newFontHandle := HFONT(SendMessage(AWinControl.Handle, WM_GETFONT, 0, 0));
+  oldFontHandle := SelectObject(canvasHandle, newFontHandle);
+
+  style := GetWindowLong(AWinControl.Handle, GWL_STYLE);
+  isMultiLine := (style and BS_MULTILINE <> 0);
+  if isMultiLine then
+  begin
+    flags := DT_CALCRECT;
+    R := Rect(0, 0, 10000, 10000);
+    Result := LCLIntf.DrawText(canvasHandle, PChar(Text), Length(Text), R, flags) <> 0;
+    if Result then
+    begin
+      Width := R.Right;
+      Height := R.Bottom;
+    end;
+  end else
+  begin
+    DeleteAmpersands(Text);
+    Result := LCLIntf.GetTextExtentPoint32(canvasHandle, PChar(Text), Length(Text), textSize);
+    if Result then
+    begin
+      Width := textSize.cx;
+      Height := textSize.cy;
+    end;
+  end;
+
+  SelectObject(canvasHandle, oldFontHandle);
+  Windows.ReleaseDC(AWinControl.Handle, canvasHandle);
 end;
 
 function GetControlText(AHandle: HWND): string;

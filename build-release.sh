@@ -5,7 +5,7 @@ LAZARUS_DIR="$(cd "$(dirname "$0")" && pwd)"
 VP_DIR="/home/jason/src/vibepascal"
 RELEASE_DIR="$LAZARUS_DIR/releases"
 LAZARUS_VERSION="4.99-vp"
-DATE_STAMP=$(date +%Y%m%d)
+DATE_STAMP="${DATE_STAMP:-$(date +%Y%m%d)}"
 
 LINUX_CFG="$VP_DIR/vibepascal-linux-x86_64.cfg"
 WIN64_CFG="$VP_DIR/vibepascal-win64-x86_64.cfg"
@@ -57,6 +57,54 @@ get_cfg_for_target() {
             echo "$LINUX_CFG"
             ;;
     esac
+}
+
+get_latest_win64_bin_tarball() {
+    find "$VP_DIR/dist/win64" -maxdepth 1 -type f -name 'vibepascal-v*-win64-bin.tar.gz' 2>/dev/null |
+        while IFS= read -r tarball; do
+            local base version
+            base=$(basename "$tarball")
+            version=${base#vibepascal-v}
+            version=${version%%-*}
+            case "$version" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            printf '%08d %s\n' "$version" "$tarball"
+        done |
+        sort -n |
+        tail -1 |
+        cut -d' ' -f2-
+}
+
+copy_win64_compiler_to_staging() {
+    local staging=$1
+    local tarball member
+
+    tarball=$(get_latest_win64_bin_tarball)
+    if [ -n "$tarball" ]; then
+        member=$(tar -tzf "$tarball" | awk '/(^|\/)bin\/ppcx64\.exe$/ { print; exit }')
+        if [ -n "$member" ]; then
+            tar -xOzf "$tarball" "$member" > "$staging/compiler/ppcx64.exe"
+            echo "Bundled Win64 VibePascal compiler from $(basename "$tarball")."
+            return 0
+        fi
+        echo "WARNING: $(basename "$tarball") does not contain bin/ppcx64.exe."
+    fi
+
+    if [ -f "$VP_DIR/compiler/ppcx64.exe" ]; then
+        cp "$VP_DIR/compiler/ppcx64.exe" "$staging/compiler/"
+        echo "Bundled Win64 VibePascal compiler from compiler/ppcx64.exe."
+        return 0
+    fi
+
+    if [ -f "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" ]; then
+        cp "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" "$staging/compiler/"
+        echo "WARNING: Bundled Win64 VibePascal compiler from legacy dist/win64/staging."
+        return 0
+    fi
+
+    echo "ERROR: Win64 ppcx64.exe not found in VibePascal dist or compiler tree." >&2
+    return 1
 }
 
 build_darwin_fpcres() {
@@ -192,8 +240,246 @@ EOF
         aarch64-darwin) user_compiler_name=ppca64 ;;
         *)              user_compiler_name=ppcx64 ;;
     esac
-    grep -rl --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null \
-        | xargs -r sed -i "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)/compiler/${user_compiler_name}\"|g"
+    # $(LazarusDir) always expands WITH trailing slash (Sterling/Melissa C346 r15
+    # smoke). $(LazarusDir)/compiler/X -> <lazdir>//compiler/X -> Lars 29bdfd5afc
+    # collapses the // post-expand, but older IDEs (pre-29bdfd5afc tarballs,
+    # third-party Lazarus installs) still string-compare and trip "Compiler
+    # filename changed for FCL 1.0.1" -> forced FCL rebuild. Drop the separator
+    # slash here so the stored Value is double-slash-free regardless of which
+    # Lazarus consumes it.
+    #
+    # Also strip -T<os> and -P<cpu> from <Params Value="..."/> lines. Melissa C18
+    # finding 2 (r15 smoke RED, 2026-05-16): packaging-time build records
+    # `<Params Value="-Tdarwin -Paarch64 -Munleashed -Scghi ...">` because lazbuild
+    # passes --os/--cpu to the wrapper. Runtime IDE invocation of ppca64 does NOT
+    # pass -Tdarwin/-Paarch64 (target+CPU auto-detect from the compiler binary
+    # itself), so IDE compare on the Params Value string trips "Compiler params
+    # changed for FCL 1.0.1" -> forced FCL rebuild. Stripping at packaging time
+    # makes the stored Params symmetric with runtime, no rebuild trigger. Lars-side
+    # alternative is to extend RemoveFPCVerbosityParams to also strip target/CPU;
+    # filed as r17 candidate for architectural cleanup.
+    # Preserve each state file's original mtime. Lazarus uses .compiled mtimes
+    # to decide whether dependent packages are stale; touching only the rewritten
+    # Lazarus-format files can make FCL look newer than LazUtils and force a
+    # user-side rebuild.
+    local compiled_file
+    local mtime_ref
+    while IFS= read -r -d '' compiled_file; do
+        mtime_ref=$(mktemp)
+        touch -r "$compiled_file" "$mtime_ref"
+        if sed -i \
+            -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g" \
+            -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
+            -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
+            -e '/Params Value=/ s/ \+"/"/g' \
+            "$compiled_file"; then
+            touch -r "$mtime_ref" "$compiled_file"
+            rm -f "$mtime_ref"
+        else
+            rm -f "$mtime_ref"
+            return 1
+        fi
+    done < <(grep -rlZ --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null || true)
+
+    rm -f "$wrapper"
+    rm -rf "$pcp"
+}
+
+get_lcl_widget_for_target() {
+    local target=$1
+    case "$target" in
+        x86_64-win64)
+            echo "win32"
+            ;;
+        *-darwin)
+            echo "cocoa"
+            ;;
+        *)
+            echo "gtk2"
+            ;;
+    esac
+}
+
+get_release_compiler_name_for_target() {
+    local target=$1
+    case "$target" in
+        x86_64-linux)
+            echo "ppcx64"
+            ;;
+        x86_64-win64)
+            echo "ppcx64.exe"
+            ;;
+        aarch64-linux)
+            echo "ppcrossaarch64"
+            ;;
+        arm-linux)
+            echo "ppcrossarm"
+            ;;
+        x86_64-darwin)
+            echo "ppcx64"
+            ;;
+        aarch64-darwin)
+            echo "ppca64"
+            ;;
+        *)
+            echo "ppcx64"
+            ;;
+    esac
+}
+
+get_lazbuild_path_for_target() {
+    local target=$1
+    if [ "$target" = "x86_64-win64" ]; then
+        echo "$LAZARUS_DIR/lazbuild.exe"
+    else
+        echo "$LAZARUS_DIR/lazbuild"
+    fi
+}
+
+clean_bgra_release_package_outputs() {
+    local target=$1
+    local widget=$2
+
+    rm -rf "$LAZARUS_DIR/components/mouseandkeyinput/lib/$target/$widget"
+    rm -rf "$LAZARUS_DIR/components/bgrabitmap/bgrabitmap/lib/${target}-${widget}-"*
+    rm -rf "$LAZARUS_DIR/components/bgracontrols/lib/${target}-${widget}-"*
+}
+
+rewrite_bgra_compiled_state() {
+    local target=$1
+    local wrapper=$2
+    local compiler_name
+    compiler_name=$(get_release_compiler_name_for_target "$target")
+
+    local compiled_file=""
+    local mtime_ref=""
+    local replacement="\$(LazarusDir)compiler/${compiler_name}"
+    while IFS= read -r -d '' compiled_file; do
+        mtime_ref=$(mktemp)
+        touch -r "$compiled_file" "$mtime_ref"
+        if sed -i \
+            -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"${replacement}\"|g" \
+            -e "s|Value=\"${wrapper}\"|Value=\"${replacement}\"|g" \
+            -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
+            -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
+            -e '/Params Value=/ s/ \+"/"/g' \
+            "$compiled_file"; then
+            touch -r "$mtime_ref" "$compiled_file"
+            rm -f "$mtime_ref"
+        else
+            rm -f "$mtime_ref"
+            return 1
+        fi
+    # Whole-tree scan. build_bgra_release_packages runs lazbuild on the BGRA
+    # .lpk set, which rebuilds FCL/LCL/LazUtils/IDEintf and other core packages
+    # as dependencies -- stamping THEIR .compiled files with the wrapper path
+    # too (Melissa r18 aarch64-darwin F7, 2026-05-19: 11 core packages carried
+    # the stale /tmp/lazrelease-*-compiler-wrapper path + -Tdarwin Params). A
+    # subdir-scoped grep missed them. grep -l only returns files that CONTAIN
+    # "$wrapper", so widening to $LAZARUS_DIR is a no-op for already-clean
+    # state files. Mirrors build_darwin_ide's rewrite scope.
+    done < <(grep -rlZ --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null || true)
+}
+
+verify_bgra_release_package_outputs() {
+    local target=$1
+    local widget=$2
+    local missing=0
+
+    shopt -s nullglob
+    local mouse_compiled=("$LAZARUS_DIR"/components/mouseandkeyinput/lib/"$target"/"$widget"/lazmouseandkeyinput.compiled)
+    local bgra_compiled=("$LAZARUS_DIR"/components/bgrabitmap/bgrabitmap/lib/"${target}-${widget}-"*/bgrabitmappack.compiled)
+    local controls_compiled=("$LAZARUS_DIR"/components/bgracontrols/lib/"${target}-${widget}-"*/bgracontrols.compiled)
+    local mouse_ppu=("$LAZARUS_DIR"/components/mouseandkeyinput/lib/"$target"/"$widget"/*.ppu)
+    local bgra_ppu=("$LAZARUS_DIR"/components/bgrabitmap/bgrabitmap/lib/"${target}-${widget}-"*/*.ppu)
+    local controls_ppu=("$LAZARUS_DIR"/components/bgracontrols/lib/"${target}-${widget}-"*/*.ppu)
+    shopt -u nullglob
+
+    if [ "${#mouse_compiled[@]}" -eq 0 ]; then
+        echo "ERROR: lazmouseandkeyinput compiled output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#bgra_compiled[@]}" -eq 0 ]; then
+        echo "ERROR: BGRABitmapPack compiled output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#controls_compiled[@]}" -eq 0 ]; then
+        echo "ERROR: bgracontrols compiled output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#mouse_ppu[@]}" -eq 0 ]; then
+        echo "ERROR: lazmouseandkeyinput ppu output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#bgra_ppu[@]}" -eq 0 ]; then
+        echo "ERROR: BGRABitmapPack ppu output missing for $target/$widget" >&2
+        missing=1
+    fi
+    if [ "${#controls_ppu[@]}" -eq 0 ]; then
+        echo "ERROR: bgracontrols ppu output missing for $target/$widget" >&2
+        missing=1
+    fi
+
+    [ "$missing" -eq 0 ]
+}
+
+build_bgra_release_packages() {
+    local target=$1
+    local cfg=$2
+    local compiler
+    compiler=$(get_compiler_for_target "$target")
+    local os_target=$(echo "$target" | cut -d- -f2)
+    local cpu_target=$(echo "$target" | cut -d- -f1)
+    local widget
+    widget=$(get_lcl_widget_for_target "$target")
+    local wrapper="/tmp/lazrelease-${target}-compiler-wrapper"
+    local pcp="/tmp/lazrelease-bgra-pcp-${target}"
+    local package=""
+
+    echo "=== Building BGRA release packages for $target ($widget) ==="
+    clean_bgra_release_package_outputs "$target" "$widget"
+
+    cat > "$wrapper" << EOF
+#!/bin/bash
+exec "$compiler" -n @"$cfg" "\$@"
+EOF
+    chmod +x "$wrapper"
+    rm -rf "$pcp"
+    mkdir -p "$pcp"
+
+    set -o pipefail
+    for package in \
+        components/mouseandkeyinput/lazmouseandkeyinput.lpk \
+        components/bgrabitmap/bgrabitmap/bgrabitmappack.lpk \
+        components/bgracontrols/bgracontrols.lpk
+    do
+        echo "=== lazbuild $package for $target ($widget) ==="
+        if ! "$LAZARUS_DIR/lazbuild" \
+            --pcp="$pcp" \
+            --lazarusdir="$LAZARUS_DIR" \
+            --compiler="$wrapper" \
+            --cpu="$cpu_target" \
+            --os="$os_target" \
+            --ws="$widget" \
+            "$LAZARUS_DIR/$package" 2>&1 | tail -60; then
+            set +o pipefail
+            rm -f "$wrapper"
+            rm -rf "$pcp"
+            return 1
+        fi
+    done
+    set +o pipefail
+
+    if ! rewrite_bgra_compiled_state "$target" "$wrapper"; then
+        rm -f "$wrapper"
+        rm -rf "$pcp"
+        return 1
+    fi
+    if ! verify_bgra_release_package_outputs "$target" "$widget"; then
+        rm -f "$wrapper"
+        rm -rf "$pcp"
+        return 1
+    fi
 
     rm -f "$wrapper"
     rm -rf "$pcp"
@@ -322,6 +608,114 @@ materialize_darwin_lhelp_app() {
     fi
 }
 
+restore_staged_mtimes() {
+    local staging=$1
+    local staged_file=""
+    local rel_path=""
+    local source_file=""
+
+    # cp -r resets destination mtimes, which can make copied source/.compiled
+    # files look newer or older than their source-tree counterparts. Two
+    # rebuild-trigger traps this prevents:
+    #   * Package-directory copy order making FCL .compiled look newer than
+    #     LazUtils, forcing LazUtils rebuild (Melissa F4, cycle 352).
+    #   * Source .pas/.lpk mtimes ending up ~5 min newer than .compiled state,
+    #     tripping TLazPackageGraph's "source disk file modified" check and
+    #     forcing package rebuild from source (Melissa F5, cycle 363).
+    # Restore source-tree mtimes before creating the Darwin .app hardlinks and
+    # the tarball, so user-side IDE sees a consistent timeline.
+    while IFS= read -r -d '' staged_file; do
+        rel_path="${staged_file#$staging/}"
+        source_file="$LAZARUS_DIR/$rel_path"
+        [ -f "$source_file" ] || continue
+        touch -r "$source_file" "$staged_file"
+    done < <(find "$staging" -type f \( \
+        -name '*.compiled' -o \
+        -name '*.pas' -o \
+        -name '*.pp' -o \
+        -name '*.lpk' -o \
+        -name '*.inc' -o \
+        -name '*.lpr' -o \
+        -name '*.lfm' \
+        \) -print0)
+}
+
+strip_stale_host_arch_artifacts() {
+    # Strip host-arch test/dev binaries and non-target build intermediates that
+    # leak from the source tree via `cp -r components/`. Without this, an
+    # x86_64-linux build host ships its own runtestscodetools/lhelp ELF inside
+    # every cross-arch tarball (Sterling C378 r17 finding: runtestscodetools
+    # was ELF x86-64 LSB inside the aarch64-darwin tarball).
+    local staging=$1
+    local target=$2
+    local widget
+    widget=$(get_lcl_widget_for_target "$target")
+
+    rm -f "$staging/components/codetools/tests/runtestscodetools" \
+          "$staging/components/codetools/tests/runtestscodetools.exe" \
+          "$staging/components/chmhelp/lhelp/lhelp" \
+          "$staging/components/chmhelp/lhelp/lhelp.exe"
+
+    # Remove non-target tests/lib intermediate dirs (e.g., tests/lib/x86_64-linux
+    # inside an aarch64-darwin staging). End users do not need test
+    # intermediates and they trip lazbuild ambiguous-unit checks.
+    local libdir=""
+    while IFS= read -r libdir; do
+        local arch
+        arch=$(basename "$libdir")
+        [ "$arch" = "$target" ] && continue
+        rm -rf "$libdir"
+    done < <(find "$staging/components" -path '*/tests/lib/*' -type d -mindepth 4 -maxdepth 5 2>/dev/null)
+
+    # Keep only the BGRA package outputs for this release target. In an `all`
+    # build, previous platform passes leave their lib dirs in the source tree;
+    # package_release copies the whole components tree for each target.
+    local libroot=""
+    local bgra_dir=""
+    local bgra_base=""
+    for libroot in \
+        "$staging/components/bgrabitmap/bgrabitmap/lib" \
+        "$staging/components/bgracontrols/lib"
+    do
+        [ -d "$libroot" ] || continue
+        while IFS= read -r bgra_dir; do
+            bgra_base=$(basename "$bgra_dir")
+            case "$bgra_base" in
+                ${target}-${widget}-*) ;;
+                *) rm -rf "$bgra_dir" ;;
+            esac
+        done < <(find "$libroot" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+    done
+
+    local mouse_root="$staging/components/mouseandkeyinput/lib"
+    local mouse_dir=""
+    local mouse_base=""
+    if [ -d "$mouse_root" ]; then
+        while IFS= read -r mouse_dir; do
+            mouse_base=$(basename "$mouse_dir")
+            [ "$mouse_base" = "$target" ] || rm -rf "$mouse_dir"
+        done < <(find "$mouse_root" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+
+        if [ -d "$mouse_root/$target" ]; then
+            while IFS= read -r mouse_dir; do
+                mouse_base=$(basename "$mouse_dir")
+                [ "$mouse_base" = "$widget" ] || rm -rf "$mouse_dir"
+            done < <(find "$mouse_root/$target" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+        fi
+    fi
+
+    # Strip macOS-only artifacts from non-darwin tarballs. lhelp.app contains a
+    # relative symlink (Contents/MacOS/lhelp -> ../../../lhelp) that aborts the
+    # default Windows tar.exe mid-extract, leaving the user with a partial
+    # tree (Wynona C95 r17 finding). The .app bundle is macOS-specific and
+    # provides no value in win64/linux tarballs. Darwin tarballs keep the
+    # bundle and the materialize_darwin_lhelp_app pass below replaces the
+    # symlink with a real binary.
+    if [[ "$target" != *-darwin ]]; then
+        rm -rf "$staging/components/chmhelp/lhelp/lhelp.app"
+    fi
+}
+
 create_darwin_app_bundle() {
     local target=$1
     local cpu_target=$(echo "$target" | cut -d- -f1)
@@ -369,11 +763,7 @@ package_release() {
     if [ "$target" = "x86_64-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcx64"
     elif [ "$target" = "x86_64-win64" ]; then
-        if [ -f "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" ]; then
-            cp "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" "$staging/compiler/"
-        else
-            echo "WARNING: Win64 ppcx64.exe not found in VibePascal dist. Skipping compiler."
-        fi
+        copy_win64_compiler_to_staging "$staging"
     elif [ "$target" = "aarch64-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcrossaarch64"
     elif [ "$target" = "arm-linux" ]; then
@@ -427,6 +817,19 @@ package_release() {
     cp -r "$LAZARUS_DIR/designer" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/images" "$staging/" 2>/dev/null || true
+
+    # Ship the auto-update helper scripts at tarball root so users can refresh
+    # and rebuild the IDE from the source tree this tarball delivers. The copies
+    # above bring only subtrees (components/, lcl/, ide/, ...) -- never repo-root
+    # files -- so the updater scripts were absent (GOD mpd5wmli: "no
+    # auto-update.bat script was included").
+    for updater in auto-update.bat auto-update.ps1 auto-update.sh; do
+        [ -f "$LAZARUS_DIR/$updater" ] && cp "$LAZARUS_DIR/$updater" "$staging/"
+    done
+
+    strip_stale_host_arch_artifacts "$staging" "$target"
+
+    restore_staged_mtimes "$staging"
 
     if [[ "$target" == *-darwin ]]; then
         materialize_darwin_lhelp_app "$staging/components/chmhelp/lhelp"
@@ -898,9 +1301,45 @@ build_platform() {
         build_darwin_starter "$target" "$cfg"
         build_darwin_lhelp "$target" "$cfg"
         create_darwin_app_bundle "$target"
+        if ! build_bgra_release_packages "$target" "$cfg"; then
+            cp "$saved_lazbuild" "$LAZARUS_DIR/lazbuild"
+            rm -f "$saved_lazbuild"
+            return 1
+        fi
 
         # Restore darwin lazbuild for packaging
         cp "$saved_lazbuild" "$LAZARUS_DIR/lazbuild"
+        rm -f "$saved_lazbuild"
+    elif [ "$target" = "x86_64-linux" ]; then
+        build_bgra_release_packages "$target" "$cfg"
+    else
+        # Cross-target lazbuild binaries are not executable on this Linux build
+        # host. Use a native lazbuild with a per-target compiler wrapper to
+        # produce package artifacts, then restore the target lazbuild for
+        # packaging.
+        local target_lazbuild
+        target_lazbuild=$(get_lazbuild_path_for_target "$target")
+        local saved_lazbuild="$LAZARUS_DIR/lazbuild-${target}"
+        [ "$target" = "x86_64-win64" ] && saved_lazbuild="${saved_lazbuild}.exe"
+        if [ ! -f "$target_lazbuild" ]; then
+            echo "ERROR: target lazbuild not found at $target_lazbuild" >&2
+            return 1
+        fi
+        cp "$target_lazbuild" "$saved_lazbuild"
+        make -C "$LAZARUS_DIR" lazbuild \
+            PP="$VP_DIR/compiler/ppcx64" \
+            FPCDIR="$VP_DIR" \
+            OS_TARGET=linux \
+            CPU_TARGET=x86_64 \
+            OPT="-n @$LINUX_CFG" 2>&1 | tail -5
+
+        if ! build_bgra_release_packages "$target" "$cfg"; then
+            cp "$saved_lazbuild" "$target_lazbuild"
+            rm -f "$saved_lazbuild"
+            return 1
+        fi
+
+        cp "$saved_lazbuild" "$target_lazbuild"
         rm -f "$saved_lazbuild"
     fi
 

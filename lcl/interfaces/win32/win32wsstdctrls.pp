@@ -270,6 +270,8 @@ type
     class function GetDoubleBuffered(const AWinControl: TWinControl): Boolean; override;
     class procedure SetDefault(const AButton: TCustomButton; ADefault: Boolean); override;
     class procedure SetShortCut(const AButton: TCustomButton; const ShortCutK1, ShortCutK2: TShortCut); override;
+    class procedure SetText(const AWinControl: TWinControl; const AText: string); override;
+    class procedure SetWordWrap(const AButton: TCustomButton; const AValue: Boolean); override;
   end;
 
   { TWin32WSCustomCheckBox }
@@ -1963,13 +1965,35 @@ function ButtonWndProc(Window: HWnd; Msg: UInt; WParam: Windows.WParam;
     LParam: Windows.LParam): LResult; stdcall;
 var
   Control: TWinControl;
+  WindowInfo: PWin32WindowInfo;
   LMessage: TLMessage;
+
+  function HasLiveVisibleButtonControl: Boolean;
+  begin
+    Result := False;
+    try
+      WindowInfo := GetWin32WindowInfo(Window);
+      Control := WindowInfo^.WinControl;
+      if (Control = nil) or (PPointer(Control)^ = nil) then
+        Exit;
+      if (Control.WidgetSetClass = nil)
+      or (csDestroying in Control.ComponentState)
+      or (not Control.HandleAllocated) or (HWND(Control.Handle) <> Window)
+      or (not Control.Visible) or (not Windows.IsWindowVisible(Window)) then
+        Exit;
+      Result := True;
+    except
+      Control := nil;
+    end;
+  end;
+
 begin
   case Msg of
     WM_PAINT,
     WM_ERASEBKGND:
       begin
-        Control := GetWin32WindowInfo(Window)^.WinControl;
+        if not HasLiveVisibleButtonControl then
+          Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
         if not TWSWinControlClass(Control.WidgetSetClass).GetDoubleBuffered(Control) then
         begin
           LMessage.msg := Msg;
@@ -1983,6 +2007,19 @@ begin
       end;
     WM_PRINTCLIENT:
       Result := CallDefaultWindowProc(Window, Msg, WParam, LParam);
+    WM_KEYDOWN,
+    WM_KEYUP,
+    WM_CHAR,
+    WM_DEADCHAR,
+    WM_SYSKEYDOWN,
+    WM_SYSKEYUP,
+    WM_SYSCHAR,
+    WM_SYSDEADCHAR:
+      begin
+        if not HasLiveVisibleButtonControl then
+          Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
+        Result := WindowProc(Window, Msg, WParam, LParam);
+      end;
     else
       Result := WindowProc(Window, Msg, WParam, LParam);
   end;
@@ -2001,7 +2038,8 @@ begin
     pClassName := @ButtonClsName[0];
     SubClassWndProc := @ButtonWndProc;
     WindowTitle := StrCaption;
-    if (pos(#13, AWinControl.Caption) <> 0) or (pos(#10, AWinControl.Caption) <> 0) then
+    if (pos(#13, AWinControl.Caption) <> 0) or (pos(#10, AWinControl.Caption) <> 0)
+    or ((AWinControl is TCustomButton) and TCustomButton(AWinControl).WordWrap) then
       Flags:= Flags or BS_MULTILINE;
   end;
   // create window
@@ -2013,6 +2051,43 @@ class function TWin32WSButton.GetDoubleBuffered(
   const AWinControl: TWinControl): Boolean;
 begin
   Result := GetWin32NativeDoubleBuffered(AWinControl);
+end;
+
+function ButtonCaptionNeedsMultiline(const ACaption: string): Boolean;
+begin
+  Result := (pos(#13, ACaption) <> 0) or (pos(#10, ACaption) <> 0);
+end;
+
+function ButtonNeedsMultilineStyle(const ACaption: string;
+  const AWordWrap: Boolean): Boolean;
+begin
+  Result := AWordWrap or ButtonCaptionNeedsMultiline(ACaption);
+end;
+
+procedure UpdateButtonMultilineStyle(const AButton: TCustomButton;
+  const AUseMultiline: Boolean);
+var
+  WindowStyle, NewWindowStyle: dword;
+begin
+  WindowStyle := GetWindowLong(AButton.Handle, GWL_STYLE);
+  NewWindowStyle := WindowStyle;
+  if AUseMultiline then
+    NewWindowStyle := NewWindowStyle or BS_MULTILINE
+  else
+    NewWindowStyle := NewWindowStyle and not BS_MULTILINE;
+
+  if NewWindowStyle <> WindowStyle then
+  begin
+    SetWindowLong(AButton.Handle, GWL_STYLE, NewWindowStyle);
+    Windows.SendMessage(AButton.Handle, BM_SETSTYLE, NewWindowStyle, 1);
+  end;
+end;
+
+procedure RedrawButtonHandle(const AWinControl: TWinControl);
+begin
+  AWinControl.Invalidate;
+  InvalidateRect(AWinControl.Handle, nil, False);
+  UpdateWindow(AWinControl.Handle);
 end;
 
 class procedure TWin32WSButton.SetDefault(const AButton: TCustomButton; ADefault: Boolean);
@@ -2034,6 +2109,35 @@ class procedure TWin32WSButton.SetShortCut(const AButton: TCustomButton;
 begin
   if not WSCheckHandleAllocated(AButton, 'SetShortcut') then Exit;
   // TODO: implement me!
+end;
+
+class procedure TWin32WSButton.SetWordWrap(const AButton: TCustomButton;
+  const AValue: Boolean);
+begin
+  if not WSCheckHandleAllocated(AButton, 'SetWordWrap') then Exit;
+
+  UpdateButtonMultilineStyle(AButton,
+    ButtonNeedsMultilineStyle(AButton.Caption, AValue));
+  // BM_SETSTYLE marks the BUTTON dirty, but the IDE form designer forces
+  // double-buffered paint in csDesigning (win32callback.inc) and caches the
+  // pre-toggle bitmap until something invalidates the LCL paint pipeline.
+  // Force an immediate redraw so stale text is not left until hover.
+  RedrawButtonHandle(AButton);
+end;
+
+class procedure TWin32WSButton.SetText(const AWinControl: TWinControl;
+  const AText: string);
+begin
+  if not WSCheckHandleAllocated(AWinControl, 'SetText') then Exit;
+  inherited SetText(AWinControl, AText);
+  if AWinControl is TCustomButton then
+    UpdateButtonMultilineStyle(TCustomButton(AWinControl),
+      ButtonNeedsMultilineStyle(AText, TCustomButton(AWinControl).WordWrap));
+  // Standard Win32 buttons usually repaint on SetWindowText, but at design
+  // time the IDE form designer's double-buffered paint path can cache the
+  // old bitmap (especially for BS_MULTILINE).  Force an explicit invalidate
+  // so the caption refresh is visible immediately in the designer.
+  RedrawButtonHandle(AWinControl);
 end;
 
 { TWin32WSCustomCheckBox }
@@ -2071,7 +2175,10 @@ var
   iconWidth: Integer;
   details: TThemedElementDetails;
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // Measure with the LCL Font (what dark-mode renders via Control.Font.Reference.Handle).
+  // WM_GETFONT can mismatch during CreateHandle before WM_SETFONT propagates, clipping
+  // AutoSize-True captions -- observed in dark mode (GOD mpjwe7iz, 2026-05-24).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     if ThemeServices.ThemesEnabled then
     begin

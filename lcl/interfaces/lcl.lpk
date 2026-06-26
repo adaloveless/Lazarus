@@ -2582,6 +2582,16 @@ end;"/>
         <UnitName Value="Interfaces"/>
       </Item>
       <Item>
+        <Filename Value="win32/uimport.pas"/>
+        <AddToUsesPkgSection Value="False"/>
+        <UnitName Value="uImport"/>
+      </Item>
+      <Item>
+        <Filename Value="win32/uwin32widgetsetdark.pas"/>
+        <AddToUsesPkgSection Value="False"/>
+        <UnitName Value="uWin32WidgetSetDark"/>
+      </Item>
+      <Item>
         <Filename Value="win32/issues.xml"/>
         <Type Value="Issues"/>
       </Item>

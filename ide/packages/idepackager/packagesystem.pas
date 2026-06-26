@@ -2627,6 +2627,10 @@ function TLazPackageGraph.IsCompiledInBasePackage(PackageName: string): boolean;
 var
   bp: TLazarusIDEBasePkg;
 begin
+  {$IFNDEF MSWINDOWS}
+  if SameText(PackageName,'metadarkstyledsgn') then
+    exit(true);
+  {$ENDIF}
   for bp in TLazarusIDEBasePkg do
     if SameText(PackageName,LazarusIDEBasePkgNames[bp]) then
       exit(true);
@@ -4235,8 +4239,22 @@ begin
             Stats.Kind:=pcskRelease
           else begin
             Stats.Kind:=pcskDefault;
-            if (Stats.CompilerFilename>'') and not FilenameIsAbsolute(Stats.CompilerFilename) then
-              Stats.CompilerFilename:=ResolveDots(APackage.DirectoryExpanded+Stats.CompilerFilename);
+            if Stats.CompilerFilename>'' then begin
+              // Expand IDE macros (e.g. $(LazarusDir)) before the FilenameIsAbsolute test;
+              // tarball-shipped .compiled files use the macro form, which otherwise looks
+              // relative because of the leading '$' and gets DirectoryExpanded prepended.
+              if Assigned(GlobalMacroList) then
+                GlobalMacroList.SubstituteStr(Stats.CompilerFilename);
+              // $(LazarusDir) expands WITH a trailing slash, so the macro form
+              // "$(LazarusDir)/compiler/ppca64" becomes "<LAZDIR>//compiler/ppca64".
+              // FilenameIsAbsolute returns True (skipping the ResolveDots branch below)
+              // but CompareFilenames does not collapse "//", so the saved-vs-live compare
+              // trips on every pristine-PCP lazbuild. TrimFilename calls ResolveDots which
+              // collapses duplicate path delimiters.
+              Stats.CompilerFilename:=TrimFilename(Stats.CompilerFilename);
+              if not FilenameIsAbsolute(Stats.CompilerFilename) then
+                Stats.CompilerFilename:=ResolveDots(APackage.DirectoryExpanded+Stats.CompilerFilename);
+            end;
           end;
         end
         else begin

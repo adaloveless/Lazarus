@@ -2683,6 +2683,7 @@ var
   LastBoundsMutatedOld: TRect;
   ParentClientWidth: integer;
   ParentClientHeight: integer;
+  RealizeAlignedChildBounds: Boolean;
   RemainingBorderSpace: TRect; // borderspace around RemainingClientRect
                                // e.g. Right=3 means borderspace of 3
 
@@ -2704,6 +2705,19 @@ var
       then Exit;
     end;
     Result := False;
+  end;
+
+  function IsCustomPanelClass(AClass: TClass): Boolean;
+  begin
+    // Controls cannot reference ExtCtrls here; keep the TPanel-specific
+    // realization path scoped by class ancestry name.
+    Result := False;
+    while AClass <> nil do
+    begin
+      if AClass.ClassName = 'TCustomPanel' then
+        Exit(True);
+      AClass := AClass.ClassParent;
+    end;
   end;
 
   function Anchored(Align: TAlign; Anchors: TAnchors): Boolean;
@@ -3178,6 +3192,17 @@ var
       if BoundsMutated then begin
         LastBoundsMutated:=Control;
         LastBoundsMutatedOld:=OldBounds;
+        if RealizeAlignedChildBounds and (Control is TWinControl) and
+           TWinControl(Control).HandleAllocated and
+           ([csLoading, csDestroying] * ComponentState = []) and
+           ([csLoading, csDestroying] * Control.ComponentState = []) and
+           (Control.Width > 0) and (Control.Height > 0) then begin
+          TWinControl(Control).InvalidateBoundsRealized;
+          TWinControl(Control).RealizeBounds;
+          LCLIntf.SetWindowPos(TWinControl(Control).Handle, 0, Control.Left,
+            Control.Top, Control.Width, Control.Height,
+            SWP_NOZORDER or SWP_NOACTIVATE);
+        end;
       end;
       // Sometimes SetBounds change the bounds. For example due to constraints.
       // update the new bounds
@@ -3335,6 +3360,7 @@ begin
     r:=GetLogicalClientRect;
     ParentClientWidth:=r.Right;
     ParentClientHeight:=r.Bottom;
+    RealizeAlignedChildBounds:=IsCustomPanelClass(ClassType);
     if NeedAlignWork then
     begin
       //DebugLn(['TWinControl.AlignControls  ',DbgSName(Self),' RemainingClientRect=',dbgs(RemainingClientRect),' ',dbgs(ClientRect)]);

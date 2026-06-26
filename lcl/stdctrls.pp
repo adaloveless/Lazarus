@@ -1239,9 +1239,11 @@ type
     FDefault: Boolean;
     FActive: boolean;
     FRolesUpdateLocked: Boolean;
+    FWordWrap: Boolean;
     procedure SetCancel(NewCancel: boolean);
     procedure SetDefault(Value: Boolean);
     procedure SetModalResult(const AValue: TModalResult);
+    procedure SetWordWrap(AValue: Boolean);
     procedure CMUIActivate(var Message: TLMessage); message CM_UIACTIVATE;
     procedure WMSetFocus(var Message: TLMSetFocus); message LM_SETFOCUS;
     procedure WMKillFocus(var Message: TLMKillFocus); message LM_KILLFOCUS;
@@ -1257,6 +1259,7 @@ type
     class function GetControlClassDefaultSize: TSize; override;
     property ParentColor default false;
     procedure WSSetDefault;
+    procedure WSWordWrap;
     procedure WSSetText(const AText: String); override;
     procedure TextChanged; override;
     procedure Loaded; override;
@@ -1276,6 +1279,7 @@ type
     property ShortCut: TShortcut read FShortCut;
     property ShortCutKey2: TShortcut read FShortCutKey2;
     property Cancel: Boolean read FCancel write SetCancel default false;
+    property WordWrap: Boolean read FWordWrap write SetWordWrap default False;
     property Color default {$ifdef UseCLDefault}clDefault{$else}clBtnFace{$endif};
     property TabStop default true;
   end;
@@ -1334,6 +1338,7 @@ type
     property OnResize;
     property OnStartDrag;
     property OnUTF8KeyPress;
+    property WordWrap;
   end;
 
   { TCustomCheckBox }

@@ -2857,7 +2857,9 @@ begin
     case TheMessage.CharCode of
       VK_DELETE:
         if not Selection.OnlyInvisiblePersistentsSelected then
-          DoDeleteSelectedPersistents;
+        begin
+          Application.QueueAsyncCall(@DoDeleteSelectedPersistentsAsync, 0);
+        end;
 
       VK_UP:
         Nudge(0,-1);
@@ -3059,8 +3061,14 @@ begin
     Special := (Copy(APersistent.ClassName,1,3) = 'TPS') // A hack for PSScript plugins. ToDo...
       or ((APersistent is TWinControl) and TWinControl(APersistent).IsSpecialSubControl);
     // delete component
-    if APersistent is TComponent then
+    if APersistent is TComponent then begin
+      if APersistent is TControl then begin
+        TControl(APersistent).Visible:=false;
+        if (APersistent is TWinControl) and TWinControl(APersistent).HandleAllocated then
+          LCLIntf.ShowWindow(TWinControl(APersistent).Handle, SW_HIDE);
+      end;
       TheFormEditor.DeleteComponent(TComponent(APersistent),FreeIt)
+    end
     else if FreeIt then
       APersistent.Free;
     // call ComponentDeleted handler
@@ -3218,6 +3226,8 @@ begin
     {$IFDEF VerboseDesigner}
     DebugLn('[TDesigner.Notification] opRemove ',dbgsName(AComponent));
     {$ENDIF}
+    if DeletingPersistent.IndexOf(AComponent) >= 0 then
+      exit;
     // Notification is usually triggered by TheFormEditor.DeleteComponent in DoDeletePersistent.
     DoDeletePersistent(AComponent,false);
   end;

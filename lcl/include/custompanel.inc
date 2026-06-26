@@ -36,6 +36,7 @@ begin
   FAlignment := taCenter;
   FVertAlignment := taVerticalCenter;
   FFullRepaint := True;
+  FShowCaption := True;
   Color := {$ifdef UseCLDefault}clDefault{$else}clBtnFace{$endif};
   with GetControlClassDefaultSize do
     SetInitialBounds(0, 0, CX, CY);
@@ -108,6 +109,15 @@ begin
   end;
 end;
 
+procedure TCustomPanel.SetShowCaption(const Value: Boolean);
+begin
+  if FShowCaption <> Value then
+  begin
+    FShowCaption := Value;
+    Invalidate;
+  end;
+end;
+
 class procedure TCustomPanel.WSRegisterClass;
 begin
   inherited WSRegisterClass;
@@ -155,7 +165,7 @@ begin
   InflateRect(ARect, -BorderWidth, -BorderWidth);
   PaintBevel(ARect, BevelInner);
 
-  if Caption <> '' then
+  if (Caption <> '') and FShowCaption then
   begin
     TS := Canvas.TextStyle;
     TS.Alignment := BidiFlipAlignment(Self.Alignment, UseRightToLeftAlignment);

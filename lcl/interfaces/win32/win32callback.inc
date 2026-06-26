@@ -1375,6 +1375,8 @@ begin
   ChildWinControl := ChildWindowInfo^.WinControl;
   if ChildWinControl = nil then
     ChildWinControl := ChildWindowInfo^.AWinControl;
+  if (ChildWinControl <> nil) and (csDestroying in ChildWinControl.ComponentState) then
+    Exit;
 
   case Msg of
     WM_CTLCOLORSTATIC,
@@ -1386,6 +1388,14 @@ begin
         DrawParentBackground(HWND(LParam), WindowDC);
         LMessage.Result := GetStockObject(HOLLOW_BRUSH);
         SetBkMode(WindowDC, TRANSPARENT);
+        if ChildWinControl <> nil then
+        begin
+          WindowColor := ChildWinControl.Font.Color;
+          if WindowColor = clDefault then
+            WindowColor := ChildWinControl.GetDefaultColor(dctFont);
+          if WindowColor <> clDefault then
+            Windows.SetTextColor(WindowDC, ColorToRGB(WindowColor));
+        end;
         WinProcess := false;
       end;
     end;
@@ -2238,10 +2248,16 @@ begin
       // others need to erased with their window color
       // scrollbar also has buttons
       ChildWindowInfo := GetWin32WindowInfo(HWND(LParam));
-      if Assigned(ChildWindowInfo^.ParentMsgHandler)
-      and ChildWindowInfo^.ParentMsgHandler(lWinControl,
-        Window, Msg, WParam, LParam, LMessage.Result, WinProcess) then Exit(LMessage.Result);
-      DoMsgColor(ChildWindowInfo);
+      ACtl := ChildWindowInfo^.WinControl;
+      if ACtl = nil then
+        ACtl := ChildWindowInfo^.AWinControl;
+      if (ACtl = nil) or not (csDestroying in ACtl.ComponentState) then
+      begin
+        if Assigned(ChildWindowInfo^.ParentMsgHandler)
+        and ChildWindowInfo^.ParentMsgHandler(lWinControl,
+          Window, Msg, WParam, LParam, LMessage.Result, WinProcess) then Exit(LMessage.Result);
+        DoMsgColor(ChildWindowInfo);
+      end;
     end;
     WM_CLEAR:
     begin

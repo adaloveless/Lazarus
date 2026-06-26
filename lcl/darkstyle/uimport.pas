@@ -31,12 +31,15 @@ var
   pModule: PByte absolute hModule;
   pDosHeader: PIMAGE_DOS_HEADER absolute hModule;
 begin
+  DataDir := nil;
+  if hModule = 0 then Exit(nil);
   if pDosHeader^.e_magic = IMAGE_DOS_SIGNATURE then
   begin
     pNTHeaders := @pModule[pDosHeader^.e_lfanew];
     if pNTHeaders^.Signature = IMAGE_NT_SIGNATURE then
     begin
       DataDir := @pNTHeaders^.OptionalHeader.DataDirectory[Index];
+      if DataDir^.VirtualAddress = 0 then Exit(nil);
       Result := @pModule[DataDir^.VirtualAddress];
       Exit;
     end;
@@ -182,4 +185,3 @@ begin
 end;
 
 end.
-
