@@ -883,7 +883,7 @@ function Clean-StalePackageArtifacts {
         try {
             [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
             $userLinks = $pkgXml.CONFIG.UserPkgLinks
-            $itemNodes = $userLinks.ChildNodes | Where-Object { $_.Name -match '^Item\d+$' }
+            $itemNodes = $userLinks.ChildNodes | Where-Object { $_.LocalName -match '^Item\d+$' }
             foreach ($it in $itemNodes) {
                 $fileNode = $it.SelectSingleNode("Filename")
                 $nameNode = $it.SelectSingleNode("Name")
