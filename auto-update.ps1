@@ -12,6 +12,8 @@ param(
     [string]$VPDir,
     [switch]$SelfUpdated,
     [switch]$NoLaunch,
+    [switch]$AllowPush,
+    [switch]$KeepLocal,
     [switch]$Help
 )
 
@@ -37,6 +39,13 @@ if ($Help) {
     Write-Host "  -Doctor         Diagnose toolchain + IDE config; report problems without changing state"
     Write-Host "  -VPDir <path>   Path to VibePascal source (auto-detected if omitted)"
     Write-Host "  -NoLaunch       Do not launch the IDE after a successful update/rebuild"
+    Write-Host "  -AllowPush      Opt-in: push the post-upstream-merge result to origin/main."
+    Write-Host "                  Default is no-push (per GOD directive 2026-05-16) -- merge stays local"
+    Write-Host "                  to avoid background-process credential-prompt hangs and accidental"
+    Write-Host "                  pushes from end-user boxes. BuildMaster ships releases, not clients."
+    Write-Host "  -KeepLocal      Preserve uncommitted changes and untracked files in both repos."
+    Write-Host "                  Use this when developing or testing updater changes so they are"
+    Write-Host "                  not wiped by the pristine-test-env reset."
     Write-Host "  -Help           Show this help"
     Write-Host ""
     Write-Host "Default: pull updates, rebuild lazbuild + IDE if anything changed."
@@ -46,7 +55,7 @@ if ($Help) {
 function Log-Info  { param($msg) Write-Host "[INFO] $msg" -ForegroundColor Cyan }
 function Log-Ok    { param($msg) Write-Host "[OK] $msg" -ForegroundColor Green }
 function Log-Warn  { param($msg) Write-Host "[WARN] $msg" -ForegroundColor Yellow }
-function Log-Err   { param($msg) Write-Host "[ERROR] $msg" -ForegroundColor Red }
+function Log-Err   { param($msg) $script:ErrorCount++; Write-Host "[ERROR] $msg" -ForegroundColor Red }
 function Log-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
 $script:LazarusUpdated = $false
@@ -54,6 +63,7 @@ $script:VPUpdated = $false
 $script:UpstreamUpdated = $false
 $script:BuildProductsWereMissing = $false
 $script:LocalBuildProductsRestored = $false
+$script:ErrorCount = 0
 
 if (-not $VPDir -and $env:VPDIR -and (Test-Path (Join-Path $env:VPDIR ".git"))) {
     $VPDir = $env:VPDIR
@@ -121,14 +131,46 @@ if (-not $VPDir) {
         }
     }
     if (-not $VPDir) {
-        Log-Err "VibePascal directory not found. Use -VPDir to specify its location."
-        Log-Err "Searched: $($candidates -join ', ')"
-        Log-Err ""
-        Log-Err "How to fix:"
-        Log-Err "  1. Clone next to Lazarus: git clone git@github.com:adaloveless/vibepascal.git ""$parent\vibepascal"""
-        Log-Err "  2. Or pass the path:      .\auto-update.bat -VPDir C:\path\to\vibepascal"
-        Log-Err "  3. Or set the env var:    setx VPDIR ""C:\path\to\vibepascal"" (then open a new shell)"
-        exit 1
+        # GOD directive mp8vlvmq (2026-05-16): if VibePascal isn't anywhere on this machine,
+        # materialize it from GitHub rather than bailing out. Canonical default: C:\vibepascal.
+        $cloneTarget = "C:\vibepascal"
+        $cloneRepo = "https://github.com/adaloveless/vibepascal.git"
+        Log-Warn "VibePascal directory not found in any candidate path."
+
+        if (Test-Path $cloneTarget) {
+            Log-Err "$cloneTarget exists but lacks .git or VibePascal source markers -- refusing to clone over it."
+            Log-Err "Move it aside (rename to ${cloneTarget}.bak) and re-run, or pass -VPDir."
+            exit 1
+        }
+
+        Log-Info "Materializing VibePascal: git clone $cloneRepo -> $cloneTarget"
+        $cloneParent = Split-Path -Parent $cloneTarget
+        if ($cloneParent -and -not (Test-Path $cloneParent)) {
+            New-Item -ItemType Directory -Path $cloneParent -Force | Out-Null
+        }
+
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & git clone $cloneRepo $cloneTarget 2>&1 | ForEach-Object { Write-Host $_ }
+            $cloneExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = $prevEAP
+        }
+
+        if ($cloneExit -ne 0 -or -not (Test-Path (Join-Path $cloneTarget ".git"))) {
+            Log-Err "git clone failed (exit $cloneExit) -- VibePascal could not be materialized."
+            Log-Err "Searched: $($candidates -join ', ')"
+            Log-Err ""
+            Log-Err "How to fix manually:"
+            Log-Err "  1. Clone next to Lazarus: git clone $cloneRepo ""$parent\vibepascal"""
+            Log-Err "  2. Or pass the path:      .\auto-update.bat -VPDir C:\path\to\vibepascal"
+            Log-Err "  3. Or set the env var:    setx VPDIR ""C:\path\to\vibepascal"" (then open a new shell)"
+            exit 1
+        }
+
+        $VPDir = $cloneTarget
+        Log-Ok "VibePascal materialized at: $VPDir"
     }
 }
 
@@ -145,15 +187,74 @@ if (-not (Test-Path $VPCompiler)) {
 
 function Sort-VPArchives {
     param([object[]]$Items)
-    # Parse -v## suffix (e.g., vibepascal-win64-<sha>-v28.tar.gz) and sort numerically
-    # descending; unversioned archives fall behind and sort by LastWriteTime.
-    # Fresh git clones give all archives nearly identical mtimes, so LastWriteTime
-    # alone is non-deterministic -- version number is the authoritative ordering.
+    # Parse -v## from filename and sort numerically descending; unversioned archives
+    # fall behind and sort by LastWriteTime. Fresh git clones give all archives nearly
+    # identical mtimes, so LastWriteTime alone is non-deterministic -- version number
+    # is the authoritative ordering.
+    #
+    # Two naming conventions are supported:
+    #   legacy (v23-v31):  vibepascal-win64-<sha>-v28.tar.gz       -- "-v28." at end
+    #   v32+ split-archives: vibepascal-v32-rc-<sha>-win64-bin.tar.gz -- "-v32-" mid-name
+    # The single regex '-v(\d+)[-.]' captures both: the version-number segment is
+    # always preceded by '-v' and followed by '-' (new) or '.' (legacy).
     return $Items | Sort-Object `
         @{Expression = {
-            if ($_.Name -match '-v(\d+)\.(tar\.gz|zip)$') { [int]$Matches[1] } else { -1 }
+            if ($_.Name -match '-v(\d+)[-.]') { [int]$Matches[1] } else { -1 }
           }; Descending = $true}, `
         @{Expression = {$_.LastWriteTime}; Descending = $true}
+}
+
+function Get-VPArchiveSet {
+    # Resolve the ordered list of FileInfo archives that Extract-VPBinaries must unpack.
+    # v32+ tarballs are split: bin-only (compiler + bin/) needs pairing with a units tarball
+    # (RTL+packages PPU baseline) and optionally an RTL overlay (cycle-fix RTL PPUs over the
+    # baseline). Legacy v23-v31 tarballs are monolithic and extract alone. Extract order
+    # matters: units (baseline) -> bin (compiler + bin/) -> RTL overlay (patches over baseline).
+    param([string]$DistDir, [string]$Filter)
+    $all = @(Get-ChildItem -Path $DistDir -Filter $Filter -ErrorAction SilentlyContinue)
+    if ($all.Count -eq 0) { return @() }
+
+    $sorted = @(Sort-VPArchives $all)
+    $primary = $sorted[0]
+
+    # v32+ split-bin pattern: vibepascal-v<N>(-rc)?-<sha>-win64-bin.tar.gz
+    if ($primary.Name -match '^vibepascal-v(\d+)(?:-rc)?-([0-9a-f]+)-win64-bin\.tar\.gz$') {
+        $binVersion = [int]$Matches[1]
+        $binSha = $Matches[2]
+
+        # Units baseline: latest vibepascal-v<N>-win64-units.tar.gz (no -rc, no -bin).
+        # Otto ships v33-units as the stable baseline; v42-bin diffs only RTL from v33.
+        $unitsCandidates = @($all | Where-Object { $_.Name -match '^vibepascal-v\d+-win64-units\.tar\.gz$' })
+        if ($unitsCandidates.Count -eq 0) {
+            Log-Err "v$binVersion bin-only tarball requires a paired units tarball (vibepascal-v<N>-win64-units.tar.gz); none found in $DistDir"
+            Log-Warn "Otto ships v33 units as the stable baseline -- ensure dist/win64 contains vibepascal-v33-win64-units.tar.gz (or newer)"
+            return @()
+        }
+        $units = (Sort-VPArchives $unitsCandidates)[0]
+
+        # RTL overlay: prefer commit-hash prefix match against the bin's sha (e.g. v42-bin c7617b0
+        # pairs with vibepascal-c7617b0252-rtl-findclose-win64.tar.gz). Falls back to latest mtime
+        # if no prefix match. Overlay is optional -- units alone may be sufficient for many builds.
+        $overlayCandidates = @($all | Where-Object { $_.Name -match '^vibepascal-([0-9a-f]+)-rtl-.*-win64\.tar\.gz$' })
+        $matchingOverlay = $null
+        if ($overlayCandidates.Count -gt 0) {
+            $shaPrefix = $binSha.Substring(0, [Math]::Min(7, $binSha.Length))
+            $prefixMatch = @($overlayCandidates | Where-Object { $_.Name.StartsWith("vibepascal-$shaPrefix") })
+            if ($prefixMatch.Count -gt 0) {
+                $matchingOverlay = ($prefixMatch | Sort-Object LastWriteTime -Descending)[0]
+            } else {
+                $matchingOverlay = ($overlayCandidates | Sort-Object LastWriteTime -Descending)[0]
+                Log-Warn "RTL overlay $($matchingOverlay.Name) does not match bin commit-hash prefix $shaPrefix -- using latest available"
+            }
+        }
+
+        $set = @($units, $primary)
+        if ($matchingOverlay) { $set += $matchingOverlay }
+        return $set
+    }
+
+    # Legacy monolithic v23-v31 (or any unrecognized naming): extract primary alone.
+    return @($primary)
 }
 
 function Extract-VPBinaries {
@@ -164,122 +265,170 @@ function Extract-VPBinaries {
     if (-not (Test-Path $distDir)) {
         $distDir = Join-Path $VPDir "dist"
     }
-
-    $tarballs = @()
-    if (Test-Path $distDir) {
-        $tarballs = @(Sort-VPArchives (Get-ChildItem -Path $distDir -Filter "*.tar.gz" -ErrorAction SilentlyContinue))
-    }
-    if ($tarballs.Count -eq 0 -and (Test-Path $distDir)) {
-        $tarballs = @(Sort-VPArchives (Get-ChildItem -Path $distDir -Filter "*.zip" -ErrorAction SilentlyContinue))
-    }
-
-    if ($tarballs.Count -eq 0) {
+    if (-not (Test-Path $distDir)) {
         if (Test-Path $compilerExe) { return }
-        Log-Warn "No VibePascal dist archives found at $distDir"
+        Log-Warn "No VibePascal dist directory found at $distDir"
         return
     }
 
-    $archive = $tarballs[0].FullName
-    $archiveKey = "$($tarballs[0].Name)|$($tarballs[0].LastWriteTime.Ticks)"
+    $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.tar.gz")
+    if ($archiveSet.Count -eq 0) {
+        $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.zip")
+    }
+    if ($archiveSet.Count -eq 0) {
+        if (Test-Path $compilerExe) { return }
+        Log-Warn "No usable VibePascal archives in $distDir"
+        return
+    }
+
+    # Marker fingerprints every archive in the set so any change invalidates the cache.
+    $archiveKey = ($archiveSet | ForEach-Object { "$($_.Name)|$($_.LastWriteTime.Ticks)" }) -join ';'
 
     if ((Test-Path $compilerExe) -and (Test-Path $markerFile)) {
         $lastExtracted = (Get-Content $markerFile -Raw -ErrorAction SilentlyContinue).Trim()
         if ($lastExtracted -eq $archiveKey) { return }
-        Log-Info "Newer VibePascal tarball detected ($($tarballs[0].Name)), re-extracting..."
+        Log-Info "VibePascal archive set changed, re-extracting..."
+    } elseif ($archiveSet.Count -gt 1) {
+        $names = ($archiveSet | ForEach-Object { $_.Name }) -join ', '
+        Log-Info "Extracting VibePascal split-archive set ($($archiveSet.Count) archives): $names"
     } else {
-        Log-Info "Extracting VibePascal binaries from $archive"
+        Log-Info "Extracting VibePascal binaries from $($archiveSet[0].FullName)"
     }
 
-    $tempDir = Join-Path $env:TEMP "vp-extract-$(Get-Random)"
-    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-    try {
-        if ($archive.EndsWith(".zip")) {
-            Expand-Archive -Path $archive -DestinationPath $tempDir -Force
-        } else {
-            & "$env:SystemRoot\System32\tar.exe" -xzf $archive -C $tempDir 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                Log-Err "tar extraction failed (exit $LASTEXITCODE)"
-                return
-            }
+    # Blow away stale units once at the start to avoid v24-compiler+v22-PPU CRC mismatches.
+    # Both dirs matter: units\x86_64-win64 holds tarball PPUs, rtl\units\x86_64-win64 may hold
+    # source-build PPUs that collide with tarball PPUs (different system.ppu CRC).
+    foreach ($stale in @("units\x86_64-win64", "rtl\units\x86_64-win64")) {
+        $stalePath = Join-Path $VPDir $stale
+        if (Test-Path $stalePath) {
+            Log-Info "Removing stale PPU units at $stalePath"
+            Remove-Item -Recurse -Force $stalePath -ErrorAction SilentlyContinue
         }
+    }
 
-        # Descend into a single root dir if the tarball wrapped everything in one
-        $extractRoot = $tempDir
-        $topDirs = @(Get-ChildItem -Path $tempDir -Directory -ErrorAction SilentlyContinue)
-        $topFiles = @(Get-ChildItem -Path $tempDir -File -ErrorAction SilentlyContinue)
-        if ($topDirs.Count -eq 1 -and $topFiles.Count -eq 0) {
-            $extractRoot = $topDirs[0].FullName
-        }
+    $srcCompiler = $null
 
-        # Find the compiler binary in the tarball (v24+: bin/ppcx64.exe, legacy: compiler/ppcx64.exe)
-        $srcCompiler = $null
-        foreach ($rel in @("bin\ppcx64.exe", "compiler\ppcx64.exe")) {
-            $candidate = Join-Path $extractRoot $rel
-            if (Test-Path $candidate) { $srcCompiler = $candidate; break }
-        }
-        if (-not $srcCompiler) {
-            $found = Get-ChildItem -Path $extractRoot -Filter "ppcx64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($found) { $srcCompiler = $found.FullName }
-        }
-        if (-not $srcCompiler) {
-            Log-Err "ppcx64.exe not found in archive"
-            return
-        }
-
-        # Blow away stale units before re-extracting to avoid v24-compiler+v22-PPU CRC mismatches.
-        # Both dirs matter: units\x86_64-win64 holds tarball PPUs, rtl\units\x86_64-win64 may hold
-        # PPUs from a prior source build that collide with tarball PPUs (different system.ppu CRC).
-        foreach ($stale in @("units\x86_64-win64", "rtl\units\x86_64-win64")) {
-            $stalePath = Join-Path $VPDir $stale
-            if (Test-Path $stalePath) {
-                Log-Info "Removing stale PPU units at $stalePath"
-                Remove-Item -Recurse -Force $stalePath -ErrorAction SilentlyContinue
-            }
-        }
-
-        # Copy ALL top-level entries (bin/, units/, compiler/, fpc.cfg, etc.) into $VPDir
-        Log-Info "Copying tarball contents to $VPDir"
-        Get-ChildItem -Path $extractRoot -Force -ErrorAction SilentlyContinue | ForEach-Object {
-            $destPath = Join-Path $VPDir $_.Name
-            if ($_.PSIsContainer) {
-                if (-not (Test-Path $destPath)) {
-                    New-Item -ItemType Directory -Path $destPath -Force | Out-Null
-                }
-                Copy-Item -Path (Join-Path $_.FullName "*") -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($archive in $archiveSet) {
+        $archivePath = $archive.FullName
+        $tempDir = Join-Path $env:TEMP "vp-extract-$(Get-Random)"
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+        try {
+            if ($archivePath.EndsWith(".zip")) {
+                Expand-Archive -Path $archivePath -DestinationPath $tempDir -Force
             } else {
-                Copy-Item -Path $_.FullName -Destination $destPath -Force
+                & "$env:SystemRoot\System32\tar.exe" -xzf $archivePath -C $tempDir 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Log-Err "tar extraction failed for $($archive.Name) (exit $LASTEXITCODE)"
+                    return
+                }
             }
-        }
 
-        # Ensure compiler\ppcx64.exe exists for legacy callers that look there
-        if (-not (Test-Path $compilerExe)) {
-            $compilerDir = Join-Path $VPDir "compiler"
-            if (-not (Test-Path $compilerDir)) { New-Item -ItemType Directory -Path $compilerDir -Force | Out-Null }
-            Copy-Item $srcCompiler $compilerExe -Force
-        }
+            # Descend into a single root dir if the tarball wrapped everything in one
+            $extractRoot = $tempDir
+            $topDirs = @(Get-ChildItem -Path $tempDir -Directory -ErrorAction SilentlyContinue)
+            $topFiles = @(Get-ChildItem -Path $tempDir -File -ErrorAction SilentlyContinue)
+            if ($topDirs.Count -eq 1 -and $topFiles.Count -eq 0) {
+                $extractRoot = $topDirs[0].FullName
+            }
 
-        $unitCount = 0
-        $unitsDir = Join-Path $VPDir "units\x86_64-win64"
-        if (Test-Path $unitsDir) {
-            $unitCount = (Get-ChildItem -Path $unitsDir -Filter "*.ppu" -ErrorAction SilentlyContinue).Count
-        }
-        $fpcCfgExtracted = Test-Path (Join-Path $VPDir "bin\fpc.cfg")
-        Log-Ok "Extracted VibePascal: ppcx64.exe + $unitCount PPUs$(if ($fpcCfgExtracted) { ' + bin\fpc.cfg' })"
+            # Capture compiler from the first archive that has one (bin tarball does;
+            # units/RTL-overlay archives don't include ppcx64.exe). Track the DESTINATION
+            # path in $VPDir (which persists), not the source in $tempDir (deleted by
+            # the finally below). GOD mp8x4twg: previous code pointed at a temp path
+            # that was gone by the time the legacy-compiler\ copy at line ~370 ran.
+            if (-not $srcCompiler) {
+                foreach ($rel in @("bin\ppcx64.exe", "compiler\ppcx64.exe")) {
+                    if (Test-Path (Join-Path $extractRoot $rel)) {
+                        $srcCompiler = Join-Path $VPDir $rel
+                        break
+                    }
+                }
+            }
 
-        [IO.File]::WriteAllText($markerFile, $archiveKey, (New-Object System.Text.UTF8Encoding $false))
-
-        # Prefer bin\ppcx64.exe -- fpcres.exe and friends live in bin\ alongside it, and the
-        # tarball's fpc.cfg is authored for $FPCBINDIR=bin/. compiler\ppcx64.exe is kept for
-        # legacy callers but has no resource compiler next to it, so running lazbuild from
-        # compiler\ fails with "fpcres.exe not found".
-        $binCompiler = Join-Path $VPDir "bin\ppcx64.exe"
-        if (Test-Path $binCompiler) {
-            $script:VPCompiler = $binCompiler
-        } else {
-            $script:VPCompiler = $compilerExe
+            # Copy ALL top-level entries into $VPDir. Later archives in the set overlay earlier ones.
+            Log-Info "Copying $($archive.Name) contents to $VPDir"
+            Get-ChildItem -Path $extractRoot -Force -ErrorAction SilentlyContinue | ForEach-Object {
+                $destPath = Join-Path $VPDir $_.Name
+                if ($_.PSIsContainer) {
+                    if (-not (Test-Path $destPath)) {
+                        New-Item -ItemType Directory -Path $destPath -Force | Out-Null
+                    }
+                    # Retry copy for locked binaries (e.g. ppcx64.exe still held by a crashed process).
+                    $copyOk = $false
+                    for ($retry = 0; $retry -lt 3; $retry++) {
+                        try {
+                            Copy-Item -Path (Join-Path $_.FullName "*") -Destination $destPath -Recurse -Force -ErrorAction Stop
+                            $copyOk = $true
+                            break
+                        } catch {
+                            if ($retry -lt 2) {
+                                Log-Warn "Copy locked, retrying in 1s... ($($_.Exception.Message))"
+                                Start-Sleep -Seconds 1
+                            }
+                        }
+                    }
+                    if (-not $copyOk) {
+                        Log-Err "Failed to copy $($_.Name) to $destPath after 3 attempts -- file may be locked by a running compiler process"
+                    }
+                } else {
+                    $copyOk = $false
+                    for ($retry = 0; $retry -lt 3; $retry++) {
+                        try {
+                            Copy-Item -Path $_.FullName -Destination $destPath -Force -ErrorAction Stop
+                            $copyOk = $true
+                            break
+                        } catch {
+                            if ($retry -lt 2) {
+                                Log-Warn "Copy locked, retrying in 1s... ($($_.Exception.Message))"
+                                Start-Sleep -Seconds 1
+                            }
+                        }
+                    }
+                    if (-not $copyOk) {
+                        Log-Err "Failed to copy $($_.Name) to $destPath after 3 attempts -- file may be locked by a running compiler process"
+                    }
+                }
+            }
+        } finally {
+            Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
         }
-    } finally {
-        Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
+    }
+
+    # Recover compiler if no archive contained it (e.g. user supplied units-only + overlay).
+    if (-not $srcCompiler) {
+        $found = @(Get-ChildItem -Path $VPDir -Filter "ppcx64.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($found.Count -gt 0) { $srcCompiler = $found[0].FullName }
+    }
+    if (-not $srcCompiler) {
+        Log-Err "ppcx64.exe not found in any extracted archive"
+        return
+    }
+
+    # Ensure compiler\ppcx64.exe exists for legacy callers that look there
+    if (-not (Test-Path $compilerExe)) {
+        $compilerDir = Join-Path $VPDir "compiler"
+        if (-not (Test-Path $compilerDir)) { New-Item -ItemType Directory -Path $compilerDir -Force | Out-Null }
+        Copy-Item $srcCompiler $compilerExe -Force
+    }
+
+    $unitCount = 0
+    $unitsDir = Join-Path $VPDir "units\x86_64-win64"
+    if (Test-Path $unitsDir) {
+        $unitCount = (Get-ChildItem -Path $unitsDir -Filter "*.ppu" -ErrorAction SilentlyContinue).Count
+    }
+    $fpcCfgExtracted = Test-Path (Join-Path $VPDir "bin\fpc.cfg")
+    $setDesc = if ($archiveSet.Count -gt 1) { " ($($archiveSet.Count)-archive set)" } else { "" }
+    Log-Ok "Extracted VibePascal${setDesc}: ppcx64.exe + $unitCount PPUs$(if ($fpcCfgExtracted) { ' + bin\fpc.cfg' })"
+
+    [IO.File]::WriteAllText($markerFile, $archiveKey, (New-Object System.Text.UTF8Encoding $false))
+
+    # Prefer bin\ppcx64.exe -- fpcres.exe and the tarball's fpc.cfg live in bin\ alongside it.
+    # compiler\ppcx64.exe is the legacy fallback but has no resource compiler next to it.
+    $binCompiler = Join-Path $VPDir "bin\ppcx64.exe"
+    if (Test-Path $binCompiler) {
+        $script:VPCompiler = $binCompiler
+    } else {
+        $script:VPCompiler = $compilerExe
     }
 }
 
@@ -334,13 +483,34 @@ function Ensure-VPConfig {
     Log-Info "Generated VibePascal config: $VPCfgPath ($($unitPaths.Count) unit path$(if ($unitPaths.Count -ne 1) { 's' }))"
 }
 
-function Ensure-SelfClean {
-    param([string]$RepoDir)
-    $scriptName = "auto-update.ps1"
-    $result = Invoke-Git -WorkDir $RepoDir -GitArgs @("status", "--porcelain", "--", $scriptName)
-    if ($result.Output -and $result.Output.Trim().Length -gt 0) {
-        Log-Warn "auto-update.ps1 has local modifications -- leaving local version in place"
+# GOD mp8g1me3 (2026-05-16): auto-update is for pristine test envs, not local dev.
+# Wipe ALL local changes (tracked + untracked) so test machines pull cleanly.
+# If you are a developer with local work, do NOT run auto-update.bat -- use git directly.
+function Wipe-LocalChanges {
+    param([string]$RepoDir, [string]$Label)
+    Log-Header "Wiping local changes in $Label (pristine test-env mode)"
+    Log-Warn "auto-update.bat discards ALL uncommitted changes and untracked files."
+    Log-Warn "If you are a developer with local work, abort NOW (Ctrl-C)."
+
+    # Kill any compiler/build processes that might lock binaries in the repo
+    # before git clean tries to remove them (prevents "Invalid argument" / access-denied).
+    if ($Label -eq "VibePascal") {
+        Get-Process | Where-Object { $_.ProcessName -in @("ppcx64","fpc","make") } | ForEach-Object {
+            Log-Warn "Terminating locked process: $($_.ProcessName) (PID $($_.Id))"
+            Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Milliseconds 500
     }
+
+    $reset = Invoke-Git -WorkDir $RepoDir -GitArgs @("reset", "--hard", "HEAD")
+    if ($reset.ExitCode -ne 0) {
+        Log-Err "git reset --hard HEAD failed in $RepoDir`: $($reset.Error)"
+    }
+    $clean = Invoke-Git -WorkDir $RepoDir -GitArgs @("clean", "-fdx")
+    if ($clean.ExitCode -ne 0) {
+        Log-Err "git clean -fdx failed in $RepoDir`: $($clean.Error)"
+    }
+    Log-Ok "$Label working tree reset + cleaned ($RepoDir)"
 }
 
 function Relaunch-IfUpdated {
@@ -362,6 +532,7 @@ function Relaunch-IfUpdated {
     if ($FixLpi)       { $relaunchParams['FixLpi']       = $true }
     if ($ForceRebuild) { $relaunchParams['ForceRebuild'] = $true }
     if ($NoLaunch)     { $relaunchParams['NoLaunch']     = $true }
+    if ($KeepLocal)    { $relaunchParams['KeepLocal']    = $true }
     if ($VPDir)        { $relaunchParams['VPDir']        = $VPDir }
 
     $paramSummary = ($relaunchParams.GetEnumerator() | ForEach-Object { "-$($_.Key) $($_.Value)" }) -join ' '
@@ -497,24 +668,43 @@ function Pull-LazarusUpstream {
         Log-Ok "Merge from upstream complete"
     }
 
-    Log-Info "Pushing to origin..."
-    $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("push", "origin", "main")
-    if ($result.ExitCode -ne 0) {
-        Log-Warn "Push failed (non-critical): $($result.Error)"
+    if ($AllowPush) {
+        Log-Info "Pushing to origin..."
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("push", "origin", "main")
+        if ($result.ExitCode -ne 0) {
+            Log-Warn "Push failed (non-critical): $($result.Error)"
+        } else {
+            Log-Ok "Pushed to adaloveless/Lazarus"
+        }
     } else {
-        Log-Ok "Pushed to adaloveless/Lazarus"
+        Log-Info "Skipping push to origin/main (use -AllowPush to enable; merge stays local per GOD directive)"
     }
     $script:LazarusUpdated = $true
 }
 
 function Pull-LazarusOrigin {
-    if ($script:LazarusUpdated -and -not $script:UpstreamUpdated) {
-        Log-Header "Pulling Lazarus origin changes"
+    if (-not $script:LazarusUpdated) { return }
+
+    Log-Header "Pulling Lazarus origin changes"
+
+    $localCommits = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "origin/main..HEAD")
+    if (-not $localCommits) { $localCommits = "0" }
+
+    if ([int]$localCommits -eq 0) {
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("pull", "--ff-only", "origin", "main")
         if ($result.ExitCode -ne 0) {
             Log-Err "Pull failed: $($result.Error)"
         } else {
             Log-Ok "Lazarus origin pulled"
+        }
+    } else {
+        Log-Info "Merging origin/main ($localCommits local commit(s) ahead)..."
+        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge origin/main", "origin/main")
+        if ($result.ExitCode -ne 0) {
+            Log-Err "Merge from origin failed: $($result.Error)"
+            Log-Err "Resolve conflicts manually, then re-run."
+        } else {
+            Log-Ok "Merge from origin complete"
         }
     }
 }
@@ -525,10 +715,21 @@ function Find-Make {
         (Get-Command "mingw32-make" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
         "C:\lazarus\fpc\bin\x86_64-win64\make.exe",
         "C:\installs\lazarus\fpc\bin\x86_64-win64\make.exe",
-        "C:\FPC\bin\x86_64-win64\make.exe"
+        "C:\FPC\bin\x86_64-win64\make.exe",
+        "C:\tools\msys64\usr\bin\make.exe",
+        "C:\msys64\usr\bin\make.exe",
+        "C:\msys32\usr\bin\make.exe"
     )
     foreach ($p in $makePaths) {
-        if ($p -and (Test-Path $p)) { return $p }
+        if ($p -and (Test-Path $p)) {
+            # MSYS2 make depends on sibling tools (sh.exe, sed.exe) in the same usr\bin dir;
+            # prepend that directory to PATH so child processes can find them.
+            $makeDir = Split-Path -Parent $p
+            if ($makeDir -match '(?i)msys(64|32)?\\usr\\bin$' -and ($env:PATH -notlike "*$makeDir*")) {
+                $env:PATH = "$makeDir;$env:PATH"
+            }
+            return $p
+        }
     }
     foreach ($root in @("C:\lazarus\fpc", "C:\installs\lazarus\fpc", "C:\FPC")) {
         if (Test-Path $root) {
@@ -597,6 +798,137 @@ function Rebuild-Lazbuild {
     Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
 }
 
+function Sanitize-PackageRegistrations {
+    # Strip stale UserPkgLinks from packagefiles.xml that point at OTHER Lazarus
+    # checkouts (typically C:\temp\lazarus-* or sibling worktrees). When such a
+    # link names a core package like LCL or LCLBase, lazbuild --build-ide writes
+    # the stale lib path into idemake.cfg and then loads an outdated themes.ppu
+    # from there, causing inexplicable "no method in ancestor class to be
+    # overridden" errors on freshly-pulled source (seen post-merge 2026-05-27 on
+    # the IsDarkTheme virtual). Also wipe idemake.cfg + staticpackages.inc so
+    # lazbuild regenerates them from the now-clean registrations.
+    $pcpDir = Join-Path $env:LOCALAPPDATA "lazarus"
+    $pkgFilesXml = Join-Path $pcpDir "packagefiles.xml"
+    if (-not (Test-Path $pkgFilesXml)) { return }
+
+    $coreLazPackages = @(
+        "LCL", "LCLBase", "FCL", "IDEIntf", "SynEdit", "CodeTools",
+        "LazUtils", "LazControls", "IdeConfig", "IdePackager", "IdeProject",
+        "IdeDebugger", "IdeUtils", "BuildIntf", "DebuggerIntf",
+        "LazDebuggerIntf", "Printer4Lazarus", "Printer4LazarusStandalone"
+    )
+
+    try {
+        [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
+        $userLinks = $pkgXml.CONFIG.UserPkgLinks
+        if (-not $userLinks) { return }
+
+        $removed = @()
+        # Use LocalName because $_.Name is shadowed by the child <Name> element
+        # via PowerShell's XML property adapter (returns an XmlElement, not the tag).
+        $itemNodes = @($userLinks.ChildNodes | Where-Object { $_.LocalName -match '^Item\d+$' })
+        foreach ($it in $itemNodes) {
+            $fileNode = $it.SelectSingleNode("Filename")
+            $nameNode = $it.SelectSingleNode("Name")
+            $file = if ($fileNode) { $fileNode.GetAttribute("Value") } else { $null }
+            $pkgName = if ($nameNode) { $nameNode.GetAttribute("Value") } else { "" }
+            if (-not $file) { continue }
+            if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
+
+            $reason = $null
+            if ($coreLazPackages -contains $pkgName -and
+                -not $file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $reason = "core package $pkgName pointing outside `$LazarusDir"
+            } elseif (-not (Test-Path $file)) {
+                $reason = "missing file"
+            }
+
+            if ($reason) {
+                $removed += "$pkgName -> $file ($reason)"
+                [void]$userLinks.RemoveChild($it)
+            }
+        }
+
+        if ($removed.Count -gt 0) {
+            $count = [int]$userLinks.GetAttribute("Count")
+            $userLinks.SetAttribute("Count", ($count - $removed.Count).ToString())
+            $pkgXml.Save($pkgFilesXml)
+            foreach ($r in $removed) {
+                Log-Info "Removed stale package registration: $r"
+            }
+            Log-Ok "Sanitized $($removed.Count) stale UserPkgLink(s) from packagefiles.xml"
+        }
+    } catch {
+        Log-Warn "Could not sanitize packagefiles.xml: $_"
+    }
+
+    foreach ($f in @("idemake.cfg", "staticpackages.inc")) {
+        $p = Join-Path $pcpDir $f
+        if (Test-Path $p) {
+            Remove-Item $p -Force -ErrorAction SilentlyContinue
+            Log-Info "Removed stale $f (lazbuild will regenerate)"
+        }
+    }
+}
+
+function Clean-StalePackageArtifacts {
+    # Stale .ppu/.o files (compiled with older/different compilers) cause
+    # VibePascal ICEs when lazbuild --build-ide= tries to recompile them.
+    # Wipe lib/ output dirs for ALL installed packages (external + Lazarus
+    # built-in) so they rebuild cleanly from source.
+
+    # --- 1. External packages (from packagefiles.xml) ---
+    $pkgFilesXml = Join-Path $env:LOCALAPPDATA "lazarus\packagefiles.xml"
+    if (Test-Path $pkgFilesXml) {
+        try {
+            [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
+            $userLinks = $pkgXml.CONFIG.UserPkgLinks
+            $itemNodes = $userLinks.ChildNodes | Where-Object { $_.Name -match '^Item\d+$' }
+            foreach ($it in $itemNodes) {
+                $fileNode = $it.SelectSingleNode("Filename")
+                $nameNode = $it.SelectSingleNode("Name")
+                $file = if ($fileNode) { $fileNode.GetAttribute("Value") } else { $null }
+                $pkgName = if ($nameNode) { $nameNode.GetAttribute("Value") } else { "unknown" }
+                if (-not $file) { continue }
+                if (-not [System.IO.Path]::IsPathRooted($file)) { continue }
+                if ($file.StartsWith($LazarusDir, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+
+                $pkgDir = Split-Path -Parent $file
+                $libDir = Join-Path $pkgDir "lib"
+                if (-not (Test-Path $libDir)) { continue }
+
+                $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.a","*.rsj","*.compiled") -ErrorAction SilentlyContinue)
+                if ($stale.Count -eq 0) { continue }
+
+                Log-Info "Cleaning stale build artifacts in external package: $pkgName ($($stale.Count) file(s))"
+                foreach ($f in $stale) {
+                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {
+            Log-Warn "Could not clean external package artifacts: $_"
+        }
+    }
+
+    # --- 2. Lazarus built-in packages (components, ide packages, lcl, etc.) ---
+    try {
+        $lazarusLibDirs = @(Get-ChildItem -Path $LazarusDir -Recurse -Directory -Filter "lib" -ErrorAction SilentlyContinue | Where-Object {
+            (Get-ChildItem -Path $_.FullName -Recurse -Filter "*.ppu" -ErrorAction SilentlyContinue | Select-Object -First 1) -ne $null
+        })
+        foreach ($libDir in $lazarusLibDirs) {
+            $stale = @(Get-ChildItem -Path $libDir.FullName -Recurse -Include @("*.ppu","*.o","*.a","*.rsj","*.compiled") -ErrorAction SilentlyContinue)
+            if ($stale.Count -gt 0) {
+                Log-Info "Cleaning stale build artifacts in Lazarus lib: $($libDir.FullName) ($($stale.Count) file(s))"
+                foreach ($f in $stale) {
+                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    } catch {
+        Log-Warn "Could not clean Lazarus package artifacts: $_"
+    }
+}
+
 function Rebuild-IDE {
     Log-Header "Rebuilding Lazarus IDE (lazarus.exe)"
 
@@ -652,14 +984,26 @@ function Rebuild-IDE {
 
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @addPkgArgs 2>&1 |
-        Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
-    $buildExit = $LASTEXITCODE
+
+    $maxAttempts = 2
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        if ($attempt -gt 1) {
+            Log-Warn "IDE build failed on attempt $($attempt-1); cleaning stale artifacts and retrying..."
+            Sanitize-PackageRegistrations
+            Clean-StalePackageArtifacts
+            Start-Sleep -Seconds 2
+        }
+        & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @addPkgArgs 2>&1 |
+            Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
+        $buildExit = $LASTEXITCODE
+        if ($buildExit -eq 0) { break }
+    }
+
     $ErrorActionPreference = $prevEAP
     $env:PATH = $oldPath
 
     if ($buildExit -ne 0) {
-        Log-Err "lazarus.exe build failed with exit code $buildExit"
+        Log-Err "lazarus.exe build failed with exit code $buildExit after $maxAttempts attempts"
         return
     }
 
@@ -873,31 +1217,27 @@ function Reset-LazarusConfig {
 
 function Test-MetaDarkStyleInstalled {
     # GOD directive moehki0x (2026-04-25): MetaDarkStyle is a flagship feature.
-    # Verify the design-time package vendored at components\metadarkstyle was
-    # built and linked into lazarus.exe. Returns @{ Ok = $bool; Notes = @() }.
+    # Post-cycle 322 #182: runtime units live in lcl/darkstyle/ (linked via
+    # lclbase.lpk), only the design-time package remains at
+    # components\metadarkstyle\dsgn\. Verify design-time LPK + PPU + that
+    # MetaDarkStyle symbols are linked into lazarus.exe.
     param([string]$Dir = $LazarusDir, [string]$Cpu = "x86_64", [string]$Os = "win64")
 
     $result = @{ Ok = $true; Notes = @() }
 
-    $rtLpk = Join-Path $Dir "components\metadarkstyle\metadarkstyle.lpk"
     $dsLpk = Join-Path $Dir "components\metadarkstyle\dsgn\metadarkstyledsgn.lpk"
-    foreach ($lpk in @($rtLpk, $dsLpk)) {
-        if (-not (Test-Path $lpk)) {
-            $result.Ok = $false
-            $result.Notes += "Source missing: $lpk (re-pull from upstream fork)"
-        }
+    if (-not (Test-Path $dsLpk)) {
+        $result.Ok = $false
+        $result.Notes += "Source missing: $dsLpk (re-pull from upstream fork)"
+        return $result
     }
-    if (-not $result.Ok) { return $result }
 
-    $rtPpu = Join-Path $Dir "components\metadarkstyle\lib\$Cpu-$Os\metadarkstyle.ppu"
     $dsPpu = Join-Path $Dir "components\metadarkstyle\dsgn\lib\$Cpu-$Os\metadarkstyledsgn.ppu"
-    foreach ($ppu in @($rtPpu, $dsPpu)) {
-        if (-not (Test-Path $ppu)) {
-            $result.Ok = $false
-            $result.Notes += "Build artifact missing: $ppu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
-        }
+    if (-not (Test-Path $dsPpu)) {
+        $result.Ok = $false
+        $result.Notes += "Build artifact missing: $dsPpu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
+        return $result
     }
-    if (-not $result.Ok) { return $result }
 
     $lazExe = Join-Path $Dir "lazarus.exe"
     if (Test-Path $lazExe) {
@@ -1264,7 +1604,24 @@ if ($ResetConfig) {
     $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
     if ($quality.Quality -ne "Compatible") {
         Log-Warn "Lazarus directory still flagged $($quality.Quality): $($quality.Note)"
-        Log-Warn "IDE may show 'Without a proper Lazarus directory' on startup. Run -ForceRebuild to rebuild lazarus.exe."
+        if (-not $ForceRebuild) {
+            Log-Warn "IDE may show 'Without a proper Lazarus directory' on startup. Run -ForceRebuild to rebuild lazarus.exe."
+        }
+    }
+    if ($ForceRebuild) {
+        # -ResetConfig -ForceRebuild: rebuild current source after config reset.
+        # Calls Rebuild-Lazbuild + Rebuild-IDE directly instead of falling through
+        # to the main pipeline, which would re-extract VP, wipe local changes, and
+        # pull upstream -- not what the user asked for with -ResetConfig.
+        Log-Info "-ResetConfig -ForceRebuild: rebuilding lazbuild + IDE after config reset"
+        Rebuild-Lazbuild
+        Configure-Environment
+        Sanitize-PackageRegistrations
+        Clean-StalePackageArtifacts
+        Rebuild-IDE
+        if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
+            Log-Ok "Lazarus rebuilt after ResetConfig"
+        }
     }
     exit 0
 }
@@ -1284,17 +1641,37 @@ if ($FixLpi) {
     exit 0
 }
 
+if (-not $KeepLocal) {
+    Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
+    if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
+        Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
+    }
+} else {
+    Log-Info "Keeping local changes (-KeepLocal)"
+}
+
+# Extract VibePascal AFTER wipe: extracted binaries (bin\ppcx64.exe, units\x86_64-win64\*.ppu,
+# bin\fpc.cfg, .auto-update-extracted.txt marker) live at untracked paths inside $VPDir, so
+# `git clean -fdx` during the VibePascal wipe deletes them. Extract first leaves the rebuild
+# step with no compiler (GOD mp8h9y4b/mp8har98).
 Extract-VPBinaries
 
-Ensure-SelfClean -RepoDir $LazarusDir
 $scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
 
-Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
+$upstreamRemote = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("remote", "get-url", "upstream")
+if ($upstreamRemote) {
+    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
+} else {
+    Log-Warn "No 'upstream' remote configured -- skipping upstream Lazarus (fpc/Lazarus) checks"
+    Log-Info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
+}
 
 if (-not $UpstreamOnly) {
     Check-VPUpdates
 }
-Check-LazarusUpstream
+if ($upstreamRemote) {
+    Check-LazarusUpstream
+}
 Check-LazarusOrigin
 
 if ($Check) {
@@ -1339,6 +1716,8 @@ if ($anyUpdated) {
     } else {
         Rebuild-Lazbuild
         Configure-Environment
+        Sanitize-PackageRegistrations
+        Clean-StalePackageArtifacts
         Rebuild-IDE
         if ((Test-Path (Join-Path $LazarusDir "lazbuild.exe")) -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
             $script:LocalBuildProductsRestored = $true
@@ -1380,3 +1759,10 @@ if (-not $NoLaunch) {
 }
 
 Print-Summary
+
+if ($script:ErrorCount -gt 0) {
+    Write-Host ""
+    Log-Warn "Auto-update completed with $($script:ErrorCount) error(s) -- see [ERROR] lines above. Returning exit 1."
+    exit 1
+}
+exit 0
