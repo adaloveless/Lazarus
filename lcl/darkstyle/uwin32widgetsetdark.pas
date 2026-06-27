@@ -2095,10 +2095,20 @@ begin
   PrepareDarkGroupedChildSizing(AWinControl);
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
-  InstallDarkGroupBoxWndProc(Result);
-  EnableDarkStyle(Result);
-  if (AWinControl is TCustomRadioGroup) or (AWinControl is TCustomCheckGroup) then
-    PostMessage(Result, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
+  // DarkGroupBoxWndProc fills the whole client (Exit(0) on WM_PAINT) and only
+  // excludes *windowed* children, so at design time it masks non-windowed
+  // children (labels/bevels/images) and races the designer when a child is
+  // moved -- the IDE form designer then "loses" controls placed on group boxes
+  // (GOD mqwtobmj/mqwtqzcm). Every other dark WS class guards its subclass with
+  // csDesigning; do the same here so the designer paints natively and all
+  // children stay visible. Runtime dark rendering is unchanged.
+  if not (csDesigning in AWinControl.ComponentState) then
+  begin
+    InstallDarkGroupBoxWndProc(Result);
+    EnableDarkStyle(Result);
+    if (AWinControl is TCustomRadioGroup) or (AWinControl is TCustomCheckGroup) then
+      PostMessage(Result, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
+  end;
 end;
 
 class function TWin32WSCustomGroupBoxDark.GetDefaultColor(
