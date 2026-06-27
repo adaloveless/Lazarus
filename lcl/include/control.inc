@@ -1544,6 +1544,30 @@ begin
   AdjustSize;
 end;
 
+procedure TControl.DoMarginChange;
+begin
+  // VCL compatibility: Margins only affect layout when AlignWithMargins is True.
+  if FAlignWithMargins then
+  begin
+    if Parent <> nil then Parent.InvalidatePreferredSize;
+    AdjustSize;
+  end;
+end;
+
+procedure TControl.SetMargins(const AValue: TMargins);
+begin
+  FMargins.Assign(AValue);
+end;
+
+procedure TControl.SetAlignWithMargins(const AValue: Boolean);
+begin
+  if FAlignWithMargins = AValue then Exit;
+  FAlignWithMargins := AValue;
+  // Toggling AlignWithMargins changes the alignment geometry, so re-layout.
+  if Parent <> nil then Parent.InvalidatePreferredSize;
+  AdjustSize;
+end;
+
 function TControl.IsBorderSpacingInnerBorderStored: Boolean;
 begin
   Result:=BorderSpacing.InnerBorder<>0;
@@ -4375,7 +4399,6 @@ begin
     Exit;
   inherited WSRegisterClass;
   RegisterControl;
-  RegisterPropertyToSkip(TControl, 'AlignWithMargins', 'VCL compatibility property', '');
   RegisterPropertyToSkip(TControl, 'Ctl3D',            'VCL compatibility property', '');
   RegisterPropertyToSkip(TControl, 'ParentCtl3D',      'VCL compatibility property', '');
   RegisterPropertyToSkip(TControl, 'IsControl',        'VCL compatibility property', '');
@@ -5256,6 +5279,7 @@ begin
   for Side := Low(FAnchorSides) to High(FAnchorSides) do
     FreeThenNil(FAnchorSides[Side]);
   FreeThenNil(FBorderSpacing);
+  FreeThenNil(FMargins);
   FreeThenNil(FConstraints);
   FreeThenNil(FFont);
   FreeThenNil(FAccessibleObject);
@@ -5300,6 +5324,7 @@ begin
                    +[csCaptureMouse, csClickEvents, csSetCaption, csDoubleClicks];
     FConstraints:= TSizeConstraints.Create(Self);
     FBorderSpacing := CreateControlBorderSpacing;
+    FMargins := TMargins.Create(Self);
     for Side:=Low(FAnchorSides) to High(FAnchorSides) do
       FAnchorSides[Side]:=TAnchorSide.Create(Self,Side);
 

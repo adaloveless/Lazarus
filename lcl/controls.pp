@@ -877,6 +877,42 @@ type
   end;
 
 
+  { TMargins - Delphi VCL-compatible margins for a TControl.
+    When the control's AlignWithMargins property is True, these margins are
+    reserved around the control during alignment and anchoring (using the same
+    GetSpaceAround hook that BorderSpacing uses). Each side defaults to 3,
+    matching the Delphi VCL. AlignWithMargins defaults to False, so by default
+    Margins have no layout effect - exactly like the VCL. }
+
+  TMargins = class(TPersistent)
+  private
+    FControl: TControl;
+    FLeft: Integer;
+    FTop: Integer;
+    FRight: Integer;
+    FBottom: Integer;
+    FOnChange: TNotifyEvent;
+    procedure SetLeft(const AValue: Integer);
+    procedure SetTop(const AValue: Integer);
+    procedure SetRight(const AValue: Integer);
+    procedure SetBottom(const AValue: Integer);
+  protected
+    procedure Change; virtual;
+    function GetOwner: TPersistent; override;
+  public
+    constructor Create(OwnerControl: TControl);
+    procedure Assign(Source: TPersistent); override;
+    function IsEqual(aMargins: TMargins): Boolean;
+    property Control: TControl read FControl;
+  published
+    property Left: Integer read FLeft write SetLeft default 3;
+    property Top: Integer read FTop write SetTop default 3;
+    property Right: Integer read FRight write SetRight default 3;
+    property Bottom: Integer read FBottom write SetBottom default 3;
+    property OnChange: TNotifyEvent read FOnChange write FOnChange;
+  end;
+
+
   { TAnchorSide
     Class holding the reference sides of the anchors of a TControl.
     Every TControl has four AnchorSides:
@@ -1207,6 +1243,8 @@ type
     FBaseParentClientSize: TSize;
     FBiDiMode: TBiDiMode;
     FBorderSpacing: TControlBorderSpacing;
+    FMargins: TMargins;               // VCL-compatible margins (gated by AlignWithMargins)
+    FAlignWithMargins: Boolean;       // VCL-compatible: when True, Margins affect alignment
     FBoundsRectForNewParent: TRect;
     FCaption: TCaption;
     FCaptureMouseButtons: TCaptureMouseButtons;
@@ -1326,6 +1364,8 @@ type
     procedure SetAccessibleRole(AValue: TLazAccessibilityRole);
     procedure SetAnchorSide(Kind: TAnchorKind; AValue: TAnchorSide);
     procedure SetBorderSpacing(const AValue: TControlBorderSpacing);
+    procedure SetMargins(const AValue: TMargins);
+    procedure SetAlignWithMargins(const AValue: Boolean);
     procedure SetBoundsRect(const ARect: TRect);
     procedure SetBoundsRectForNewParent(const AValue: TRect);
     procedure SetClientHeight(Value: Integer);
@@ -1375,6 +1415,7 @@ type
     procedure DoConstraintsChange(Sender: TObject); virtual;
     procedure DoBorderSpacingChange(Sender: TObject;
                                     InnerSpaceChanged: Boolean); virtual;
+    procedure DoMarginChange; virtual;
     function IsBorderSpacingInnerBorderStored: Boolean; virtual;
     function IsCaptionStored: Boolean;
     procedure SendMoveSizeMessages(SizeChanged, PosChanged: Boolean); virtual;
@@ -1851,6 +1892,9 @@ type
     property HelpType: THelpType read FHelpType write FHelpType default htContext;
     property HelpKeyword: string read FHelpKeyword write SetHelpKeyword stored IsHelpKeyWordStored;
     property HelpContext: THelpContext read FHelpContext write SetHelpContext stored IsHelpContextStored default 0;
+    // Delphi VCL compatibility: every control gets Margins + AlignWithMargins
+    property Margins: TMargins read FMargins write SetMargins;
+    property AlignWithMargins: Boolean read FAlignWithMargins write SetAlignWithMargins default False;
   end;
 
 
@@ -3862,6 +3906,15 @@ begin
   SpaceAround.Top:=Top+Around;
   SpaceAround.Right:=Right+Around;
   SpaceAround.Bottom:=Bottom+Around;
+  // Delphi VCL compatibility: when the owning control has AlignWithMargins set,
+  // its Margins are added to the space reserved around it during alignment.
+  if (FControl<>nil) and FControl.AlignWithMargins and (FControl.Margins<>nil) then
+  begin
+    inc(SpaceAround.Left, FControl.Margins.Left);
+    inc(SpaceAround.Top, FControl.Margins.Top);
+    inc(SpaceAround.Right, FControl.Margins.Right);
+    inc(SpaceAround.Bottom, FControl.Margins.Bottom);
+  end;
 end;
 
 
@@ -3958,6 +4011,80 @@ begin
     Result := FControl.Width+Around*2+Left+Right
   else
     Result := 0;
+end;
+
+{ TMargins }
+
+constructor TMargins.Create(OwnerControl: TControl);
+begin
+  inherited Create;
+  FControl := OwnerControl;
+  FLeft := 3;
+  FTop := 3;
+  FRight := 3;
+  FBottom := 3;
+end;
+
+function TMargins.GetOwner: TPersistent;
+begin
+  Result := FControl;
+end;
+
+procedure TMargins.Change;
+begin
+  if FControl <> nil then
+    FControl.DoMarginChange;
+  if Assigned(FOnChange) then
+    FOnChange(Self);
+end;
+
+procedure TMargins.SetLeft(const AValue: Integer);
+begin
+  if FLeft = AValue then Exit;
+  FLeft := AValue;
+  Change;
+end;
+
+procedure TMargins.SetTop(const AValue: Integer);
+begin
+  if FTop = AValue then Exit;
+  FTop := AValue;
+  Change;
+end;
+
+procedure TMargins.SetRight(const AValue: Integer);
+begin
+  if FRight = AValue then Exit;
+  FRight := AValue;
+  Change;
+end;
+
+procedure TMargins.SetBottom(const AValue: Integer);
+begin
+  if FBottom = AValue then Exit;
+  FBottom := AValue;
+  Change;
+end;
+
+procedure TMargins.Assign(Source: TPersistent);
+begin
+  if Source is TMargins then
+  begin
+    FLeft := TMargins(Source).Left;
+    FTop := TMargins(Source).Top;
+    FRight := TMargins(Source).Right;
+    FBottom := TMargins(Source).Bottom;
+    Change;
+  end
+  else
+    inherited Assign(Source);
+end;
+
+function TMargins.IsEqual(aMargins: TMargins): Boolean;
+begin
+  Result := (aMargins <> nil)
+        and (FLeft = aMargins.Left) and (FTop = aMargins.Top)
+        and (FRight = aMargins.Right) and (FBottom = aMargins.Bottom);
 end;
 
 { TControlChildSizing }
