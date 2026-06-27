@@ -493,7 +493,7 @@ begin
           #$8c:
             if (Line[2] in [#$9A..#$9B, #$A9..#$AA]) then PWidths^ := 2;       // 231A..231B, 2329..232A
           #$8f:
-            if (Line[2] in [#$A9..#$AC, #$B0, #$B3]) then PWidths^ := 2;       // 23E9..23EC, 23F0, 23F3
+            if (Line[2] in [#$A9..#$B3, #$B8..#$BA]) then PWidths^ := 2;       // 23E9..23F3, 23F8..23FA (full emoji set; incl. 23F1/23F2 stopwatch/timer, text-default-presentation but font-rendered wide)
           #$97:
             if (Line[2] in [#$BD..#$BE]) then PWidths^ := 2;                   // 25FD..25FE
           #$98:
