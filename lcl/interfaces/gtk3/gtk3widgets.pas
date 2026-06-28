@@ -3452,7 +3452,14 @@ end;
 procedure TGtk3Widget.SetVisible(AValue: Boolean);
 begin
   if IsWidgetOK then
+  begin
+    if AValue then
+      FWidget^.set_no_show_all(False)
+    else
+    if [wtNotebook, wtWindow] * WidgetType = [] then
+      FWidget^.set_no_show_all(True);
     FWidget^.Visible := AValue;
+  end;
 end;
 
 function TGtk3Widget.QueryInterface(constref iid: TGuid; out obj): LongInt; {$IFDEF WINDOWS}stdcall{$ELSE}cdecl{$ENDIF};
@@ -4761,8 +4768,12 @@ begin
       if GetContainerWidget^.can_focus then
         FocusWidget := GetContainerWidget
       else
-        FocusWidget := FWidget;
-      PGtkWindow(TopLevel)^.set_focus(FocusWidget);
+      if FWidget^.can_focus then
+        FocusWidget := FWidget
+      else
+        FocusWidget := nil;
+      if FocusWidget <> nil then
+        PGtkWindow(TopLevel)^.set_focus(FocusWidget);
     end;
   end;
 end;
@@ -9400,7 +9411,8 @@ begin
       begin
         ParentMenu := menuItem.Parent.Items[ndx];
         if ParentMenu.RadioItem and (ParentMenu.GroupIndex = MenuItem.GroupIndex) and
-           ParentMenu.HandleAllocated then
+           ParentMenu.HandleAllocated and
+           Gtk3IsRadioMenuItem(PGObject(TGtk3MenuItem(ParentMenu.Handle).Widget)) then
         begin
           pl := PGtkRadioMenuItem(TGtk3MenuItem(ParentMenu.Handle).Widget)^.get_group;
           PGtkRadioMenuItem(Result)^.set_group(pl);
@@ -15737,7 +15749,9 @@ begin
           PGtkWindow(Widget)^.resize(AWidth, AHeight);
           x := 0;
           y := 0;
-          if not PGtkWindow(Widget)^.get_decorated and (PGtkWindow(Widget)^.transient_for <> nil) then
+          if not PGtkWindow(Widget)^.get_decorated and (PGtkWindow(Widget)^.transient_for <> nil)
+            and (PGtkWindow(Widget)^.transient_for^.window <> nil)
+            and not gdk_window_is_destroyed(PGtkWindow(Widget)^.transient_for^.window) then
             PGtkWindow(Widget)^.transient_for^.window^.get_origin(@x, @y);
           PGtkWindow(Widget)^.move(ALeft + x, ATop + y);
         end;
@@ -15760,7 +15774,9 @@ begin
          decorated windows, but non decorated with popupparent must align.}
         x := 0;
         y := 0;
-        if not PGtkWindow(Widget)^.get_decorated and (PGtkWindow(Widget)^.transient_for <> nil) then
+        if not PGtkWindow(Widget)^.get_decorated and (PGtkWindow(Widget)^.transient_for <> nil)
+          and (PGtkWindow(Widget)^.transient_for^.window <> nil)
+          and not gdk_window_is_destroyed(PGtkWindow(Widget)^.transient_for^.window) then
           PGtkWindow(Widget)^.transient_for^.window^.get_origin(@x, @y);
         PGtkWindow(Widget)^.move(ALeft + x, ATop + y);
       end;
