@@ -49,21 +49,30 @@ var
   This allows one to stop a program, without extra gdb configuration.
  ------------------------------------------------------------------------------}
 procedure RaiseGDBException(const Msg: string);
+var
+  Zero: Integer;
 begin
   DebugLn(lrsERRORInCode, Msg);
   // creates an exception, that gdb catches:
   DebugLn(lrsCreatingGdbCatchableError);
   DumpStack;
   {$ifndef HASAMIGA} // On Amiga Division by 0 is not catchable, just crash
-  if (length(Msg) div (length(Msg) div 10000))=0 then ;
+  // Intentional division by zero.  The original length-dependent
+  // expression accidentally used 0 as a divisor for every Msg shorter
+  // than 10000 chars; use an explicit zero divisor instead.
+  Zero := 0;
+  if (length(Msg) div Zero)=0 then ;
   {$endif}
 end;
 
 procedure RaiseAndCatchException;
+var
+  Zero: Integer;
 begin
   try
     {$ifndef HASAMIGA} // On Amiga Division by 0 is not catchable, just crash
-    if (length(lrsERRORInCode) div (length(lrsERRORInCode) div 10000))=0 then ;
+    Zero := 0;
+    if (length(lrsERRORInCode) div Zero)=0 then ;
     {$else}
     DumpStack;
     {$endif}
