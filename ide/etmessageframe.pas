@@ -1963,10 +1963,14 @@ var
   procedure DrawText(ARect: TRect; aTxt: string; IsSelected: boolean;
     TxtColor: TColor);
   const
-    // Minimum HSL-lightness gap (0..255) enforced between the search-match
-    // highlight fill (clHighlight) and the text painted over it, so highlighted
-    // text stays readable in light mode, dark mode, and on coloured message
-    // lines (GOD mqyfwsgi). Tunable.
+    // Minimum PERCEPTUAL-luminance gap (ColorToGray, 0..255) enforced between
+    // the search-match highlight fill (clHighlight) and the text painted over
+    // it, so highlighted text stays readable in light mode, dark mode, and on
+    // coloured message lines (GOD mqym49cd: white text on a yellow highlight).
+    // HSL lightness is NOT used for the contrast test -- pure yellow's HSL L is
+    // only ~127 (identical to blue) yet it is perceptually bright, so an HSL-L
+    // test wrongly passes white-on-yellow. ColorToGray sees yellow as ~236.
+    // Tunable.
     MinHighlightContrast = 125;
   var
     Details: TThemedElementDetails;
@@ -1978,8 +1982,8 @@ var
     LastP: Integer;
     HighlightCol: TColor;
     HighlightApplied: boolean;
-    HlH, HlL, HlS, TxH, TxL, TxS: Byte;
-    NewL: Integer;
+    TxH, TxL, TxS: Byte;
+    NewL, HlLum, TxLum, lo, hi, mid: Integer;
   begin
     Canvas.Font.Color:=Font.Color;
     TextRect:=ARect;
@@ -2012,25 +2016,41 @@ var
       Canvas.Brush.Color:=BackgroundColor;
     end;
     // A search-match highlight (clHighlight) was painted under part of this row.
-    // Where the highlight's HSL lightness sits too close to the text colour the
-    // text washes out (GOD mqyfwsgi: "alter the text LIGHTNESS whenever a
-    // highlight is applied that would cause low contrast"). Apply a differential
-    // to the TEXT lightness so it clears MinHighlightContrast from the highlight
-    // -- shifted to the far side of the highlight's lightness, preserving the
-    // text hue and saturation. Themed/selected rows (TxtColor=clDefault) keep
-    // the theme's own contrast and are left untouched.
+    // Where the highlight and the text are too close in PERCEIVED brightness the
+    // text washes out (GOD mqym49cd: white text on a yellow highlight; mqyfwsgi:
+    // "alter the text LIGHTNESS whenever a highlight is applied that would cause
+    // low contrast"). Measure contrast with ColorToGray (perceptual luminance,
+    // so a bright hue like yellow is judged bright even though its HSL L is only
+    // ~127), and when the gap is too small shift the TEXT's HSL lightness to the
+    // readable side -- darker on a bright highlight, lighter on a dark one --
+    // preserving the text hue and saturation. The shift is sized (binary search
+    // on L) to just clear MinHighlightContrast in luminance, which is always
+    // reachable (HlLum>=128 -> black clears it; HlLum<128 -> white clears it).
+    // Themed/selected rows (TxtColor=clDefault) keep the theme's own contrast.
     if HighlightApplied and (TxtColor<>clDefault) then begin
-      ColorToHLS(ColorToRGB(clHighlight),HlH,HlL,HlS);
-      ColorToHLS(ColorToRGB(TxtColor),TxH,TxL,TxS);
-      if Abs(Integer(HlL)-Integer(TxL))<MinHighlightContrast then begin
-        if HlL<128 then
-          NewL:=Integer(HlL)+MinHighlightContrast
-        else
-          NewL:=Integer(HlL)-MinHighlightContrast;
-        if NewL<0 then
-          NewL:=0
-        else if NewL>255 then
-          NewL:=255;
+      HlLum:=ColorToGray(clHighlight);
+      TxLum:=ColorToGray(TxtColor);
+      if Abs(HlLum-TxLum)<MinHighlightContrast then begin
+        ColorToHLS(ColorToRGB(TxtColor),TxH,TxL,TxS);
+        if HlLum>=128 then begin
+          // bright highlight -> darken text: largest L that clears the gap
+          NewL:=0; lo:=0; hi:=255;
+          while lo<=hi do begin
+            mid:=(lo+hi) div 2;
+            if ColorToGray(HLStoColor(TxH,Byte(mid),TxS))<=HlLum-MinHighlightContrast then
+            begin NewL:=mid; lo:=mid+1; end
+            else hi:=mid-1;
+          end;
+        end else begin
+          // dark highlight -> lighten text: smallest L that clears the gap
+          NewL:=255; lo:=0; hi:=255;
+          while lo<=hi do begin
+            mid:=(lo+hi) div 2;
+            if ColorToGray(HLStoColor(TxH,Byte(mid),TxS))>=HlLum+MinHighlightContrast then
+            begin NewL:=mid; hi:=mid-1; end
+            else lo:=mid+1;
+          end;
+        end;
         TxtColor:=HLStoColor(TxH,Byte(NewL),TxS);
       end;
     end;
