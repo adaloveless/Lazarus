@@ -35,8 +35,7 @@ uses
   Math, StrUtils, Classes, SysUtils, AVL_Tree,
   // LCL
   Forms, Buttons, ExtCtrls, Controls, LMessages, LCLType, LCLIntf,
-  Graphics, Themes, ImgList, Menus, Clipbrd, Dialogs, StdCtrls,
-  {$IFDEF MSWINDOWS}uDarkStyleParams,{$ENDIF}
+  Graphics, GraphUtil, Themes, ImgList, Menus, Clipbrd, Dialogs, StdCtrls,
   // LazUtils
   GraphType, UTF8Process, LazUTF8, LazFileCache, LazFileUtils, IntegerList, LazLoggerBase,
   // SynEdit
@@ -1963,6 +1962,12 @@ var
 
   procedure DrawText(ARect: TRect; aTxt: string; IsSelected: boolean;
     TxtColor: TColor);
+  const
+    // Minimum HSL-lightness gap (0..255) enforced between the search-match
+    // highlight fill (clHighlight) and the text painted over it, so highlighted
+    // text stays readable in light mode, dark mode, and on coloured message
+    // lines (GOD mqyfwsgi). Tunable.
+    MinHighlightContrast = 125;
   var
     Details: TThemedElementDetails;
     TextRect: TRect;
@@ -1972,9 +1977,9 @@ var
     aRight: Integer;
     LastP: Integer;
     HighlightCol: TColor;
-    {$IFDEF MSWINDOWS}
-    HighlightR, HighlightG, HighlightB: Byte;
-    {$ENDIF}
+    HighlightApplied: boolean;
+    HlH, HlL, HlS, TxH, TxL, TxS: Byte;
+    NewL: Integer;
   begin
     Canvas.Font.Color:=Font.Color;
     TextRect:=ARect;
@@ -1988,18 +1993,9 @@ var
       TxtColor:=clDefault;
     end else
       Details:=ThemeServices.GetElementDetails(ttItemNormal);
+    HighlightApplied:=false;
     if LoSearchText<>'' then begin
       HighlightCol:=clHighlight;
-      {$IFDEF MSWINDOWS}
-      // Search-match highlight: clHighlight is too bright in dark mode --
-      // dim to ~30% so text remains readable against the highlight rectangle.
-      if IsDarkModeEnabled then begin
-        RedGreenBlue(ColorToRGB(clHighlight),HighlightR,HighlightG,HighlightB);
-        HighlightCol:=RGBToColor((HighlightR*30) div 100,
-                                 (HighlightG*30) div 100,
-                                 (HighlightB*30) div 100);
-      end;
-      {$ENDIF}
       LoTxt:=UTF8LowerCase(aTxt);
       p:=1;
       LastP:=1;
@@ -2011,8 +2007,32 @@ var
         aRight:=aLeft+Canvas.TextWidth(copy(ATxt,p,length(LoSearchText)));
         Canvas.FillRect(aLeft,TextRect.Top+1,aRight,TextRect.Bottom-1);
         LastP:=p+length(LoSearchText);
+        HighlightApplied:=true;
       end;
       Canvas.Brush.Color:=BackgroundColor;
+    end;
+    // A search-match highlight (clHighlight) was painted under part of this row.
+    // Where the highlight's HSL lightness sits too close to the text colour the
+    // text washes out (GOD mqyfwsgi: "alter the text LIGHTNESS whenever a
+    // highlight is applied that would cause low contrast"). Apply a differential
+    // to the TEXT lightness so it clears MinHighlightContrast from the highlight
+    // -- shifted to the far side of the highlight's lightness, preserving the
+    // text hue and saturation. Themed/selected rows (TxtColor=clDefault) keep
+    // the theme's own contrast and are left untouched.
+    if HighlightApplied and (TxtColor<>clDefault) then begin
+      ColorToHLS(ColorToRGB(clHighlight),HlH,HlL,HlS);
+      ColorToHLS(ColorToRGB(TxtColor),TxH,TxL,TxS);
+      if Abs(Integer(HlL)-Integer(TxL))<MinHighlightContrast then begin
+        if HlL<128 then
+          NewL:=Integer(HlL)+MinHighlightContrast
+        else
+          NewL:=Integer(HlL)-MinHighlightContrast;
+        if NewL<0 then
+          NewL:=0
+        else if NewL>255 then
+          NewL:=255;
+        TxtColor:=HLStoColor(TxH,Byte(NewL),TxS);
+      end;
     end;
     if TxtColor=clDefault then
       ThemeServices.DrawText(Canvas, Details, ATxt, TextRect,
