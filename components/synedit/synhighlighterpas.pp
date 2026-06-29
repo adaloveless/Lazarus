@@ -291,8 +291,8 @@ type
     cfbtRecordCase,
     cfbtRecordCaseSection,
     cfbtAnonymousProcedure,
-    // Internal type / not configurable
     cfbtCaseElse,     // "else" in case can have multiply statements
+    // Internal type / not configurable
     cfbtPackage,
     //cfbtIfThen,
     cfbtConstBlock,
@@ -309,8 +309,8 @@ type
 
 
 const
-  cfbtLastPublic = cfbtAnonymousProcedure;
-  cfbtFirstPrivate = cfbtCaseElse;
+  cfbtLastPublic = cfbtCaseElse;
+  cfbtFirstPrivate = cfbtPackage;
 
   cfbtVarType      = cfbtVarBlock      deprecated 'use cfbtVarBlock / To be removed in 5.99';
   cfbtLocalVarType = cfbtLocalVarBlock deprecated 'use cfbtLocalVarBlock / To be removed in 5.99';
@@ -332,7 +332,7 @@ const
     [cfbtProgram,cfbtUnit,cfbtUnitSection, cfbtRegion, //cfbtProcedure,//=need by nested proc?
       cfbtVarBlock, cfbtConstBlock, cfbtClassConstBlock, cfbtTypeBlock, cfbtClassTypeBlock,
       cfbtLabelBlock, cfbtLocalLabelBlock,
-      cfbtCaseElse,
+      //cfbtCaseElse,
       cfbtIfDef, cfbtAnsiComment,cfbtBorCommand,cfbtSlashComment, cfbtNestedComment]);
 
   // restrict cdecl etc to places where they can be.
@@ -7594,6 +7594,8 @@ begin
     //if (PasBlockType in [cfbtIfElse]) then
     //  Include( aActions, sfaOutlineMergeLevelOnWrongCol);
 
+    if (PasBlockType in [cfbtCaseElse]) then
+      Include( aActions, sfaOutlineMergeParent);
     if (PasBlockType in [cfbtClassSection]) then begin
       t := FFoldConfig[ord(cfbtClass)];
       if t.Enabled and (sfaOutline in t.FoldActions) then
@@ -8145,6 +8147,8 @@ begin
 
   if not (TPascalCodeFoldBlockType(Index) in PascalNoOutlineRanges) then
     Result.Modes := Result.Modes + [fmOutline];
+  if (TPascalCodeFoldBlockType(Index) in [cfbtCaseElse]) then // not by default
+    Result.Modes := Result.Modes - [fmOutline];
 
   Result.Enabled := (TPascalCodeFoldBlockType(Index) in [cfbtBeginEnd..cfbtLastPublic]) and
     (Result.Modes <> []);
