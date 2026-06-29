@@ -1984,6 +1984,7 @@ var
     HighlightApplied: boolean;
     TxH, TxL, TxS: Byte;
     NewL, HlLum, TxLum, lo, hi, mid: Integer;
+    EffColor: TColor;
   begin
     Canvas.Font.Color:=Font.Color;
     TextRect:=ARect;
@@ -2019,19 +2020,30 @@ var
     // Where the highlight and the text are too close in PERCEIVED brightness the
     // text washes out (GOD mqym49cd: white text on a yellow highlight; mqyfwsgi:
     // "alter the text LIGHTNESS whenever a highlight is applied that would cause
-    // low contrast"). Measure contrast with ColorToGray (perceptual luminance,
-    // so a bright hue like yellow is judged bright even though its HSL L is only
-    // ~127), and when the gap is too small shift the TEXT's HSL lightness to the
-    // readable side -- darker on a bright highlight, lighter on a dark one --
-    // preserving the text hue and saturation. The shift is sized (binary search
-    // on L) to just clear MinHighlightContrast in luminance, which is always
-    // reachable (HlLum>=128 -> black clears it; HlLum<128 -> white clears it).
-    // Themed/selected rows (TxtColor=clDefault) keep the theme's own contrast.
-    if HighlightApplied and (TxtColor<>clDefault) then begin
+    // low contrast"). This MUST cover theme-default rows too: an ordinary message
+    // line carries TxtColor=clDefault and renders via Font.Color (e.g. white in
+    // dark mode) through ThemeServices.DrawText, which is unaware of the highlight
+    // underneath -- so white-on-yellow has to be corrected here, not only on the
+    // coloured (error/warning) lines. Resolve the colour the text will actually
+    // paint in, measure contrast with ColorToGray (perceptual luminance, so a
+    // bright hue like yellow is judged bright even though its HSL L is only ~127),
+    // and when the gap is too small shift the TEXT's HSL lightness to the readable
+    // side -- darker on a bright highlight, lighter on a dark one -- preserving the
+    // text hue and saturation. The shift is sized (binary search on L) to just
+    // clear MinHighlightContrast in luminance, always reachable (HlLum>=128 -> black
+    // clears it; HlLum<128 -> white clears it); the resolved concrete colour then
+    // forces the explicit-colour draw below. Selected rows keep the theme's own
+    // selection contrast and are left untouched.
+    if HighlightApplied and (not IsSelected) then begin
+      if TxtColor=clDefault then begin
+        EffColor:=Font.Color;
+        if EffColor=clDefault then EffColor:=clWindowText;
+      end else
+        EffColor:=TxtColor;
       HlLum:=ColorToGray(clHighlight);
-      TxLum:=ColorToGray(TxtColor);
+      TxLum:=ColorToGray(EffColor);
       if Abs(HlLum-TxLum)<MinHighlightContrast then begin
-        ColorToHLS(ColorToRGB(TxtColor),TxH,TxL,TxS);
+        ColorToHLS(ColorToRGB(EffColor),TxH,TxL,TxS);
         if HlLum>=128 then begin
           // bright highlight -> darken text: largest L that clears the gap
           NewL:=0; lo:=0; hi:=255;
