@@ -2076,6 +2076,30 @@ var
     end;
   end;
 
+  function DimHeaderForDarkTheme(aColor: TColor): TColor;
+  // The message-view header backgrounds are keyed to the build tool-state
+  // (Running=clYellow, Success=green, Failed=red; ide/envguioptions.pas) as
+  // FIXED bright RGB that do NOT adapt to a dark theme, so the theme's near-
+  // white header text is unreadable on them -- GOD mr0uvyzn: the white
+  // "Messages, Warnings: N" on a bright-yellow bar. Per GOD card
+  // adfa5b3c3d66c0d1, dim those backgrounds to ~25-33% brightness when the
+  // control background is dark. Gate on the actual BackgroundColor perceptual
+  // luminance (ColorToGray) so this is platform-uniform -- no OS dark-mode
+  // flag -- and light themes keep the bright bars (their dark header text
+  // stays readable). clYellow(gray~236)->30%(gray~70) clears the gap vs white.
+  const
+    DarkHeaderDimPercent = 30; // within GOD's 25-33% band
+  var
+    r, g, b: Byte;
+  begin
+    Result:=aColor;
+    if ColorToGray(BackgroundColor)>=128 then exit; // light theme: keep bright bars
+    RedGreenBlue(ColorToRGB(aColor), r, g, b);
+    Result:=RGBToColor(Byte(r*DarkHeaderDimPercent div 100),
+                       Byte(g*DarkHeaderDimPercent div 100),
+                       Byte(b*DarkHeaderDimPercent div 100));
+  end;
+
 var
   i, j, y: Integer;
   Indent, ImgIndex: Integer;
@@ -2120,7 +2144,7 @@ begin
     if (y+ItemHeight>0) and (y<ClientHeight) then begin
       // header text
       NodeRect:=Rect(0,y,ClientWidth,y+ItemHeight);
-      Canvas.Brush.Color:=HeaderBackground[View.ToolState];
+      Canvas.Brush.Color:=DimHeaderForDarkTheme(HeaderBackground[View.ToolState]);
       Canvas.FillRect(NodeRect);
       DrawText(NodeRect,View.GetHeaderText, View.FSelectedLines.IndexOf(-1)>=0, TextColor);
       Canvas.Brush.Color:=BackgroundColor;
@@ -2180,12 +2204,12 @@ begin
       // => paint view header hint
       fHasHeaderHint:=True;
       NodeRect:=Rect(0,0,ClientWidth,ItemHeight div 2);
-      Canvas.Brush.Color:=HeaderBackground[View.ToolState];
+      Canvas.Brush.Color:=DimHeaderForDarkTheme(HeaderBackground[View.ToolState]);
       Canvas.Brush.Style:=bsSolid;
       Canvas.FillRect(NodeRect);
       NodeRect:=Rect(0,NodeRect.Bottom,ClientWidth,ItemHeight);
-      Canvas.GradientFill(NodeRect,HeaderBackground[View.ToolState],
-        AutoHeaderBackground,gdVertical);
+      Canvas.GradientFill(NodeRect,DimHeaderForDarkTheme(HeaderBackground[View.ToolState]),
+        DimHeaderForDarkTheme(AutoHeaderBackground),gdVertical);
       NodeRect:=Rect(0,0,ClientWidth,ItemHeight);
       DrawText(NodeRect,'...'+View.GetHeaderText,false,TextColor);
       Canvas.Brush.Color:=BackgroundColor;
