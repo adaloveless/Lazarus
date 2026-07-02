@@ -109,7 +109,7 @@ begin
 {$IFDEF FPC}
   res := TLazarusResourceStream.Create('SHADOW', nil);
   FShadow := TBGRASliceScaling.Create(res);
-  FShadow.Margins := Margins(6, 9, 6, 9);
+  FShadow.Margins := BGRASliceScaling.Margins(6, 9, 6, 9);
   res.Free;
 {$ENDIF}
 end;
