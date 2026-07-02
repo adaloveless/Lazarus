@@ -78,6 +78,11 @@ wipe_local_changes() {
     log_warn "auto-update.sh discards ALL uncommitted changes and untracked files."
     log_warn "If you are a developer with local work, abort NOW (Ctrl-C)."
 
+    if [ ! -d "$LAZARUS_DIR/.git" ]; then
+        log_warn "$LAZARUS_DIR is not a git checkout; skipping local wipe."
+        return
+    fi
+
     git -C "$LAZARUS_DIR" reset --hard HEAD 2>&1 | tail -1
     git -C "$LAZARUS_DIR" clean -fdx 2>&1 | tail -1
     log_ok "Lazarus working tree reset + cleaned ($LAZARUS_DIR)"
@@ -462,7 +467,6 @@ echo "  VibePascal: $VP_DIR"
 echo "  Compiler:   $VP_COMPILER"
 echo ""
 
-wipe_local_changes
 SCRIPT_PRE_HASH=$(sha256sum "$LAZARUS_DIR/auto-update.sh" 2>/dev/null | cut -d' ' -f1)
 
 git -C "$LAZARUS_DIR" fetch upstream 2>/dev/null
@@ -477,6 +481,8 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
     print_summary
     exit 0
 fi
+
+wipe_local_changes
 
 if [ "$UPSTREAM_ONLY" -eq 0 ]; then
     pull_vp

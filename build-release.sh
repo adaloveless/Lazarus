@@ -829,9 +829,28 @@ package_release() {
     # above bring only subtrees (components/, lcl/, ide/, ...) -- never repo-root
     # files -- so the updater scripts were absent (GOD mpd5wmli: "no
     # auto-update.bat script was included").
-    for updater in auto-update.bat auto-update.ps1 auto-update.sh; do
-        [ -f "$LAZARUS_DIR/$updater" ] && cp "$LAZARUS_DIR/$updater" "$staging/"
-    done
+    #
+    # Per-platform inclusion keeps each tarball self-sufficient without shipping
+    # maintainer scripts that target a different OS or architecture:
+    #   - Linux x86_64: auto-update.sh (Finn/BEHEMOTH smoke path)
+    #   - Win64: auto-update.bat + auto-update.ps1 (ZENBOOK smoke path)
+    #   - Darwin: none -- the .app bundle ships a pre-built IDE
+    #   - ARM Linux: none -- auto-update.sh currently hard-codes the x86_64 path
+    case "$target" in
+        x86_64-linux)
+            [ -f "$LAZARUS_DIR/auto-update.sh" ] && cp "$LAZARUS_DIR/auto-update.sh" "$staging/"
+            ;;
+        x86_64-win64)
+            [ -f "$LAZARUS_DIR/auto-update.bat" ] && cp "$LAZARUS_DIR/auto-update.bat" "$staging/"
+            [ -f "$LAZARUS_DIR/auto-update.ps1" ] && cp "$LAZARUS_DIR/auto-update.ps1" "$staging/"
+            ;;
+        *-darwin|aarch64-linux|arm-linux)
+            # No updater scripts for these platforms.
+            ;;
+        *)
+            # Unknown / future platform: default to no updater scripts.
+            ;;
+    esac
 
     strip_stale_host_arch_artifacts "$staging" "$target"
 
