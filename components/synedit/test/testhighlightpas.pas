@@ -95,6 +95,7 @@ type
     procedure TestFrameColorComments;
     procedure TestFoldNodeInfo;
     procedure TestIsComment;
+    procedure TestMultilineTripleQuoteString;
   end;
 
 implementation
@@ -683,6 +684,35 @@ begin
   CheckTokensForLine('continue',  11, [tkSpace, tkKey, tkSymbol ]);
   CheckTokensForLine('exit',      12, [tkSpace, tkKey, tkSymbol ]);
 
+end;
+
+procedure TTestHighlighterPas.TestMultilineTripleQuoteString;
+begin
+  // GOD mr5i9g5b / plan #340: Delphi 12 / FPC-Unleashed ''' multi-line raw
+  // strings must be recognized. When spmsmTripleQuote was off, the raw-string
+  // body (e.g. pdGetBooks.pas SQL / LLM-prompt blocks) was lexed as CODE, so a
+  // '(*' or '{' inside it opened a comment that cascaded through the rest of the
+  // file. spmsmTripleQuote is now enabled by default in the constructor; verify
+  // the body stays a string and code after the closing ''' is unaffected. Also
+  // verify the end-of-line guard: a bare '''' (escaped quote) is NOT an opener.
+  ReCreateEdit;
+  SetLines
+    ([ 'program A;',                       // 0
+       'begin',                            // 1
+       '  s := ' + #39#39#39,              // 2   s := '''    (opener at line end)
+       '    count(*) as x',                // 3   '(*' must stay string, not comment
+       '    a { brace b',                  // 4   '{'  must stay string, not comment
+       '    ' + #39#39#39 + ';',           // 5   ''';        (closer)
+       '  b;',                             // 6   plain code again (no cascade)
+       '  s := ' + #39#39#39#39 + ';',     // 7   s := '''';  (escaped quote, NOT multiline)
+       '  c;',                             // 8   plain code (EOL guard held)
+       'end.'                              // 9
+    ]);
+
+  CheckTokensForLine('raw body has (*',              3, [tkString]);
+  CheckTokensForLine('raw body has {',               4, [tkString]);
+  CheckTokensForLine('code resumes after raw str',   6, [tkSpace, tkIdentifier, tkSymbol]);
+  CheckTokensForLine('escaped-quote is not opener',  8, [tkSpace, tkIdentifier, tkSymbol]);
 end;
 
 procedure TTestHighlighterPas.TestRaiseAt;
