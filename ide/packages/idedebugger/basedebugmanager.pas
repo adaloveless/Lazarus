@@ -200,7 +200,7 @@ type
                                 ): TModalResult; virtual; abstract;
     function DoDeleteBreakPointAtMark(const ASourceMarkObj: TObject): TModalResult; virtual; abstract;
 
-    function ShowBreakPointProperties(const ABreakpoint: TIDEBreakPoint): TModalresult; virtual; abstract;
+    function ShowBreakPointProperties(const ABreakpoint: TIdeTracePoint): TModalresult; virtual; abstract;
     function ShowWatchProperties(const AWatch: TCurrentWatch; AWatchExpression: String = ''; AResDataType: TWatchResultDataKind = rdkUnknown): TModalresult; virtual; abstract;
 
     procedure RequestWatchData(AWatchValue: IDbgWatchValueIntf); override;
@@ -232,7 +232,7 @@ type
     property Disassembler: TIDEDisassembler read FDisassembler;
     property LineInfo: TIDELineInfo read FLineInfo;
     property Registers: TIdeRegistersMonitor read FRegisters;
-    property Signals: TIDESignals read FSignals;               // A list of actions for signals we know of
+    property Signals: TIDESignals read FSignals;  deprecated 'To be removed in 5.99';              // A list of actions for signals we know of
     property PseudoTerminal: TPseudoTerminal read GetPseudoTerminal; experimental; // 'may be replaced with a more general API';
     (* TODO: workaround for http://bugs.freepascal.org/view.php?id=21834   *)
     property DebuggerClass: TDebuggerClass read GetCurrentDebuggerClass;

@@ -7613,8 +7613,11 @@ begin
     //if (PasBlockType in [cfbtIfElse]) then
     //  Include( aActions, sfaOutlineMergeLevelOnWrongCol);
 
-    if (PasBlockType in [cfbtCaseElse]) then
-      Include( aActions, sfaOutlineMergeParent);
+    if (PasBlockType in [cfbtCaseElse]) then begin
+      t := FFoldConfig[ord(cfbtCase)];
+      if t.Enabled and (sfaOutline in t.FoldActions) then
+        Include( aActions, sfaOutlineMergeParent);
+    end;
     if (PasBlockType in [cfbtClassSection]) then begin
       t := FFoldConfig[ord(cfbtClass)];
       if t.Enabled and (sfaOutline in t.FoldActions) then
@@ -8166,8 +8169,6 @@ begin
 
   if not (TPascalCodeFoldBlockType(Index) in PascalNoOutlineRanges) then
     Result.Modes := Result.Modes + [fmOutline];
-  if (TPascalCodeFoldBlockType(Index) in [cfbtCaseElse]) then // not by default
-    Result.Modes := Result.Modes - [fmOutline];
 
   Result.Enabled := (TPascalCodeFoldBlockType(Index) in [cfbtBeginEnd..cfbtLastPublic]) and
     (Result.Modes <> []);
