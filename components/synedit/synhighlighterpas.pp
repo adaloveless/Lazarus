@@ -4323,6 +4323,15 @@ begin
   CreateAttribute(attribStringBacktick, TLazEditHighlighterAttributesModifier_Eol, @SYNS_AttrStringBacktick, SYNS_XML_AttrStringBacktick, [lafPastEOL]);
   FPasAttributesMod[attribStringBacktick].Features:= [lafPastEOL];
 
+  // Recognize Delphi 12 / FPC-Unleashed triple-quoted ''' multi-line raw
+  // strings by default. The handling code (StringProc_MultiLineTQ) already
+  // exists but was never enabled, so pdGetBooks.pas-style '''...''' blocks
+  // were mis-lexed as single-line strings and their content leaked as code,
+  // desyncing every token after the block (GOD mr5i9g5b). Set the field +
+  // lafPastEOL feature directly here (mirrors SetStringMultilineMode without
+  // the construction-time change notification).
+  FStringMultilineMode := [spmsmTripleQuote];
+  FPasAttributes[attribString].UpdateSupportedFeatures([lafPastEOL], []);
 
   CreateAttribute(attribSymbol, TLazEditHighlighterAttributes, @SYNS_AttrSymbol, SYNS_XML_AttrSymbol);
   CreateAttribute(attribProcedureHeaderName, TLazEditHighlighterAttributesModifier, @SYNS_AttrProcedureHeaderName, SYNS_XML_AttrProcedureHeaderName);
@@ -5792,6 +5801,7 @@ procedure TSynPasSyn.StringProc;
 var
   IsInWord, WasInWord, ct, WasInString: Boolean;
   tfb: TPascalCodeFoldBlockType;
+  j: Integer;
 begin
   fTokenID := tkString;
   if reStringSingle in FRequiredStates then
@@ -5803,10 +5813,19 @@ begin
        (spmsmTripleQuote in FStringMultilineMode) and
        (LinePtr[Run] = '''') and (LinePtr[Run+1] = '''') and (LinePtr[Run+2] = '''') then
     begin
-      Inc(Run, 3);
-      PasCodeFoldRange.MultilineStringKind := spmsmTripleQuote;
-      StringProc_MultiLineTQ();
-      exit;
+      // A ''' run only opens a multi-line raw string when nothing but
+      // whitespace follows it to end-of-line (Delphi 12 / FPC rule). This
+      // guard keeps ordinary '''' escaped-quote idioms and single-line
+      // '''x''' literals on the normal single-quoted-string path below.
+      j := Run + 3;
+      while LinePtr[j] in [#9, ' '] do Inc(j);
+      if LinePtr[j] in [#0, #10, #13] then
+      begin
+        Inc(Run, 3);
+        PasCodeFoldRange.MultilineStringKind := spmsmTripleQuote;
+        StringProc_MultiLineTQ();
+        exit;
+      end;
     end;
 
     if FInString then begin
@@ -7594,8 +7613,11 @@ begin
     //if (PasBlockType in [cfbtIfElse]) then
     //  Include( aActions, sfaOutlineMergeLevelOnWrongCol);
 
-    if (PasBlockType in [cfbtCaseElse]) then
-      Include( aActions, sfaOutlineMergeParent);
+    if (PasBlockType in [cfbtCaseElse]) then begin
+      t := FFoldConfig[ord(cfbtCase)];
+      if t.Enabled and (sfaOutline in t.FoldActions) then
+        Include( aActions, sfaOutlineMergeParent);
+    end;
     if (PasBlockType in [cfbtClassSection]) then begin
       t := FFoldConfig[ord(cfbtClass)];
       if t.Enabled and (sfaOutline in t.FoldActions) then
@@ -8147,8 +8169,6 @@ begin
 
   if not (TPascalCodeFoldBlockType(Index) in PascalNoOutlineRanges) then
     Result.Modes := Result.Modes + [fmOutline];
-  if (TPascalCodeFoldBlockType(Index) in [cfbtCaseElse]) then // not by default
-    Result.Modes := Result.Modes - [fmOutline];
 
   Result.Enabled := (TPascalCodeFoldBlockType(Index) in [cfbtBeginEnd..cfbtLastPublic]) and
     (Result.Modes <> []);
