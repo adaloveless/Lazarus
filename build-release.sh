@@ -720,6 +720,25 @@ strip_stale_host_arch_artifacts() {
     if [[ "$target" != *-darwin ]]; then
         rm -rf "$staging/components/chmhelp/lhelp/lhelp.app"
     fi
+
+    # General cross-arch build-state strip (Melissa r20 aarch64-darwin smoke,
+    # 2026-05-29: ~60 orphan x86_64-darwin .compiled leaked into the aarch64-darwin
+    # tarball). package_release cp -r's lcl/, components/, ide/, packager/, ...
+    # which each carry units/<arch>/ + lib/<arch>/ build outputs for EVERY arch
+    # built in the shared workdir. The targeted strips above only cover the
+    # test/BGRA/mouse/lhelp leaks; this catch-all removes any NON-target arch's
+    # units|lib state tree so the tarball ships only its own arch's .compiled/
+    # .ppu/.o. The fully-anchored regex matches only clean arch-token leaf dirs
+    # (e.g. units/x86_64-darwin) -- never the widget-suffixed BGRA dirs
+    # (lib/<target>-gtk2-<hash>) handled above, nor arch-neutral Makefile.compiled
+    # at package roots. -prune stops find descending into a dir we then rm.
+    local cross_arch_dir=""
+    while IFS= read -r -d '' cross_arch_dir; do
+        [ "$(basename "$cross_arch_dir")" = "$target" ] && continue
+        rm -rf "$cross_arch_dir"
+    done < <(find "$staging" -type d -regextype posix-extended \
+        -regex '.*/(units|lib)/(x86_64|aarch64|arm|i386)-(linux|darwin|win64|win32)' \
+        -prune -print0 2>/dev/null)
 }
 
 create_darwin_app_bundle() {
