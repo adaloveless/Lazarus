@@ -162,7 +162,7 @@ pull_vp() {
     # version SELECTOR while split-archive pairing stays intact on Windows side.
     local_latest="$VP_DIR/dist/win64/LATEST.txt"
     if [ -f "$local_latest" ]; then
-        log_info "LATEST.txt present: $(grep -E '^version:|^source_commit:' \"$local_latest\" 2>/dev/null | head -2)"
+        log_info "LATEST.txt present: $(grep -E '^version:|^source_commit:' "$local_latest" 2>/dev/null | head -2)"
     fi
 }
 
