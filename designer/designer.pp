@@ -49,6 +49,7 @@ uses
   // IDEIntf
   IDEDialogs, PropEdits, PropEditUtils, ComponentEditors, MenuIntf,
   IDEImagesIntf, FormEditingIntf, IDECommands, LazIDEIntf,
+  ComponentTreeView,
   ObjectInspector, IdeIntfStrConsts,
   // IDE
   LazarusIDEStrConsts, EnvGuiOptions, EditorOptions, SourceEditor,
@@ -1654,8 +1655,18 @@ begin
 
   Modified;
   OI := FormEditingHook.GetCurrentObjectInspector;
-  if Assigned(OI) then
+  if Assigned(OI) then begin
     OI.ComponentTree.BuildComponentNodes(True);
+    // Also highlight the selected component in Structure pane (task #346, c583).
+    NewSelection:=TPersistentSelectionList.Create;
+    try
+      for i:=0 to Selection.Count-1 do
+        NewSelection.Add(Selection[i].Persistent);
+      OI.ComponentTree.SetSelection(NewSelection);
+    finally
+      NewSelection.Free;
+    end;
+  end;
 end;
 
 procedure TDesigner.NotifyComponentAdded(AComponent: TComponent);
@@ -2373,6 +2384,19 @@ begin
           if (CompIndex<0) then begin
             // select only this component
             Selection.AssignPersistent(MouseDownComponent);
+            // Propagate single-click selection to Structure pane tree view so the
+            // clicked object is highlighted in the hierarchy (task #346, c583).
+            if Assigned(FormEditingHook) then
+              with FormEditingHook.GetCurrentObjectInspector do
+                if Assigned(ComponentTree) then begin
+                  NewSelection:=TPersistentSelectionList.Create;
+                  try
+                    NewSelection.Add(MouseDownComponent);
+                    ComponentTree.SetSelection(NewSelection);
+                  finally
+                    NewSelection.Free;
+                  end;
+                end;
           end else
             // sync with the interface
             Selection.UpdateBounds;
