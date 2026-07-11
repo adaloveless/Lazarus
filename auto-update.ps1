@@ -251,6 +251,7 @@ function Get-VPArchiveSet {
         $primaryFile = Get-ChildItem -Path $DistDir -Filter $VersionedTarball -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($primaryFile) {
             Log-Info "LATEST.txt versioned_tarball $($primaryFile.Name) selected as primary"
+            $primary = $primaryFile
         } else {
             Log-Warn "LATEST.txt references $VersionedTarball but file not found in $DistDir -- falling back to Sort-VPArchives[0]"
             $sorted = @(Sort-VPArchives $all)
