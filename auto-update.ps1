@@ -658,11 +658,24 @@ function Pull-LazarusUpstream {
         }
         Log-Ok "Fast-forward merge from upstream"
     } else {
+        if (-not $AllowPush) {
+            # Update/user mode: this box tracks adaloveless/origin -- the curated fork that
+            # Lars periodically merges fpc/upstream into and resolves. Re-merging fpc/upstream
+            # here re-does those resolved merges and CONFLICTS ($localCommits fork commit(s)
+            # diverge from upstream), leaving conflict markers that the missing-binary
+            # force-rebuild then compiles (Finn/ZENBOOK r23 win64 smoke 2026-07-03:
+            # components/codetools/stdcodetools.pas <<<<<<< HEAD -> exit 1). The origin pull
+            # below brings in whatever upstream commits adaloveless has already curated.
+            Log-Ok "Skipping fpc/upstream merge in update mode ($localCommits fork commit(s) diverge from upstream); tracking adaloveless/origin only. Re-run with -AllowPush to merge upstream as a maintainer."
+            return
+        }
         Log-Info "Merging upstream/main ($localCommits local commit(s) ahead)..."
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge upstream/main", "upstream/main")
         if ($result.ExitCode -ne 0) {
             Log-Err "Merge failed: $($result.Error)"
-            Log-Err "Resolve conflicts manually, then re-run."
+            Log-Warn "Aborting the conflicted merge so the working tree stays clean (never rebuild a tree with conflict markers)."
+            Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "--abort") | Out-Null
+            Log-Err "Resolve conflicts manually (or pull adaloveless/origin), then re-run."
             return
         }
         Log-Ok "Merge from upstream complete"
@@ -702,6 +715,8 @@ function Pull-LazarusOrigin {
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge origin/main", "origin/main")
         if ($result.ExitCode -ne 0) {
             Log-Err "Merge from origin failed: $($result.Error)"
+            Log-Warn "Aborting the conflicted merge so the working tree stays clean (never rebuild a tree with conflict markers)."
+            Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "--abort") | Out-Null
             Log-Err "Resolve conflicts manually, then re-run."
         } else {
             Log-Ok "Merge from origin complete"
@@ -1729,6 +1744,17 @@ if ($missingBuildProducts.Count -gt 0) {
 if ($ForceRebuild) {
     Log-Info "Force rebuild requested"
     $anyUpdated = $true
+}
+
+# Safety gate: never compile a tree that still has unresolved merge conflicts. A forced
+# rebuild over conflict markers feeds "<<<<<<< HEAD" to ppcx64 and fails deep in the build
+# (Finn/ZENBOOK r23 win64 smoke 2026-07-03: components/codetools/stdcodetools.pas -> exit 1).
+$unmergedFiles = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("ls-files", "--unmerged")
+if ($unmergedFiles) {
+    Log-Err "Working tree in $LazarusDir has unresolved merge conflicts -- refusing to rebuild (would compile conflict markers)."
+    Log-Err "Resolve them, or run 'git merge --abort' / 'git reset --hard origin/main' in $LazarusDir, then re-run the updater."
+    Print-Summary
+    exit 1
 }
 
 if ($anyUpdated) {
