@@ -155,6 +155,15 @@ pull_vp() {
         git -C "$VP_DIR" reset --hard origin/main || { log_err "VP reset failed"; return 1; }
     fi
     log_ok "VibePascal pulled successfully"
+
+    # LATEST.txt sidecar (GOD mrghu0l5): report current version/source_commit for diagnostics.
+    # Linux clients build from source after pull, so no extraction needed -- but the info confirms
+    # Otto's latest-pointer is in sync with what we just pulled. LATEST.txt becomes the authoritative
+    # version SELECTOR while split-archive pairing stays intact on Windows side.
+    local_latest="$VP_DIR/dist/win64/LATEST.txt"
+    if [ -f "$local_latest" ]; then
+        log_info "LATEST.txt present: $(grep -E '^version:|^source_commit:' \"$local_latest\" 2>/dev/null | head -2)"
+    fi
 }
 
 check_lazarus_upstream() {

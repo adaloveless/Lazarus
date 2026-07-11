@@ -204,18 +204,64 @@ function Sort-VPArchives {
         @{Expression = {$_.LastWriteTime}; Descending = $true}
 }
 
+function Read-LATESTTxt {
+    # Parse LATEST.txt sidecar in dist/win64/. Returns a hashtable with parsed fields or $null on failure.
+    # Expected format: key: value pairs (version, source_commit, dist_commit, versioned_tarball, tarball_md5, tarball_sha256, exe_md5, exe_sha256, date, notes).
+    # LATEST.txt is the authoritative version SELECTOR while split-archive pairing stays intact.
+    # If absent (older dist), caller falls back to Sort-VPArchives[0].
+    param([string]$DistDir)
+    $latestFile = Join-Path $DistDir "LATEST.txt"
+    if (-not (Test-Path $latestFile)) { return $null }
+
+    try {
+        $content = Get-Content -Path $latestFile -Raw -ErrorAction Stop
+        $result = @{}
+        foreach ($line in $content -split "`n") {
+            if ($line -match '^\s*(\w[\w\s]*):\s*(.+?)\s*$') {
+                $key = $Matches[1].Trim().ToLower()
+                $value = $Matches[2].Trim()
+                $result[$key] = $value
+            }
+        }
+        if ($result.ContainsKey('versioned_tarball')) { return $result }
+        Log-Warn "LATEST.txt present but missing versioned_tarball field"
+        return $null
+    } catch {
+        Log-Warn "Failed to read LATEST.txt at $latestFile: $_"
+        return $null
+    }
+}
+
 function Get-VPArchiveSet {
     # Resolve the ordered list of FileInfo archives that Extract-VPBinaries must unpack.
     # v32+ tarballs are split: bin-only (compiler + bin/) needs pairing with a units tarball
     # (RTL+packages PPU baseline) and optionally an RTL overlay (cycle-fix RTL PPUs over the
     # baseline). Legacy v23-v31 tarballs are monolithic and extract alone. Extract order
     # matters: units (baseline) -> bin (compiler + bin/) -> RTL overlay (patches over baseline).
-    param([string]$DistDir, [string]$Filter)
+    #
+    # If $VersionedTarball is provided (from LATEST.txt), use that as primary instead of Sort-VPArchives[0].
+    # This ensures split-archive pairing regex ^vibepascal-v(\d+)(?:-rc)?-([0-9a-f]+)-win64-bin\.tar\.gz$ matches.
+    # The vibepascal-latest-win64-bin.tar.gz filename does NOT match this regex -> falls through to legacy monolithic -> bin-without-units CRC error class.
+    param([string]$DistDir, [string]$Filter, [string]$VersionedTarball = $null)
     $all = @(Get-ChildItem -Path $DistDir -Filter $Filter -ErrorAction SilentlyContinue)
     if ($all.Count -eq 0) { return @() }
 
-    $sorted = @(Sort-VPArchives $all)
-    $primary = $sorted[0]
+    # Use LATEST.txt versioned_tarball as primary if provided, otherwise Sort-VPArchives[0].
+    if ($VersionedTarball) {
+        $primaryFile = Get-ChildItem -Path $DistDir -Filter $VersionedTarball -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($primaryFile) {
+            Log-Info "LATEST.txt versioned_tarball $($primaryFile.Name) selected as primary"
+        } else {
+            Log-Warn "LATEST.txt references $VersionedTarball but file not found in $DistDir -- falling back to Sort-VPArchives[0]"
+            $sorted = @(Sort-VPArchives $all)
+            $primary = $sorted[0]
+        }
+    } else {
+        $sorted = @(Sort-VPArchives $all)
+        $primary = $sorted[0]
+    }
+
+    if (-not $primary) { return @() }
 
     # v32+ split-bin pattern: vibepascal-v<N>(-rc)?-<sha>-win64-bin.tar.gz
     if ($primary.Name -match '^vibepascal-v(\d+)(?:-rc)?-([0-9a-f]+)-win64-bin\.tar\.gz$') {
@@ -271,9 +317,16 @@ function Extract-VPBinaries {
         return
     }
 
-    $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.tar.gz")
+    # LATEST.txt sidecar (GOD mrghu0l5): read versioned_tarball for authoritative version SELECTOR.
+    # Falls back to Sort-VPArchives[0] if absent (older dist). The versioned_tarball filename matches
+    # the split-archive pairing regex; vibepascal-latest-win64-bin.tar.gz does NOT match -> legacy monolithic extract -> bin-without-units CRC error class.
+    $latestData = Read-LATESTTxt -DistDir $distDir
+    $versionedTarball = if ($latestData) { $latestData['versioned_tarball'] } else { $null }
+    if ($versionedTarball) { Log-Info "LATEST.txt version: $($latestData['version']) commit: $($latestData['source_commit'])" }
+
+    $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.tar.gz" -VersionedTarball $versionedTarball)
     if ($archiveSet.Count -eq 0) {
-        $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.zip")
+        $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.zip" -VersionedTarball $versionedTarball)
     }
     if ($archiveSet.Count -eq 0) {
         if (Test-Path $compilerExe) { return }
