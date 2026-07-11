@@ -44,6 +44,9 @@ const
   SIGUNUSED  = 31;
 
 type
+  // Keep RSP replies ABI-compatible for callers compiled in a different mode.
+  TRspMessage = string;
+
   { TRemoteConfig }
 
   TRemoteConfig = class(TDbgProcessConfig)
@@ -119,7 +122,7 @@ type
     constructor Create(AFileName: string; AOwner: TDbgProcess; AConfig: TRemoteConfig); Overload;
     destructor Destroy; override;
     // Wait for async signal - blocking
-    function WaitForSignal(out msg: string): integer;
+    function WaitForSignal(out msg: TRspMessage): integer;
     procedure ResetStatusEvent;
 
     procedure Break();
@@ -565,7 +568,7 @@ begin
   DoneCriticalSection(fCS);
 end;
 
-function TRspConnection.WaitForSignal(out msg: string): integer;
+function TRspConnection.WaitForSignal(out msg: TRspMessage): integer;
 var
   res: boolean;
   startIndex, colonIndex, semicolonIndex, i: integer;

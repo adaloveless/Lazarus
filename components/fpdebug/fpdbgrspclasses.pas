@@ -527,7 +527,7 @@ end;
 
 procedure TDbgRspProcess.TerminateProcess;
 var
-  s: string;
+  s: TRspMessage;
 begin
   // Try to prevent access to the RSP socket after it has been closed
   if not (FIsTerminating or (TDbgRspProcess(Process).FStatus = SIGHUP)) then
@@ -582,7 +582,7 @@ function TDbgRspProcess.Continue(AProcess: TDbgProcess; AThread: TDbgThread; Sin
   function DoLocalStep(TheThread: TDbgThread): Integer;
   var
     res: boolean;
-    s: string;
+    s: TRspMessage;
   begin
     res := RspConnection.SingleStep();
     TDbgRspThread(TheThread).ResetPauseStates; // So BeforeContinue will not run again
@@ -681,7 +681,7 @@ end;
 
 function TDbgRspProcess.WaitForDebugEvent(out ProcessIdentifier, ThreadIdentifier: THandle): boolean;
 var
-  s: string;
+  s: TRspMessage;
 begin
   debugln(DBG_VERBOSE, ['Entering WaitForDebugEvent, FStatus = ', FStatus]);
   // Currently only single process/thread
