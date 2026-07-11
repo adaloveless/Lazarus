@@ -593,10 +593,17 @@ function Pull-VP {
     if (-not $script:VPUpdated) { return }
 
     Log-Header "Pulling VibePascal updates"
+    # If ff-only pull fails (local branch diverged from origin/main), reset to origin/main.
+    # Recovers from the pinning bug where a stale local commit leaves VP stuck on an old version
+    # (GOD mrghu0l5; Finn/ZENBOOK r23 win64 smoke: --ff-only failure + no fallback = pinned forever).
     $result = Invoke-Git -WorkDir $VPDir -GitArgs @("pull", "--ff-only", "origin", "main")
     if ($result.ExitCode -ne 0) {
-        Log-Err "VibePascal pull failed: $($result.Error)"
-        return
+        Log-Warn "VP --ff-only pull failed; reset --hard origin/main (pristine mode)"
+        $reset = Invoke-Git -WorkDir $VPDir -GitArgs @("reset", "--hard", "origin/main")
+        if ($reset.ExitCode -ne 0) {
+            Log-Err "VP reset --hard origin/main failed: $($reset.Error)"
+            return
+        }
     }
     Log-Ok "VibePascal pulled successfully"
 }
@@ -704,9 +711,16 @@ function Pull-LazarusOrigin {
     if (-not $localCommits) { $localCommits = "0" }
 
     if ([int]$localCommits -eq 0) {
+        # If ff-only pull fails (local branch diverged from origin/main), reset to origin/main.
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("pull", "--ff-only", "origin", "main")
         if ($result.ExitCode -ne 0) {
-            Log-Err "Pull failed: $($result.Error)"
+            Log-Warn "Lazarus --ff-only pull failed; reset --hard origin/main (pristine mode)"
+            $reset = Invoke-Git -WorkDir $LazarusDir -GitArgs @("reset", "--hard", "origin/main")
+            if ($reset.ExitCode -ne 0) {
+                Log-Err "Lazarus reset --hard origin/main failed: $($reset.Error)"
+            } else {
+                Log-Ok "Lazarus origin pulled"
+            }
         } else {
             Log-Ok "Lazarus origin pulled"
         }
