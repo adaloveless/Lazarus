@@ -1211,6 +1211,7 @@ type
   public
     constructor Create(AnOwner: TControl); overload;
   end;
+  TControlFontClass = class of TControlFont;
 
 {* Note on TControl.Caption
  * The VCL implementation relies on the virtual Get/SetTextBuf to
@@ -1554,6 +1555,7 @@ type
     procedure InvalidateControl(CtrlIsVisible, CtrlIsOpaque: Boolean);
     procedure InvalidateControl(CtrlIsVisible, CtrlIsOpaque, IgnoreWinControls: Boolean);
     procedure FontChanged(Sender: TObject); virtual;
+    function  ControlFontClass: TControlFontClass; virtual;
     procedure ParentFontChanged; virtual;
     function GetAction: TBasicAction; virtual;
     function RealGetText: TCaption; virtual;

@@ -5179,6 +5179,8 @@ var
   function IdentifierIsFollowedByColon: boolean;
   begin
     Result:=false;
+    if Params.Identifier=nil then
+      exit;
     Params.IdentifierTool.MoveCursorToCleanPos(Params.Identifier);
     Params.IdentifierTool.ReadNextAtom;
     Params.IdentifierTool.ReadNextAtom;
@@ -11746,6 +11748,7 @@ var
 
   procedure ResolvePoint;
   begin
+    TrueSelf:=false;
     // for example 'A.B'
     if (ExprType.Context.Node=nil) then
       // 'a:array[0. '
@@ -15962,7 +15965,8 @@ function TFindDeclarationTool.FindExprTypeAsString(
         Tool.ReadNextAtom;
         Result:=Tool.CurPos.StartPos;
       end;
-      if (Result>0) and (Tool.CurPos.Flag in [cafSemicolon, cafRoundBracketClose])
+      if (Result>0) and (Tool.CurPos.Flag in [cafSemicolon, cafEqual])
+      // don't read variable initialization part e.g. "= (1,2,3);"
       then begin
         stop:= Tool.CurPos.StartPos-1;
         break;
