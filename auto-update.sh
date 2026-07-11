@@ -149,12 +149,20 @@ pull_vp() {
     log_header "Pulling VibePascal updates"
     # If ff-only pull fails (local branch diverged from origin/main), reset to origin/main.
     # This recovers from the pinning bug where a stale local commit left VP stuck on an old version
-    # (GOD mrghu0l5; Finn/ZENBOOK r23 win64 smoke: --ff-only failure + no fallback = pinned forever).
+    # (GOD mrghu0l5; Finn/ZENBOX r23 win64 smoke: --ff-only failure + no fallback = pinned forever).
     if ! git -C "$VP_DIR" pull --ff-only origin main 2>&1; then
         log_warn "VP --ff-only pull failed; reset --hard origin/main (pristine mode)"
         git -C "$VP_DIR" reset --hard origin/main || { log_err "VP reset failed"; return 1; }
     fi
     log_ok "VibePascal pulled successfully"
+
+    # LATEST.txt sidecar (GOD mrghu0l5): if present, report current version/source_commit for logging.
+    # Linux clients build from source after pull, so no extraction needed -- but the info is useful
+    # for diagnostics and to confirm Otto's latest-pointer is in sync with what we just pulled.
+    local_latest="$VP_DIR/dist/win64/LATEST.txt"
+    if [ -f "$local_latest" ]; then
+        log_info "LATEST.txt present: $(grep -E '^version:|^source_commit:' \"$local_latest\" 2>/dev/null | head -2)"
+    fi
 }
 
 check_lazarus_upstream() {

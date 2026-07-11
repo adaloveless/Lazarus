@@ -284,6 +284,18 @@ function Extract-VPBinaries {
     # Marker fingerprints every archive in the set so any change invalidates the cache.
     $archiveKey = ($archiveSet | ForEach-Object { "$($_.Name)|$($_.LastWriteTime.Ticks)" }) -join ';'
 
+    # LATEST.txt sidecar (GOD mrghu0l5): if present, include its content in the key so a new
+    # version/source_commit without tarball changes still triggers re-extraction. Otto ships this
+    # on every Win64 compiler ship — vibepascal-latest-win64-bin.tar.gz is a byte-identical copy of
+    # the current versioned tarball, and LATEST.txt has cheap update-check fields (version,
+    # source_commit, dist_commit, tarball+exe hashes).
+    $latestFile = Join-Path $distDir "LATEST.txt"
+    if (Test-Path $latestFile) {
+        $latestHash = (Get-FileHash -Path $latestFile -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
+        $archiveKey = "$latestHash;$archiveKey"
+        Log-Info "LATEST.txt present ($latestHash), including in extraction key"
+    }
+
     if ((Test-Path $compilerExe) -and (Test-Path $markerFile)) {
         $lastExtracted = (Get-Content $markerFile -Raw -ErrorAction SilentlyContinue).Trim()
         if ($lastExtracted -eq $archiveKey) { return }
