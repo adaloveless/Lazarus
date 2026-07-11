@@ -1693,6 +1693,15 @@ if ($Check) {
 
 if (-not $UpstreamOnly) {
     Pull-VP
+    # Re-extract VibePascal binaries after pulling source changes so the compiler always
+    # reflects the latest pulled version (GOD mrfegvha: auto-update.bat reported VP updated
+    # but ppcx64.exe stayed stale because Extract-VPBinaries ran only before the pull).
+    # The marker-based dedup in Extract-VPBinaries makes this a safe no-op when dist/ has
+    # no new tarballs.
+    if ($script:VPUpdated) {
+        Log-Info "Re-extracting VibePascal binaries after VP source update"
+        Extract-VPBinaries
+    }
 }
 Pull-LazarusUpstream
 Pull-LazarusOrigin
