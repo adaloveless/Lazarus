@@ -1016,7 +1016,7 @@ begin
   // .interp section.
   for i := 0 to LoaderList.Count -1 do
     begin
-    InterpSection := LoaderList.Items[i].Section['.interp'];
+    InterpSection := LoaderList.Items[i].Section[String('.interp')];
     if assigned(InterpSection) then
       begin
       // Try to retrieve the inode of the file (library) in the .interp section.

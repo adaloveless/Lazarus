@@ -1063,7 +1063,7 @@ begin
       // reloadData will only be set if it is not in the skipped sections list
       if reloadData and (dataStart >= 0) then
       begin
-        pSection := FOwner.LoaderList[0].Section['.data'];
+        pSection := FOwner.LoaderList[0].Section[String('.data')];
         WriteData(dataStart, pSection^.Size, pSection^.RawData^);
       end;
     end;
