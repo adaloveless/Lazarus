@@ -227,7 +227,7 @@ function Read-LATESTTxt {
         Log-Warn "LATEST.txt present but missing versioned_tarball field"
         return $null
     } catch {
-        Log-Warn "Failed to read LATEST.txt at $latestFile: $_"
+        Log-Warn "Failed to read LATEST.txt at ${latestFile}: $_"
         return $null
     }
 }
