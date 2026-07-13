@@ -241,9 +241,11 @@ begin
 end.
 "@ -Encoding ASCII
     $smokeOut = Join-Path $tmp "smoke_hello.exe"
-    & $compilerExe -n "@$cfgPath" $smokeSrc -o$smokeOut 2`>`&1 | Out-Null
+    $smokeLog = Join-Path $tmp "smoke_compile.log"
+    & $compilerExe -n "@$cfgPath" $smokeSrc "-o$smokeOut" *> $smokeLog
     if ($LASTEXITCODE -ne 0) {
-        Write-ErrorX "Compiler smoke test failed"
+        Write-ErrorX "Compiler smoke test failed (log: $smokeLog) -- compiler output:"
+        Get-Content $smokeLog | ForEach-Object { Write-Host "    $_" }
         exit 1
     }
     $smokeRun = & $smokeOut 2`>`&1
