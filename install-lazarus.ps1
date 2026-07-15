@@ -1,6 +1,6 @@
 # Headless / agentic installer for Lazarus + VibePascal release tarballs on Windows.
 # Non-interactive, no GUI. Downloads the latest GitHub release for x86_64-win64,
-# verifies SHA256SUMS, extracts, writes a self-contained compilerpc.cfg,
+# verifies the release SHA-256 digest, extracts, writes a self-contained compilerpc.cfg,
 # and creates a lazbuild wrapper on the PATH.
 #
 # Usage:
@@ -74,7 +74,7 @@ if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN
 $py = @"
 import json, os, re, sys, urllib.request
 api_base, target_arch = sys.argv[1], sys.argv[2]
-headers = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
+headers = json.loads(os.environ.get("INSTALL_LAZ_HEADERS", "{}"))
 url = f"{api_base}/releases"
 req = urllib.request.Request(url, headers=headers)
 with urllib.request.urlopen(req, timeout=60) as resp:
@@ -83,33 +83,38 @@ if not releases:
     print("NO_RELEASES", file=sys.stderr); sys.exit(1)
 data = releases[0]
 tag = data["tag_name"]
-tarball_re = re.compile(rf'^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}-r\d+\.tar\.gz$')
-sha_re = re.compile(r'^SHA256SUMS-\d{8}-r\d+\.txt$')
-tarball_url = tarball_name = sha_url = sha_name = None
+tarball_re = re.compile(rf'^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}(?:-r\d+)?\.tar\.gz$')
+sha_re = re.compile(r'^SHA256SUMS-\d{8}(?:-r\d+)?\.txt$')
+tarball_url = tarball_name = expected_sha = sha_url = None
 for asset in data.get('assets', []):
     name = asset['name']
     if tarball_re.match(name):
         tarball_url = asset['browser_download_url']; tarball_name = name
+        dig = asset.get('digest') or ''
+        if dig.startswith('sha256:'):
+            expected_sha = dig.split(':', 1)[1]
     elif sha_re.match(name):
-        sha_url = asset['browser_download_url']; sha_name = name
+        sha_url = asset['browser_download_url']
 if not tarball_url:
     print('NO_TARBALL', file=sys.stderr); sys.exit(1)
-if not sha_url:
-    print('NO_SHA', file=sys.stderr); sys.exit(1)
 print(tag)
 print(tarball_name)
 print(tarball_url)
-print(sha_name)
-print(sha_url)
+print(expected_sha or '')
+print(sha_url or '')
 "@
 
+$pyFile = Join-Path $tmp "fetch-release-meta.py"
+Set-Content -Path $pyFile -Value $py -Encoding ASCII
 $headersJson = $headers | ConvertTo-Json -Compress
-python -c $py $ApiBase $Arch $headersJson | Set-Content $metaFile
+$env:INSTALL_LAZ_HEADERS = $headersJson
+python $pyFile $ApiBase $Arch | Set-Content $metaFile
+Remove-Item Env:\INSTALL_LAZ_HEADERS -ErrorAction SilentlyContinue
 
 $tag          = (Get-Content $metaFile)[0]
 $tarballName  = (Get-Content $metaFile)[1]
 $tarballUrl   = (Get-Content $metaFile)[2]
-$shaName      = (Get-Content $metaFile)[3]
+$expectedSha  = (Get-Content $metaFile)[3]
 $shaUrl       = (Get-Content $metaFile)[4]
 
 Write-Info "Latest release: $tag"
@@ -120,25 +125,29 @@ function Download-File($url, $out) {
     curl.exe -fsSL --max-time 1500 --retry 1 -o $out $url
 }
 
-$shaPath     = Join-Path $tmp $shaName
 $tarballPath = Join-Path $tmp $tarballName
-
-Write-Info "Downloading $shaName..."
-Download-File $shaUrl $shaPath
 
 Write-Info "Downloading $tarballName..."
 Download-File $tarballUrl $tarballPath
 
-# --- verify digest ---
-Write-Info "Verifying tarball digest..."
-$expected = (Select-String -Path $shaPath -Pattern "([a-f0-9]{64})\s+$([regex]::Escape($tarballName))").Matches.Groups[1].Value
-if (-not $expected) {
-    Write-ErrorX "Tarball name not found in $shaName"
+# --- determine expected digest (GitHub API per-asset digest preferred; SHA256SUMS asset fallback) ---
+if (-not $expectedSha -and $shaUrl) {
+    $shaName = Split-Path -Leaf $shaUrl
+    $shaPath = Join-Path $tmp $shaName
+    Write-Info "Downloading $shaName..."
+    Download-File $shaUrl $shaPath
+    $expectedSha = (Select-String -Path $shaPath -Pattern "([a-f0-9]{64})\s+$([regex]::Escape($tarballName))").Matches.Groups[1].Value
+}
+if (-not $expectedSha) {
+    Write-ErrorX "No SHA256 digest available for $tarballName"
     exit 1
 }
+
+# --- verify digest ---
+Write-Info "Verifying tarball digest..."
 $actual = (Get-FileHash -Path $tarballPath -Algorithm SHA256).Hash.ToLower()
-if ($expected -ne $actual) {
-    Write-ErrorX "SHA256 mismatch for $tarballName`nExpected: $expected`nActual:   $actual"
+if ($expectedSha.ToLower() -ne $actual) {
+    Write-ErrorX "SHA256 mismatch for $tarballName`nExpected: $expectedSha`nActual:   $actual"
     exit 1
 }
 Write-Ok "Digest verified"
@@ -232,9 +241,11 @@ begin
 end.
 "@ -Encoding ASCII
     $smokeOut = Join-Path $tmp "smoke_hello.exe"
-    & $compilerExe -n "@$cfgPath" $smokeSrc -o$smokeOut 2`>`&1 | Out-Null
+    $smokeLog = Join-Path $tmp "smoke_compile.log"
+    & $compilerExe -n "@$cfgPath" $smokeSrc "-o$smokeOut" *> $smokeLog
     if ($LASTEXITCODE -ne 0) {
-        Write-ErrorX "Compiler smoke test failed"
+        Write-ErrorX "Compiler smoke test failed (log: $smokeLog) -- compiler output:"
+        Get-Content $smokeLog | ForEach-Object { Write-Host "    $_" }
         exit 1
     }
     $smokeRun = & $smokeOut 2`>`&1

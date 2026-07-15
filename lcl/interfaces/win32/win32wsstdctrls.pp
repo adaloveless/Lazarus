@@ -314,6 +314,8 @@ type
   published
     class function CreateHandle(const AWinControl: TWinControl;
           const AParams: TCreateParams): HWND; override;
+    class procedure GetPreferredSize(const AWinControl: TWinControl;
+          var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean); override;
   end;
 
 { useful helper functions }
@@ -2314,6 +2316,15 @@ begin
   Result := Params.Window;
   // don't generate a BM_CLICK on focus
   SendMessage(Result, BM_SETDONTCLICK, 1, 0);
+end;
+
+class procedure TWin32WSRadioButton.GetPreferredSize(const AWinControl: TWinControl;
+  var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean);
+begin
+  // Radios must measure with the LCL Font like check boxes, or the caption is clipped
+  // and the hit-area truncated in dark mode. TWin32WSCustomCheckBox.GetPreferredSize
+  // already handles the TRadioButton glyph via its "is TRadioButton" branch; delegate.
+  TWin32WSCustomCheckBox.GetPreferredSize(AWinControl, PreferredWidth, PreferredHeight, WithThemeSpace);
 end;
 
 end.
