@@ -381,6 +381,8 @@ object EditorMultiWindowOptionsFrame: TEditorMultiWindowOptionsFrame
       Height = 55
       Top = 173
       Width = 240
+      AutoSize = True
+      Constraints.MinWidth = 240
       AutoFill = True
       Caption = 'cgCloseOther'
       ChildSizing.LeftRightSpacing = 6
@@ -415,6 +417,8 @@ object EditorMultiWindowOptionsFrame: TEditorMultiWindowOptionsFrame
       Top = 173
       Width = 240
       Anchors = [akLeft, akBottom]
+      AutoSize = True
+      Constraints.MinWidth = 240
       AutoFill = True
       BorderSpacing.Left = 6
       Caption = 'cgCloseRight'
