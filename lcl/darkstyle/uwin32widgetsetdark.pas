@@ -755,11 +755,11 @@ procedure DrawDarkPushButtonWindow(Window: HWND; DC: HDC);
 var
   Info: PWin32WindowInfo;
   Control: TWinControl;
-  R, CalcR, DrawR: TRect;
+  R, CalcR, DrawR, FocusR: TRect;
   Text: UnicodeString;
   State: LRESULT;
   FillColor, BorderColor, TextColor: TColor;
-  Hot: Boolean;
+  Hot, Focused, IsDefault: Boolean;
   OldBkMode, YOff: Integer;
   OldTextColor: COLORREF;
   OldPenColor, OldBrushColor: COLORREF;
@@ -774,6 +774,13 @@ begin
   GetClientRect(Window, R);
   State := SendMessage(Window, BM_GETSTATE, 0, 0);
   Hot := IsWindowEnabled(Window) and (GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) <> 0);
+  // GOD mrkzl7bj: distinguish the focused button and the Default (BS_DEFPUSHBUTTON)
+  // button. This dark WM_PAINT override fully replaces the standard button paint
+  // (WM_ERASEBKGND=1 + Exit(0)), which normally draws the focus rect and the
+  // default border -- so without this a focused/default dark button is
+  // indistinguishable from an ordinary one.
+  IsDefault := (GetWindowLongPtrW(Window, GWL_STYLE) and BS_DEFPUSHBUTTON) <> 0;
+  Focused := IsWindowEnabled(Window) and (GetFocus() = Window);
 
   FillColor := SysColor[COLOR_BTNFACE];
   BorderColor := SysColor[COLOR_BTNHIGHLIGHT];
@@ -798,6 +805,9 @@ begin
       FillColor := Lighter(FillColor, 125);
       BorderColor := Lighter(BorderColor, 135);
     end;
+    // Default button: accent the outline so the default action stands out.
+    if IsDefault then
+      BorderColor := SysColor[COLOR_HIGHLIGHT];
   end;
 
   OldPen := SelectObject(DC, GetStockObject(DC_PEN));
@@ -809,6 +819,32 @@ begin
   SetDCBrushColor(DC, OldBrushColor);
   SelectObject(DC, OldBrush);
   SelectObject(DC, OldPen);
+
+  // Default button: a second 1px-inset accent ring gives a subtly thicker
+  // outline, so Default reads differently from an ordinary button (mrkzl7bj).
+  if IsWindowEnabled(Window) and IsDefault then
+  begin
+    OldPen := SelectObject(DC, GetStockObject(DC_PEN));
+    OldBrush := SelectObject(DC, GetStockObject(NULL_BRUSH));
+    OldPenColor := SetDCPenColor(DC, ColorToRGB(SysColor[COLOR_HIGHLIGHT]));
+    Windows.RoundRect(DC, R.Left + 1, R.Top + 1, R.Right - 1, R.Bottom - 1, 7, 7);
+    SetDCPenColor(DC, OldPenColor);
+    SelectObject(DC, OldBrush);
+    SelectObject(DC, OldPen);
+  end;
+
+  // Focused button: draw the keyboard-focus rectangle the standard button
+  // paint would normally show (mrkzl7bj). Inset inside the border + text margin.
+  if Focused then
+  begin
+    FocusR := R;
+    InflateRect(FocusR, -4, -4);
+    OldTextColor := SetTextColor(DC, ColorToRGB(SysColor[COLOR_BTNTEXT]));
+    OldBrushColor := SetBkColor(DC, ColorToRGB(FillColor));
+    Windows.DrawFocusRect(DC, FocusR);
+    SetTextColor(DC, OldTextColor);
+    SetBkColor(DC, OldBrushColor);
+  end;
 
   InflateRect(R, -6, -2);
   if (State and BST_PUSHED) <> 0 then
