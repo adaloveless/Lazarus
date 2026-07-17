@@ -6930,7 +6930,9 @@ begin
   xtComp,
   xtInt64,
   xtCardinal,
-  xtQWord: AddAssignment('0');
+  xtQWord,
+  xtInt128,
+  xtUInt128: AddAssignment('0');
   xtBoolean,
   xtByteBool,
   xtWordBool,
@@ -10076,7 +10078,8 @@ function TCodeCompletionCodeTool.CompleteCode(CursorPos: TCodeXYPosition;
           or UpAtomIs('TRY') or UpAtomIs('FINALLY') or UpAtomIs('EXCEPT')
           or UpAtomIs('FOR') or UpAtomIs('TO') or UpAtomIs('DO')
           or UpAtomIs('REPEAT') or UpAtomIs('UNTIL') or UpAtomIs('WHILE')
-          or UpAtomIs('IF') or UpAtomIs('THEN') or UpAtomIs('CASE') or UpAtomIs('ELSE')
+          or UpAtomIs('IF') or UpAtomIs('THEN') or UpAtomIs('CASE')
+          or UpAtomIs('MATCH') or UpAtomIs('ELSE')
           then
             break;
         cafSemicolon:

@@ -433,6 +433,8 @@ type
       AResultType: PChar);
     procedure AddCompilerProcedure(const AProcName, AParameterList: PChar);
     procedure AddKeyWord(aKeyWord: string);
+    procedure AddAutoPropertyBackingFields(ClassNode: TCodeTreeNode);
+    procedure AddFutureControlMembers;
   protected
     CurrentIdentifierList: TIdentifierList;
     CurrentIdentifierContexts: TCodeContextInfo;
@@ -1252,6 +1254,44 @@ begin
   CurrentIdentifierList.Add(NewItem);
 end;
 
+procedure TIdentCompletionTool.AddAutoPropertyBackingFields(ClassNode: TCodeTreeNode);
+// an accessor-less property in {$modeswitch autoproperties} gets a strict-private
+// F<Name> backing field; offer it for completion inside the class's own methods
+var
+  SectionNode, MemberNode: TCodeTreeNode;
+  NewItem: TIdentifierListItem;
+  FieldIdent, PropType: PChar;
+begin
+  if (ClassNode=nil) or not (cmsAutoProperties in Scanner.CompilerModeSwitches) then
+    exit;
+  SectionNode:=ClassNode.FirstChild;
+  while SectionNode<>nil do begin
+    if SectionNode.Desc in AllClassSections then begin
+      MemberNode:=SectionNode.FirstChild;
+      while MemberNode<>nil do begin
+        if (MemberNode.Desc=ctnProperty)
+        and not PropertyNodeHasParamList(MemberNode)
+        and not PropertyHasSpecifier(MemberNode,'READ',false)
+        and not PropertyHasSpecifier(MemberNode,'WRITE',false) then begin
+          PropType:=GetPropertyTypeIdentifier(MemberNode);
+          if PropType<>nil then begin
+            FieldIdent:=CurrentIdentifierList.CreateIdentifier(
+              GetAutoPropertyFieldPrefix(MemberNode.StartPos)+ExtractPropName(MemberNode,false));
+            if not CurrentIdentifierList.HasIdentifier(FieldIdent,'') then begin
+              NewItem:=CIdentifierListItem.Create(
+                  icompUnknown,false,0,FieldIdent,1,nil,nil,ctnVarDefinition);
+              NewItem.ResultType:=GetIdentifier(PropType);
+              CurrentIdentifierList.Add(NewItem);
+            end;
+          end;
+        end;
+        MemberNode:=MemberNode.NextBrother;
+      end;
+    end;
+    SectionNode:=SectionNode.NextBrother;
+  end;
+end;
+
 procedure TIdentCompletionTool.AddCompilerFunction(const AProcName, AParameterList,
   AResultType: PChar);
 var
@@ -1304,6 +1344,15 @@ begin
       nil,
       ctnConstant);
   CurrentIdentifierList.Add(NewItem);
+end;
+
+// synthetic control members of a `future of T` thread handle
+procedure TIdentCompletionTool.AddFutureControlMembers;
+begin
+  AddCompilerProcedure('Cancel','');
+  AddCompilerFunction('Cancelled','','Boolean');
+  AddCompilerFunction('Done','','Boolean');
+  AddCompilerFunction('ThreadID','','TThreadID');
 end;
 
 function TIdentCompletionTool.CollectAllIdentifiers(
@@ -1437,6 +1486,13 @@ begin
           NewItem.ResultType:= FoundContext.Tool.ExtractClassNameOfProcNode(FuncNode,false);
           CurrentIdentifierList.Add(NewItem);
         end;
+
+        // accessor-less auto-properties expose a strict-private F<Name> backing field
+        if (cmsAutoProperties in Scanner.CompilerModeSwitches)
+        and FoundContext.Tool.NodeIsMethodBody(FuncNode)
+        and not FoundContext.Tool.NodeIsClassMethod(FuncNode) then
+          AddAutoPropertyBackingFields(
+            FoundContext.Tool.FindClassNodeForMethodBody(FuncNode,true,false));
 
         if (cmsResult in Scanner.CompilerModeSwitches) and
         not CurrentIdentifierList.HasIdentifier(PChar('Result'),'') then begin
@@ -1801,9 +1857,12 @@ begin
     // see fpc/compiler/psystem.pp
     FPCFulVersion:=StrToIntDef(Scanner.Values['FPC_FULLVERSION'],0);
     AddCompilerProcedure('Assert','Condition:Boolean;const Message:String');
+    AddCompilerFunction('AlignOf','T or T.Field','SizeInt');
     AddCompilerFunction('Assigned','P:Pointer','Boolean');
     AddCompilerFunction('Addr','var X','Pointer');
+    AddCompilerFunction('BitAlignOf','T or T.Field','SizeInt');
     AddCompilerFunction('BitSizeOf','Identifier','Integer');
+    AddCompilerFunction('BitOffsetOf','T.Field','SizeInt');
     AddCompilerProcedure('Break','');
     AddCompilerFunction('Concat','S1:String;S2:String[...;Sn:String]', 'String');
     if FPCFulVersion>=30100 then
@@ -1842,6 +1901,7 @@ begin
     AddCompilerFunction('Low','Arg:TypeOrVariable','Ordinal');
     AddCompilerProcedure('New','var X:Pointer');
     AddCompilerFunction('ObjCSelector','String','SEL');
+    AddCompilerFunction('OffsetOf','T.Field','SizeInt');
     AddCompilerFunction('Ofs','var X','LongInt');
     AddCompilerFunction('Ord','X:Ordinal', 'Integer');
     AddCompilerProcedure('Pack','A:Array;N:Integer;var A:Array');
@@ -1866,6 +1926,9 @@ begin
     AddCompilerFunction('Slice','var A:Array;Count:Integer','Array');
     AddCompilerProcedure('Str','const X[:Width[:Decimals]];var S:String');
     AddCompilerFunction('Succ','X:Ordinal', 'Ordinal');
+    if Scanner.CompilerMode=cmUnleashed then
+      // unleashed: compile-time type-of-expression intrinsic
+      AddCompilerFunction('Type','Expr','typeof Expr');
     AddCompilerFunction('TypeInfo','Identifier', 'Pointer');
     AddCompilerFunction('GetTypeKind','Identifier', 'TTypeKind');
     AddCompilerFunction('IsManagedType','Identifier', 'Boolean');
@@ -1877,6 +1940,15 @@ begin
     AddCompilerProcedure('Write','Args:Arguments');
     AddCompilerProcedure('WriteLn','Args:Arguments');
     AddCompilerProcedure('WriteStr','var S:String;Args:Arguments');
+    AddCompilerProcedure('SwapValues','var A,B:T');
+    if cmsParallelFor in Scanner.CompilerModeSwitches then begin
+      // implicit worker-locals of `for parallel` bodies
+      AddBaseConstant('WorkerIndex');
+      AddBaseConstant('WorkerCount');
+    end;
+    if cmsAsyncAwait in Scanner.CompilerModeSwitches then
+      // implicit read-only cancel flag of `async begin..end` blocks
+      AddBaseConstant('Cancelled');
     if Scanner.PascalCompiler=pcPas2js then begin
       AddCompilerFunction('Str','const X[:Width[:Decimals]]','string');
       AddCompilerFunction('AWait','const Expr: T','T');
@@ -2221,6 +2293,8 @@ type
       Add('record');
       Add('helper');
       Add('of');  // array of // set of
+      if cmsAsyncAwait in Scanner.CompilerModeSwitches then
+        Add('future');  // future of T
     end;
   end;
 
@@ -2372,6 +2446,12 @@ begin
         Add('begin');
         Add('type');
         Add('var');
+        if cmsStaticSection in Scanner.CompilerModeSwitches then
+          Add('static');
+        if cmsThreadStatic in Scanner.CompilerModeSwitches then begin
+          Add('threadstatic');
+          Add('tstatic');
+        end;
         Add('const');
         Add('label');
         Add('procedure');
@@ -2462,6 +2542,10 @@ begin
           and (ilcfStartOfStatement in CurrentIdentifierList.ContextFlags)
           then begin
             Add('asm');
+            if cmsAsyncAwait in Scanner.CompilerModeSwitches then begin
+              Add('async');
+              Add('await');
+            end;
             Add('begin');
             Add('end');
             Add('case');
@@ -2470,9 +2554,13 @@ begin
             Add('for');
             Add('goto');
             Add('if');
+            if cmsLock in Scanner.CompilerModeSwitches then
+              Add('lock');
             Add('raise');
             Add('repeat');
             Add('try');
+            if cmsLock in Scanner.CompilerModeSwitches then
+              Add('trylock');
             Add('until');
             Add('while');
             Add('with');
@@ -3372,10 +3460,12 @@ var
     if (Node.Parent<>nil)
     and (Node.Parent.Desc in AllClassSections)
     and (Node.Desc=ctnVarDefinition)
-    and (CurrentIdentifierList.StartAtomBehind.Flag<>cafColon) then begin
+    and (CurrentIdentifierList.StartAtomBehind.Flag<>cafColon)
+    and ((Node.Parent.Parent=nil)
+         or not (Node.Parent.Parent.Desc in AllPascalStatements)) then begin
       { cursor is at a class variable definition without type
         for example:
-        
+
         public
           MouseM|
         end;
@@ -3414,6 +3504,11 @@ begin
       if not ParseSourceTillCollectionStart(IdentStartXY,CleanCursorPos,CursorNode,
                                             IdentStartPos,IdentEndPos) then
         Exit;
+      // ParseSourceTillCollectionStart can return CursorNode=nil when the
+      // cursor sits in a parser gap (e.g. after a stray `end.` left by a
+      // partial parse). FindDeepestNodeAtPos's gap-case exits without
+      // raising even when ExceptionOnNotFound is set; guard the deref.
+      if CursorNode=nil then exit;
       Params:=TFindDeclarationParams.Create(Self,CursorNode);
       try
         if CleanCursorPos=0 then ;
@@ -3517,8 +3612,8 @@ begin
                   CurrentIdentifierList.ContextFlags+[ilcfStartOfStatement];
               end;
               // check if expression
-              if UpAtomIs('IF') or UpAtomIs('CASE') or UpAtomIs('WHILE')
-              or UpAtomIs('UNTIL')
+              if UpAtomIs('IF') or UpAtomIs('CASE') or UpAtomIs('MATCH')
+              or UpAtomIs('WHILE') or UpAtomIs('UNTIL')
               then begin
                 // todo: check at start of expression, not only in front of variable
                 CurrentIdentifierList.ContextFlags:=
@@ -3672,6 +3767,29 @@ begin
                 end;
                 TupleChild:=TupleChild.NextBrother;
               end;
+            end else if (cmsTuples in Scanner.CompilerModeSwitches) and
+                        (GatherContext.Node<>nil) and
+                        (GatherContext.Node.Desc=ctnRecordType) and
+                        (GatherContext.Node.StartPos<=GatherContext.Tool.SrcLen) and
+                        (GatherContext.Tool.Src[GatherContext.Node.StartPos]='(') then begin
+              // named tuple `(ip: string; took: dword)`: inject the field
+              // names directly. The general FindIdentifierInContext path is
+              // unreliable on these anonymous record return types.
+              TupleChild:=GatherContext.Node.FirstChild;
+              while TupleChild<>nil do begin
+                if TupleChild.Desc=ctnVarDefinition then begin
+                  TupleItem:=TIdentifierListItem.Create(
+                    icompExact,false,0,
+                    @GatherContext.Tool.Src[TupleChild.StartPos],
+                    0,TupleChild,GatherContext.Tool,
+                    ctnVarDefinition);
+                  CurrentIdentifierList.Add(TupleItem);
+                end;
+                TupleChild:=TupleChild.NextBrother;
+              end;
+            end else if GatherContext.Node.Desc=ctnFutureType then begin
+              // future handle: only the synthetic control members
+              AddFutureControlMembers;
             end else begin
               if GatherContext.Node.Desc=ctnIdentifier then
                 Params.Flags:=Params.Flags+[fdfIgnoreCurContextNode];
@@ -3679,6 +3797,10 @@ begin
             end;
 
           end else
+          if ExprType.Desc=xtFuture then
+            // future handle resolved from an `async ...` initializer
+            AddFutureControlMembers
+          else
           if ExprType.Desc in xtAllTypeHelperTypes then
           begin
             // gather all identifiers in cursor context for basic types (strings etc.)
@@ -3896,6 +4018,72 @@ begin
             end;
           end;
 
+          // tuple result fallback: function f: (a:int; b:int); result.|
+          // When normal resolution failed (GatherContext.Node=nil), look up
+          // the enclosing function's return type directly.
+          if (cmsTuples in Scanner.CompilerModeSwitches) and
+             (GatherContext.Node=nil) and
+             (ContextExprStartPos>0) and
+             (ContextExprStartPos<IdentStartPos) then begin
+            // extract identifier before the dot
+            TupleScanPos:=IdentStartPos-1;
+            while (TupleScanPos>0) and (Src[TupleScanPos] in ['.',' ',#9,#10,#13]) do
+              dec(TupleScanPos);
+            InlineVarExprEndPos:=TupleScanPos+1;
+            while (TupleScanPos>0) and (Src[TupleScanPos] in ['a'..'z','A'..'Z','0'..'9','_']) do
+              dec(TupleScanPos);
+            InlineVarExprStartPos:=TupleScanPos+1;
+            if (InlineVarExprEndPos-InlineVarExprStartPos=6) and
+               (CompareIdentifiers(@Src[InlineVarExprStartPos],PChar('Result'))=0) then begin
+              // walk up to enclosing ctnProcedure
+              TupleChild:=CursorNode;
+              while (TupleChild<>nil) and (TupleChild.Desc<>ctnProcedure) do
+                TupleChild:=TupleChild.Parent;
+              if TupleChild<>nil then begin
+                // get function result type: ctnProcedureHead's first child,
+                // skipping ctnParameterList if present
+                TupleChild:=TupleChild.FirstChild;
+                if (TupleChild<>nil) and (TupleChild.Desc=ctnProcedureHead) then
+                  TupleChild:=TupleChild.FirstChild;
+                if (TupleChild<>nil) and (TupleChild.Desc=ctnParameterList) then
+                  TupleChild:=TupleChild.NextBrother;
+                if (TupleChild<>nil) and (TupleChild.Desc=ctnRecordType) and
+                   (TupleChild.StartPos<=SrcLen) and
+                   (Src[TupleChild.StartPos]='(') then begin
+                  // detect positional vs named by looking for ':' before ')'
+                  IsPositionalTuple:=true;
+                  TupleScanPos:=TupleChild.StartPos+1;
+                  while (TupleScanPos<=SrcLen) and (Src[TupleScanPos]<>')') do begin
+                    if Src[TupleScanPos]=':' then begin
+                      IsPositionalTuple:=false;
+                      break;
+                    end;
+                    inc(TupleScanPos);
+                  end;
+                  TupleFieldIdx:=0;
+                  TupleChild:=TupleChild.FirstChild;
+                  while TupleChild<>nil do begin
+                    if TupleChild.Desc=ctnVarDefinition then begin
+                      inc(TupleFieldIdx);
+                      if IsPositionalTuple then
+                        TupleItem:=TIdentifierListItem.Create(
+                          icompExact,false,0,
+                          PChar('_'+IntToStr(TupleFieldIdx)),
+                          0,TupleChild,Self,ctnVarDefinition)
+                      else
+                        TupleItem:=TIdentifierListItem.Create(
+                          icompExact,false,0,
+                          @Src[TupleChild.StartPos],
+                          0,TupleChild,Self,ctnVarDefinition);
+                      CurrentIdentifierList.Add(TupleItem);
+                    end;
+                    TupleChild:=TupleChild.NextBrother;
+                  end;
+                end;
+              end;
+            end;
+          end;
+
           // check for procedure/method declaration context
           CheckProcedureDeclarationContext;
 
@@ -4036,6 +4224,9 @@ var
       AddCompilerProc('Slice','var A:Array;Count:Integer','Array');
       AddCompilerProc('Str','const X[:Width[:Decimals]];var S:String');
       AddCompilerProc('Succ','X:Ordinal', 'Ordinal');
+      if Scanner.CompilerMode=cmUnleashed then
+        // unleashed: compile-time type-of-expression intrinsic
+        AddCompilerProc('Type','Expr','typeof Expr');
       AddCompilerProc('TypeInfo','Identifier', 'Pointer');
       AddCompilerProc('GetTypeKind','Identifier', 'TTypeKind');
       AddCompilerProc('IsManagedType','Identifier', 'Boolean');

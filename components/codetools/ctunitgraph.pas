@@ -382,6 +382,13 @@ function TUsesGraph.Parse(IgnoreErrors: boolean; out Completed: boolean;
     for i:=0 to UsedFiles.Count-1 do begin
       Filename:=UsedFiles[i];
       if not FilenameIsPascalUnit(Filename) then continue;
+      // UsesSectionToFilenames falls back to "unitname in path" pseudo-paths
+      // when the source isn't found; OnLoadFile would crash with
+      // "directory not absolute" in TCTDirectoryCache.Create. Skip only those
+      // (non-absolute and carrying the ' in ' marker), not legitimate virtual
+      // files of unsaved units
+      if (not FilenameIsAbsolute(Filename))
+      and (System.Pos(' in ',Filename)>0) then continue;
       // check if already used
       if CurUnit.IndexOfUses(Filename)>=0 then continue;
       if not UnitCanFindTarget(Filename) then continue;
