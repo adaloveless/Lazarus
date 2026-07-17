@@ -7003,14 +7003,18 @@ var
               if not EndBlockIsOk then exit;
             if TopBlockType(Stack)=btTry then begin
               if not EndBlockIsOk then exit;
-            BeginBlock(Stack,btFinally,CurPos.StartPos)
+              BeginBlock(Stack,btFinally,CurPos.StartPos);
+            end else
+              DebugLn(['ReadStatements SKIPPING finally (no btTry on stack) at ',CleanPosToStr(CurPos.StartPos),' TopBlock=',ord(TopBlockType(Stack))]);
           end else if UpAtomIs('EXCEPT') then begin
             // an open if statement is implicitly closed by except
             while TopBlockType(Stack) in [btIf,btIfElse] do
               if not EndBlockIsOk then exit;
             if TopBlockType(Stack)=btTry then begin
               if not EndBlockIsOk then exit;
-            BeginBlock(Stack,btExcept,CurPos.StartPos)
+              BeginBlock(Stack,btExcept,CurPos.StartPos);
+            end else
+              DebugLn(['ReadStatements SKIPPING except (no btTry on stack) at ',CleanPosToStr(CurPos.StartPos),' TopBlock=',ord(TopBlockType(Stack))]);
           end else if UpAtomIs('REPEAT') then
             BeginBlock(Stack,btRepeat,CurPos.StartPos)
           else if UpAtomIs('UNTIL') then begin
