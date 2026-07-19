@@ -6156,8 +6156,9 @@ begin
     ReadNextAtom;
     if CurPos.EndPos=CurPos.StartPos then exit;
     // read till block keyword counterpart
-    if UpAtomIs('BEGIN') or UpAtomIs('CASE') or UpAtomIs('ASM')
-    or UpAtomIs('RECORD') or UpAtomIs('TRY') or UpAtomIs('REPEAT') then begin
+    if UpAtomIs('BEGIN') or UpAtomIs('CASE') or UpAtomIs('MATCH')
+    or UpAtomIs('ASM') or UpAtomIs('RECORD') or UpAtomIs('TRY')
+    or UpAtomIs('REPEAT') then begin
       // read forward till END, FINALLY, EXCEPT
       ReadTilBlockEnd(true,false);
     end else if UpAtomIs('END') or UpAtomIs('FINALLY') or UpAtomIs('EXCEPT')
@@ -6373,8 +6374,9 @@ begin
     ReadNextAtom;
     if CurPos.EndPos=CurPos.StartPos then exit;
     // read till block keyword counterpart
-    if UpAtomIs('BEGIN') or UpAtomIs('CASE') or UpAtomIs('ASM')
-    or UpAtomIs('RECORD') or UpAtomIs('TRY') or UpAtomIs('REPEAT') then begin
+    if UpAtomIs('BEGIN') or UpAtomIs('CASE') or UpAtomIs('MATCH')
+    or UpAtomIs('ASM') or UpAtomIs('RECORD') or UpAtomIs('TRY')
+    or UpAtomIs('REPEAT') then begin
       // read forward till END, FINALLY, EXCEPT
       ReadTilBlockEnd(true,false);
     end else
@@ -6408,7 +6410,7 @@ function TStandardCodeTool.CompleteBlock(const CursorPos: TCodeXYPosition;
   Statements:
     begin: end;
     asm: end;
-    try: finally end;
+    try: except end;
     finally: end;
     except: end;
     repeat: until ;
@@ -6440,6 +6442,7 @@ type
     btCaseOf,
     btCaseColon,
     btCaseElse,
+    btMatch,
     btRepeat,
     btIf,
     btIfElse,
@@ -6643,6 +6646,20 @@ var
     FromPos: LongInt;
     ToPos: LongInt;
     WasInCursorBlock: Boolean;
+    // inline-var skip state: tracks nested case/match-expression and
+    // statement-expression begin..end depth inside `var d := match X of
+    // ...; end;` so an inner ';' or 'end' doesn't terminate the var
+    // statement early; ExprStack records 'C'/'M'/'B' per level, ExprPos
+    // remembers the keyword position so the outer Stack can adopt the
+    // open expression blocks when the cursor sits inside an unfinished
+    // initializer (e.g. 'var r := case s of |' with no body yet)
+    VarCaseExprDepth: Integer;
+    VarMatchExprDepth: Integer;
+    VarBeginDepth: Integer;
+    VarInCaseElse: Boolean;
+    VarExprStack: string;
+    VarExprPos: array of Integer;
+    VarTransferIdx: Integer;
 
     function EndBlockIsOk: boolean;
     begin
@@ -6871,7 +6888,7 @@ var
               if not EndBlockIsOk then exit; // close btCaseOf,btCaseElse
               if not EndBlockIsOk then exit; // close btCase
             end;
-          btBegin,btFinally,btExcept,btCase:
+          btBegin,btFinally,btExcept,btCase,btMatch:
             if not EndBlockIsOk then exit;
           btCaseColon,btRepeat:
             begin
@@ -6941,12 +6958,27 @@ var
         while TopBlockType(Stack) in [btIf,btIfElse] do
           if not EndBlockIsOk then exit;
       cafColon:
-        if TopBlockType(Stack)=btCaseOf then
+        // match branches are 'pat: stmt;' like case-of branches; reuse
+        // btCaseColon so a ';' inside the branch closes it properly and
+        // inline-var declarations are allowed in the branch body
+        if TopBlockType(Stack) in [btCaseOf,btMatch] then
           BeginBlock(Stack,btCaseColon,CurPos.StartPos);
       cafSemicolon:
-        while TopBlockType(Stack)
-        in [btCaseColon,btIf,btIfElse,btRoundBracket,btEdgedBracket] do begin
-          if not EndBlockIsOk then exit;
+        begin
+          while TopBlockType(Stack)
+          in [btCaseColon,btIf,btIfElse,btRoundBracket,btEdgedBracket] do begin
+            if not EndBlockIsOk then exit;
+          end;
+          // case/match-as-expression with `else` has no trailing `end` - the
+          // `;` after the else value closes the whole construct (same as the
+          // inline-var path). Detect via IsCaseExpression on the enclosing
+          // case/match keyword position
+          if (TopBlockType(Stack)=btCaseElse) and (Stack.Top>=1)
+          and (Stack.Stack[Stack.Top-1].Typ in [btCase,btMatch])
+          and IsCaseExpression(Stack.Stack[Stack.Top-1].StartPos) then begin
+            if not EndBlockIsOk then exit; // close btCaseElse
+            if not EndBlockIsOk then exit; // close btCase/btMatch
+          end;
         end;
       cafWord:
         if TopBlockType(Stack)<>btAsm then begin
@@ -6969,16 +7001,20 @@ var
             // an open if statement is implicitly closed by finally
             while TopBlockType(Stack) in [btIf,btIfElse] do
               if not EndBlockIsOk then exit;
-            if TopBlockType(Stack)=btTry then
+            if TopBlockType(Stack)=btTry then begin
               if not EndBlockIsOk then exit;
-            BeginBlock(Stack,btFinally,CurPos.StartPos)
+              BeginBlock(Stack,btFinally,CurPos.StartPos);
+            end else
+              DebugLn(['ReadStatements SKIPPING finally (no btTry on stack) at ',CleanPosToStr(CurPos.StartPos),' TopBlock=',ord(TopBlockType(Stack))]);
           end else if UpAtomIs('EXCEPT') then begin
             // an open if statement is implicitly closed by except
             while TopBlockType(Stack) in [btIf,btIfElse] do
               if not EndBlockIsOk then exit;
-            if TopBlockType(Stack)=btTry then
+            if TopBlockType(Stack)=btTry then begin
               if not EndBlockIsOk then exit;
-            BeginBlock(Stack,btExcept,CurPos.StartPos)
+              BeginBlock(Stack,btExcept,CurPos.StartPos);
+            end else
+              DebugLn(['ReadStatements SKIPPING except (no btTry on stack) at ',CleanPosToStr(CurPos.StartPos),' TopBlock=',ord(TopBlockType(Stack))]);
           end else if UpAtomIs('REPEAT') then
             BeginBlock(Stack,btRepeat,CurPos.StartPos)
           else if UpAtomIs('UNTIL') then begin
@@ -7002,6 +7038,16 @@ var
             end;
           end else if UpAtomIs('CASE') then begin
             BeginBlock(Stack,btCase,CurPos.StartPos)
+          end else if UpAtomIs('MATCH') then begin
+            // match has no 'of' keyword; branches like '_: begin..end;'
+            // close as ordinary statements inside btMatch
+            BeginBlock(Stack,btMatch,CurPos.StartPos)
+          end else if UpAtomIs('TRYLOCK')
+          and (cmsLock in Scanner.CompilerModeSwitches) then begin
+            // `trylock ... do <stmt> else <stmt>`: the mandatory else
+            // belongs to the trylock, not to a missing end; track the
+            // statement like an if so the else/semicolon close it
+            BeginBlock(Stack,btIf,CurPos.StartPos)
           end else if UpAtomIs('OF') then begin
             CloseBrackets;
             if TopBlockType(Stack)=btCase then
@@ -7019,6 +7065,10 @@ var
                 if not EndBlockIsOk then exit;
                 BeginBlock(Stack,btCaseElse,CurPos.StartPos);
               end;
+            btMatch:
+              // `match X of ... else val` has no btCaseOf (of does not open
+              // one for match); the else catch-all opens directly on btMatch
+              BeginBlock(Stack,btCaseElse,CurPos.StartPos);
             btBegin:
               begin
                 // missing end
@@ -7042,17 +7092,145 @@ var
                 break;
               end;
             end;
-          end else if UpAtomIs('VAR')
+          end else if (UpAtomIs('VAR')
+            or (UpAtomIs('CONST') and (cmsInlineVars in Scanner.CompilerModeSwitches)))
           and (TopBlockType(Stack) in [btBegin,btTry,btFinally,btExcept,btRepeat,btCaseColon,btCaseElse]) then begin
-            // inline var declaration (e.g. var s := expr;) - skip over it
+            // inline var/const declaration (e.g. var s := expr; const k = 5;)
+            // - skip over it.
+            // also stop on header terminators 'do'/'then' so inline var inside
+            // 'with var X: T do begin ...' or 'for var i := A to B do ...'
+            // returns control to the main loop before the body keyword.
+            // track case/match expression depth so 'end' of an inline
+            // 'var d := match x of ... end;' / 'var d := case x of ...
+            // 2:'b'; end;' initializer closes the case/match instead of
+            // breaking the skip at the first inner ';'. ExprStack records
+            // 'C'/'M' per level so a nested case-inside-match (or vice
+            // versa) pops the right counter on 'end'.
+            VarCaseExprDepth:=0;
+            VarMatchExprDepth:=0;
+            VarBeginDepth:=0;
+            VarInCaseElse:=false;
+            VarExprStack:='';
+            SetLength(VarExprPos,0);
             repeat
               ReadNextAtom;
               if CurPos.StartPos>SrcLen then break;
-              if CurPos.Flag=cafSemicolon then break;
-              if (CurPos.Flag=cafEND)
-              or ((CurPos.Flag=cafWord) and WordIsStatemendEnd) then begin
+              // about to consume an 'end' past the cursor while we have
+              // open case/match/begin blocks - hand those blocks over to
+              // the main Stack so the cursor block becomes the (still
+              // open) case/match/begin and completion emits 'end' at the
+              // right indent. For well-formed initializers the 'end' is
+              // at the case/match keyword indent so EndBlockIsOk clears
+              // NeedCompletion and nothing is inserted; for unfinished
+              // initializers (e.g. 'var r := case s of |' with no body)
+              // the 'end' is at the enclosing block's indent, NeedCompletion
+              // stays set and a proper 'end;' lands at the case/match indent
+              if (VarExprStack<>'') and (CurPos.Flag=cafEnd)
+              and (CurPos.StartPos>=CleanCursorPos) then begin
+                for VarTransferIdx:=1 to Length(VarExprStack) do
+                  case VarExprStack[VarTransferIdx] of
+                  'C': BeginBlock(Stack,btCase,VarExprPos[VarTransferIdx-1]);
+                  'M': BeginBlock(Stack,btMatch,VarExprPos[VarTransferIdx-1]);
+                  'B': BeginBlock(Stack,btBegin,VarExprPos[VarTransferIdx-1]);
+                  end;
                 UndoReadNextAtom;
                 break;
+              end;
+              if CurPos.Flag=cafSemicolon then begin
+                // case-with-else and match-with-else as expression have no
+                // trailing 'end'; the ';' after the else value terminates
+                // both the construct and the var statement
+                if (((VarCaseExprDepth=0) and (VarMatchExprDepth=0))
+                    or VarInCaseElse)
+                and (VarBeginDepth=0) then break;
+                continue;
+              end;
+              if CurPos.Flag=cafEnd then begin
+                if VarExprStack<>'' then
+                  case VarExprStack[Length(VarExprStack)] of
+                  'B':
+                    begin
+                      dec(VarBeginDepth);
+                      SetLength(VarExprStack,Length(VarExprStack)-1);
+                      SetLength(VarExprPos,Length(VarExprPos)-1);
+                      continue;
+                    end;
+                  'M':
+                    begin
+                      dec(VarMatchExprDepth);
+                      SetLength(VarExprStack,Length(VarExprStack)-1);
+                      SetLength(VarExprPos,Length(VarExprPos)-1);
+                      continue;
+                    end;
+                  'C':
+                    if (VarCaseExprDepth>0) and (not VarInCaseElse) then begin
+                      dec(VarCaseExprDepth);
+                      SetLength(VarExprStack,Length(VarExprStack)-1);
+                      SetLength(VarExprPos,Length(VarExprPos)-1);
+                      continue;
+                    end;
+                  end;
+                if (VarCaseExprDepth>0) and (not VarInCaseElse) then begin
+                  dec(VarCaseExprDepth);
+                  continue;
+                end;
+                UndoReadNextAtom;
+                break;
+              end;
+              if (CurPos.Flag=cafWord) then begin
+                if UpAtomIs('CASE')
+                and ((LastAtoms.GetPriorAtom.Flag in
+                       [cafAssignment,cafRoundBracketOpen,cafEdgedBracketOpen,
+                        cafComma,cafEqual])
+                  or (VarCaseExprDepth>0) or (VarMatchExprDepth>0)) then begin
+                  inc(VarCaseExprDepth);
+                  VarExprStack:=VarExprStack+'C';
+                  SetLength(VarExprPos,Length(VarExprPos)+1);
+                  VarExprPos[High(VarExprPos)]:=CurPos.StartPos;
+                  VarInCaseElse:=false;
+                  continue;
+                end;
+                if UpAtomIs('MATCH')
+                and ((LastAtoms.GetPriorAtom.Flag in
+                       [cafAssignment,cafRoundBracketOpen,cafEdgedBracketOpen,
+                        cafComma,cafEqual])
+                  or (VarCaseExprDepth>0) or (VarMatchExprDepth>0)) then begin
+                  inc(VarMatchExprDepth);
+                  VarExprStack:=VarExprStack+'M';
+                  SetLength(VarExprPos,Length(VarExprPos)+1);
+                  VarExprPos[High(VarExprPos)]:=CurPos.StartPos;
+                  continue;
+                end;
+                // 'else'/'otherwise' inside case/match expression: switch
+                // to catch-all mode so the following ';' terminates the var
+                if ((VarCaseExprDepth>0) or (VarMatchExprDepth>0))
+                and (not VarInCaseElse)
+                and (UpAtomIs('ELSE') or UpAtomIs('OTHERWISE')) then begin
+                  VarInCaseElse:=true;
+                  continue;
+                end;
+                // statement-expression 'begin..end' as initializer or
+                // branch value - push 'B' so its 'end' pops here
+                if UpAtomIs('BEGIN')
+                and ((LastAtoms.GetPriorAtom.Flag in
+                       [cafAssignment,cafRoundBracketOpen,cafEdgedBracketOpen,
+                        cafComma,cafEqual,cafColon])
+                  or (VarCaseExprDepth>0) or (VarMatchExprDepth>0)
+                  or (VarBeginDepth>0)) then begin
+                  inc(VarBeginDepth);
+                  VarExprStack:=VarExprStack+'B';
+                  SetLength(VarExprPos,Length(VarExprPos)+1);
+                  VarExprPos[High(VarExprPos)]:=CurPos.StartPos;
+                  continue;
+                end;
+                // inside match-expression or nested begin these keywords
+                // belong to the body; only the outer 'end' closes
+                if (VarMatchExprDepth=0) and (VarBeginDepth=0)
+                and (WordIsStatemendEnd
+                     or UpAtomIs('DO') or UpAtomIs('THEN')) then begin
+                  UndoReadNextAtom;
+                  break;
+                end;
               end;
               if (CurPos.Flag in [cafRoundBracketOpen,cafEdgedBracketOpen]) then
                 ReadTilBracketClose(true);
@@ -7178,12 +7356,14 @@ var
           else
             NewCode:='end'+NewCode;
         end;
-      btFinally,btExcept,btCaseOf,btCaseElse:
+      btFinally,btExcept,btCase,btMatch,btCaseOf,btCaseElse:
         NewCode:='end'+NewCode;
       btRepeat:
         NewCode:='until '+NewCode;
       btTry:
-        NewCode:='finally'+SourceChangeCache.BeautifyCodeOptions.LineEnd
+        // except is the far more common branch; users who want finally
+        // type it explicitly
+        NewCode:='except'+SourceChangeCache.BeautifyCodeOptions.LineEnd
                 +'end'+NewCode;
       btCaseColon:
         begin
@@ -7253,6 +7433,14 @@ var
           NeedCompletion:=CleanCursorPos;
         end;
       end;
+    end else if CurPos.Flag=cafEnd then begin
+      // nested record/class: the `end` the parser landed on may belong to
+      // an enclosing scope. If it sits at a smaller indent than this
+      // section's record/class keyword line, the inner block still needs
+      // its own `end;` inserted at the cursor.
+      Indent:=Beauty.GetLineIndent(Src,CurPos.StartPos);
+      if Indent<LastIndent then
+        NeedCompletion:=CleanCursorPos;
     end else
       exit(true);
     //debugln(['CompleteClassSection NeedCompletion=',NeedCompletion]);
@@ -7301,6 +7489,10 @@ var
   {  type
        TMyClass = record
          |
+
+     Also handles nested records inside another record body, where the next
+     `end` the parser sees belongs to the enclosing record - detected by
+     indent.
   }
   var
     LastIndent: LongInt;
@@ -7311,10 +7503,74 @@ var
     if CleanCursorPos<StartNode.StartPos then exit;
     LastIndent:=Beauty.GetLineIndent(Src,StartNode.StartPos);
     MoveCursorToNodeStart(StartNode);
-    ReadNextAtom; // record
+    ReadNextAtom; // optional `packed`/`bitpacked` prefix
+    if UpAtomIs('PACKED') or UpAtomIs('BITPACKED') then
+      ReadNextAtom; // record
     if CleanCursorPos<CurPos.EndPos then exit(true);
     ReadNextAtom;
-    if CurPos.Flag=cafEnd then exit(true);
+    if CurPos.Flag=cafEnd then begin
+      // for nested records: the `end` the parser landed on may belong to an
+      // enclosing record (the inner record is still missing its own `end;`).
+      // detect by indent - if it sits at a smaller indent than the inner
+      // `record` keyword, it is not the inner's `end` and we need to insert
+      // one at the cursor.
+      if (CleanCursorPos<=CurPos.StartPos)
+      and (Beauty.GetLineIndent(Src,CurPos.StartPos)<LastIndent) then begin
+        InsertPos:=CleanCursorPos;
+        if not Replace('end;',InsertPos,InsertPos,LastIndent,
+          gtNewLine,gtEmptyLine,
+          [bcfIndentExistingLineBreaks])
+        then
+          exit;
+      end;
+      exit(true);
+    end;
+    if CleanCursorPos<=CurPos.StartPos then begin
+      Indent:=Beauty.GetLineIndent(Src,CurPos.StartPos);
+      InsertPos:=CleanCursorPos;
+      if Indent<=LastIndent then begin
+        if not Replace('end;',InsertPos,InsertPos,LastIndent,
+          gtNewLine,gtEmptyLine,
+          [bcfIndentExistingLineBreaks])
+        then
+          exit;
+      end;
+    end;
+    Result:=true;
+  end;
+
+  function CompleteUnion: Boolean;
+  {  composablerecords - close a `union` block sitting inside a record:
+       n = record
+         union
+           |
+       end;
+     Mirrors CompleteRecord but anchored on `union` (ctnRecordCase). }
+  var
+    LastIndent: LongInt;
+    Indent: LongInt;
+    InsertPos: LongInt;
+  begin
+    Result:=false;
+    if CleanCursorPos<StartNode.StartPos then exit;
+    LastIndent:=Beauty.GetLineIndent(Src,StartNode.StartPos);
+    MoveCursorToNodeStart(StartNode);
+    ReadNextAtom; // union (or legacy `case`)
+    if CleanCursorPos<CurPos.EndPos then exit(true);
+    ReadNextAtom;
+    if CurPos.Flag=cafEnd then begin
+      // same nested-end detection as CompleteRecord
+      if (CleanCursorPos<=CurPos.StartPos)
+      and (Beauty.GetLineIndent(Src,CurPos.StartPos)<LastIndent) then begin
+        InsertPos:=CleanCursorPos;
+        if not Replace('end;',InsertPos,InsertPos,LastIndent,
+          gtNewLine,gtEmptyLine,
+          [bcfIndentExistingLineBreaks])
+        then
+          exit;
+      end;
+      exit(true);
+    end;
     if CleanCursorPos<=CurPos.StartPos then begin
       Indent:=Beauty.GetLineIndent(Src,CurPos.StartPos);
       InsertPos:=CleanCursorPos;
@@ -7372,6 +7628,9 @@ begin
     end
     else if StartNode.Desc=ctnRecordType then begin
       if not CompleteRecord then exit;
+    end
+    else if StartNode.Desc=ctnRecordCase then begin
+      if not CompleteUnion then exit;
     end;
   finally
     FreeStack(Stack);
