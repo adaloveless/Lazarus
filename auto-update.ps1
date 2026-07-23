@@ -881,6 +881,60 @@ function Rebuild-Lazbuild {
     Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
 }
 
+function Remove-PackageFromAutoInstall {
+    # Purge a package from the IDE's PERSISTED auto-install list so a subsequent
+    # --build-ide does not recompile it from config. lazbuild --add-package ADDS to
+    # this list (it is cumulative), so a package that broke the build stays wired in
+    # via miscellaneousoptions.xml <StaticAutoInstallPackages> and staticpackages.inc
+    # and keeps failing every retry. Both must be cleaned for a fallback build to work.
+    param(
+        [Parameter(Mandatory)] [string] $PcpDir,
+        [Parameter(Mandatory)] [string] $PackageName
+    )
+
+    # 1) miscellaneousoptions.xml -- authoritative list the IDE reads.
+    $miscXml = Join-Path $PcpDir "miscellaneousoptions.xml"
+    if (Test-Path $miscXml) {
+        try {
+            [xml]$mx = Get-Content $miscXml -Raw
+            $listNode = $mx.SelectSingleNode("//StaticAutoInstallPackages")
+            if ($listNode) {
+                $items = @($listNode.ChildNodes | Where-Object { $_.LocalName -match '^Item\d+$' })
+                $kept  = @($items | Where-Object { $_.GetAttribute("Value") -ne $PackageName } |
+                          ForEach-Object { $_.GetAttribute("Value") })
+                if ($kept.Count -ne $items.Count) {
+                    foreach ($i in $items) { [void]$listNode.RemoveChild($i) }
+                    for ($n = 0; $n -lt $kept.Count; $n++) {
+                        $e = $mx.CreateElement("Item$($n+1)")
+                        $e.SetAttribute("Value", $kept[$n])
+                        [void]$listNode.AppendChild($e)
+                    }
+                    $listNode.SetAttribute("Count", "$($kept.Count)")
+                    $mx.Save($miscXml)
+                    Log-Info "Purged $PackageName from StaticAutoInstallPackages (miscellaneousoptions.xml)"
+                }
+            }
+        } catch {
+            Log-Warn "Could not rewrite miscellaneousoptions.xml to drop $PackageName -- $($_.Exception.Message)"
+        }
+    }
+
+    # 2) staticpackages.inc -- generated include; drop the line so a stale copy is not reused.
+    $incFile = Join-Path $PcpDir "staticpackages.inc"
+    if (Test-Path $incFile) {
+        try {
+            $lines = Get-Content $incFile
+            $filtered = $lines | Where-Object { $_ -notmatch [regex]::Escape($PackageName) }
+            if (@($filtered).Count -ne @($lines).Count) {
+                Set-Content -Path $incFile -Value $filtered -Encoding utf8
+                Log-Info "Purged $PackageName from staticpackages.inc"
+            }
+        } catch {
+            Log-Warn "Could not rewrite staticpackages.inc to drop $PackageName -- $($_.Exception.Message)"
+        }
+    }
+}
+
 function Sanitize-PackageRegistrations {
     # Strip stale UserPkgLinks from packagefiles.xml that point at OTHER Lazarus
     # checkouts (typically C:\temp\lazarus-* or sibling worktrees). When such a
@@ -1145,6 +1199,13 @@ function Rebuild-IDE {
             $keptLpks = @($addPkgLpks | Where-Object { $_ -ne $commonxLpkPath })
             $attemptPkgArgs = @()
             if ($keptLpks.Count -gt 0) { $attemptPkgArgs = @("--add-package") + $keptLpks }
+            # GOD mrxp2wpx follow-up: dropping the --add-package arg is NOT enough. lazbuild
+            # ADDS to the IDE's persisted AutoInstall list, so PackageCommonX_LCL stays in
+            # miscellaneousoptions.xml (StaticAutoInstallPackages) + staticpackages.inc and
+            # is recompiled from CONFIG on every retry -- the build fails identically all
+            # three attempts and the box is left with no IDE (confirmed on GOD's Windows box,
+            # commonx PRESENT). The retry only recovers if the persisted entry is PURGED too.
+            Remove-PackageFromAutoInstall -PcpDir $envDir -PackageName "PackageCommonX_LCL"
             Log-Warn "Retrying WITHOUT commonx (PackageCommonX_LCL) so the IDE still builds."
             Log-Warn "  Cause: PackageCommonX_LCL.lpk sets -Mdelphi (String=AnsiString) but --build-ide compiles -Munleashed (String=UnicodeString)."
             Log-Warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette until that mode collision is fixed."
