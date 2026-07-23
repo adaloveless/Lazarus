@@ -912,7 +912,8 @@ var
 begin
   if (CurPos.StartPos<1) or (CurPos.StartPos>SrcLen) then exit(false);
   p:=@Src[CurPos.StartPos];
-  Result:=(p^ in ['''','#','`']) or ((p^='^') and (p[1] in ['A'..'Z']));
+  Result:=(p^ in ['''','#','`']) or ((p^='^') and (p[1] in ['A'..'Z']))
+       or ((p^='$') and (p[1]=''''));
 end;
 
 function TCustomCodeTool.AtomIsCharConstant: boolean;
@@ -1387,11 +1388,15 @@ begin
       end;
       CurPos.EndPos:=p-PChar(Src)+1;
     end;
-  '$': // hex number
+  '$': // hex number or interpolated string ($'...')
     begin
-      inc(p);
-      while IsHexNumberChar[p^] do
+      if p[1]='''' then
+        SkipPascalInterpolatedString(p,Scanner.NestedComments)
+      else begin
         inc(p);
+        while IsHexNumberChar[p^] do
+          inc(p);
+      end;
       CurPos.EndPos:=p-PChar(Src)+1;
     end;
   ';':
