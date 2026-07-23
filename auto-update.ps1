@@ -1085,6 +1085,7 @@ function Rebuild-IDE {
     # registering commonx's duplicates would reproduce the "duplicate unit name/file name"
     # package-install failure GOD hit in cycle 322 #182.
     $commonxRoot = $null
+    $commonxLpkPath = $null
     $commonxCandidates = @()
     if ($env:COMMONX_DIR) { $commonxCandidates += $env:COMMONX_DIR }
     $commonxCandidates += @(
@@ -1100,8 +1101,9 @@ function Rebuild-IDE {
         $commonxLpk = Get-ChildItem -Path $commonxRoot -Filter "PackageCommonX_LCL.lpk" -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($commonxLpk) {
-            $addPkgLpks += $commonxLpk.FullName
-            Log-Info "Including commonx LCL controls incl. TTouchButton ($($commonxLpk.FullName))"
+            $commonxLpkPath = $commonxLpk.FullName
+            $addPkgLpks += $commonxLpkPath
+            Log-Info "Including commonx LCL controls incl. TTouchButton ($commonxLpkPath)"
         } else {
             Log-Warn "PackageCommonX_LCL.lpk not found under $commonxRoot -- TTouchButton will be MISSING from the designer palette"
         }
@@ -1118,7 +1120,18 @@ function Rebuild-IDE {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
 
-    $maxAttempts = 2
+    # GOD mrxp2wpx (2026-07-23): an OPTIONAL THIRD-PARTY package must NEVER be able to take
+    # the whole IDE down. commonx is the only --add-package entry whose source this repo does
+    # not control, and PackageCommonX_LCL.lpk forces `-Mdelphi` (String=AnsiString) while
+    # --build-ide compiles `-Munleashed -Scghi` (String=UnicodeString). Under that collision
+    # commonx's transitively-compiled CORE units fail to build --
+    #   commandline.pas(310,36) -> stringx.SplitString(...; var sLeft, sRight: string; ...)
+    #   Error (3069) Call by var for arg no. 4 ... Got "AnsiString" expected "UnicodeString"
+    # -- which aborts "Compile AutoInstall Packages" and leaves NO lazarus.exe at all. The
+    # previous loop retried IDENTICAL args, so a deterministic package error simply failed
+    # twice and the user was left with no IDE. From attempt 2 on, drop commonx: a missing
+    # component on the palette is bad, but a machine with no IDE is far worse.
+    $maxAttempts = 3
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         if ($attempt -gt 1) {
             Log-Warn "IDE build failed on attempt $($attempt-1); cleaning stale artifacts and retrying..."
@@ -1126,10 +1139,26 @@ function Rebuild-IDE {
             Clean-StalePackageArtifacts
             Start-Sleep -Seconds 2
         }
-        & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @addPkgArgs 2>&1 |
+
+        $attemptPkgArgs = $addPkgArgs
+        if ($attempt -gt 1 -and $commonxLpkPath) {
+            $keptLpks = @($addPkgLpks | Where-Object { $_ -ne $commonxLpkPath })
+            $attemptPkgArgs = @()
+            if ($keptLpks.Count -gt 0) { $attemptPkgArgs = @("--add-package") + $keptLpks }
+            Log-Warn "Retrying WITHOUT commonx (PackageCommonX_LCL) so the IDE still builds."
+            Log-Warn "  Cause: PackageCommonX_LCL.lpk sets -Mdelphi (String=AnsiString) but --build-ide compiles -Munleashed (String=UnicodeString)."
+            Log-Warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette until that mode collision is fixed."
+        }
+
+        & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @attemptPkgArgs 2>&1 |
             Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
         $buildExit = $LASTEXITCODE
-        if ($buildExit -eq 0) { break }
+        if ($buildExit -eq 0) {
+            if ($attempt -gt 1 -and $commonxLpkPath) {
+                Log-Warn "IDE built WITHOUT commonx LCL packages -- TTouchButton is MISSING from the palette (see cause above)."
+            }
+            break
+        }
     }
 
     $ErrorActionPreference = $prevEAP

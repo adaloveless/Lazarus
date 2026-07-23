@@ -423,6 +423,7 @@ rebuild_ide() {
     # ONLY PackageCommonX_LCL -- commonx's BGRABitmap/LazActiveX duplicate this fork's
     # in-tree components/ copies and would trigger duplicate-unit install failures (#182).
     local commonx_root=""
+    local commonx_lpk_path=""
     for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx"; do
         if [ -n "$cand" ] && [ -d "$cand" ]; then commonx_root="$cand"; break; fi
     done
@@ -430,6 +431,7 @@ rebuild_ide() {
         local commonx_lpk
         commonx_lpk=$(find "$commonx_root" -name 'PackageCommonX_LCL.lpk' -print -quit 2>/dev/null)
         if [ -n "$commonx_lpk" ]; then
+            commonx_lpk_path="$commonx_lpk"
             add_pkg_lpks="$add_pkg_lpks $commonx_lpk"
             log_info "Including commonx LCL controls incl. TTouchButton ($commonx_lpk)"
         else
@@ -447,6 +449,32 @@ rebuild_ide() {
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
         --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
     local build_exit=${PIPESTATUS[0]}
+
+    # GOD mrxp2wpx (2026-07-23): parity with auto-update.ps1 -- an OPTIONAL THIRD-PARTY
+    # package must NEVER be able to take the whole IDE down. PackageCommonX_LCL.lpk forces
+    # -Mdelphi (String=AnsiString) while --build-ide compiles -Munleashed
+    # (String=UnicodeString); commonx's transitively-compiled core units then fail
+    # error 3069 on a cross-mode "var string" arg and abort the entire build, leaving the
+    # user with no IDE binary at all. Retry without commonx before giving up.
+    if [ "$build_exit" -ne 0 ] && [ -n "$commonx_lpk_path" ]; then
+        log_warn "IDE build failed with commonx included; retrying WITHOUT commonx so the IDE still builds."
+        log_warn "  Cause: PackageCommonX_LCL.lpk sets -Mdelphi but --build-ide compiles -Munleashed (cross-mode 'var string', error 3069)."
+        log_warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette until that is fixed."
+        local kept_lpks=""
+        local p
+        for p in $add_pkg_lpks; do
+            if [ "$p" != "$commonx_lpk_path" ]; then kept_lpks="$kept_lpks $p"; fi
+        done
+        kept_lpks="${kept_lpks# }"
+        local fallback_args=""
+        if [ -n "$kept_lpks" ]; then fallback_args="--add-package $kept_lpks"; fi
+        "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
+            --compiler="$VP_COMPILER" --ws="$ws" $fallback_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+        build_exit=${PIPESTATUS[0]}
+        if [ "$build_exit" -eq 0 ]; then
+            log_warn "IDE built WITHOUT commonx LCL packages -- TTouchButton is MISSING from the palette (see cause above)."
+        fi
+    fi
 
     if [ "$build_exit" -ne 0 ]; then
         log_err "lazarus build failed with exit code $build_exit"
