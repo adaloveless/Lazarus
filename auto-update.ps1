@@ -1056,13 +1056,63 @@ function Rebuild-IDE {
     # every site, so users do not need to run `lazbuild --add-package` manually.
     # --build-ide (not --build-ide-minimal) is required because TBuildIDE.Minimal
     # skips LoadAutoInstallPackages.
+    # lazbuild CONTRACT (ide/lazbuild.lpr:1668,1725,1760,1578): `--add-package` is a MODE
+    # SWITCH that takes NO argument -- the .lpk paths are POSITIONAL args collected into
+    # Files (Files.Assign(NonOptions) -> AddPackagesToInstallList(Files)). So the correct
+    # shape is ONE --add-package followed by N paths. (Measured on lazdev c625: repeating
+    # the switch also exits 0 -- the handler is evaluated once per option NAME -- so this
+    # is a contract-correctness fix, NOT a bug fix. But `--add-package=PATH` IS rejected,
+    # exit 6 "Option at position 1 does not allow an argument" -- my c291 bug that killed
+    # the r6 darwin builds.) Collect paths first, prefix the switch once.
+    $addPkgLpks = @()
+
     $customdrawnLpk = Join-Path $LazarusDir "components\customdrawn\customdrawn.lpk"
-    $addPkgArgs = @()
     if (Test-Path $customdrawnLpk) {
-        $addPkgArgs = @("--add-package", $customdrawnLpk)
+        $addPkgLpks += $customdrawnLpk
         Log-Info "Including customdrawn LCL controls (--add-package)"
     } else {
-        Log-Info "customdrawn.lpk not found at $customdrawnLpk -- skipping --add-package"
+        Log-Info "customdrawn.lpk not found at $customdrawnLpk -- skipping"
+    }
+
+    # GOD mrxnqj9g / mrxnwdze (2026-07-23): TTouchButton is GOD's OWN custom component
+    # and lives in the commonx LCL package set. Those packages ship with every build and
+    # MUST be installed here, or GOD's components are missing from the designer palette.
+    # Same --add-package mechanism as customdrawn above (separate args, NEVER
+    # --add-package=PATH -- that form is rejected by lazbuild; my c291 bug killed r6).
+    #
+    # ONLY PackageCommonX_LCL is added. commonx also carries BGRABitmap/LazActiveX, but
+    # this fork already vendors those in-tree (components\bgrabitmap, components\activex);
+    # registering commonx's duplicates would reproduce the "duplicate unit name/file name"
+    # package-install failure GOD hit in cycle 322 #182.
+    $commonxRoot = $null
+    $commonxCandidates = @()
+    if ($env:COMMONX_DIR) { $commonxCandidates += $env:COMMONX_DIR }
+    $commonxCandidates += @(
+        "C:\source\Pascal\FPC\commonx",
+        "C:\source\pascal\FPC\commonx",
+        (Join-Path (Split-Path -Parent $LazarusDir) "commonx")
+    )
+    foreach ($cand in $commonxCandidates) {
+        if ($cand -and (Test-Path $cand)) { $commonxRoot = $cand; break }
+    }
+
+    if ($commonxRoot) {
+        $commonxLpk = Get-ChildItem -Path $commonxRoot -Filter "PackageCommonX_LCL.lpk" -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($commonxLpk) {
+            $addPkgLpks += $commonxLpk.FullName
+            Log-Info "Including commonx LCL controls incl. TTouchButton ($($commonxLpk.FullName))"
+        } else {
+            Log-Warn "PackageCommonX_LCL.lpk not found under $commonxRoot -- TTouchButton will be MISSING from the designer palette"
+        }
+    } else {
+        Log-Info "commonx tree not found -- skipping commonx LCL packages (set COMMONX_DIR to override)"
+    }
+
+    # ONE switch, then every collected path as a positional arg (see contract note above).
+    $addPkgArgs = @()
+    if ($addPkgLpks.Count -gt 0) {
+        $addPkgArgs = @("--add-package") + $addPkgLpks
     }
 
     $prevEAP = $ErrorActionPreference

@@ -403,13 +403,45 @@ rebuild_ide() {
     # every site, so users do not need to run `lazbuild --add-package` manually.
     # --build-ide (not --build-ide-minimal) is required because TBuildIDE.Minimal
     # skips LoadAutoInstallPackages.
+    # lazbuild CONTRACT (ide/lazbuild.lpr:1668,1725,1760,1578): --add-package is a MODE
+    # SWITCH taking NO argument; .lpk paths are POSITIONAL (Files). ONE switch + N paths.
+    # (Measured c625: repeating the switch also exits 0; this is contract-correctness, not
+    # a bug fix. `--add-package=PATH` however IS rejected, exit 6 -- the c291 r6 killer.)
+    local add_pkg_lpks=""
     local customdrawn_lpk="$LAZARUS_DIR/components/customdrawn/customdrawn.lpk"
     local add_pkg_args=""
     if [ -f "$customdrawn_lpk" ]; then
-        add_pkg_args="--add-package $customdrawn_lpk"
+        add_pkg_lpks="$customdrawn_lpk"
         log_info "Including customdrawn LCL controls (--add-package)"
     else
-        log_info "customdrawn.lpk not found at $customdrawn_lpk -- skipping --add-package"
+        log_info "customdrawn.lpk not found at $customdrawn_lpk -- skipping"
+    fi
+
+    # GOD mrxnqj9g / mrxnwdze (2026-07-23): TTouchButton is GOD's OWN component, shipped
+    # in the commonx LCL package set, which must be installed by auto-update or GOD's
+    # components go missing from the designer palette. Parity with auto-update.ps1.
+    # ONLY PackageCommonX_LCL -- commonx's BGRABitmap/LazActiveX duplicate this fork's
+    # in-tree components/ copies and would trigger duplicate-unit install failures (#182).
+    local commonx_root=""
+    for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx"; do
+        if [ -n "$cand" ] && [ -d "$cand" ]; then commonx_root="$cand"; break; fi
+    done
+    if [ -n "$commonx_root" ]; then
+        local commonx_lpk
+        commonx_lpk=$(find "$commonx_root" -name 'PackageCommonX_LCL.lpk' -print -quit 2>/dev/null)
+        if [ -n "$commonx_lpk" ]; then
+            add_pkg_lpks="$add_pkg_lpks $commonx_lpk"
+            log_info "Including commonx LCL controls incl. TTouchButton ($commonx_lpk)"
+        else
+            log_warn "PackageCommonX_LCL.lpk not found under $commonx_root -- TTouchButton will be MISSING from the palette"
+        fi
+    else
+        log_info "commonx tree not found -- skipping commonx LCL packages (set COMMONX_DIR to override)"
+    fi
+
+    # ONE switch, then every collected path (see contract note above).
+    if [ -n "$add_pkg_lpks" ]; then
+        add_pkg_args="--add-package $add_pkg_lpks"
     fi
 
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
