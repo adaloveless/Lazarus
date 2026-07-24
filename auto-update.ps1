@@ -1146,8 +1146,9 @@ function Rebuild-IDE {
             $attemptPkgArgs = @()
             if ($keptLpks.Count -gt 0) { $attemptPkgArgs = @("--add-package") + $keptLpks }
             Log-Warn "Retrying WITHOUT commonx (PackageCommonX_LCL) so the IDE still builds."
-            Log-Warn "  Cause: PackageCommonX_LCL.lpk sets -Mdelphi (String=AnsiString) but --build-ide compiles -Munleashed (String=UnicodeString)."
-            Log-Warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette until that mode collision is fixed."
+            Log-Warn "  Note: the original -Mdelphi/-Munleashed cross-mode error 3069 was fixed commonx-side (svn r6011/r6014, 2026-07-23)."
+            Log-Warn "  If this still fires, the cause is NEW -- capture the first 'Error:' line from the commonx compile before assuming the old one."
+            Log-Warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette this run."
         }
 
         & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @attemptPkgArgs 2>&1 |

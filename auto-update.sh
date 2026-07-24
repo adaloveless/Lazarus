@@ -451,14 +451,24 @@ rebuild_ide() {
     local build_exit=${PIPESTATUS[0]}
 
     # GOD mrxp2wpx (2026-07-23): parity with auto-update.ps1 -- an OPTIONAL THIRD-PARTY
-    # package must NEVER be able to take the whole IDE down. PackageCommonX_LCL.lpk forces
-    # -Mdelphi (String=AnsiString) while --build-ide compiles -Munleashed
-    # (String=UnicodeString); commonx's transitively-compiled core units then fail
-    # error 3069 on a cross-mode "var string" arg and abort the entire build, leaving the
-    # user with no IDE binary at all. Retry without commonx before giving up.
+    # package must NEVER be able to take the whole IDE down. Keep this retry regardless of
+    # whether the original cause is fixed: the guarantee is "worst case = a missing
+    # component, never a missing IDE".
+    #
+    # ORIGINAL cause (fixed commonx-side 2026-07-23, svn r6011/r6014): PackageCommonX_LCL.lpk
+    # set -Mdelphi (String=AnsiString) while its transitively-compiled core units --
+    # commandline.pas/stringx.pas, which are NOT package members -- straddled that boundary,
+    # so a "var string" arg failed error 3069 and aborted the entire build. r6011 flipped the
+    # .lpk to -Mdelphiunicode and dropped the {$mode delphiunicode} pin from DelphiDefs.inc;
+    # r6014 swept {$I DelphiDefs.inc} across the closure so every unit floats to the same mode.
+    #
+    # MECHANISM (verified on lazdev, two controls, 2026-07-24): a package's NON-MEMBER
+    # transitive units inherit the PACKAGE's CustomOptions -M flag -- they are NOT compiled
+    # with the IDE's -Munleashed. So this failure mode tracks the .lpk's own mode setting.
     if [ "$build_exit" -ne 0 ] && [ -n "$commonx_lpk_path" ]; then
         log_warn "IDE build failed with commonx included; retrying WITHOUT commonx so the IDE still builds."
-        log_warn "  Cause: PackageCommonX_LCL.lpk sets -Mdelphi but --build-ide compiles -Munleashed (cross-mode 'var string', error 3069)."
+        log_warn "  Note: the original -Mdelphi/-Munleashed cross-mode error 3069 was fixed commonx-side (svn r6011/r6014)."
+        log_warn "  If this still fires, the cause is NEW -- capture the first 'Error:' line from the commonx compile before assuming the old one."
         log_warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette until that is fixed."
         local kept_lpks=""
         local p
