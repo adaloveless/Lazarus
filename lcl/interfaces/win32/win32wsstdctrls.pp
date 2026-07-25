@@ -762,7 +762,11 @@ class procedure TWin32WSCustomGroupBox.GetPreferredSize(
   const AWinControl: TWinControl; var PreferredWidth, PreferredHeight: integer;
   WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth,
+  // Measure with the LCL Font (as the dark-mode caption paint DrawDarkGroupBoxWindow and
+  // the client caption inset GetLCLClientBoundsOffset both do) so AutoSize group boxes
+  // reserve enough height for the taller dark caption and it is not buried by the first
+  // row of items -- covers TCheckGroup and TRadioGroup (GOD mrzkbqip, 2026-07-24).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth,
                  PreferredHeight) then begin
     PreferredWidth += 19;
     PreferredHeight += 4;
