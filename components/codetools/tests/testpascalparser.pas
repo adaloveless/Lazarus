@@ -91,6 +91,10 @@ type
     procedure TestParseUnleashedInlineGenerics;
     procedure TestParseUnleashedPrefixedAttribute;
     procedure TestParseUnleashedMatchExpression;
+    procedure TestParseUnleashedMultiHelpers;
+    procedure TestParseUnleashedStatementExpressions;
+    procedure TestParseUnleashedArrayEquality;
+    procedure TestParseUnleashedTuples;
     procedure TestParseDelphiInlineVarAnonCaptureGenericReturn;
     procedure TestParseDelphiGenericReturnType;
   end;
@@ -1310,6 +1314,108 @@ begin
   '    2: 20;',
   '  else',
   '    30;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedMultiHelpers;
+// t10 multiple active class helpers for one type (cmUnleashed m_multi_helpers).
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TMyObject = class',
+  '    procedure DoThis_1;',
+  '  end;',
+  '  THelper1 = class helper for TMyObject',
+  '    procedure DoThis_2;',
+  '  end;',
+  '  THelper2 = class helper for TMyObject',
+  '    procedure DoThis_3;',
+  '  end;',
+  'implementation',
+  'procedure TMyObject.DoThis_1;',
+  'begin',
+  'end;',
+  'procedure THelper1.DoThis_2;',
+  'begin',
+  'end;',
+  'procedure THelper2.DoThis_3;',
+  'begin',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedStatementExpressions;
+// t11 case-as-expression on the right-hand side of an assignment
+// (cmUnleashed m_statement_expressions).
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TMyEnum = (meFirst, meSecond, meLast);',
+  'procedure Test;',
+  'implementation',
+  'procedure Test;',
+  'var',
+  '  s: String;',
+  'begin',
+  '  s := case meSecond of',
+  '    meFirst: ''Foo'';',
+  '    meSecond: ''Bar'';',
+  '    meLast: ''FooBar'';',
+  '  end;',
+  '  Writeln(s);',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedArrayEquality;
+// t12 dynamic-array compared against an array constructor
+// (cmUnleashed m_array_equality).
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'function Is1(constref arr: array of Integer): Boolean;',
+  'implementation',
+  'function Is1(constref arr: array of Integer): Boolean;',
+  'begin',
+  '  Result := arr = [1];',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedTuples;
+// t13 anonymous tuple return types plus positional _1/_2 element access
+// (cmUnleashed m_tuples). This is the only one of the four that the per-feature
+// control proved mode-sensitive: under {$mode objfpc} it fails to parse.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'function Pair: (Integer, Integer);',
+  'function Mixed: (Integer, String);',
+  'implementation',
+  'function Pair: (Integer, Integer);',
+  'begin',
+  '  Result._1 := 10;',
+  '  Result._2 := 20;',
+  'end;',
+  'function Mixed: (Integer, String);',
+  'begin',
+  '  Result._1 := 42;',
+  '  Result._2 := ''hello'';',
+  'end;',
   'end.']);
   ParseModule;
 end;
