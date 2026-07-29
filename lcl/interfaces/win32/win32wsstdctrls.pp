@@ -1466,7 +1466,11 @@ class procedure TWin32WSCustomEdit.GetPreferredSize(
   const AWinControl: TWinControl; var PreferredWidth, PreferredHeight: integer;
   WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, 'Fj', PreferredWidth, PreferredHeight) then
+  // Use MeasureTextForControl to get actual font metrics (WM_SETFONT), not WM_GETFONT.
+  // In dark mode, the LCL Font is taller than system default -> MeasureText under-measures,
+  // causing edit boxes to be too short and text to clip vertically. Fix matches TCheckBox/
+  // TRadioButton/GroupBox pattern (GOD mrzkbqip lineage, 2026-07-24).
+  if MeasureTextForControl(AWinControl, GetControlText(AWinControl.Handle), PreferredWidth, PreferredHeight) then
   begin
     PreferredWidth := 0;
     if TCustomEdit(AWinControl).BorderStyle <> bsNone then
@@ -1887,7 +1891,11 @@ class procedure TWin32WSCustomStaticText.GetPreferredSize(
   const AWinControl: TWinControl; var PreferredWidth, PreferredHeight: integer;
   WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // Use MeasureTextForControl to get actual font metrics (WM_SETFONT), not WM_GETFONT.
+  // In dark mode, the LCL Font is taller than system default -> MeasureText under-measures,
+  // causing static text labels to be too short and text to clip vertically. Fix matches
+  // TCheckBox/TRadioButton/GroupBox pattern (GOD mrzkbqip lineage, 2026-07-24).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     Inc(PreferredHeight);
     if TCustomStaticText(AWinControl).BorderStyle <> sbsNone then
@@ -1953,7 +1961,11 @@ end;
 class procedure TWin32WSButtonControl.GetPreferredSize(const AWinControl: TWinControl;
   var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // Use MeasureTextForControl to get actual font metrics (WM_SETFONT), not WM_GETFONT.
+  // In dark mode, the LCL Font is taller than system default -> MeasureText under-measures,
+  // causing buttons to be too short and button captions to clip vertically. Fix matches
+  // TCheckBox/TRadioButton/GroupBox pattern (GOD mrzkbqip lineage, 2026-07-24).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     Inc(PreferredWidth, 20);
     Inc(PreferredHeight, 4);
