@@ -1268,6 +1268,7 @@ function SyncDarkCheckRadioWindowBounds(Window: HWND; Control: TWinControl;
 var
   Parent: HWND;
   R: TRect;
+  WinLeft, WinTop: Integer;
 begin
   Result := False;
   if (Window = 0) or (Control = nil) or
@@ -1280,12 +1281,26 @@ begin
   if Parent <> 0 then
     MapWindowPoints(0, Parent, R, 2);
 
-  if (R.Left = Control.Left) and (R.Top = Control.Top) and
+  // Control.Left/Top are LCL client coordinates, and the LCL client area of a
+  // group box EXCLUDES the frame and the caption row. MapWindowPoints above put
+  // R in the parent's WIN32 client area, which for a BS_GROUPBOX button is the
+  // WHOLE window (frame + caption included). Comparing/assigning the two spaces
+  // directly drops GetLCLClientBoundsOffset -- (2, tmHeight+3) = (2,18) at 100%
+  // DPI -- so every grouped dark checkbox/radio was slammed 18px up and 2px left,
+  // landing the first item row exactly on top of the group caption ("buried
+  // heading" / "white dots", GOD mry3f78l/mrzkbqip) and pushing the last row past
+  // the group's bottom edge. The mismatched compare also never matched, so this
+  // re-fired on every sync and kept undoing correct LCL placement.
+  WinLeft := Control.Left;
+  WinTop := Control.Top;
+  LCLBoundsToWin32Bounds(Control, WinLeft, WinTop);
+
+  if (R.Left = WinLeft) and (R.Top = WinTop) and
      (R.Right - R.Left = Control.Width) and
      (R.Bottom - R.Top = Control.Height) then
     Exit;
 
-  SetWindowPos(Window, 0, Control.Left, Control.Top,
+  SetWindowPos(Window, 0, WinLeft, WinTop,
     Control.Width, Control.Height,
     SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
   InvalidateDarkChildPlacement(Window, ARedrawNow);
