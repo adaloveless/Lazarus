@@ -176,7 +176,7 @@ begin
   DefaultDark.SysColor[COLOR_3DLIGHT]:=                  RGBToColor(40, 40, 40);
   DefaultDark.SysColor[COLOR_INFOTEXT]:=                 RGBToColor(53, 53, 53);
   DefaultDark.SysColor[COLOR_INFOBK]:=                   RGBToColor(245, 245, 245);
-  DefaultDark.SysColor[COLOR_HOTLIGHT]:=                 RGBToColor(66, 66, 66);
+  DefaultDark.SysColor[COLOR_HOTLIGHT]:=                 RGBToColor(88, 166, 255);
   DefaultDark.SysColor[COLOR_GRADIENTACTIVECAPTION]:=    GetSysColor(COLOR_GRADIENTACTIVECAPTION);
   DefaultDark.SysColor[COLOR_GRADIENTINACTIVECAPTION]:=  GetSysColor(COLOR_GRADIENTINACTIVECAPTION);
   DefaultDark.SysColor[COLOR_MENUHILIGHT]:=              RGBToColor(66, 66, 66);
