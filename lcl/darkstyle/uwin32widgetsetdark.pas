@@ -3878,6 +3878,12 @@ begin
   WSExtCtrls.RegisterCustomCheckGroup;
   RegisterWSComponent(TCustomCheckGroup, TWin32WSCustomCheckGroupDark);
 
+  // TButtonControl is the intermediate ancestor of BOTH TCustomButton and TCustomCheckBox.
+  // Every other family below registers its intermediate core class before its Dark override;
+  // this one did not, so the TButtonControl node was created lazily AFTER ApplyDarkStyle had
+  // finished, and its VClass merge then read a stale parent slot and never acquired SetBounds.
+  WSStdCtrls.RegisterButtonControl;
+
   WSStdCtrls.RegisterCustomButton;
   RegisterWSComponent(TCustomButton, TWin32WSButtonDark);
 
