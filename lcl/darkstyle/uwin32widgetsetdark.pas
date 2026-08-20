@@ -1560,10 +1560,12 @@ end;
 
 procedure DrawDarkGroupBoxWindow(Window: HWND; DC: HDC);
 var
-  R, BorderR, TextR: TRect;
+  R, BorderR, TextR, ClientOfs: TRect;
   Text: UnicodeString;
   Control: TWinControl;
   FontHandle, OldFont, OldPen, OldBrush: HGDIOBJ;
+  Org: TPoint;
+  DCIndex: Integer;
   OldBkMode: Integer;
   OldTextColor: COLORREF;
   Brush: HBRUSH;
@@ -1677,8 +1679,30 @@ begin
   // TShape) inside a dark group box were never asked to paint -- ExcludeChildWindows
   // above cannot clip them either, since both its loops key on a window handle --
   // and the FillRect covered them.
+  // GOD ms6qjsvb residual: PaintControls places each handle-less child with
+  // MoveWindowOrg(DC, Left, Top) (wincontrol.inc:5121), where Left/Top are
+  // relative to the parent's LCL CLIENT origin -- but this DC comes from
+  // BeginPaint/WM_PRINTCLIENT and carries the WIN32 client origin. For an
+  // ordinary TWinControl the two coincide, which is why PaintHandler needs no
+  // correction; a group box's LCL client area is inset by the frame and the
+  // caption (GetLCLClientBoundsOffset -> Left=2, Top=tmHeight+3), so without
+  // this shift every handle-less child paints ~18px too high and 2px too left.
+  // The stock paint path applies the identical correction before delivering
+  // LM_PAINT (win32callback.inc:749); this override bypasses that path, so it
+  // has to apply the correction itself.
   if Control <> nil then
-    TWinControlDark(Control).PaintControls(DC, nil);
+  begin
+    DCIndex := Windows.SaveDC(DC);
+    try
+      if GetLCLClientBoundsOffset(Control, ClientOfs)
+      and Windows.GetWindowOrgEx(DC, @Org) then
+        Windows.SetWindowOrgEx(DC, Org.X - ClientOfs.Left,
+          Org.Y - ClientOfs.Top, nil);
+      TWinControlDark(Control).PaintControls(DC, nil);
+    finally
+      Windows.RestoreDC(DC, DCIndex);
+    end;
+  end;
 end;
 
 function CallDarkGroupBoxOldProc(Window: HWND; Msg: UInt;
