@@ -1669,6 +1669,16 @@ begin
   SetBkMode(DC, OldBkMode);
   if OldFont <> 0 then
     SelectObject(DC, OldFont);
+
+  // GOD ms6qjsvb: this dark WM_PAINT override fully replaces
+  // TWinControl.PaintHandler, which paints the control surface and THEN its
+  // handle-less children (wincontrol.inc:5042). Only the first half was
+  // reproduced here, so TGraphicControl descendants (TLabel, TSpeedButton,
+  // TShape) inside a dark group box were never asked to paint -- ExcludeChildWindows
+  // above cannot clip them either, since both its loops key on a window handle --
+  // and the FillRect covered them.
+  if Control <> nil then
+    TWinControlDark(Control).PaintControls(DC, nil);
 end;
 
 function CallDarkGroupBoxOldProc(Window: HWND; Msg: UInt;
