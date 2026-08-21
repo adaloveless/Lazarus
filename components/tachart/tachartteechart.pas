@@ -11,7 +11,7 @@
 }
 unit TAChartTeeChart;
 
-{$H+}
+{$MODE ObjFPC}{$H+}
 
 interface
 
