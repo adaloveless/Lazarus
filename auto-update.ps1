@@ -1074,6 +1074,19 @@ function Rebuild-IDE {
         Log-Info "customdrawn.lpk not found at $customdrawnLpk -- skipping"
     }
 
+    # GOD mss4zlof / mt0snq31 (2026-08-20): TAChart (incl. TPieSeries) was missing from
+    # auto-update-delivered IDEs. Adding tachartlazaruspkg.lpk to the AutoInstall list so
+    # it ships on every build. TAChart compiles clean under -Munleashed after tadrawercanvas.pas:13
+    # gained {$MODE ObjFPC} (Wynona 2026-08-11, verified HEAD ce12737bc1). This is a CORE
+    # Lazarus component — not optional like commonx — so it does NOT get dropped on retry.
+    $tachartLpk = Join-Path $LazarusDir "components\tachart\tachartlazaruspkg.lpk"
+    if (Test-Path $tachartLpk) {
+        $addPkgLpks += $tachartLpk
+        Log-Info "Including TAChart LCL controls (--add-package)"
+    } else {
+        Log-Warn "TAChart package not found at $tachartLpk -- TPieSeries will be MISSING from the designer palette"
+    }
+
     # GOD mrxnqj9g / mrxnwdze (2026-07-23): TTouchButton is GOD's OWN custom component
     # and lives in the commonx LCL package set. Those packages ship with every build and
     # MUST be installed here, or GOD's components are missing from the designer palette.
