@@ -1476,9 +1476,12 @@ var
   ax: TChartAxis;
 begin
   if (AOperation = opInsert) and (AComponent is TBasicChartSeries) then
-    AddSeries(TBasicChartSeries(AComponent))
+    if FSeries <> nil then
+      AddSeries(TBasicChartSeries(AComponent))
   else if (AOperation = opRemove) and (AComponent is TBasicChartSeries) then
-    DeleteSeries(TBasicChartSeries(AComponent))
+    if (FSeries <> nil) and not (csDestroying in ComponentState) and
+       not (csDestroying in AComponent.ComponentState) then
+      DeleteSeries(TBasicChartSeries(AComponent))
   else if (AOperation = opRemove) and (AComponent = Toolset) then
     FToolset := nil
   else if (AOperation = opRemove) and (AComponent = GUIConnector) then
@@ -2150,10 +2153,12 @@ var
   i: Integer;
 begin
   if FList.Count > 0 then
-    Items[0].FChart.StyleChanged(Items[0].FChart);
+    if (Items[0].FChart <> nil) and not (csDestroying in Items[0].FChart.ComponentState) then
+      Items[0].FChart.StyleChanged(Items[0].FChart);
   for i := 0 to FList.Count - 1 do begin
     Items[i].FChart := nil;
-    Items[i].Free;
+    if Items[i].Owner = nil then
+      Items[i].Free;
   end;
   FList.Clear;
 end;
