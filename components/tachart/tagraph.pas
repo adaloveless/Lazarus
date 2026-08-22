@@ -1475,7 +1475,11 @@ procedure TChart.Notification(AComponent: TComponent; AOperation: TOperation);
 var
   ax: TChartAxis;
 begin
-  if (AOperation = opRemove) and (AComponent = Toolset) then
+  if (AOperation = opInsert) and (AComponent is TBasicChartSeries) then
+    AddSeries(TBasicChartSeries(AComponent))
+  else if (AOperation = opRemove) and (AComponent is TBasicChartSeries) then
+    DeleteSeries(TBasicChartSeries(AComponent))
+  else if (AOperation = opRemove) and (AComponent = Toolset) then
     FToolset := nil
   else if (AOperation = opRemove) and (AComponent = GUIConnector) then
     GUIConnector := nil
