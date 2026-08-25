@@ -1110,6 +1110,29 @@ function Rebuild-IDE {
         if ($cand -and (Test-Path $cand)) { $commonxRoot = $cand; break }
     }
 
+    # c633 (GOD mt3gtf55): a fix on commonx SVN HEAD only helps if the LOCAL working copy is
+    # CURRENT. The updater used to build whatever was on disk, so a stale checkout (predating
+    # Knox's r6011/r6014 -Mdelphiunicode fix) re-hit error 3069 on the first attempt and was
+    # then silently DROPPED on retry -- an IDE that builds but has NO TBetterWebBrowser /
+    # TTouchButton at all (exactly what GOD reported). Refresh the working copy BEFORE
+    # building. Non-fatal in every failure mode: worst case is today's behavior (stale commonx
+    # dropped on retry), never a missing IDE (the c626 guarantee).
+    if ($commonxRoot) {
+        $svnCmd = Get-Command svn -ErrorAction SilentlyContinue
+        if ($svnCmd) {
+            $svnOut = (& svn update $commonxRoot 2>&1 | Out-String)
+            if ($LASTEXITCODE -eq 0) {
+                Log-Info "Refreshed commonx SVN working copy ($commonxRoot) -- r6011/r6014 -Mdelphiunicode fix picked up."
+            } else {
+                $svnErrLines = ($svnOut.Trim() -split '[\r\n]+') | Where-Object { $_ } | Select-Object -Last 3
+                Log-Warn "svn update of commonx FAILED (exit $LASTEXITCODE). If TBetterWebBrowser/TTouchButton are still missing after this run, run:  svn update $commonxRoot  then re-run auto-update.bat."
+                Log-Warn "  svn output tail: $($svnErrLines -join ' ;; ')"
+            }
+        } else {
+            Log-Warn "svn.exe not found on PATH -- cannot refresh commonx automatically. If TBetterWebBrowser/TTouchButton are still missing after this run, run:  svn update $commonxRoot  then re-run auto-update.bat."
+        }
+    }
+
     if ($commonxRoot) {
         $commonxLpk = Get-ChildItem -Path $commonxRoot -Filter "PackageCommonX_LCL.lpk" -Recurse -ErrorAction SilentlyContinue |
             Select-Object -First 1
@@ -1133,17 +1156,23 @@ function Rebuild-IDE {
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
 
-    # GOD mrxp2wpx (2026-07-23): an OPTIONAL THIRD-PARTY package must NEVER be able to take
+    # GOD mrxp2wpx / mt3gtf55: an OPTIONAL THIRD-PARTY package must NEVER be able to take
     # the whole IDE down. commonx is the only --add-package entry whose source this repo does
-    # not control, and PackageCommonX_LCL.lpk forces `-Mdelphi` (String=AnsiString) while
-    # --build-ide compiles `-Munleashed -Scghi` (String=UnicodeString). Under that collision
-    # commonx's transitively-compiled CORE units fail to build --
+    # not control. ORIGINAL cause, fixed commonx-side at svn r6011/r6014 (2026-07-23): the
+    # .lpk forced `-Mdelphi` (String=AnsiString) while --build-ide compiles
+    # `-Munleashed -Scghi` (String=UnicodeString). Under that collision commonx's
+    # transitively-compiled CORE units failed to build --
     #   commandline.pas(310,36) -> stringx.SplitString(...; var sLeft, sRight: string; ...)
     #   Error (3069) Call by var for arg no. 4 ... Got "AnsiString" expected "UnicodeString"
-    # -- which aborts "Compile AutoInstall Packages" and leaves NO lazarus.exe at all. The
-    # previous loop retried IDENTICAL args, so a deterministic package error simply failed
-    # twice and the user was left with no IDE. From attempt 2 on, drop commonx: a missing
-    # component on the palette is bad, but a machine with no IDE is far worse.
+    # -- which aborts "Compile AutoInstall Packages" and leaves NO lazarus.exe at all.
+    # r6011 flipped the .lpk CustomOptions to -Mdelphiunicode; r6014/r6015 swept
+    # {$I DelphiDefs.inc} across the closure (VERIFIED from source c631: HEAD r6017 has
+    # CustomOptions=-Mdelphiunicode -dLCL and no {$mode} pin in DelphiDefs.inc). The updater
+    # now runs `svn update` on the commonx tree (above) so a lagging checkout cannot
+    # silently re-fail -- see the c633 block. This retry remains purely as the LAST-RESORT
+    # guarantee: a missing component on the palette is bad, but a machine with no IDE is far
+    # worse (c626). If commonx is dropped here despite a successful svn update, the cause is
+    # NEW -- read the first 'Error:' line printed above, do not assume the old 3069.
     $maxAttempts = 3
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         if ($attempt -gt 1) {
@@ -1159,9 +1188,9 @@ function Rebuild-IDE {
             $attemptPkgArgs = @()
             if ($keptLpks.Count -gt 0) { $attemptPkgArgs = @("--add-package") + $keptLpks }
             Log-Warn "Retrying WITHOUT commonx (PackageCommonX_LCL) so the IDE still builds."
-            Log-Warn "  Note: the original -Mdelphi/-Munleashed cross-mode error 3069 was fixed commonx-side (svn r6011/r6014, 2026-07-23)."
-            Log-Warn "  If this still fires, the cause is NEW -- capture the first 'Error:' line from the commonx compile before assuming the old one."
-            Log-Warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette this run."
+            Log-Warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
+            Log-Warn "  The first 'Error:' line printed above is the cause. If it names a commonx unit with error 3069, the svn update did not take effect (see the svn messages from earlier in this run)."
+            Log-Warn "  Consequence: commonx components (incl. TTouchButton / TBetterWebBrowser) will NOT be on the designer palette this run."
         }
 
         & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @attemptPkgArgs 2>&1 |
