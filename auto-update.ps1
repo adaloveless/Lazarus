@@ -63,6 +63,9 @@ $script:VPUpdated = $false
 $script:UpstreamUpdated = $false
 $script:BuildProductsWereMissing = $false
 $script:LocalBuildProductsRestored = $false
+# c635: first compiler Error:/Fatal: line from the build attempt that INCLUDED commonx.
+# Replayed in the final failure block so the causal line survives a top-truncated paste.
+$script:CommonXFirstError = ""
 $script:ErrorCount = 0
 
 if (-not $VPDir -and $env:VPDIR -and (Test-Path (Join-Path $env:VPDIR ".git"))) {
@@ -1215,6 +1218,17 @@ function Rebuild-IDE {
     # r6011 flipped the .lpk CustomOptions to -Mdelphiunicode; r6014/r6015 swept
     # {$I DelphiDefs.inc} across the closure (VERIFIED from source c631: HEAD r6017 has
     # CustomOptions=-Mdelphiunicode -dLCL and no {$mode} pin in DelphiDefs.inc). The updater
+    #
+    # c635 MEASUREMENT (2026-08-25, GOD mt917m2w/mt917vcr) -- READ BEFORE TRUSTING THE c631 CLAIM.
+    # Measured on lazdev against commonx SVN HEAD r6142, VibePascal ppcx64 -Twin64 -Scghi -dLCL,
+    # the FULL PackageCommonX_LCL closure (167 units, 344,501 lines):
+    #   -Mdelphiunicode (what the .lpk sets) -> EXIT 0, clean. commonx source is NOT broken.
+    #   -Munleashed     (the IDE build mode) -> FATAL typex.pas(43,3) "( expected but [ found";
+    #                                           fixing that exposes typex.pas(226,25) Delphi generics.
+    # typex.pas is Delphi-dialect by construction and CANNOT compile under -Munleashed. The
+    # "non-member transitive units inherit the package -M" note is UNCONFIRMED for the real
+    # --build-ide path -- it is what stopped the investigation last time, and the build still fails.
+    # The first-error capture added this cycle is what will settle it from a real Windows run.
     # now runs `svn update` on the commonx tree (above) so a lagging checkout cannot
     # silently re-fail -- see the c633 block. This retry remains purely as the LAST-RESORT
     # guarantee: a missing component on the palette is bad, but a machine with no IDE is far
@@ -1247,9 +1261,24 @@ function Rebuild-IDE {
             Log-Warn "  Consequence: commonx components (incl. TTouchButton / TBetterWebBrowser) will NOT be on the designer palette this run."
         }
 
+        # c635 (GOD mt917m2w/mt917vcr): tee attempt 1 to a log so the FIRST compiler error can be
+        # replayed in the final failure block. That line was previously printed only mid-build, and
+        # a pasted run log is truncated from the TOP -- so the single line naming the failing unit
+        # was exactly the line that never reached us. Tee-Object does not change what is displayed
+        # (Where-Object still gates that) and $LASTEXITCODE still reports lazbuild, not the pipeline.
+        $attemptLog = Join-Path ([IO.Path]::GetTempPath()) ("lazbuild_attempt" + $attempt + ".log")
         & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @attemptPkgArgs 2>&1 |
+            Tee-Object -FilePath $attemptLog |
             Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
         $buildExit = $LASTEXITCODE
+        # Only attempt 1 includes commonx, so only its first error explains a dropped package.
+        if ($attempt -eq 1 -and $buildExit -ne 0 -and (Test-Path $attemptLog)) {
+            try {
+                $feMatch = Select-String -Path $attemptLog -Pattern "(Error|Fatal):" | Select-Object -First 1
+                if ($feMatch) { $script:CommonXFirstError = ($feMatch.Line).Trim() }
+            } catch { }
+        }
+        Remove-Item $attemptLog -Force -ErrorAction SilentlyContinue
         if ($buildExit -eq 0) {
             if ($attempt -gt 1 -and $commonxLpkPath) {
                 Log-Warn "IDE built WITHOUT commonx LCL packages -- TTouchButton is MISSING from the palette (see cause above)."
@@ -1306,6 +1335,13 @@ function Rebuild-IDE {
         Log-Err '    Unable to find the component class "TBetterWebBrowser" ... it is needed by unit <your form>.pas'
         Log-Err "  The FIRST 'Error:' line printed above is the cause -- it names the commonx unit that"
         Log-Err "  failed to compile under the IDE build mode, which is why the retry dropped the package."
+        if ($script:CommonXFirstError) {
+            Log-Err "  FIRST COMPILER ERROR from the attempt that included commonx (THIS IS THE CAUSE):"
+            Log-Err ("    " + $script:CommonXFirstError)
+        } else {
+            Log-Err "  (no compiler error captured this run -- commonx may have been skipped before the"
+            Log-Err "   build rather than failing during it)"
+        }
         try {
             $stampDir = Split-Path -Parent $stampPath
             if (-not (Test-Path $stampDir)) { New-Item -ItemType Directory -Path $stampDir -Force | Out-Null }

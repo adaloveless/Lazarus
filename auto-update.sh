@@ -539,9 +539,21 @@ rebuild_ide() {
         add_pkg_args="--add-package $add_pkg_lpks"
     fi
 
+    # c635 (GOD mt917m2w/mt917vcr): tee attempt 1 to a log so the FIRST compiler error can be
+    # replayed in the final failure block. Until now that line was printed only mid-build, and a
+    # pasted log gets truncated from the TOP -- so the one line naming the failing unit was exactly
+    # the line that never made it back to us. grep still gates what is shown live; tee does not
+    # change the displayed output, and PIPESTATUS[0] still reports lazbuild, not tee/grep.
+    local cx_build_log
+    cx_build_log=$(mktemp 2>/dev/null || echo "$LAZARUS_DIR/.lazbuild_attempt1.log")
+    COMMONX_FIRST_ERROR=""
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
-        --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+        --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | grep -E "Linking|lines compiled|Fatal|Error"
     local build_exit=${PIPESTATUS[0]}
+    if [ "$build_exit" -ne 0 ]; then
+        COMMONX_FIRST_ERROR=$(grep -m1 -E "(Error|Fatal):" "$cx_build_log" 2>/dev/null)
+    fi
+    rm -f "$cx_build_log" 2>/dev/null || true
 
     # GOD mrxp2wpx (2026-07-23): parity with auto-update.ps1 -- an OPTIONAL THIRD-PARTY
     # package must NEVER be able to take the whole IDE down. Keep this retry regardless of
@@ -558,6 +570,18 @@ rebuild_ide() {
     # MECHANISM (verified on lazdev, two controls, 2026-07-24): a package's NON-MEMBER
     # transitive units inherit the PACKAGE's CustomOptions -M flag -- they are NOT compiled
     # with the IDE's -Munleashed. So this failure mode tracks the .lpk's own mode setting.
+    #
+    # c635 MEASUREMENT (2026-08-25, GOD mt917m2w/mt917vcr) -- READ THIS BEFORE TRUSTING THE LINE ABOVE.
+    # Measured on lazdev against commonx SVN HEAD r6142, VibePascal ppcx64 -Twin64 -Scghi -dLCL,
+    # the FULL PackageCommonX_LCL closure (167 units, 344,501 lines):
+    #   -Mdelphiunicode (what the .lpk sets) -> EXIT 0, clean. commonx source is NOT broken.
+    #   -Munleashed     (the IDE build mode) -> FATAL at typex.pas(43,3) "( expected but [ found",
+    #                                           and after fixing that, again at typex.pas(226,25)
+    #                                           "Generics without specialization".
+    # So typex.pas is Delphi-dialect by construction and CANNOT compile under -Munleashed; the
+    # "inherits the package -M" claim above is what stopped us looking last time, and GOD's build
+    # is still failing. Treat that claim as UNCONFIRMED for the real --build-ide path until someone
+    # reads the captured first-error line (now replayed at the end of the run) from a real Windows run.
     if [ "$build_exit" -ne 0 ] && [ -n "$commonx_lpk_path" ]; then
         log_warn "IDE build failed with commonx included; retrying WITHOUT commonx so the IDE still builds."
         log_warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
@@ -614,6 +638,13 @@ rebuild_ide() {
         log_err "    Unable to find the component class \"TBetterWebBrowser\" ... it is needed by unit <your form>.pas"
         log_err "  The first 'Error:' line printed above is the cause -- it names the commonx unit that"
         log_err "  failed to compile under the IDE build mode, which is why the retry dropped the package."
+        if [ -n "$COMMONX_FIRST_ERROR" ]; then
+            log_err "  FIRST COMPILER ERROR from the attempt that included commonx (THIS IS THE CAUSE):"
+            log_err "    $COMMONX_FIRST_ERROR"
+        else
+            log_err "  (no compiler error captured this run -- commonx may have been skipped before the"
+            log_err "   build rather than failing during it)"
+        fi
         mkdir -p "$(dirname "$(commonx_stamp_path)")" 2>/dev/null
         get_commonx_install_stamp > "$(commonx_stamp_path)" 2>/dev/null || true
     elif [ "$cx_rc" -eq 0 ]; then
