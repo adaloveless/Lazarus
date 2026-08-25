@@ -1238,6 +1238,12 @@ function Rebuild-IDE {
     # "non-member transitive units inherit the package -M" note is UNCONFIRMED for the real
     # --build-ide path -- it is what stopped the investigation last time, and the build still fails.
     # The first-error capture added this cycle is what will settle it from a real Windows run.
+    #
+    # c636 RESOLVED IT (GOD mt93q21h, 2026-08-25): the real Windows run came back and the failure
+    # was NOT the -Munleashed parse error at all -- it was an internal compiler crash loading a
+    # stale ppu (PPU DESTROY DURING LOAD ... in module TYPEX / error 1026 / exit 217). typex.pas
+    # mode-portability was never what broke GOD's build and is NOT a palette blocker; it stays a
+    # real but SEPARATE question owned by Knox as commonx SME.
     # now runs `svn update` on the commonx tree (above) so a lagging checkout cannot
     # silently re-fail -- see the c633 block. This retry remains purely as the LAST-RESORT
     # guarantee: a missing component on the palette is bad, but a machine with no IDE is far

@@ -646,6 +646,12 @@ rebuild_ide() {
     # "inherits the package -M" claim above is what stopped us looking last time, and GOD's build
     # is still failing. Treat that claim as UNCONFIRMED for the real --build-ide path until someone
     # reads the captured first-error line (now replayed at the end of the run) from a real Windows run.
+    #
+    # c636 RESOLVED IT (GOD mt93q21h, 2026-08-25): the real Windows run came back and the
+    # failure was NOT the -Munleashed parse error at all. It was an internal compiler crash
+    # loading a stale ppu (PPU DESTROY DURING LOAD ... in module TYPEX / error 1026 / exit 217).
+    # So typex.pas mode-portability was never what was breaking GOD's build, and it is NOT a
+    # blocker for the palette. It stays a real but SEPARATE question owned by Knox as commonx SME.
     if [ "$build_exit" -ne 0 ] && [ -n "$commonx_lpk_path" ]; then
         log_warn "IDE build failed with commonx included; retrying WITHOUT commonx so the IDE still builds."
         log_warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
