@@ -66,6 +66,8 @@ $script:LocalBuildProductsRestored = $false
 # c635: first compiler Error:/Fatal: line from the build attempt that INCLUDED commonx.
 # Replayed in the final failure block so the causal line survives a top-truncated paste.
 $script:CommonXFirstError = ""
+$script:CommonXPpuHint = ""
+$script:CommonXArtifactsCleaned = 0
 $script:ErrorCount = 0
 
 if (-not $VPDir -and $env:VPDIR -and (Test-Path (Join-Path $env:VPDIR ".git"))) {
@@ -958,10 +960,71 @@ function Sanitize-PackageRegistrations {
 }
 
 function Clean-StalePackageArtifacts {
+    param([string[]]$ExtraPackageLpks = @())
+
     # Stale .ppu/.o files (compiled with older/different compilers) cause
     # VibePascal ICEs when lazbuild --build-ide= tries to recompile them.
     # Wipe lib/ output dirs for ALL installed packages (external + Lazarus
     # built-in) so they rebuild cleanly from source.
+    #
+    # c636 (GOD mt93q21h) -- TWO defects fixed here, both mine:
+    #   (1) This function only ever ran on the RETRY, and the retry is the attempt that
+    #       DROPS commonx. So the one cleanup written for this exact failure could never
+    #       run before the one build that needed it. It is now also called before attempt 1.
+    #   (2) Section 1 below finds packages via packagefiles.xml only, and cleans just
+    #       <pkgDir>\lib. On GOD's run it printed NOTHING for commonx, and typex.pas lives
+    #       in the commonx ROOT -- on the package unit search path (OtherUnitFiles
+    #       ".;..;..\vcl"), not under lib. A stray ppu there is loaded and kills the compiler:
+    #         PPU DESTROY DURING LOAD: symlist[436]=ENetworkError typ=5 in module TYPEX
+    #         Error: (1026) Compilation raised exception internally
+    #         EListError: List index exceeds bounds (1)
+    #         Error: (lazarus) Compile package PackageCommonX_LCL 1.0: stopped with exit code 217
+    #       Section 0 handles packages we KNOW we install, by path, independent of any XML.
+    # Only compiler OUTPUT is removed. A stray .ppu/.o outside lib is removed only when its
+    # own .pas/.pp sits beside it; commonx has ZERO versioned .ppu/.o (checked via svn), so
+    # this cannot delete a checked-in file.
+
+    # --- 0. Explicitly named packages (independent of packagefiles.xml) ---
+    $script:CommonXArtifactsCleaned = 0
+    foreach ($lpk in $ExtraPackageLpks) {
+        if (-not $lpk) { continue }
+        if (-not (Test-Path $lpk)) { continue }
+        $pkgDir = Split-Path -Parent $lpk
+        $pkgName = [IO.Path]::GetFileNameWithoutExtension($lpk)
+        $removed = 0
+        try {
+            $libDir = Join-Path $pkgDir "lib"
+            if (Test-Path $libDir) {
+                $stale = @(Get-ChildItem -Path $libDir -Recurse -Include @("*.ppu","*.o","*.a","*.rsj","*.compiled") -ErrorAction SilentlyContinue)
+                foreach ($f in $stale) {
+                    Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                    $removed++
+                }
+            }
+            foreach ($rel in @(".", "..", "..\vcl")) {
+                $d = Join-Path $pkgDir $rel
+                if (-not (Test-Path $d)) { continue }
+                foreach ($ext in @("*.ppu", "*.o")) {
+                    $strays = @(Get-ChildItem -Path $d -Filter $ext -File -ErrorAction SilentlyContinue)
+                    foreach ($f in $strays) {
+                        $base = Join-Path $f.DirectoryName ([IO.Path]::GetFileNameWithoutExtension($f.Name))
+                        if ((Test-Path ($base + ".pas")) -or (Test-Path ($base + ".pp"))) {
+                            Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue
+                            $removed++
+                        }
+                    }
+                }
+            }
+        } catch {
+            Log-Warn "Could not clean build artifacts for ${pkgName} - $_"
+        }
+        $script:CommonXArtifactsCleaned += $removed
+        if ($removed -gt 0) {
+            Log-Info "Cleaned $removed stale build artifact(s) for ${pkgName} in ${pkgDir} before building - stale .ppu/.o make the compiler die with an internal error (1026)."
+        } else {
+            Log-Info "Package tree for ${pkgName} is clean - no stale build artifacts to remove."
+        }
+    }
 
     # --- 1. External packages (from packagefiles.xml) ---
     $pkgFilesXml = Join-Path $env:LOCALAPPDATA "lazarus\packagefiles.xml"
@@ -1180,12 +1243,22 @@ function Rebuild-IDE {
     # guarantee: a missing component on the palette is bad, but a machine with no IDE is far
     # worse (c626). If commonx is dropped here despite a successful svn update, the cause is
     # NEW -- read the first 'Error:' line printed above, do not assume the old 3069.
+    # c636 (GOD mt93q21h): attempt 1 is the ONLY attempt that includes commonx, so the stale-
+    # artifact cleanup has to happen HERE, before it -- not in the retry that drops the package.
+    if ($commonxLpkPath) {
+        Clean-StalePackageArtifacts -ExtraPackageLpks @($commonxLpkPath)
+    }
+
     $maxAttempts = 3
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         if ($attempt -gt 1) {
             Log-Warn "IDE build failed on attempt $($attempt-1); cleaning stale artifacts and retrying..."
             Sanitize-PackageRegistrations
-            Clean-StalePackageArtifacts
+            if ($commonxLpkPath) {
+                Clean-StalePackageArtifacts -ExtraPackageLpks @($commonxLpkPath)
+            } else {
+                Clean-StalePackageArtifacts
+            }
             Start-Sleep -Seconds 2
         }
 
@@ -1215,6 +1288,10 @@ function Rebuild-IDE {
             try {
                 $feMatch = Select-String -Path $attemptLog -Pattern "(Error|Fatal):" | Select-Object -First 1
                 if ($feMatch) { $script:CommonXFirstError = ($feMatch.Line).Trim() }
+                # c636: "(1026) Compilation raised exception internally" names no unit. The lines
+                # that do are the PPU-load lines above it, and they match neither Error: nor Fatal:.
+                $ppuMatch = Select-String -Path $attemptLog -Pattern "PPU DESTROY DURING LOAD" | Select-Object -First 1
+                if ($ppuMatch) { $script:CommonXPpuHint = ($ppuMatch.Line).Trim() }
             } catch { }
         }
         Remove-Item $attemptLog -Force -ErrorAction SilentlyContinue
@@ -1277,6 +1354,13 @@ function Rebuild-IDE {
         if ($script:CommonXFirstError) {
             Log-Err "  FIRST COMPILER ERROR from the attempt that included commonx (THIS IS THE CAUSE):"
             Log-Err ("    " + $script:CommonXFirstError)
+            if ($script:CommonXPpuHint) {
+                Log-Err "  ...and this names the unit it died on (an internal compiler error carries no unit):"
+                Log-Err ("    " + $script:CommonXPpuHint)
+                Log-Err "  A 'PPU DESTROY DURING LOAD' + error 1026 pair means a ppu on the search path could not"
+                Log-Err ("  be loaded - normally a stale one. This run removed " + $script:CommonXArtifactsCleaned + " stale artifact(s) before building,")
+                Log-Err "  so if you are still seeing this, staleness is NOT the remaining cause."
+            }
         } else {
             Log-Err "  (no compiler error captured this run -- commonx may have been skipped before the"
             Log-Err "   build rather than failing during it)"
