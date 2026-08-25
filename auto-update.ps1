@@ -1097,18 +1097,11 @@ function Rebuild-IDE {
     # this fork already vendors those in-tree (components\bgrabitmap, components\activex);
     # registering commonx's duplicates would reproduce the "duplicate unit name/file name"
     # package-install failure GOD hit in cycle 322 #182.
-    $commonxRoot = $null
+    # c634: discovery moved to Get-CommonXRoot so the pre-build decision, the build and the
+    # post-build verification all resolve the SAME tree. When those lists drift, the checker
+    # and the builder disagree and the self-heal trigger below can never be satisfied.
+    $commonxRoot = Get-CommonXRoot
     $commonxLpkPath = $null
-    $commonxCandidates = @()
-    if ($env:COMMONX_DIR) { $commonxCandidates += $env:COMMONX_DIR }
-    $commonxCandidates += @(
-        "C:\source\Pascal\FPC\commonx",
-        "C:\source\pascal\FPC\commonx",
-        (Join-Path (Split-Path -Parent $LazarusDir) "commonx")
-    )
-    foreach ($cand in $commonxCandidates) {
-        if ($cand -and (Test-Path $cand)) { $commonxRoot = $cand; break }
-    }
 
     # c633 (GOD mt3gtf55): a fix on commonx SVN HEAD only helps if the LOCAL working copy is
     # CURRENT. The updater used to build whatever was on disk, so a stale checkout (predating
@@ -1236,6 +1229,32 @@ function Rebuild-IDE {
         Log-Err "MetaDarkStyle dark mode NOT installed -- this is a regression GOD will notice."
         foreach ($n in $mds.Notes) { Log-Err "  $n" }
         Log-Err "Fix: re-pull origin/main, then run -ResetConfig -ForceRebuild."
+    }
+
+    # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
+    # Until now the ONLY signal that PackageCommonX_LCL had been dropped was a Log-Warn
+    # buried mid-build, while the run still ended "[OK] lazarus.exe rebuilt" -- so a build
+    # that silently lost TBetterWebBrowser / TTouchButton looked identical to a good one.
+    # Record the attempted state either way so the pre-build self-heal trigger knows whether
+    # retrying is worthwhile.
+    $cx = Test-CommonXComponentsInstalled -Dir $LazarusDir
+    $stampPath = Get-CommonXStampPath
+    if ($cx.Checked -and -not $cx.Ok) {
+        Log-Err "commonx components NOT installed: $($cx.Missing -join ', ')"
+        Log-Err "  Forms using them will fail to open in the designer with:"
+        Log-Err '    Unable to find the component class "TBetterWebBrowser" ... it is needed by unit <your form>.pas'
+        Log-Err "  The FIRST 'Error:' line printed above is the cause -- it names the commonx unit that"
+        Log-Err "  failed to compile under the IDE build mode, which is why the retry dropped the package."
+        try {
+            $stampDir = Split-Path -Parent $stampPath
+            if (-not (Test-Path $stampDir)) { New-Item -ItemType Directory -Path $stampDir -Force | Out-Null }
+            Set-Content -Path $stampPath -Value (Get-CommonXInstallStamp) -Encoding ASCII
+        } catch { }
+    } elseif ($cx.Checked) {
+        Log-Ok "commonx components installed (TBetterWebBrowser, TTouchButton on the 'Digital Tundra' palette)"
+        if (Test-Path $stampPath) { Remove-Item $stampPath -Force -ErrorAction SilentlyContinue }
+    } else {
+        foreach ($n in $cx.Notes) { Log-Info "  $n" }
     }
 
     $starterExe = Join-Path $LazarusDir "startlazarus.exe"
@@ -1430,6 +1449,113 @@ function Reset-LazarusConfig {
     } else {
         Log-Info "No existing config at $envOptsDir -- nothing to reset"
     }
+}
+
+function Get-CommonXRoot {
+    # Single source of truth for locating the commonx working copy. Used by Rebuild-IDE
+    # (to pass PackageCommonX_LCL.lpk to lazbuild --add-package), by the pre-build
+    # self-heal decision, and by the post-build verification.
+    $candidates = @()
+    if ($env:COMMONX_DIR) { $candidates += $env:COMMONX_DIR }
+    $candidates += @(
+        "C:\source\Pascal\FPC\commonx",
+        "C:\source\pascal\FPC\commonx",
+        (Join-Path (Split-Path -Parent $LazarusDir) "commonx")
+    )
+    foreach ($cand in $candidates) {
+        if ($cand -and (Test-Path $cand)) { return $cand }
+    }
+    return $null
+}
+
+function Test-CommonXComponentsInstalled {
+    # GOD mt8zo2vh (2026-08-25, c634), and mss4zlof / mrxnwdze / mt7spkau before it:
+    # "Unable to find the component class TBetterWebBrowser ... needed by unit
+    # C:\Source\Pascal\FPC\Trick.Player\FormDecks.pas".
+    #
+    # WHY THIS CHECK EXISTS. The IDE resolves a component class off the COMPONENT PALETTE
+    # (ide\sourcefilemanager.pas SearchComponentClass -> TryRegisteredClasses ->
+    # IDEComponentPalette.FindRegComponent), so PackageCommonX_LCL must be INSTALLED INTO
+    # THE IDE -- present-on-disk and compiles-clean are both insufficient. Until c634
+    # nothing verified that end state, and two mechanisms conspired to hide the failure:
+    #   1. Rebuild-IDE only runs when $anyUpdated, so on a steady-state box (binaries
+    #      present, pull is a no-op) --add-package never executes at all;
+    #   2. when attempt 1 fails, the c626 containment drops commonx and the build still
+    #      exits 0 with "[OK] lazarus.exe rebuilt" -- the only signal is a mid-log warning.
+    # Net effect: an IDE that lost GOD's components stayed broken indefinitely. Same shape
+    # as Test-MetaDarkStyleInstalled below, applied to GOD's own components.
+    #
+    # Detection is a symbol scan of lazarus.exe: RegisterComponents publishes each class
+    # name into the linked binary's RTTI, so the names are present iff the design-time
+    # package was linked in. This is the identical technique Test-MetaDarkStyleInstalled
+    # already relies on in this file.
+    param([string]$Dir = $LazarusDir)
+
+    $result = @{ Ok = $true; Missing = @(); Notes = @(); Checked = $false }
+
+    $lazExe = Join-Path $Dir "lazarus.exe"
+    if (-not (Test-Path $lazExe)) {
+        $result.Notes += "lazarus.exe not present -- nothing to verify yet"
+        return $result
+    }
+
+    # Only meaningful when a commonx tree exists to install FROM. With no commonx checkout
+    # the components are legitimately absent (Rebuild-IDE logs a skip) and forcing rebuilds
+    # would spin forever on a box that simply does not have commonx.
+    $commonxRoot = Get-CommonXRoot
+    if (-not $commonxRoot) {
+        $result.Notes += "commonx tree not found -- component check skipped (set COMMONX_DIR to enable)"
+        return $result
+    }
+
+    # Class names registered by PackageCommonX_LCL: TBetterWebBrowser lives in
+    # lcl\BetterWebBrowser.pas, TTouchButton in lcl\touchcontrols_vcl.pas. Both are GOD's
+    # components and both ride the same package, so either one missing means the package
+    # was not installed.
+    $wanted = @("TBetterWebBrowser", "TTouchButton")
+
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($lazExe)
+        $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+        $result.Checked = $true
+        # Ordinal Contains, not -match: lazarus.exe is ~175 MB, so a regex pass per symbol
+        # over a string that size is needlessly expensive, and Contains needs no escaping.
+        foreach ($sym in $wanted) {
+            if (-not $text.Contains($sym)) { $result.Missing += $sym }
+        }
+        if ($result.Missing.Count -gt 0) {
+            $result.Ok = $false
+            $result.Notes += "lazarus.exe does NOT contain: $($result.Missing -join ', ') -- PackageCommonX_LCL was not installed into the IDE"
+        } else {
+            $result.Notes += "lazarus.exe contains commonx component symbols ($($wanted -join ', '))"
+        }
+    } catch {
+        $result.Notes += "Could not scan lazarus.exe: $_"
+    }
+
+    return $result
+}
+
+function Get-CommonXInstallStamp {
+    # Identifies the material a commonx install attempt was made against: the Lazarus commit
+    # plus the commonx working-copy revision. The self-heal trigger retries only when this
+    # CHANGES, so a box where commonx genuinely cannot compile does not pay for a full IDE
+    # rebuild on every single run.
+    $lazHead = ""
+    try { $lazHead = (Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-parse", "HEAD")) -join "" } catch { }
+    $commonxRev = ""
+    $commonxRoot = Get-CommonXRoot
+    if ($commonxRoot -and (Get-Command svn -ErrorAction SilentlyContinue)) {
+        try {
+            $info = (& svn info $commonxRoot 2>&1 | Out-String)
+            if ($info -match "(?m)^Revision:\s*(\d+)") { $commonxRev = $Matches[1] }
+        } catch { }
+    }
+    return "$($lazHead.Trim())|$commonxRev"
+}
+
+function Get-CommonXStampPath {
+    return (Join-Path (Join-Path $env:LOCALAPPDATA "lazarus") "commonx-install-attempt.txt")
 }
 
 function Test-MetaDarkStyleInstalled {
@@ -1934,6 +2060,44 @@ if ($missingBuildProducts.Count -gt 0) {
 if ($ForceRebuild) {
     Log-Info "Force rebuild requested"
     $anyUpdated = $true
+}
+
+# c634 (GOD mt8zo2vh) -- SELF-HEAL a degraded IDE.
+# Rebuild-IDE only runs when $anyUpdated. On a steady-state box (lazarus.exe present, pull
+# a no-op) that meant an IDE which had lost PackageCommonX_LCL -- because attempt 1 failed
+# once and the c626 containment dropped it -- could never get it back without someone
+# knowing to pass -ForceRebuild. That is why GOD saw the same "Unable to find the component
+# class TBetterWebBrowser" dialog for weeks: the updater reported success every run and
+# never rebuilt. If the components are missing, rebuild.
+#
+# Guarded by a stamp so this cannot spin: retry only when the Lazarus commit or the commonx
+# revision has CHANGED since the last attempt that failed to install them. On a box where
+# commonx genuinely cannot compile, the user gets one loud diagnosis, not a full IDE rebuild
+# on every run. -ForceRebuild always overrides the guard.
+if (-not $anyUpdated -and -not $NoBuild) {
+    $cxCheck = Test-CommonXComponentsInstalled -Dir $LazarusDir
+    if ($cxCheck.Checked -and -not $cxCheck.Ok) {
+        $stampPath = Get-CommonXStampPath
+        $currentStamp = Get-CommonXInstallStamp
+        # [string] cast + try/catch: $ErrorActionPreference is "Stop" script-wide, and an
+        # empty stamp file makes Get-Content -Raw return $null, so a bare .Trim() would
+        # abort the whole updater.
+        $lastStamp = ""
+        if (Test-Path $stampPath) {
+            try { $lastStamp = ([string](Get-Content $stampPath -Raw -ErrorAction SilentlyContinue)).Trim() } catch { $lastStamp = "" }
+        }
+
+        Log-Warn "IDE is missing GOD's commonx components: $($cxCheck.Missing -join ', ')"
+        if ($lastStamp -ne $currentStamp) {
+            Log-Info "Forcing IDE rebuild to reinstall PackageCommonX_LCL (source changed since the last attempt)"
+            $anyUpdated = $true
+        } else {
+            Log-Err "PackageCommonX_LCL still not installed, and nothing has changed since the last attempt -- not rebuilding again."
+            Log-Err "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
+            Log-Err "  Fix: run  .\auto-update.ps1 -ForceRebuild  and read the FIRST 'Error:' line of the build output."
+            Log-Err "  That first error is the commonx unit that fails to compile under the IDE build mode."
+        }
+    }
 }
 
 # Safety gate: never compile a tree that still has unresolved merge conflicts. A forced
