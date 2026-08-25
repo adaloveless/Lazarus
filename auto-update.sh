@@ -440,6 +440,28 @@ rebuild_ide() {
     for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx"; do
         if [ -n "$cand" ] && [ -d "$cand" ]; then commonx_root="$cand"; break; fi
     done
+
+    # c633 (GOD mt3gtf55): a fix on commonx SVN HEAD only helps if the LOCAL working copy is
+    # CURRENT. The updater used to build whatever was on disk, so a stale checkout (predating
+    # Knox's r6011/r6014 -Mdelphiunicode fix) re-hit error 3069 on the first attempt and was
+    # then silently DROPPED on retry -- an IDE that builds but has NO TBetterWebBrowser /
+    # TTouchButton at all. Refresh the working copy BEFORE building. Non-fatal in every
+    # failure mode: worst case is today's behavior (stale commonx dropped), never a missing IDE.
+    if [ -n "$commonx_root" ]; then
+        if command -v svn >/dev/null 2>&1; then
+            svn_rc=0
+            svn_out=$(svn update "$commonx_root" 2>&1) || svn_rc=$?
+            if [ "$svn_rc" -eq 0 ]; then
+                log_info "Refreshed commonx SVN working copy ($commonx_root) -- r6011/r6014 -Mdelphiunicode fix picked up."
+            else
+                log_warn "svn update of commonx FAILED (exit $svn_rc). If TBetterWebBrowser/TTouchButton are still missing after this run, run:  svn update $commonx_root  then re-run this updater."
+                log_warn "  svn output tail: $(printf '%s' "$svn_out" | grep -v '^$' | tail -n 3 | tr '\n' ' ')"
+            fi
+        else
+            log_warn "svn not found on PATH -- cannot refresh commonx automatically. If TBetterWebBrowser/TTouchButton are still missing after this run, run:  svn update $commonx_root  then re-run this updater."
+        fi
+    fi
+
     if [ -n "$commonx_root" ]; then
         local commonx_lpk
         commonx_lpk=$(find "$commonx_root" -name 'PackageCommonX_LCL.lpk' -print -quit 2>/dev/null)
@@ -480,9 +502,9 @@ rebuild_ide() {
     # with the IDE's -Munleashed. So this failure mode tracks the .lpk's own mode setting.
     if [ "$build_exit" -ne 0 ] && [ -n "$commonx_lpk_path" ]; then
         log_warn "IDE build failed with commonx included; retrying WITHOUT commonx so the IDE still builds."
-        log_warn "  Note: the original -Mdelphi/-Munleashed cross-mode error 3069 was fixed commonx-side (svn r6011/r6014)."
-        log_warn "  If this still fires, the cause is NEW -- capture the first 'Error:' line from the commonx compile before assuming the old one."
-        log_warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette until that is fixed."
+        log_warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
+        log_warn "  The first 'Error:' line printed above is the cause. If it names a commonx unit with error 3069, the svn update did not take effect (see the svn messages from earlier in this run)."
+        log_warn "  Consequence: commonx components (incl. TTouchButton / TBetterWebBrowser) will NOT be on the designer palette until that is fixed."
         local kept_lpks=""
         local p
         for p in $add_pkg_lpks; do
