@@ -428,6 +428,63 @@ get_commonx_install_stamp() {
     printf '%s|%s' "$laz_head" "$cx_rev"
 }
 
+# c636 (GOD mt93q21h): stale .ppu/.o in the commonx tree crash the compiler outright.
+# From GOD's Windows run, the attempt that INCLUDED commonx died like this:
+#   PPU DESTROY DURING LOAD: symlist[436]=ENetworkError typ=5 in module TYPEX
+#   Error: (1026) Compilation raised exception internally
+#   EListError: List index exceeds bounds (1)
+#   Error: (lazarus) Compile package PackageCommonX_LCL 1.0: stopped with exit code 217
+# That is an INTERNAL compiler error while LOADING a ppu -- not a source defect (c635 compiled
+# this same closure clean, 167 units / 344,501 lines / exit 0, but did so in FRESH scratch dirs,
+# which is exactly why a clean-dir probe could never reproduce it).
+#
+# auto-update.ps1 already had a Clean-StalePackageArtifacts for this class ("stale .ppu/.o
+# compiled with older/different compilers cause VibePascal ICEs"), but it ran ONLY on the retry
+# -- and the retry is the attempt that DROPS commonx. So the cleanup could never run before the
+# one build that needed it, and auto-update.sh had no cleanup at all. Clean BEFORE the attempt
+# that includes the package.
+#
+# Only compiler OUTPUT is removed: everything under the package's own lib/ output tree, plus a
+# stray <unit>.ppu/.o sitting beside its own <unit>.pas on the package's unit search path
+# (OtherUnitFiles ".;..;../vcl" -- typex.pas lives in the commonx ROOT, i.e. "..", which the
+# lib/-only sweep never touched). Verified against SVN: commonx has ZERO versioned .ppu/.o, so
+# this cannot delete a checked-in file.
+clean_stale_package_artifacts() {
+    local lpk="$1"
+    COMMONX_ARTIFACTS_CLEANED=0
+    [ -n "$lpk" ] || return 0
+    local pkg_dir removed=0 d f base
+    pkg_dir=$(dirname "$lpk")
+
+    # 1. the package's declared UnitOutputDirectory tree (lib/<cpu>-<os>-<ws>)
+    if [ -d "$pkg_dir/lib" ]; then
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            if rm -f "$f" 2>/dev/null; then removed=$((removed + 1)); fi
+        done < <(find "$pkg_dir/lib" -type f \( -name '*.ppu' -o -name '*.o' -o -name '*.a' -o -name '*.rsj' -o -name '*.compiled' \) 2>/dev/null)
+    fi
+
+    # 2. strays on the unit search path, guarded by the matching source beside them
+    for d in "$pkg_dir" "$pkg_dir/.." "$pkg_dir/../vcl"; do
+        [ -d "$d" ] || continue
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            base="${f%.*}"
+            if [ -f "$base.pas" ] || [ -f "$base.pp" ]; then
+                if rm -f "$f" 2>/dev/null; then removed=$((removed + 1)); fi
+            fi
+        done < <(find "$d" -maxdepth 1 -type f \( -name '*.ppu' -o -name '*.o' \) 2>/dev/null)
+    done
+
+    COMMONX_ARTIFACTS_CLEANED="$removed"
+    if [ "$removed" -gt 0 ]; then
+        log_info "Cleaned $removed stale build artifact(s) from the commonx package tree ($pkg_dir) before building -- stale .ppu/.o make the compiler die with an internal error (1026)."
+    else
+        log_info "commonx package tree clean -- no stale build artifacts to remove ($pkg_dir)."
+    fi
+    return 0
+}
+
 rebuild_ide() {
     log_header "Rebuilding Lazarus IDE"
 
@@ -527,6 +584,8 @@ rebuild_ide() {
             commonx_lpk_path="$commonx_lpk"
             add_pkg_lpks="$add_pkg_lpks $commonx_lpk"
             log_info "Including commonx LCL controls incl. TTouchButton ($commonx_lpk)"
+            # c636: clean BEFORE the attempt that includes commonx (see the function comment).
+            clean_stale_package_artifacts "$commonx_lpk"
         else
             log_warn "PackageCommonX_LCL.lpk not found under $commonx_root -- TTouchButton will be MISSING from the palette"
         fi
@@ -547,11 +606,16 @@ rebuild_ide() {
     local cx_build_log
     cx_build_log=$(mktemp 2>/dev/null || echo "$LAZARUS_DIR/.lazbuild_attempt1.log")
     COMMONX_FIRST_ERROR=""
+    COMMONX_PPU_HINT=""
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
         --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | grep -E "Linking|lines compiled|Fatal|Error"
     local build_exit=${PIPESTATUS[0]}
     if [ "$build_exit" -ne 0 ]; then
         COMMONX_FIRST_ERROR=$(grep -m1 -E "(Error|Fatal):" "$cx_build_log" 2>/dev/null)
+        # c636: "Error: (1026) Compilation raised exception internally" does not say WHICH unit.
+        # The lines that do are the PPU-load lines just above it, and they match neither
+        # "Error:" nor "Fatal:" -- so the c635 capture printed the symptom without the subject.
+        COMMONX_PPU_HINT=$(grep -m1 -E "PPU DESTROY DURING LOAD" "$cx_build_log" 2>/dev/null || true)
     fi
     rm -f "$cx_build_log" 2>/dev/null || true
 
@@ -582,6 +646,12 @@ rebuild_ide() {
     # "inherits the package -M" claim above is what stopped us looking last time, and GOD's build
     # is still failing. Treat that claim as UNCONFIRMED for the real --build-ide path until someone
     # reads the captured first-error line (now replayed at the end of the run) from a real Windows run.
+    #
+    # c636 RESOLVED IT (GOD mt93q21h, 2026-08-25): the real Windows run came back and the
+    # failure was NOT the -Munleashed parse error at all. It was an internal compiler crash
+    # loading a stale ppu (PPU DESTROY DURING LOAD ... in module TYPEX / error 1026 / exit 217).
+    # So typex.pas mode-portability was never what was breaking GOD's build, and it is NOT a
+    # blocker for the palette. It stays a real but SEPARATE question owned by Knox as commonx SME.
     if [ "$build_exit" -ne 0 ] && [ -n "$commonx_lpk_path" ]; then
         log_warn "IDE build failed with commonx included; retrying WITHOUT commonx so the IDE still builds."
         log_warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
@@ -641,6 +711,13 @@ rebuild_ide() {
         if [ -n "$COMMONX_FIRST_ERROR" ]; then
             log_err "  FIRST COMPILER ERROR from the attempt that included commonx (THIS IS THE CAUSE):"
             log_err "    $COMMONX_FIRST_ERROR"
+            if [ -n "$COMMONX_PPU_HINT" ]; then
+                log_err "  ...and this names the unit it died on (an internal compiler error carries no unit):"
+                log_err "    $COMMONX_PPU_HINT"
+                log_err "  A 'PPU DESTROY DURING LOAD' + error 1026 pair means a ppu on the search path could not"
+                log_err "  be loaded -- normally a stale one. This run removed ${COMMONX_ARTIFACTS_CLEANED:-0} stale artifact(s) before building,"
+                log_err "  so if you are still seeing this, staleness is NOT the remaining cause."
+            fi
         else
             log_err "  (no compiler error captured this run -- commonx may have been skipped before the"
             log_err "   build rather than failing during it)"
