@@ -56,6 +56,7 @@ function Log-Info  { param($msg) Write-Host "[INFO] $msg" -ForegroundColor Cyan 
 function Log-Ok    { param($msg) Write-Host "[OK] $msg" -ForegroundColor Green }
 function Log-Warn  { param($msg) Write-Host "[WARN] $msg" -ForegroundColor Yellow }
 function Log-Err   { param($msg) $script:ErrorCount++; Write-Host "[ERROR] $msg" -ForegroundColor Red }
+function Log-ErrDetail { param($msg) Write-Host "[ERROR] $msg" -ForegroundColor Red }  # continuation line of an already-counted failure -- prints identically, does NOT increment ErrorCount
 function Log-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
 $script:LazarusUpdated = $false
@@ -165,12 +166,12 @@ if (-not $VPDir) {
 
         if ($cloneExit -ne 0 -or -not (Test-Path (Join-Path $cloneTarget ".git"))) {
             Log-Err "git clone failed (exit $cloneExit) -- VibePascal could not be materialized."
-            Log-Err "Searched: $($candidates -join ', ')"
-            Log-Err ""
-            Log-Err "How to fix manually:"
-            Log-Err "  1. Clone next to Lazarus: git clone $cloneRepo ""$parent\vibepascal"""
-            Log-Err "  2. Or pass the path:      .\auto-update.bat -VPDir C:\path\to\vibepascal"
-            Log-Err "  3. Or set the env var:    setx VPDIR ""C:\path\to\vibepascal"" (then open a new shell)"
+            Log-ErrDetail "Searched: $($candidates -join ', ')"
+            Log-ErrDetail ""
+            Log-ErrDetail "How to fix manually:"
+            Log-ErrDetail "  1. Clone next to Lazarus: git clone $cloneRepo ""$parent\vibepascal"""
+            Log-ErrDetail "  2. Or pass the path:      .\auto-update.bat -VPDir C:\path\to\vibepascal"
+            Log-ErrDetail "  3. Or set the env var:    setx VPDIR ""C:\path\to\vibepascal"" (then open a new shell)"
             exit 1
         }
 
@@ -1353,23 +1354,23 @@ function Rebuild-IDE {
     $stampPath = Get-CommonXStampPath
     if ($cx.Checked -and -not $cx.Ok) {
         Log-Err "commonx components NOT installed: $($cx.Missing -join ', ')"
-        Log-Err "  Forms using them will fail to open in the designer with:"
-        Log-Err '    Unable to find the component class "TBetterWebBrowser" ... it is needed by unit <your form>.pas'
-        Log-Err "  The FIRST 'Error:' line printed above is the cause -- it names the commonx unit that"
-        Log-Err "  failed to compile under the IDE build mode, which is why the retry dropped the package."
+        Log-ErrDetail "  Forms using them will fail to open in the designer with:"
+        Log-ErrDetail '    Unable to find the component class "TBetterWebBrowser" ... it is needed by unit <your form>.pas'
+        Log-ErrDetail "  The FIRST 'Error:' line printed above is the cause -- it names the commonx unit that"
+        Log-ErrDetail "  failed to compile under the IDE build mode, which is why the retry dropped the package."
         if ($script:CommonXFirstError) {
-            Log-Err "  FIRST COMPILER ERROR from the attempt that included commonx (THIS IS THE CAUSE):"
-            Log-Err ("    " + $script:CommonXFirstError)
+            Log-ErrDetail "  FIRST COMPILER ERROR from the attempt that included commonx (THIS IS THE CAUSE):"
+            Log-ErrDetail ("    " + $script:CommonXFirstError)
             if ($script:CommonXPpuHint) {
-                Log-Err "  ...and this names the unit it died on (an internal compiler error carries no unit):"
-                Log-Err ("    " + $script:CommonXPpuHint)
-                Log-Err "  A 'PPU DESTROY DURING LOAD' + error 1026 pair means a ppu on the search path could not"
-                Log-Err ("  be loaded - normally a stale one. This run removed " + $script:CommonXArtifactsCleaned + " stale artifact(s) before building,")
-                Log-Err "  so if you are still seeing this, staleness is NOT the remaining cause."
+                Log-ErrDetail "  ...and this names the unit it died on (an internal compiler error carries no unit):"
+                Log-ErrDetail ("    " + $script:CommonXPpuHint)
+                Log-ErrDetail "  A 'PPU DESTROY DURING LOAD' + error 1026 pair means a ppu on the search path could not"
+                Log-ErrDetail ("  be loaded - normally a stale one. This run removed " + $script:CommonXArtifactsCleaned + " stale artifact(s) before building,")
+                Log-ErrDetail "  so if you are still seeing this, staleness is NOT the remaining cause."
             }
         } else {
-            Log-Err "  (no compiler error captured this run -- commonx may have been skipped before the"
-            Log-Err "   build rather than failing during it)"
+            Log-ErrDetail "  (no compiler error captured this run -- commonx may have been skipped before the"
+            Log-ErrDetail "   build rather than failing during it)"
         }
         try {
             $stampDir = Split-Path -Parent $stampPath
@@ -1837,9 +1838,9 @@ function Invoke-Doctor {
         Log-Ok "IDE package .lpk vs source consistency: OK"
     } else {
         Log-Err "IDE package .lpk vs source mismatches detected ($($lpkCheck.Mismatches.Count)):"
-        foreach ($m in $lpkCheck.Mismatches) { Log-Err "  $m" }
-        Log-Err "  Cause: source pulled but .lpk stale, or .lpk pulled but source not yet rebuilt."
-        Log-Err "  Fix: re-pull origin/main, then run -ForceRebuild."
+        foreach ($m in $lpkCheck.Mismatches) { Log-ErrDetail "  $m" }
+        Log-ErrDetail "  Cause: source pulled but .lpk stale, or .lpk pulled but source not yet rebuilt."
+        Log-ErrDetail "  Fix: re-pull origin/main, then run -ForceRebuild."
         $problems++
     }
 
@@ -2219,9 +2220,9 @@ if (-not $anyUpdated -and -not $NoBuild) {
             $anyUpdated = $true
         } else {
             Log-Err "PackageCommonX_LCL still not installed, and nothing has changed since the last attempt -- not rebuilding again."
-            Log-Err "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
-            Log-Err "  Fix: run  .\auto-update.ps1 -ForceRebuild  and read the FIRST 'Error:' line of the build output."
-            Log-Err "  That first error is the commonx unit that fails to compile under the IDE build mode."
+            Log-ErrDetail "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
+            Log-ErrDetail "  Fix: run  .\auto-update.ps1 -ForceRebuild  and read the FIRST 'Error:' line of the build output."
+            Log-ErrDetail "  That first error is the commonx unit that fails to compile under the IDE build mode."
         }
     }
 }
@@ -2262,7 +2263,7 @@ $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
 if ($quality.Quality -ne "Compatible") {
     Write-Host ""
     Log-Err "Lazarus directory check FAILED: $($quality.Quality) [$($quality.Note)]"
-    Log-Err "IDE will show 'Without a proper Lazarus directory you will get a lot of warnings' on startup."
+    Log-ErrDetail "IDE will show 'Without a proper Lazarus directory you will get a lot of warnings' on startup."
     Log-Info "Run: .\auto-update.ps1 -Doctor for a full diagnosis."
 }
 
