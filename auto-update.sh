@@ -373,6 +373,61 @@ configure_environment() {
     log_ok "IDE configured to use VibePascal. Restart Lazarus to apply."
 }
 
+# c634: single source of truth for locating the commonx working copy, so the pre-build
+# decision, the build and the post-build verification all resolve the SAME tree. Mirrors
+# Get-CommonXRoot in auto-update.ps1.
+get_commonx_root() {
+    local cand
+    for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx"; do
+        if [ -n "$cand" ] && [ -d "$cand" ]; then printf '%s' "$cand"; return 0; fi
+    done
+    return 1
+}
+
+# c634 (GOD mt8zo2vh): report which of GOD's commonx components are NOT linked into the
+# built IDE. The IDE resolves a component class off the component palette
+# (ide/sourcefilemanager.pas SearchComponentClass -> IDEComponentPalette.FindRegComponent),
+# so PackageCommonX_LCL must be INSTALLED INTO the IDE -- present-on-disk and
+# compiles-clean are both insufficient. RegisterComponents publishes each class name into
+# the linked binary's RTTI, so a symbol scan answers it exactly.
+#
+# Prints the missing class names (space separated) on stdout.
+# Exit 0 = all present, 1 = some missing, 2 = not checkable (no binary / no commonx tree).
+COMMONX_COMPONENTS="TBetterWebBrowser TTouchButton"
+test_commonx_components_installed() {
+    local exe="$LAZARUS_DIR/lazarus"
+    [ -f "$exe" ] || return 2
+    # With no commonx checkout the components are legitimately absent (rebuild_ide logs a
+    # skip); forcing rebuilds there would spin forever on a box that simply has no commonx.
+    get_commonx_root >/dev/null 2>&1 || return 2
+
+    local missing="" sym
+    for sym in $COMMONX_COMPONENTS; do
+        if ! grep -a -q -- "$sym" "$exe" 2>/dev/null; then
+            missing="$missing $sym"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        printf '%s' "${missing# }"
+        return 1
+    fi
+    return 0
+}
+
+# Identifies the material an install attempt was made against (Lazarus commit + commonx
+# revision), so the self-heal retry fires only when something has actually CHANGED.
+commonx_stamp_path() {
+    printf '%s' "${XDG_CACHE_HOME:-$HOME/.cache}/lazarus-commonx-install-attempt.txt"
+}
+get_commonx_install_stamp() {
+    local laz_head="" cx_rev="" cx_root=""
+    laz_head=$(git -C "$LAZARUS_DIR" rev-parse HEAD 2>/dev/null || printf '')
+    if cx_root=$(get_commonx_root 2>/dev/null) && command -v svn >/dev/null 2>&1; then
+        cx_rev=$(svn info "$cx_root" 2>/dev/null | sed -n 's/^Revision:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+    fi
+    printf '%s|%s' "$laz_head" "$cx_rev"
+}
+
 rebuild_ide() {
     log_header "Rebuilding Lazarus IDE"
 
@@ -435,11 +490,14 @@ rebuild_ide() {
     # components go missing from the designer palette. Parity with auto-update.ps1.
     # ONLY PackageCommonX_LCL -- commonx's BGRABitmap/LazActiveX duplicate this fork's
     # in-tree components/ copies and would trigger duplicate-unit install failures (#182).
+    # c634: discovery moved to get_commonx_root so the pre-build decision, the build and the
+    # post-build verification all resolve the SAME tree. When those lists drift, the checker
+    # and the builder disagree and the self-heal trigger can never be satisfied.
+    # `|| true` is required under `set -e`: get_commonx_root returns 1 when there is no
+    # commonx tree, which is a normal, non-fatal state here.
     local commonx_root=""
     local commonx_lpk_path=""
-    for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx"; do
-        if [ -n "$cand" ] && [ -d "$cand" ]; then commonx_root="$cand"; break; fi
-    done
+    commonx_root=$(get_commonx_root || true)
 
     # c633 (GOD mt3gtf55): a fix on commonx SVN HEAD only helps if the LOCAL working copy is
     # CURRENT. The updater used to build whatever was on disk, so a stale checkout (predating
@@ -541,6 +599,27 @@ rebuild_ide() {
 
     local size=$(du -sh "$LAZARUS_DIR/lazarus" | cut -f1)
     log_ok "lazarus rebuilt ($size)"
+
+    # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
+    # Until now the ONLY signal that PackageCommonX_LCL had been dropped was a log_warn
+    # buried mid-build, while the run still ended "lazarus rebuilt" -- so a build that
+    # silently lost TBetterWebBrowser / TTouchButton looked identical to a good one. Record
+    # the attempted state either way, so the self-heal trigger knows whether a retry is
+    # worthwhile.
+    local cx_missing="" cx_rc=0
+    cx_missing=$(test_commonx_components_installed) || cx_rc=$?
+    if [ "$cx_rc" -eq 1 ]; then
+        log_err "commonx components NOT installed: $cx_missing"
+        log_err "  Forms using them will fail to open in the designer with:"
+        log_err "    Unable to find the component class \"TBetterWebBrowser\" ... it is needed by unit <your form>.pas"
+        log_err "  The first 'Error:' line printed above is the cause -- it names the commonx unit that"
+        log_err "  failed to compile under the IDE build mode, which is why the retry dropped the package."
+        mkdir -p "$(dirname "$(commonx_stamp_path)")" 2>/dev/null
+        get_commonx_install_stamp > "$(commonx_stamp_path)" 2>/dev/null || true
+    elif [ "$cx_rc" -eq 0 ]; then
+        log_ok "commonx components installed ($COMMONX_COMPONENTS on the 'Digital Tundra' palette)"
+        rm -f "$(commonx_stamp_path)" 2>/dev/null || true
+    fi
 }
 
 test_ide_package_lpk_consistency() {
@@ -759,6 +838,35 @@ fi
 if [ "$FORCE_REBUILD" -eq 1 ]; then
     log_info "Force rebuild requested"
     ANY_UPDATED=1
+fi
+
+# c634 (GOD mt8zo2vh) -- SELF-HEAL a degraded IDE.
+# rebuild_ide only runs when ANY_UPDATED. On a steady-state box (binaries present, pull a
+# no-op) that meant an IDE which had lost PackageCommonX_LCL -- because the build failed
+# once and the retry dropped it -- could never get it back without someone knowing to pass
+# --force-rebuild. That is why GOD saw the same "Unable to find the component class
+# TBetterWebBrowser" dialog for weeks: the updater reported success every run and never
+# rebuilt. If the components are missing, rebuild.
+#
+# Guarded by a stamp so this cannot spin: retry only when the Lazarus commit or the commonx
+# revision has CHANGED since the last attempt that failed to install them.
+if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$BUILD_IDE" -eq 1 ]; then
+    cx_missing=""; cx_rc=0
+    cx_missing=$(test_commonx_components_installed) || cx_rc=$?
+    if [ "$cx_rc" -eq 1 ]; then
+        log_warn "IDE is missing GOD's commonx components: $cx_missing"
+        current_stamp=$(get_commonx_install_stamp)
+        last_stamp=""
+        [ -f "$(commonx_stamp_path)" ] && last_stamp=$(cat "$(commonx_stamp_path)" 2>/dev/null)
+        if [ "$current_stamp" != "$last_stamp" ]; then
+            log_info "Forcing IDE rebuild to reinstall PackageCommonX_LCL (source changed since the last attempt)"
+            ANY_UPDATED=1
+        else
+            log_err "PackageCommonX_LCL still not installed, and nothing has changed since the last attempt -- not rebuilding again."
+            log_err "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
+            log_err "  Fix: run  ./auto-update.sh --force-rebuild  and read the FIRST 'Error:' line of the build output."
+        fi
+    fi
 fi
 
 if [ "$ANY_UPDATED" -eq 1 ]; then
