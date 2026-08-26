@@ -373,6 +373,118 @@ configure_environment() {
     log_ok "IDE configured to use VibePascal. Restart Lazarus to apply."
 }
 
+# c634: single source of truth for locating the commonx working copy, so the pre-build
+# decision, the build and the post-build verification all resolve the SAME tree. Mirrors
+# Get-CommonXRoot in auto-update.ps1.
+get_commonx_root() {
+    local cand
+    for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx"; do
+        if [ -n "$cand" ] && [ -d "$cand" ]; then printf '%s' "$cand"; return 0; fi
+    done
+    return 1
+}
+
+# c634 (GOD mt8zo2vh): report which of GOD's commonx components are NOT linked into the
+# built IDE. The IDE resolves a component class off the component palette
+# (ide/sourcefilemanager.pas SearchComponentClass -> IDEComponentPalette.FindRegComponent),
+# so PackageCommonX_LCL must be INSTALLED INTO the IDE -- present-on-disk and
+# compiles-clean are both insufficient. RegisterComponents publishes each class name into
+# the linked binary's RTTI, so a symbol scan answers it exactly.
+#
+# Prints the missing class names (space separated) on stdout.
+# Exit 0 = all present, 1 = some missing, 2 = not checkable (no binary / no commonx tree).
+COMMONX_COMPONENTS="TBetterWebBrowser TTouchButton"
+test_commonx_components_installed() {
+    local exe="$LAZARUS_DIR/lazarus"
+    [ -f "$exe" ] || return 2
+    # With no commonx checkout the components are legitimately absent (rebuild_ide logs a
+    # skip); forcing rebuilds there would spin forever on a box that simply has no commonx.
+    get_commonx_root >/dev/null 2>&1 || return 2
+
+    local missing="" sym
+    for sym in $COMMONX_COMPONENTS; do
+        if ! grep -a -q -- "$sym" "$exe" 2>/dev/null; then
+            missing="$missing $sym"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        printf '%s' "${missing# }"
+        return 1
+    fi
+    return 0
+}
+
+# Identifies the material an install attempt was made against (Lazarus commit + commonx
+# revision), so the self-heal retry fires only when something has actually CHANGED.
+commonx_stamp_path() {
+    printf '%s' "${XDG_CACHE_HOME:-$HOME/.cache}/lazarus-commonx-install-attempt.txt"
+}
+get_commonx_install_stamp() {
+    local laz_head="" cx_rev="" cx_root=""
+    laz_head=$(git -C "$LAZARUS_DIR" rev-parse HEAD 2>/dev/null || printf '')
+    if cx_root=$(get_commonx_root 2>/dev/null) && command -v svn >/dev/null 2>&1; then
+        cx_rev=$(svn info "$cx_root" 2>/dev/null | sed -n 's/^Revision:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+    fi
+    printf '%s|%s' "$laz_head" "$cx_rev"
+}
+
+# c636 (GOD mt93q21h): stale .ppu/.o in the commonx tree crash the compiler outright.
+# From GOD's Windows run, the attempt that INCLUDED commonx died like this:
+#   PPU DESTROY DURING LOAD: symlist[436]=ENetworkError typ=5 in module TYPEX
+#   Error: (1026) Compilation raised exception internally
+#   EListError: List index exceeds bounds (1)
+#   Error: (lazarus) Compile package PackageCommonX_LCL 1.0: stopped with exit code 217
+# That is an INTERNAL compiler error while LOADING a ppu -- not a source defect (c635 compiled
+# this same closure clean, 167 units / 344,501 lines / exit 0, but did so in FRESH scratch dirs,
+# which is exactly why a clean-dir probe could never reproduce it).
+#
+# auto-update.ps1 already had a Clean-StalePackageArtifacts for this class ("stale .ppu/.o
+# compiled with older/different compilers cause VibePascal ICEs"), but it ran ONLY on the retry
+# -- and the retry is the attempt that DROPS commonx. So the cleanup could never run before the
+# one build that needed it, and auto-update.sh had no cleanup at all. Clean BEFORE the attempt
+# that includes the package.
+#
+# Only compiler OUTPUT is removed: everything under the package's own lib/ output tree, plus a
+# stray <unit>.ppu/.o sitting beside its own <unit>.pas on the package's unit search path
+# (OtherUnitFiles ".;..;../vcl" -- typex.pas lives in the commonx ROOT, i.e. "..", which the
+# lib/-only sweep never touched). Verified against SVN: commonx has ZERO versioned .ppu/.o, so
+# this cannot delete a checked-in file.
+clean_stale_package_artifacts() {
+    local lpk="$1"
+    COMMONX_ARTIFACTS_CLEANED=0
+    [ -n "$lpk" ] || return 0
+    local pkg_dir removed=0 d f base
+    pkg_dir=$(dirname "$lpk")
+
+    # 1. the package's declared UnitOutputDirectory tree (lib/<cpu>-<os>-<ws>)
+    if [ -d "$pkg_dir/lib" ]; then
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            if rm -f "$f" 2>/dev/null; then removed=$((removed + 1)); fi
+        done < <(find "$pkg_dir/lib" -type f \( -name '*.ppu' -o -name '*.o' -o -name '*.a' -o -name '*.rsj' -o -name '*.compiled' \) 2>/dev/null)
+    fi
+
+    # 2. strays on the unit search path, guarded by the matching source beside them
+    for d in "$pkg_dir" "$pkg_dir/.." "$pkg_dir/../vcl"; do
+        [ -d "$d" ] || continue
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            base="${f%.*}"
+            if [ -f "$base.pas" ] || [ -f "$base.pp" ]; then
+                if rm -f "$f" 2>/dev/null; then removed=$((removed + 1)); fi
+            fi
+        done < <(find "$d" -maxdepth 1 -type f \( -name '*.ppu' -o -name '*.o' \) 2>/dev/null)
+    done
+
+    COMMONX_ARTIFACTS_CLEANED="$removed"
+    if [ "$removed" -gt 0 ]; then
+        log_info "Cleaned $removed stale build artifact(s) from the commonx package tree ($pkg_dir) before building -- stale .ppu/.o make the compiler die with an internal error (1026)."
+    else
+        log_info "commonx package tree clean -- no stale build artifacts to remove ($pkg_dir)."
+    fi
+    return 0
+}
+
 rebuild_ide() {
     log_header "Rebuilding Lazarus IDE"
 
@@ -417,16 +529,54 @@ rebuild_ide() {
         log_info "customdrawn.lpk not found at $customdrawn_lpk -- skipping"
     fi
 
+    # GOD mss4zlof / mt0snq31 (2026-08-20): TAChart (incl. TPieSeries) must reach the
+    # designer palette on every delivered build. Parity with auto-update.ps1.
+    # Verified compile: lazbuild --bm=unleashed -B tachartlazaruspkg.lpk exits 0 at
+    # HEAD ce12737bc1 (tadrawercanvas.pas gained {$MODE ObjFPC} -- Wynona 2026-08-11).
+    # Core Lazarus component -- NOT dropped on retry (only commonx has that fallback).
+    local tachart_lpk="$LAZARUS_DIR/components/tachart/tachartlazaruspkg.lpk"
+    if [ -f "$tachart_lpk" ]; then
+        add_pkg_lpks="$add_pkg_lpks $tachart_lpk"
+        log_info "Including TAChart LCL controls (--add-package)"
+    else
+        log_warn "TAChart package not found at $tachart_lpk -- TPieSeries will be MISSING from the palette"
+    fi
+
     # GOD mrxnqj9g / mrxnwdze (2026-07-23): TTouchButton is GOD's OWN component, shipped
     # in the commonx LCL package set, which must be installed by auto-update or GOD's
     # components go missing from the designer palette. Parity with auto-update.ps1.
     # ONLY PackageCommonX_LCL -- commonx's BGRABitmap/LazActiveX duplicate this fork's
     # in-tree components/ copies and would trigger duplicate-unit install failures (#182).
+    # c634: discovery moved to get_commonx_root so the pre-build decision, the build and the
+    # post-build verification all resolve the SAME tree. When those lists drift, the checker
+    # and the builder disagree and the self-heal trigger can never be satisfied.
+    # `|| true` is required under `set -e`: get_commonx_root returns 1 when there is no
+    # commonx tree, which is a normal, non-fatal state here.
     local commonx_root=""
     local commonx_lpk_path=""
-    for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx"; do
-        if [ -n "$cand" ] && [ -d "$cand" ]; then commonx_root="$cand"; break; fi
-    done
+    commonx_root=$(get_commonx_root || true)
+
+    # c633 (GOD mt3gtf55): a fix on commonx SVN HEAD only helps if the LOCAL working copy is
+    # CURRENT. The updater used to build whatever was on disk, so a stale checkout (predating
+    # Knox's r6011/r6014 -Mdelphiunicode fix) re-hit error 3069 on the first attempt and was
+    # then silently DROPPED on retry -- an IDE that builds but has NO TBetterWebBrowser /
+    # TTouchButton at all. Refresh the working copy BEFORE building. Non-fatal in every
+    # failure mode: worst case is today's behavior (stale commonx dropped), never a missing IDE.
+    if [ -n "$commonx_root" ]; then
+        if command -v svn >/dev/null 2>&1; then
+            svn_rc=0
+            svn_out=$(svn update "$commonx_root" 2>&1) || svn_rc=$?
+            if [ "$svn_rc" -eq 0 ]; then
+                log_info "Refreshed commonx SVN working copy ($commonx_root) -- r6011/r6014 -Mdelphiunicode fix picked up."
+            else
+                log_warn "svn update of commonx FAILED (exit $svn_rc). If TBetterWebBrowser/TTouchButton are still missing after this run, run:  svn update $commonx_root  then re-run this updater."
+                log_warn "  svn output tail: $(printf '%s' "$svn_out" | grep -v '^$' | tail -n 3 | tr '\n' ' ')"
+            fi
+        else
+            log_warn "svn not found on PATH -- cannot refresh commonx automatically. If TBetterWebBrowser/TTouchButton are still missing after this run, run:  svn update $commonx_root  then re-run this updater."
+        fi
+    fi
+
     if [ -n "$commonx_root" ]; then
         local commonx_lpk
         commonx_lpk=$(find "$commonx_root" -name 'PackageCommonX_LCL.lpk' -print -quit 2>/dev/null)
@@ -434,6 +584,8 @@ rebuild_ide() {
             commonx_lpk_path="$commonx_lpk"
             add_pkg_lpks="$add_pkg_lpks $commonx_lpk"
             log_info "Including commonx LCL controls incl. TTouchButton ($commonx_lpk)"
+            # c636: clean BEFORE the attempt that includes commonx (see the function comment).
+            clean_stale_package_artifacts "$commonx_lpk"
         else
             log_warn "PackageCommonX_LCL.lpk not found under $commonx_root -- TTouchButton will be MISSING from the palette"
         fi
@@ -446,9 +598,26 @@ rebuild_ide() {
         add_pkg_args="--add-package $add_pkg_lpks"
     fi
 
+    # c635 (GOD mt917m2w/mt917vcr): tee attempt 1 to a log so the FIRST compiler error can be
+    # replayed in the final failure block. Until now that line was printed only mid-build, and a
+    # pasted log gets truncated from the TOP -- so the one line naming the failing unit was exactly
+    # the line that never made it back to us. grep still gates what is shown live; tee does not
+    # change the displayed output, and PIPESTATUS[0] still reports lazbuild, not tee/grep.
+    local cx_build_log
+    cx_build_log=$(mktemp 2>/dev/null || echo "$LAZARUS_DIR/.lazbuild_attempt1.log")
+    COMMONX_FIRST_ERROR=""
+    COMMONX_PPU_HINT=""
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
-        --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+        --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | grep -E "Linking|lines compiled|Fatal|Error"
     local build_exit=${PIPESTATUS[0]}
+    if [ "$build_exit" -ne 0 ]; then
+        COMMONX_FIRST_ERROR=$(grep -m1 -E "(Error|Fatal):" "$cx_build_log" 2>/dev/null)
+        # c636: "Error: (1026) Compilation raised exception internally" does not say WHICH unit.
+        # The lines that do are the PPU-load lines just above it, and they match neither
+        # "Error:" nor "Fatal:" -- so the c635 capture printed the symptom without the subject.
+        COMMONX_PPU_HINT=$(grep -m1 -E "PPU DESTROY DURING LOAD" "$cx_build_log" 2>/dev/null || true)
+    fi
+    rm -f "$cx_build_log" 2>/dev/null || true
 
     # GOD mrxp2wpx (2026-07-23): parity with auto-update.ps1 -- an OPTIONAL THIRD-PARTY
     # package must NEVER be able to take the whole IDE down. Keep this retry regardless of
@@ -465,11 +634,29 @@ rebuild_ide() {
     # MECHANISM (verified on lazdev, two controls, 2026-07-24): a package's NON-MEMBER
     # transitive units inherit the PACKAGE's CustomOptions -M flag -- they are NOT compiled
     # with the IDE's -Munleashed. So this failure mode tracks the .lpk's own mode setting.
+    #
+    # c635 MEASUREMENT (2026-08-25, GOD mt917m2w/mt917vcr) -- READ THIS BEFORE TRUSTING THE LINE ABOVE.
+    # Measured on lazdev against commonx SVN HEAD r6142, VibePascal ppcx64 -Twin64 -Scghi -dLCL,
+    # the FULL PackageCommonX_LCL closure (167 units, 344,501 lines):
+    #   -Mdelphiunicode (what the .lpk sets) -> EXIT 0, clean. commonx source is NOT broken.
+    #   -Munleashed     (the IDE build mode) -> FATAL at typex.pas(43,3) "( expected but [ found",
+    #                                           and after fixing that, again at typex.pas(226,25)
+    #                                           "Generics without specialization".
+    # So typex.pas is Delphi-dialect by construction and CANNOT compile under -Munleashed; the
+    # "inherits the package -M" claim above is what stopped us looking last time, and GOD's build
+    # is still failing. Treat that claim as UNCONFIRMED for the real --build-ide path until someone
+    # reads the captured first-error line (now replayed at the end of the run) from a real Windows run.
+    #
+    # c636 RESOLVED IT (GOD mt93q21h, 2026-08-25): the real Windows run came back and the
+    # failure was NOT the -Munleashed parse error at all. It was an internal compiler crash
+    # loading a stale ppu (PPU DESTROY DURING LOAD ... in module TYPEX / error 1026 / exit 217).
+    # So typex.pas mode-portability was never what was breaking GOD's build, and it is NOT a
+    # blocker for the palette. It stays a real but SEPARATE question owned by Knox as commonx SME.
     if [ "$build_exit" -ne 0 ] && [ -n "$commonx_lpk_path" ]; then
         log_warn "IDE build failed with commonx included; retrying WITHOUT commonx so the IDE still builds."
-        log_warn "  Note: the original -Mdelphi/-Munleashed cross-mode error 3069 was fixed commonx-side (svn r6011/r6014)."
-        log_warn "  If this still fires, the cause is NEW -- capture the first 'Error:' line from the commonx compile before assuming the old one."
-        log_warn "  Consequence: commonx components (incl. TTouchButton) will NOT be on the designer palette until that is fixed."
+        log_warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
+        log_warn "  The first 'Error:' line printed above is the cause. If it names a commonx unit with error 3069, the svn update did not take effect (see the svn messages from earlier in this run)."
+        log_warn "  Consequence: commonx components (incl. TTouchButton / TBetterWebBrowser) will NOT be on the designer palette until that is fixed."
         local kept_lpks=""
         local p
         for p in $add_pkg_lpks; do
@@ -506,6 +693,41 @@ rebuild_ide() {
 
     local size=$(du -sh "$LAZARUS_DIR/lazarus" | cut -f1)
     log_ok "lazarus rebuilt ($size)"
+
+    # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
+    # Until now the ONLY signal that PackageCommonX_LCL had been dropped was a log_warn
+    # buried mid-build, while the run still ended "lazarus rebuilt" -- so a build that
+    # silently lost TBetterWebBrowser / TTouchButton looked identical to a good one. Record
+    # the attempted state either way, so the self-heal trigger knows whether a retry is
+    # worthwhile.
+    local cx_missing="" cx_rc=0
+    cx_missing=$(test_commonx_components_installed) || cx_rc=$?
+    if [ "$cx_rc" -eq 1 ]; then
+        log_err "commonx components NOT installed: $cx_missing"
+        log_err "  Forms using them will fail to open in the designer with:"
+        log_err "    Unable to find the component class \"TBetterWebBrowser\" ... it is needed by unit <your form>.pas"
+        log_err "  The first 'Error:' line printed above is the cause -- it names the commonx unit that"
+        log_err "  failed to compile under the IDE build mode, which is why the retry dropped the package."
+        if [ -n "$COMMONX_FIRST_ERROR" ]; then
+            log_err "  FIRST COMPILER ERROR from the attempt that included commonx (THIS IS THE CAUSE):"
+            log_err "    $COMMONX_FIRST_ERROR"
+            if [ -n "$COMMONX_PPU_HINT" ]; then
+                log_err "  ...and this names the unit it died on (an internal compiler error carries no unit):"
+                log_err "    $COMMONX_PPU_HINT"
+                log_err "  A 'PPU DESTROY DURING LOAD' + error 1026 pair means a ppu on the search path could not"
+                log_err "  be loaded -- normally a stale one. This run removed ${COMMONX_ARTIFACTS_CLEANED:-0} stale artifact(s) before building,"
+                log_err "  so if you are still seeing this, staleness is NOT the remaining cause."
+            fi
+        else
+            log_err "  (no compiler error captured this run -- commonx may have been skipped before the"
+            log_err "   build rather than failing during it)"
+        fi
+        mkdir -p "$(dirname "$(commonx_stamp_path)")" 2>/dev/null
+        get_commonx_install_stamp > "$(commonx_stamp_path)" 2>/dev/null || true
+    elif [ "$cx_rc" -eq 0 ]; then
+        log_ok "commonx components installed ($COMMONX_COMPONENTS on the 'Digital Tundra' palette)"
+        rm -f "$(commonx_stamp_path)" 2>/dev/null || true
+    fi
 }
 
 test_ide_package_lpk_consistency() {
@@ -724,6 +946,35 @@ fi
 if [ "$FORCE_REBUILD" -eq 1 ]; then
     log_info "Force rebuild requested"
     ANY_UPDATED=1
+fi
+
+# c634 (GOD mt8zo2vh) -- SELF-HEAL a degraded IDE.
+# rebuild_ide only runs when ANY_UPDATED. On a steady-state box (binaries present, pull a
+# no-op) that meant an IDE which had lost PackageCommonX_LCL -- because the build failed
+# once and the retry dropped it -- could never get it back without someone knowing to pass
+# --force-rebuild. That is why GOD saw the same "Unable to find the component class
+# TBetterWebBrowser" dialog for weeks: the updater reported success every run and never
+# rebuilt. If the components are missing, rebuild.
+#
+# Guarded by a stamp so this cannot spin: retry only when the Lazarus commit or the commonx
+# revision has CHANGED since the last attempt that failed to install them.
+if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$BUILD_IDE" -eq 1 ]; then
+    cx_missing=""; cx_rc=0
+    cx_missing=$(test_commonx_components_installed) || cx_rc=$?
+    if [ "$cx_rc" -eq 1 ]; then
+        log_warn "IDE is missing GOD's commonx components: $cx_missing"
+        current_stamp=$(get_commonx_install_stamp)
+        last_stamp=""
+        [ -f "$(commonx_stamp_path)" ] && last_stamp=$(cat "$(commonx_stamp_path)" 2>/dev/null)
+        if [ "$current_stamp" != "$last_stamp" ]; then
+            log_info "Forcing IDE rebuild to reinstall PackageCommonX_LCL (source changed since the last attempt)"
+            ANY_UPDATED=1
+        else
+            log_err "PackageCommonX_LCL still not installed, and nothing has changed since the last attempt -- not rebuilding again."
+            log_err "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
+            log_err "  Fix: run  ./auto-update.sh --force-rebuild  and read the FIRST 'Error:' line of the build output."
+        fi
+    fi
 fi
 
 if [ "$ANY_UPDATED" -eq 1 ]; then
