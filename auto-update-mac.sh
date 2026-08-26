@@ -412,8 +412,14 @@ pull_lazarus_upstream() {
     git -C "$LAZARUS_DIR" merge --no-edit -X ours origin/main 2>&1 || resolve_ours_conflicts
 
     log_info "Pushing to origin..."
-    git -C "$LAZARUS_DIR" push origin main 2>&1
-    log_ok "Pushed to adaloveless/Lazarus"
+    # Best-effort: a credential/network failure must not block the local update
+    # + rebuild (headless/unattended runs have no keychain prompt). The merge
+    # already happened locally; retry with a manual 'git push' if this warns.
+    if ! git -C "$LAZARUS_DIR" push origin main 2>&1; then
+        log_warn "Push to origin failed (credentials/network?) -- local updates are intact, run 'git push origin main' manually."
+    else
+        log_ok "Pushed to adaloveless/Lazarus"
+    fi
     LAZARUS_UPDATED=1
 }
 
