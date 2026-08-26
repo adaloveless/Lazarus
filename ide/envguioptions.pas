@@ -40,14 +40,14 @@ const
     'Full'      // mwfsFull
     );
 type
-  TMsgWndShowAutomatically = (
-    mwsaCompiling,
-    mwsaError,
-    mwsaNever
+  TMsgWndShowAutomatically = (  // Messages window is opened automatically ...
+    mwsaDefault, // when any message is received
+    mwsaError,   // when an error occurs
+    mwsaNever    // never
   );
 const
   MsgWndShowAutoNames: array[TMsgWndShowAutomatically] of string = (
-    'Compiling', // mwsaCompiling
+    'Default',   // mwsaDefault
     'Error',     // mwsaError
     'Never'      // mwsaNever
     );
@@ -57,7 +57,6 @@ type
     mwRunning,
     mwSuccess,
     mwFailed,
-    mwAutoHeader,
     mwTextColor
     );
 const
@@ -65,7 +64,6 @@ const
   MsgWndDefHeaderBackgroundRunning = clYellow;
   MsgWndDefHeaderBackgroundSuccess = TColor($60FF60); // light green
   MsgWndDefHeaderBackgroundFailed = TColor($6060FF); // light red
-  MsgWndDefAutoHeaderBackground = clSkyBlue;
   MsgWndDefTextColor = clDefault;
 
   MsgWndDefaultColors: array[TMsgWndColor] of TColor = (
@@ -73,7 +71,6 @@ const
     MsgWndDefHeaderBackgroundRunning, // mwRunning
     MsgWndDefHeaderBackgroundSuccess, // mwSuccess
     MsgWndDefHeaderBackgroundFailed,  // mwFailed
-    MsgWndDefAutoHeaderBackground,    // mwAutoHeader
     MsgWndDefTextColor
     );
   MsgWndColorNames: array[TMsgWndColor] of string = (
@@ -81,7 +78,6 @@ const
     'Running',
     'Success',
     'Failed',
-    'AutoHeader',
     'TextColor'
     );
 
@@ -298,6 +294,7 @@ type
     FMsgViewStayOnTop: boolean;
     FMsgViewFocus: boolean;
     FMsgViewAlwaysDrawFocused: boolean;
+    FMsgViewWordWrap: boolean;
     FShowMessagesIcons: boolean;
     FMsgViewShowAutomatically: TMsgWndShowAutomatically;
     FMsgViewShowTranslations: boolean;
@@ -397,6 +394,7 @@ type
     property MsgViewFocus: boolean read FMsgViewFocus write FMsgViewFocus; // when showing the window, focus it
     property MsgViewAlwaysDrawFocused: boolean read FMsgViewAlwaysDrawFocused
                                               write FMsgViewAlwaysDrawFocused;
+    property MsgViewWordWrap: boolean read FMsgViewWordWrap write FMsgViewWordWrap;
     property ShowMessagesIcons: boolean read FShowMessagesIcons write FShowMessagesIcons;
     property MsgViewShowAutomatically: TMsgWndShowAutomatically read FMsgViewShowAutomatically
                                                                write FMsgViewShowAutomatically;
@@ -440,7 +438,7 @@ function StrToMsgWndShowAuto(const s: string): TMsgWndShowAutomatically;
 begin
   for Result in TMsgWndShowAutomatically do
     if CompareText(s,MsgWndShowAutoNames[Result])=0 then exit;
-  Result:=mwsaCompiling;
+  Result:=mwsaDefault;
 end;
 
 { TCustomDesktopOpt }
@@ -1010,9 +1008,10 @@ begin
   FMsgViewStayOnTop:=false;
   fMsgViewFocus:=DefaultMsgViewFocus;
   FShowMessagesIcons:=true;
-  FMsgViewShowAutomatically:=mwsaCompiling;
+  FMsgViewShowAutomatically:=mwsaDefault;
   FMsgViewShowTranslations:=false;
   FMsgViewAlwaysDrawFocused:=false;
+  FMsgViewWordWrap:=true;
   FMsgViewFilenameStyle:=mwfsShort;
   for c:=low(TMsgWndColor) to high(TMsgWndColor) do
     fMsgViewColors[c]:=MsgWndDefaultColors[c];
@@ -1106,9 +1105,10 @@ begin
   fMsgViewFocus:=XMLCfg.GetValue(Path+'MsgView/Focus/Value',FMsgViewFocus);
   FShowMessagesIcons:=XMLCfg.GetValue(Path+'MsgView/ShowMessagesIcons/Value',true);
   FMsgViewShowAutomatically:=StrToMsgWndShowAuto(XMLCfg.GetValue(
-    Path+'MsgView/ShowAutomatically/Value',MsgWndShowAutoNames[mwsaCompiling]));
+    Path+'MsgView/ShowAutomatically/Value',MsgWndShowAutoNames[mwsaDefault]));
   FMsgViewShowTranslations:=XMLCfg.GetValue(Path+'MsgView/ShowTranslations/Value',false);
   FMsgViewAlwaysDrawFocused:=XMLCfg.GetValue(Path+'MsgView/AlwaysDrawFocused/Value',false);
+  FMsgViewWordWrap:=XMLCfg.GetValue(Path+'MsgView/WordWrap/Value',true);
   FMsgViewFilenameStyle:=StrToMsgWndFilenameStyle(XMLCfg.GetValue(
     Path+'MsgView/Filename/Style',MsgWndFileNameStyleNames[mwfsShort]));
   for mwc:=low(TMsgWndColor) to high(TMsgWndColor) do
@@ -1237,9 +1237,10 @@ begin
   XMLCfg.SetDeleteValue(Path+'MsgView/ShowMessagesIcons/Value',FShowMessagesIcons,true);
   XMLCfg.SetDeleteValue(Path+'MsgView/ShowAutomatically/Value',
     MsgWndShowAutoNames[FMsgViewShowAutomatically],
-    MsgWndShowAutoNames[mwsaCompiling]);
+    MsgWndShowAutoNames[mwsaDefault]);
   XMLCfg.SetDeleteValue(Path+'MsgView/ShowTranslations/Value',FMsgViewShowTranslations,false);
   XMLCfg.SetDeleteValue(Path+'MsgView/AlwaysDrawFocused/Value',FMsgViewAlwaysDrawFocused,false);
+  XMLCfg.SetDeleteValue(Path+'MsgView/WordWrap/Value',FMsgViewWordWrap,true);
   XMLCfg.SetDeleteValue(Path+'MsgView/Filename/Style',
     MsgWndFileNameStyleNames[FMsgViewFilenameStyle],
     MsgWndFileNameStyleNames[mwfsShort]);

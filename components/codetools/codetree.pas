@@ -240,7 +240,9 @@ const
     ctnClassPublic,
     ctnClassPublished
     );
-
+  AllClassObjectsArray: array of word = (ctnClass,ctnObject,ctnRecordType,
+                     ctnObjCClass,ctnObjCCategory,ctnCPPClass,
+                     ctnClassHelper,ctnRecordHelper,ctnTypeHelper);
 
 type
   // Procedure Specifiers

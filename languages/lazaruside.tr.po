@@ -492,11 +492,6 @@ msgstr "Kod katlama ağacı"
 msgid "Code folding (current)"
 msgstr "Kod katlama (güncel)"
 
-#: lazarusidestrconsts.dlgaddhiattrcustom
-#, object-pascal-format
-msgid "Custom %d"
-msgstr ""
-
 #: lazarusidestrconsts.dlgaddhiattrdefault
 msgid "Default Text"
 msgstr "Varsayılan Metin"
@@ -649,11 +644,6 @@ msgstr "Değiştirilmiş satır"
 #: lazarusidestrconsts.dlgaddhiattrmouselink
 msgid "Mouse link"
 msgstr "Fare bağlantısı"
-
-#: lazarusidestrconsts.dlgaddhiattrnestedbracket
-#, object-pascal-format
-msgid "Nested bracket %d"
-msgstr ""
 
 #: lazarusidestrconsts.dlgaddhiattroutlinelevelcolor
 #, object-pascal-format
@@ -1353,9 +1343,34 @@ msgstr "Yapılandırma ve Hedef"
 msgid "Config files"
 msgstr "Yapılandırma dosyaları"
 
+#: lazarusidestrconsts.dlgconsolegroup
+msgid "Console"
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsoleidewindow
+msgid "IDE internal window"
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsolemodeide
+msgid "Internal IDE consoles"
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsolemodeos
+msgid "OS console"
+msgstr ""
+
 #: lazarusidestrconsts.dlgconsolesizenotsupported
 msgid "Current debugger does not support this."
 msgstr "Mevcut hata ayıklayıcı bunu desteklemiyor."
+
+#: lazarusidestrconsts.dlgconsoleunknown
+#, object-pascal-format
+msgid "Unknown console \"%s\""
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsoleuseidedefault
+msgid "-- Use IDE default console --"
+msgstr ""
 
 #: lazarusidestrconsts.dlgcootherdebugginginfo
 msgid "Other debugging info"
@@ -3719,6 +3734,10 @@ msgstr ""
 msgid "Generic highlight in procedure names (implementation)"
 msgstr ""
 
+#: lazarusidestrconsts.dlgpasresolvecompilermodeswitcheswithcodetools
+msgid "Resolve compiler mode switches with CodeTools"
+msgstr ""
+
 #: lazarusidestrconsts.dlgpassoptslinker
 msgid "Pass options to linker with \"-k\", delimiter is space"
 msgstr "\"-k\" ile bağlayıcıya geçiş seçenekleri, sınırlayıcı boşluktur"
@@ -3871,7 +3890,9 @@ msgid "Session"
 msgstr "Oturum"
 
 #: lazarusidestrconsts.dlgpotitle
-msgid "Title:"
+#, fuzzy
+#| msgid "Title:"
+msgid "Title"
 msgstr "Başlık:"
 
 #: lazarusidestrconsts.dlgpouiaccess
@@ -5196,6 +5217,10 @@ msgstr "Değişikliklerden vazgeçilsin mi?"
 msgid "Abort all loading"
 msgstr "Tüm yüklemeyi iptal et"
 
+#: lazarusidestrconsts.lisabortifanycompilerpathorexecut
+msgid "Abort if any compiler path or execute-before/after command is missing in the IDE trust whitelist."
+msgstr ""
+
 #: lazarusidestrconsts.lisabortloadingproject
 msgid "Abort loading project"
 msgstr "Projeyi yüklemeyi iptal et"
@@ -5498,13 +5523,6 @@ msgstr "\"%s\"%s  yaptığınız tüm değişiklikler kaybolacak ve dosya yenide
 #: lazarusidestrconsts.lisalpha
 msgid "Alpha"
 msgstr "Alfa"
-
-#: lazarusidestrconsts.lisalreadycontainsthehe
-#, object-pascal-format
-msgid ""
-"%s already contains the help:\n"
-"%s"
-msgstr ""
 
 #: lazarusidestrconsts.lisalternativekey
 msgid "Alternative key"
@@ -5957,10 +5975,22 @@ msgstr "Yeni proje oluştur"
 msgid "Build number"
 msgstr "Yapı numarası"
 
+#: lazarusidestrconsts.lisbuildreleasepackagesstorecompi
+msgid "Build release packages. Store compiler checksum instead of date in package.compiled files. Ignore session and environment options."
+msgstr ""
+
 #: lazarusidestrconsts.lisbuildstage
 msgctxt "lazarusidestrconsts.lisbuildstage"
 msgid "Build"
 msgstr "Derle"
+
+#: lazarusidestrconsts.lisbuildtheminimalidewithdefaults
+msgid "Build the minimal IDE with defaults."
+msgstr ""
+
+#: lazarusidestrconsts.lisbuildthereleaseidesameasminima
+msgid "Build the release IDE. Same as minimal plus a fixed set of extra packages."
+msgstr ""
 
 #: lazarusidestrconsts.lisbusy
 msgid "Busy"
@@ -6221,10 +6251,6 @@ msgstr "(Filtre)"
 #: lazarusidestrconsts.liscefollowcursor
 msgid "Follow cursor"
 msgstr "İmleci takip et"
-
-#: lazarusidestrconsts.lisceisarootcontrol
-msgid "Is a root control"
-msgstr "Kök kontrol"
 
 #: lazarusidestrconsts.liscelongparamlistcount
 msgid "Parameters count treated as \"many\""
@@ -6568,10 +6594,6 @@ msgstr "Farklı bir ad seçin"
 msgid "Choose a file with CodeTools templates"
 msgstr "CodeTools şablonlarıyla bir dosya seçin"
 
-#: lazarusidestrconsts.lischooseafpdoclink
-msgid "Choose a FPDoc link"
-msgstr "Bir FPDoc bağlantısı seçin"
-
 #: lazarusidestrconsts.lischooseakey
 msgid "Choose a key ..."
 msgstr "Bir tuş seç ..."
@@ -6579,10 +6601,6 @@ msgstr "Bir tuş seç ..."
 #: lazarusidestrconsts.lischooseanameforthecomponent
 msgid "Choose a name for the component"
 msgstr "Bileşen için bir ad seçin"
-
-#: lazarusidestrconsts.lischooseanexamplefile
-msgid "Choose an example file"
-msgstr "Örnek bir dosya seçin"
 
 #: lazarusidestrconsts.lischooseanfpcmessagefile
 msgid "Choose an FPC message file"
@@ -6915,102 +6933,17 @@ msgstr "Kod oluşturma seçenekleri"
 msgid "Add path"
 msgstr "Yol ekle"
 
-#: lazarusidestrconsts.liscodehelpbrowseexamplebutton
-msgctxt "lazarusidestrconsts.liscodehelpbrowseexamplebutton"
-msgid "Browse"
-msgstr "Gözat"
-
-#: lazarusidestrconsts.liscodehelpconfirmreplace
-msgid "Confirm replace"
-msgstr "Değiştirmeyi onayla"
-
-#: lazarusidestrconsts.liscodehelpcreatebutton
-msgid "Create help item"
-msgstr "Yardım öğesi oluştur"
-
 #: lazarusidestrconsts.liscodehelpdeletepathbutton
 msgid "Remove path"
 msgstr "Yolu kaldır"
 
 #: lazarusidestrconsts.liscodehelpdescrtag
-msgctxt "lazarusidestrconsts.liscodehelpdescrtag"
 msgid "Description"
-msgstr "Açıklama"
-
-#: lazarusidestrconsts.liscodehelperrorstag
-msgctxt "lazarusidestrconsts.liscodehelperrorstag"
-msgid "Errors"
-msgstr "Hatalar"
-
-#: lazarusidestrconsts.liscodehelpexampletag
-msgid "Example"
-msgstr "Örnek"
+msgstr ""
 
 #: lazarusidestrconsts.liscodehelpgroupbox
 msgid "FPDoc settings"
 msgstr "FPDoc ayarları"
-
-#: lazarusidestrconsts.liscodehelphintboldformat
-msgid "Insert bold formatting tag"
-msgstr "Kalın biçimlendirme etiketi ekle"
-
-#: lazarusidestrconsts.liscodehelphintinsertcodetag
-msgid "Insert code formatting tag"
-msgstr "Kod biçimlendirme etiketi ekle"
-
-#: lazarusidestrconsts.liscodehelphintitalicformat
-msgid "Insert italic formatting tag"
-msgstr "Eğik biçimlendirme etiketi ekle"
-
-#: lazarusidestrconsts.liscodehelphintremarktag
-msgid "Insert remark formatting tag"
-msgstr "Açıklama biçimlendirme etiketi ekle"
-
-#: lazarusidestrconsts.liscodehelphintunderlineformat
-msgid "Insert underline formatting tag"
-msgstr "Alt çizgi biçimlendirme etiketi ekle"
-
-#: lazarusidestrconsts.liscodehelphintvartag
-msgid "Insert var formatting tag"
-msgstr "Var biçimlendirme etiketini ekle"
-
-#: lazarusidestrconsts.liscodehelpinherited
-msgctxt "lazarusidestrconsts.liscodehelpinherited"
-msgid "Inherited"
-msgstr "Inherited"
-
-#: lazarusidestrconsts.liscodehelpinsertalink
-msgid "Insert a link ..."
-msgstr "Bir bağlantı ekle ..."
-
-#: lazarusidestrconsts.liscodehelpinsertparagraphformattingtag
-msgid "Insert paragraph formatting tag"
-msgstr "Paragraf biçimlendirme etiketi ekleme"
-
-#: lazarusidestrconsts.liscodehelpmainformcaption
-msgctxt "lazarusidestrconsts.liscodehelpmainformcaption"
-msgid "FPDoc Editor"
-msgstr "FPDoc Editör"
-
-#: lazarusidestrconsts.liscodehelpnoinheriteddescriptionfound
-msgid "(no inherited description found)"
-msgstr "(Devralınan açıklama bulunamadı)"
-
-#: lazarusidestrconsts.liscodehelpnotagcaption
-msgid "<NONE>"
-msgstr "<YOK>"
-
-#: lazarusidestrconsts.liscodehelpseealsotag
-msgid "See also"
-msgstr "Ayrıca bakınız"
-
-#: lazarusidestrconsts.liscodehelpshortdescriptionof
-msgid "Short description of"
-msgstr "Kısa açıklama"
-
-#: lazarusidestrconsts.liscodehelpshorttag
-msgid "Short"
-msgstr "Kısa"
 
 #: lazarusidestrconsts.liscodeobignoreconstinfuncs
 msgctxt "lazarusidestrconsts.liscodeobignoreconstinfuncs"
@@ -8341,10 +8274,6 @@ msgstr "Fppkg yapılandırmasını geri yükle"
 msgid "Create function"
 msgstr "Fonksiyon oluştur"
 
-#: lazarusidestrconsts.liscreatehelpnode
-msgid "Create Help node"
-msgstr "Yardım oluştur düğüm"
-
 #: lazarusidestrconsts.liscreateit
 msgid "Create it"
 msgstr "Oluştur"
@@ -8576,6 +8505,10 @@ msgstr "Geçmişi temizlemek için onaylayın"
 #: lazarusidestrconsts.lisdebugdialogconfirmdelwatches
 msgid "Confirm to delete all Watches"
 msgstr "Tüm izlemeleri silmek için onaylayın"
+
+#: lazarusidestrconsts.lisdebugdialogshowwatcheshint
+msgid "Show hint for watches/locals (with same delay as source hint)"
+msgstr ""
 
 #: lazarusidestrconsts.lisdebugger
 msgctxt "lazarusidestrconsts.lisdebugger"
@@ -8853,6 +8786,12 @@ msgstr "Eski dosyayı sil \"%s\"?"
 msgid "Delete selected macro?"
 msgstr "Seçili makro silinsin mi?"
 
+#: lazarusidestrconsts.lisdeleteselectedtrustedcompilers
+#, fuzzy
+msgctxt "lazarusidestrconsts.lisdeleteselectedtrustedcompilers"
+msgid "Delete selected"
+msgstr "Seçileni sil"
+
 #: lazarusidestrconsts.lisdeletethisaddition
 msgid "Delete this addition"
 msgstr "Bu eklemeyi sil"
@@ -9066,11 +9005,6 @@ msgctxt "lazarusidestrconsts.lisdlgimport"
 msgid "Import ..."
 msgstr "İçe aktar ..."
 
-#: lazarusidestrconsts.lisdlgopen
-msgctxt "lazarusidestrconsts.lisdlgopen"
-msgid "Open ..."
-msgstr "Aç ..."
-
 #: lazarusidestrconsts.lisdoesnotexists
 #, object-pascal-format
 msgid "%s does not exist: %s"
@@ -9103,6 +9037,10 @@ msgstr "Bu iletişim kutusunu bu proje için gösterme"
 #: lazarusidestrconsts.lisdonotshowthismessageagain
 msgid "Do not show this message again"
 msgstr "Bu mesajı tekrar gösterme"
+
+#: lazarusidestrconsts.lisdonottrustcompiler
+msgid "Do not trust"
+msgstr ""
 
 #: lazarusidestrconsts.lisdonotwriteupdatedprojectinfoafterbuild
 msgid "Do not write updated project info file after build. If not specified, build number will be incremented if configured."
@@ -9286,10 +9224,6 @@ msgstr "Mesajlar için ek yardım düzenleme"
 msgid "Edit build modes"
 msgstr "Yapı modlarını düzenleme"
 
-#: lazarusidestrconsts.liseditcontexthelp
-msgid "Edit context help"
-msgstr "Bağlam yardımını düzenle"
-
 #: lazarusidestrconsts.liseditfpcmessagehelp
 msgid "Edit FPC Message Help ..."
 msgstr ""
@@ -9346,19 +9280,24 @@ msgid "Macros"
 msgstr "Makro"
 
 #: lazarusidestrconsts.lisedtexttoolparameters
-msgid "Parameters:"
+#, fuzzy
+#| msgid "Parameters:"
+msgctxt "lazarusidestrconsts.lisedtexttoolparameters"
+msgid "Parameters"
 msgstr "Parametreler:"
 
-#: lazarusidestrconsts.lisedtexttoolprogramfilename
-msgid "Program Filename:"
-msgstr "Program Adı:"
+#: lazarusidestrconsts.lisedtexttoolprogramexecutable
+msgid "Program Executable"
+msgstr ""
 
 #: lazarusidestrconsts.lisedtexttooltitleandfilenamerequired
 msgid "Title and Filename required"
 msgstr "Başlık ve Dosya Adı Gerekli"
 
 #: lazarusidestrconsts.lisedtexttoolworkingdirectory
-msgid "Working Directory:"
+#, fuzzy
+#| msgid "Working Directory:"
+msgid "Working Directory"
 msgstr "Çalışma dizini:"
 
 #: lazarusidestrconsts.liselevatethemessageprioritytoalwaysshowitbydefaultit
@@ -9611,15 +9550,6 @@ msgstr "Lfm bileşen akışının ayrıştırılması sırasında hata oluştu."
 msgid "Error reading package list from file%s%s%s%s"
 msgstr "%s%s%s%s dosyasından paket listesi okunurken hata oluştu"
 
-#: lazarusidestrconsts.liserrorreadingxml
-msgid "Error reading XML"
-msgstr "XML okunurken hata oluştu"
-
-#: lazarusidestrconsts.liserrorreadingxmlfile
-#, object-pascal-format
-msgid "Error reading xml file \"%s\"%s%s"
-msgstr "Xml dosyası okunurken hata oluştu \"%s\" %s %s"
-
 #: lazarusidestrconsts.liserrors
 msgctxt "lazarusidestrconsts.liserrors"
 msgid "Errors"
@@ -9634,6 +9564,11 @@ msgstr ", Hatalar: %s"
 msgid "Error saving form"
 msgstr "Form kaydetme hatası"
 
+#: lazarusidestrconsts.liserrorscount
+#, object-pascal-format
+msgid "Errors: %s"
+msgstr ""
+
 #: lazarusidestrconsts.liserrorsettingthenameofacomponentto
 #, object-pascal-format
 msgid "Error setting the name of a component %s to %s"
@@ -9642,7 +9577,7 @@ msgstr "%s bileşeninin adını %s olarak ayarlama hatası"
 #: lazarusidestrconsts.liserrorwritingfile
 #, object-pascal-format
 msgid "Error writing file \"%s\""
-msgstr "Dosya \"%s\" yazarken hata oluştu"
+msgstr ""
 
 #: lazarusidestrconsts.liserrorwritingpackagelisttofile
 #, object-pascal-format
@@ -9656,11 +9591,6 @@ msgstr "Her n-satır numarasını göster."
 #: lazarusidestrconsts.lisexamplefile
 msgid "Example file:"
 msgstr "Örnek dosya:"
-
-#: lazarusidestrconsts.lisexamplesidentifiertmyenumenumunitnameidentifierpac
-#, object-pascal-format
-msgid "Examples:%sIdentifier%sTMyEnum.Enum%sUnitname.Identifier%s#PackageName.UnitName.Identifier"
-msgstr "Örnekler: %sIdentifier %sTMyEnum.Enum %sUnitname.Identifier %s # PackageName.UnitName.Identifier"
 
 #: lazarusidestrconsts.lisexclude
 msgid "Exclude"
@@ -10104,13 +10034,13 @@ msgstr "&İlk test"
 msgid "Fix LFM file"
 msgstr "LFM dosyasını düzelt"
 
-#: lazarusidestrconsts.lisfocusatcompilation
-msgid "Focus at compilation"
-msgstr ""
-
 #: lazarusidestrconsts.lisfocushint
 msgid "Focus hint"
 msgstr "İpucuna odaklan"
+
+#: lazarusidestrconsts.lisfocuswindow
+msgid "Focus window"
+msgstr ""
 
 #: lazarusidestrconsts.lisforcerenaming
 msgid "Force renaming"
@@ -10169,15 +10099,6 @@ msgctxt "lazarusidestrconsts.lisfpdoceditor"
 msgid "FPDoc Editor"
 msgstr "FPDoc Editör"
 
-#: lazarusidestrconsts.lisfpdocerrorwriting
-#, object-pascal-format
-msgid "Error writing \"%s\"%s%s"
-msgstr "\"%s\"%s%s yazılırken hata oluştu"
-
-#: lazarusidestrconsts.lisfpdocfpdocsyntaxerror
-msgid "FPDoc syntax error"
-msgstr "FPDoc sözdizimi hatası"
-
 #: lazarusidestrconsts.lisfpdocpackagename
 msgid "FPDoc package name:"
 msgstr "FPDoc paket adı:"
@@ -10185,11 +10106,6 @@ msgstr "FPDoc paket adı:"
 #: lazarusidestrconsts.lisfpdocpackagenamedefaultisprojectfilename
 msgid "FPDoc package name. Default is project file name."
 msgstr "FPDoc paket adı, varsayılan proje dosyası adıdır."
-
-#: lazarusidestrconsts.lisfpdocthereisasyntaxerrorinthefpdocelement
-#, object-pascal-format
-msgid "There is a syntax error in the fpdoc element \"%s\":%s%s"
-msgstr "\"%s\":%s%s fpdoc öğesinde bir sözdizimi hatası var"
 
 #: lazarusidestrconsts.lisfppkgcompilerproblem
 msgid "there is a problem with the Free Pascal compiler executable, "
@@ -10465,10 +10381,6 @@ msgstr "Görünür"
 msgid "Width"
 msgstr "Genişlik"
 
-#: lazarusidestrconsts.lishashelp
-msgid "Has Help"
-msgstr "Yardım var"
-
 #: lazarusidestrconsts.lisheadercolors
 msgid "Header colors"
 msgstr "Başlık renkleri"
@@ -10476,10 +10388,6 @@ msgstr "Başlık renkleri"
 #: lazarusidestrconsts.lisheadercommentforclass
 msgid "Header comment for class"
 msgstr "Sınıf için üstbilgi açıklaması"
-
-#: lazarusidestrconsts.lishelpentries
-msgid "Help entries"
-msgstr "Yardım girdileri"
 
 #: lazarusidestrconsts.lishelpselectordialog
 msgid "Help selector"
@@ -10514,6 +10422,11 @@ msgstr "Aramayı Gizle"
 msgctxt "lazarusidestrconsts.lishidewindow"
 msgid "Hide window"
 msgstr "Pencereyi gizle"
+
+#: lazarusidestrconsts.lishidewithpackageoptioniffpcfullversion
+#, object-pascal-format
+msgid "Hide with package option IF FPC_FULLVERSION>=%s THEN CustomOptions+=' -vm%s'"
+msgstr ""
 
 #: lazarusidestrconsts.lishidewithpackageoptionvm
 #, object-pascal-format
@@ -10633,10 +10546,6 @@ msgstr "IDE, ana ünitede Application.Scaled (Hi-DPI) özelliğini korur."
 #: lazarusidestrconsts.lisidemaintainsthetitleinmainunit
 msgid "The IDE maintains the title in main unit."
 msgstr "IDE ana ünitedeki başlığı korur."
-
-#: lazarusidestrconsts.lisidentifier
-msgid "identifier"
-msgstr "tanımlayıcı"
 
 #: lazarusidestrconsts.lisidentifierbeginswith
 msgid "Identifier begins with ..."
@@ -10988,10 +10897,6 @@ msgstr "Makro ekle"
 msgid "Insert name of current procedure."
 msgstr "Geçerli procedure adını ekleyin."
 
-#: lazarusidestrconsts.lisinsertprintshorttag2
-msgid "Insert printshort tag"
-msgstr "Yazdırma kısayolu ekle"
-
 #: lazarusidestrconsts.lisinsertprocedurehead
 msgid "insert procedure head"
 msgstr "prosedür başlığı ekleyin"
@@ -11011,10 +10916,6 @@ msgstr "zaman ekle"
 #: lazarusidestrconsts.lisinserttimeoptionalformatstring
 msgid "Insert time. Optional: format string."
 msgstr "Zaman ekleyin. İsteğe bağlı: biçim dizesi."
-
-#: lazarusidestrconsts.lisinserturltag
-msgid "Insert url tag"
-msgstr "URL etiketi ekle"
 
 #: lazarusidestrconsts.lisinsession
 msgid "In session"
@@ -11062,10 +10963,6 @@ msgstr "Etkileşimli"
 #, object-pascal-format
 msgid "internal error: %s"
 msgstr "dahili hata: %s"
-
-#: lazarusidestrconsts.lisinvaliddeclaration
-msgid "Invalid Declaration"
-msgstr ""
 
 #: lazarusidestrconsts.lisinvaliddelete
 msgid "Invalid delete"
@@ -11803,32 +11700,6 @@ msgstr "\"Lazarus Hakkında\" iletişim kutusundaki düzeltme bilgisini güncell
 msgid "Package distributed with Lazarus"
 msgstr ""
 
-#: lazarusidestrconsts.lisldaddlinktoinherited
-msgid "Add link to inherited"
-msgstr "Devralınan bağlantı ekle"
-
-#: lazarusidestrconsts.lisldcopyfrominherited
-msgid "Copy from inherited"
-msgstr "Devralınandan kopyala"
-
-#: lazarusidestrconsts.lislddoesnothaveanyvalidfpdocpathunabletocreatethefpdo
-#, object-pascal-format
-msgid "%s does not have any valid FPDoc path.%sUnable to create the fpdoc file for %s"
-msgstr "%s geçerli bir FPDoc yolu yok.%s %s için fpdoc dosyası oluşturmaktan vazgeç"
-
-#: lazarusidestrconsts.lisldmoveentriestoinherited
-msgid "Move entries to inherited"
-msgstr "Girişleri devralınanlara taşı"
-
-#: lazarusidestrconsts.lisldnovalidfpdocpath
-msgid "No valid FPDoc path"
-msgstr "Geçerli FPDoc yolu yok"
-
-#: lazarusidestrconsts.lisldtheunitisnotownedbeanypackageorprojectpleaseaddthe
-#, object-pascal-format
-msgid "The unit %s is not owned be any package or project.%sPlease add the unit to a package or project.%sUnable to create the fpdoc file."
-msgstr "%s birimi herhangi bir paket veya proje değil.%sLütfen birimi bir pakete veya projeye ekleyin.%s fpdoc dosyası oluşturulamadı."
-
 #: lazarusidestrconsts.lisleft
 msgctxt "lazarusidestrconsts.lisleft"
 msgid "Left"
@@ -11920,17 +11791,9 @@ msgstr "kütüphane yolu"
 msgid "A Free Pascal shared library (.dll under Windows, .so under Linux, .dylib under macOS)."
 msgstr "Free Pascal paylaşılan kütüphanesi (Windows altında .dll, Linux'ta .so, MacOS X altında .dylib)."
 
-#: lazarusidestrconsts.lislink
-msgid "Link:"
-msgstr "Bağlantı:"
-
 #: lazarusidestrconsts.lislinkeroptions
 msgid "linker options"
 msgstr "bağlayıcı seçenekleri"
-
-#: lazarusidestrconsts.lislinktarget
-msgid "Link target"
-msgstr "Bağlantı hedefi"
 
 #: lazarusidestrconsts.lislistofallcasevalues
 msgid "list of all case values"
@@ -11962,7 +11825,9 @@ msgid "Maximize compatibility of project files (LPI and LPS)"
 msgstr "Proje dosyalarının uyumluluğunu en üst düzeye çıkarın (LPI ve LPS)"
 
 #: lazarusidestrconsts.lislpicompatibilitymodecheckboxhint
-msgid "Check this if you want to open your project in legacy (2.0 and older) Lazarus versions."
+#, fuzzy
+#| msgid "Check this if you want to open your project in legacy (2.0 and older) Lazarus versions."
+msgid "Check this if you want to open your project in legacy (2.2 - 4.8) Lazarus versions."
 msgstr "Projenizi eski (2.0 ve daha eski) Lazarus sürümlerinde açmak istiyorsanız bunu kontrol edin."
 
 #: lazarusidestrconsts.lislpkcompatibilitymodecheckbox
@@ -11970,7 +11835,9 @@ msgid "Maximize compatibility of package file (LPK)"
 msgstr "Paket dosyasının (LPK) uyumluluğunu en üst düzeye çıkarın"
 
 #: lazarusidestrconsts.lislpkcompatibilitymodecheckboxhint
-msgid "Check this if you want to open your package in legacy (2.0 and older) Lazarus versions."
+#, fuzzy
+#| msgid "Check this if you want to open your package in legacy (2.0 and older) Lazarus versions."
+msgid "Check this if you want to open your package in legacy (2.2 - 4.8) Lazarus versions."
 msgstr "Projenizi eski (2.0 ve daha eski) Lazarus sürümlerinde açmak istiyorsanız bunu kontrol edin."
 
 #: lazarusidestrconsts.lislpkhasvanishedondiskusingasalternative
@@ -12215,7 +12082,9 @@ msgid "Configure Custom Components ..."
 msgstr "Özel Bileşenleri Yapılandır ..."
 
 #: lazarusidestrconsts.lismenuconfigexternaltools
-msgid "Configure External Tools ..."
+#, fuzzy
+#| msgid "Configure External Tools ..."
+msgid "Configure &External Tools ..."
 msgstr "Dış Araçları Yapılandır ..."
 
 #: lazarusidestrconsts.lismenuconfigurebuildlazarus
@@ -14051,10 +13920,6 @@ msgstr "boş Free Pascal derleyici öneki."
 msgid "no hints"
 msgstr "ipucu yok"
 
-#: lazarusidestrconsts.lisnoidewindowselected
-msgid "No IDE window selected"
-msgstr "IDE penceresi seçilmedi"
-
 #: lazarusidestrconsts.lisnolfmfile
 msgid "No LFM file"
 msgstr "LFM dosyası değil"
@@ -14082,10 +13947,6 @@ msgstr "(Hiçbiri seçilmedi)"
 #: lazarusidestrconsts.lisnonewfilefound
 msgid "No new file found"
 msgstr "Yeni dosya bulunamadı"
-
-#: lazarusidestrconsts.lisnonodeselected
-msgid "no node selected"
-msgstr "hiçbir düğüm seçilmedi"
 
 #: lazarusidestrconsts.lisnopascalfile
 msgid "No Pascal file"
@@ -14333,6 +14194,25 @@ msgstr "Aç"
 msgid "Open as XML file"
 msgstr "XML dosyası olarak aç"
 
+#: lazarusidestrconsts.lisopenautomatically
+msgid "Open automatically"
+msgstr ""
+
+#: lazarusidestrconsts.lisopenautonever
+#, fuzzy
+msgctxt "lazarusidestrconsts.lisopenautonever"
+msgid "Never"
+msgstr "Asla"
+
+#: lazarusidestrconsts.lisopenautoonlywhenerrorsoccur
+msgctxt "lazarusidestrconsts.lisopenautoonlywhenerrorsoccur"
+msgid "Only when errors occur"
+msgstr ""
+
+#: lazarusidestrconsts.lisopenautowhencompiling
+msgid "When getting messages"
+msgstr ""
+
 #: lazarusidestrconsts.lisopencontexthelpinbrowser
 msgid "Open context help in the browser"
 msgstr ""
@@ -14441,10 +14321,6 @@ msgstr "Birim Aç"
 msgid "Open URL"
 msgstr "URL Aç"
 
-#: lazarusidestrconsts.lisopenxml
-msgid "Open XML"
-msgstr "XML Aç"
-
 #: lazarusidestrconsts.lisoptions
 msgctxt "lazarusidestrconsts.lisoptions"
 msgid "Options"
@@ -14551,10 +14427,6 @@ msgstr "Paket kaynak dizinleri"
 msgid "packages=%s/%s units=%s/%s identifiers=%s/%s lines=%s bytes=%s"
 msgstr "paketler=%s/%s birimler=%s/%s tanımlayıcılar=%s/%s satırlar=%s baytlar=%s"
 
-#: lazarusidestrconsts.lispackageunit
-msgid "package unit"
-msgstr "paket birimi"
-
 #: lazarusidestrconsts.lispage
 msgctxt "lazarusidestrconsts.lispage"
 msgid "Page"
@@ -14573,6 +14445,11 @@ msgstr "Sayfa adı \"%s\" zaten var, eklenmedi."
 msgctxt "lazarusidestrconsts.lispanic"
 msgid "Panic"
 msgstr "Panik"
+
+#: lazarusidestrconsts.lisparameters
+msgctxt "lazarusidestrconsts.lisparameters"
+msgid "Parameters:"
+msgstr ""
 
 #: lazarusidestrconsts.lisparsed
 msgid ", parsed "
@@ -14601,10 +14478,6 @@ msgstr "Panodan yapıştır."
 #: lazarusidestrconsts.lispastelcolors
 msgid "Pastel Colors"
 msgstr "Pastel renkler"
-
-#: lazarusidestrconsts.lispath
-msgid "Path"
-msgstr "Yol"
 
 #: lazarusidestrconsts.lispatheditbrowse
 msgctxt "lazarusidestrconsts.lispatheditbrowse"
@@ -15660,10 +15533,6 @@ msgstr "Lütfen normalde kaynak düzenleyicinin altında olan mesaj penceresinde
 msgid "Please open a unit before run."
 msgstr "Lütfen çalıştırmadan önce bir ünite açın."
 
-#: lazarusidestrconsts.lispleaseplacetheeditorcaretonanidentifierifthisisane
-msgid "Please place the editor caret on an identifier. If this is a new unit, please save the file first."
-msgstr ""
-
 #: lazarusidestrconsts.lispleaseselectsomecodetoextractanewproceduremethod
 msgid "Please select some code to extract a new procedure/method."
 msgstr "Lütfen yeni bir prosedür / yöntem çıkarmak için bazı kodları seçin."
@@ -15992,10 +15861,6 @@ msgstr "%0:s%0:s dosyasında '%1:s' satırında %2:d"
 msgid "%0:s%0:s In file '%1:s' at line %2:d:%0:s%3:s"
 msgstr "%0:s%0:s satırındaki %1:s dosyasında: %2:d:%0:s%3:s"
 
-#: lazarusidestrconsts.lisprojectunit
-msgid "project unit"
-msgstr "proje birimi"
-
 #: lazarusidestrconsts.lisprojectwizard
 msgid "Project Wizard"
 msgstr "Proje Sihirbazı"
@@ -16143,6 +16008,14 @@ msgstr "&En son Projeyi aç"
 #: lazarusidestrconsts.lispwviewexampleprojects
 msgid "View &Example Projects"
 msgstr "&Örnek Projeleri gör"
+
+#: lazarusidestrconsts.lisquerycompilerfortargets
+msgid "Query installed compiler for available targets"
+msgstr ""
+
+#: lazarusidestrconsts.lisquerycompilerfortargetshint
+msgid "List only the targets, processors and controllers the configured compiler actually supports"
+msgstr ""
 
 #: lazarusidestrconsts.lisquickcheckfppkgconfigurationatstart
 msgid "Quick check Fppkg configuration at start"
@@ -16872,10 +16745,6 @@ msgstr "Derleyici mesajlarını başka bir dile çevirmek için bunu ayarlayın 
 msgid "(Set up default indentation)"
 msgstr "(Varsayılan girintiyi ayarla)"
 
-#: lazarusidestrconsts.lisshort
-msgid "Short:"
-msgstr "Kısa:"
-
 #: lazarusidestrconsts.lisshortnopath
 msgid "Short, no path"
 msgstr "Kısa, yol yok"
@@ -16893,24 +16762,6 @@ msgstr "Göster"
 #, object-pascal-format
 msgid "Show abstract methods of \"%s\""
 msgstr "Soyut yöntemleri göster \"%s\""
-
-#: lazarusidestrconsts.lisshowautomatically
-msgid "Show automatically"
-msgstr ""
-
-#: lazarusidestrconsts.lisshowautonever
-#, fuzzy
-msgctxt "lazarusidestrconsts.lisshowautonever"
-msgid "Never"
-msgstr "Asla"
-
-#: lazarusidestrconsts.lisshowautoonlywhenerrorsoccur
-msgid "Only when errors occur"
-msgstr ""
-
-#: lazarusidestrconsts.lisshowautowhencompiling
-msgid "When compiling"
-msgstr ""
 
 #: lazarusidestrconsts.lisshowcomponenttreeinobjectinspector
 msgid "Show component tree"
@@ -17395,6 +17246,10 @@ msgstr "%s için sekmeler"
 msgid "Target:"
 msgstr "Hedef:"
 
+#: lazarusidestrconsts.listargetcontroller
+msgid "Target controller"
+msgstr ""
+
 #: lazarusidestrconsts.listargetfilenameemptyuseunitoutputdirectory
 msgid "Target file name: (-o, empty = use unit output directory)"
 msgstr "Hedef dosya adı: (-o, boş = birim çıktı dizinini kullan)"
@@ -17741,6 +17596,21 @@ msgstr "%s paketi bir tasarım zamanı paketi değildir. IDE'ye yüklenemez."
 msgid "The package \"%s\" is used by"
 msgstr "\"%s\" paketi tarafından kullanılıyor"
 
+#: lazarusidestrconsts.listhepackagewantstorunthecommand
+#, object-pascal-format
+msgid "The package \"%s\" wants to run the command:%s%s%sBuilding with a custom command can run arbitrary programs.%sDo you want to trust and run this command?"
+msgstr ""
+
+#: lazarusidestrconsts.listhepackagewantstousethecompiler
+#, object-pascal-format
+msgid "The package \"%s\" wants to use the compiler:%s%s%sThis is not the default compiler configured in the IDE. Opening a package with a custom compiler can run arbitrary programs.%sDo you want to trust and use this compiler?"
+msgstr ""
+
+#: lazarusidestrconsts.listhepackagewantstousethecompilerbuild
+#, object-pascal-format
+msgid "The package \"%s\" wants to use the compiler:%s%s%sThis is not the default compiler configured in the IDE. Building with a custom compiler can run arbitrary programs.%sDo you want to trust and use this compiler?"
+msgstr ""
+
 #: lazarusidestrconsts.listhepathofmakeisnotcorrect
 #, object-pascal-format
 msgid "The path of \"make\" is not correct: \"%s\""
@@ -17803,6 +17673,21 @@ msgstr "Proje oluşturulmadan önce kaydedilmelidir%sIDE seçeneklerinde Test Di
 #: lazarusidestrconsts.listheprojectusesfpcresourceswhichrequireatleast
 msgid "The project uses FPC resources which require at least FPC 2.4"
 msgstr "Proje, en az FPC 2.4 gerektiren FPC kaynaklarını kullanmaktadır"
+
+#: lazarusidestrconsts.listheprojectwantstorunthecommand
+#, object-pascal-format
+msgid "The project \"%s\" wants to run the command:%s%s%sBuilding with a custom command can run arbitrary programs.%sDo you want to trust and run this command?"
+msgstr ""
+
+#: lazarusidestrconsts.listheprojectwantstousethecompiler
+#, object-pascal-format
+msgid "The project \"%s\" wants to use the compiler:%s%s%sThis is not the default compiler configured in the IDE. Opening a project with a custom compiler can run arbitrary programs.%sDo you want to trust and use this compiler?"
+msgstr ""
+
+#: lazarusidestrconsts.listheprojectwantstousethecompilerbuild
+#, object-pascal-format
+msgid "The project \"%s\" wants to use the compiler:%s%s%sThis is not the default compiler configured in the IDE. Building with a custom compiler can run arbitrary programs.%sDo you want to trust and use this compiler?"
+msgstr ""
 
 #: lazarusidestrconsts.listheprojectwritesthedebugsymbolstoanexternalfilethe
 #, object-pascal-format
@@ -17965,11 +17850,6 @@ msgstr "Birimin adı şu şekildedir"
 msgid "The unit filename \"%s\" is not lowercase.%sThe Free Pascal compiler does not search for all cases. It is recommended to use lowercase filename.%sRename file lowercase?"
 msgstr "Birim dosya adı \"%s\" küçük harf değil.%sFree Pascal derleyicisi tüm durumları aramaz. Küçük harfli dosya adı kullanılması önerilir.%sDosya küçük harfli olarak yeniden adlandırılsın mı?"
 
-#: lazarusidestrconsts.listheunitispartofthefpcsourcesbutthecorrespondingfpd
-#, object-pascal-format
-msgid "The unit %s is part of the FPC sources but the corresponding fpdoc xml file was not found.%sEither you have not yet added the fpcdocs directory to the search path or the unit is not yet documented.%sThe fpdoc files for the FPC sources can be downloaded from: %s%sPlease add the directory in the fpdoc editor options.%sIn order to create a new file the directory must be writable."
-msgstr "\"%s\" birimi FPC kaynaklarının bir parçası, ancak ilgili fpdoc xml dosyası bulunamadı.%sYa fpcdocs dizinini arama yoluna henüz eklemediniz ya da birim henüz belgelenmemiş.%s FPC kaynakları için fpdoc dosyaları şu adresten indirilebilir:%s%s Lütfen dizini fpdoc düzenleyici seçeneklerine ekleyin.%s Yeni bir dosya oluşturmak için dizinin yazılabilir olması gerekir."
-
 #: lazarusidestrconsts.listheunitisusedbyotherfilesupdatereferencesautomatic
 #, object-pascal-format
 msgid "The unit %s is used by other files.%sUpdate references automatically?"
@@ -18048,10 +17928,6 @@ msgstr "&Başlık"
 msgid "Show the custom IDE title before the IDE's name and other info in the title. Example: project1 - Lazarus."
 msgstr "Görev çubuğundaki başlık, örneğin: project1.lpi - Lazarus"
 
-#: lazarusidestrconsts.listitleleaveemptyfordefault
-msgid "Title (leave empty for default)"
-msgstr "Başlık (varsayılan olarak boş bırakın)"
-
 #: lazarusidestrconsts.listofpcpath
 msgid "Path:"
 msgstr "Yol:"
@@ -18067,10 +17943,6 @@ msgstr "Araç Başlığı: Başarısız"
 #: lazarusidestrconsts.listoolheaderrunning
 msgid "Tool Header: Running"
 msgstr "Alet Başlığı: Çalışıyor"
-
-#: lazarusidestrconsts.listoolheaderscrolledup
-msgid "Tool Header: Scrolled up"
-msgstr "Araç Başlığı: Kaydırıldı"
 
 #: lazarusidestrconsts.listoolheadersuccess
 msgid "Tool Header: Success"
@@ -18123,6 +17995,34 @@ msgstr "Toplam sayfa: %s"
 #: lazarusidestrconsts.listreeneedsrefresh
 msgid "Tree needs refresh"
 msgstr "Ağacın yenilenmesi gerekiyor"
+
+#: lazarusidestrconsts.listrustcommandcaption
+msgid "Trust build command?"
+msgstr ""
+
+#: lazarusidestrconsts.listrustcompileralways
+msgid "Trust always"
+msgstr ""
+
+#: lazarusidestrconsts.listrustcompilercaption
+msgid "Trust project compiler?"
+msgstr ""
+
+#: lazarusidestrconsts.listrustcompilerthistime
+msgid "Trust this time"
+msgstr ""
+
+#: lazarusidestrconsts.listrustedcommands
+msgid "Trusted commands"
+msgstr ""
+
+#: lazarusidestrconsts.listrustedcompilers
+msgid "Trusted compilers"
+msgstr ""
+
+#: lazarusidestrconsts.listrustpkgcompilercaption
+msgid "Trust package compiler?"
+msgstr ""
 
 #: lazarusidestrconsts.listwomovedfileswillhavethesamefilenamein
 #, object-pascal-format
@@ -18769,6 +18669,10 @@ msgstr "Boolean değerleri için CheckBox kullanın"
 msgid "Use comments in custom options"
 msgstr "Özel seçeneklerdeki yorumları kullanın"
 
+#: lazarusidestrconsts.lisusedefaultcompiler
+msgid "Use default compiler"
+msgstr ""
+
 #: lazarusidestrconsts.lisusedesigntimepackages
 msgid "Use design time packages"
 msgstr "Tasarım zaman paketlerini kullanın"
@@ -19008,6 +18912,10 @@ msgstr "Derleme için çalışma dizini"
 msgid "Working directory for run"
 msgstr "Çalıştırmak için çalışma dizini"
 
+#: lazarusidestrconsts.liswraplongmessagelinesotherwisetheyareclippedandahi
+msgid "Wrap long message lines into several rows. Otherwise they are clipped and a hint shows the full text."
+msgstr ""
+
 #: lazarusidestrconsts.liswriteconfiginsteadofcommandlineparameters
 msgid "Write config instead of command line parameters"
 msgstr "Komut satırı parametreleri yerine config yaz"
@@ -19059,6 +18967,7 @@ msgid "Source Editor"
 msgstr "Kaynak Düzenleyici"
 
 #: lazarusidestrconsts.lrsplddeleteselected
+msgctxt "lazarusidestrconsts.lrsplddeleteselected"
 msgid "Delete selected"
 msgstr "Seçileni sil"
 
@@ -19389,10 +19298,6 @@ msgstr "Tür"
 #: lazarusidestrconsts.rsrevision
 msgid "&Revision:"
 msgstr "&Revizyon:"
-
-#: lazarusidestrconsts.rsselectaninheritedentry
-msgid "Select an inherited entry"
-msgstr "Devralınan bir girişi seçin"
 
 #: lazarusidestrconsts.rsshowabspath
 msgid "Absolute path"
@@ -20994,38 +20899,6 @@ msgstr "Komut tuşlarını düzenle"
 msgid "Continue with next mouse up action"
 msgstr "Bir sonraki fare yukarı hareketle devam et"
 
-#: lazarusidestrconsts.synffoldcomments
-msgid "Fold comments"
-msgstr "Yorumları katla"
-
-#: lazarusidestrconsts.synffoldcommentsinselection
-msgid "Fold comments in selection"
-msgstr "Seçimdeki yorumları katla"
-
-#: lazarusidestrconsts.synffoldinactiveifdef
-msgid "Fold inactive Ifdef"
-msgstr "Pasif Ifdef katla"
-
-#: lazarusidestrconsts.synffoldinactiveifdefexcludemixedstate
-msgid "Fold inactive Ifdef (exclude mixed state)"
-msgstr "Pasif Ifdef'i katla(karma durumu hariç)"
-
-#: lazarusidestrconsts.synffoldinactiveifdefinselection
-msgid "Fold inactive Ifdef in selection"
-msgstr "Seçilen pasif ifdef'i katla"
-
-#: lazarusidestrconsts.synffoldinactiveifdefinselectionexcludemixedstate
-msgid "Fold inactive Ifdef in selection (exclude mixed state)"
-msgstr "Seçilen pasif ifdef'i katla (karma durum hariç)"
-
-#: lazarusidestrconsts.synfhidecomments
-msgid "Hide comments"
-msgstr "Yorumları gizle"
-
-#: lazarusidestrconsts.synfhidecommentsinselection
-msgid "Hide comments in selection"
-msgstr "Seçilen yorumları gizle"
-
 #: lazarusidestrconsts.synfmatchactionbuttonofmousedown
 msgid "Match action button of mouse down"
 msgstr "Fareyle eşleşen eylem düğmesi aşağı"
@@ -21045,47 +20918,6 @@ msgstr "Farenin hareket pos'unu aşağıya ile eşleştir"
 #: lazarusidestrconsts.synfsearchallactionofmousedown
 msgid "Search all action of mouse down"
 msgstr "Farenin tüm hareketlerini aşağıya doğru ara"
-
-#: lazarusidestrconsts.synfunfoldactiveifdef
-msgid "Unfold active Ifdef"
-msgstr "Etkin Ifdef'i aç"
-
-#: lazarusidestrconsts.synfunfoldactiveifdefinselection
-msgid "Unfold active Ifdef in selection"
-msgstr "Seçimdeki etkin Ifdef'i aç"
-
-#: lazarusidestrconsts.synfunfoldall
-msgctxt "lazarusidestrconsts.synfunfoldall"
-msgid "Unfold all"
-msgstr "Hepsini aç"
-
-#: lazarusidestrconsts.synfunfoldallifdef
-msgid "Unfold all Ifdef"
-msgstr "Tüm Ifdef'leri aç"
-
-#: lazarusidestrconsts.synfunfoldallifdefinselection
-msgid "Unfold all Ifdef in selection"
-msgstr "Seçilen tüm Ifdef'i aç"
-
-#: lazarusidestrconsts.synfunfoldallinselection
-msgid "Unfold all in selection"
-msgstr "Seçilenin tümünü aç"
-
-#: lazarusidestrconsts.synfunfoldcomments
-msgid "Unfold comments"
-msgstr "Yorumları açın"
-
-#: lazarusidestrconsts.synfunfoldcommentsinselection
-msgid "Unfold comments in selection"
-msgstr "Seçilen yorumları aç"
-
-#: lazarusidestrconsts.synfunfoldinactiveifdef
-msgid "Unfold inactive Ifdef"
-msgstr "Etkin olmayan Ifdef'i açın"
-
-#: lazarusidestrconsts.synfunfoldinactiveifdefinselection
-msgid "Unfold inactive Ifdef in selection"
-msgstr "Seçimdeki etkin olmayan Ifdef'i açın"
 
 #: lazarusidestrconsts.synspelloptmousewheelchangestabs
 msgid "Mouse-wheel changes tabs"

@@ -86,6 +86,7 @@ uses
 const
   DefaultCompletionLongLineHintType = sclpExtendRightOnly;
   DefaultEditorDisableAntiAliasing = false;
+  DefaultEditorFontHeight = 10;
 
 type
   TPreviewPasSyn = TIDESynFreePasSyn;
@@ -1737,6 +1738,7 @@ type
     fPasExtendedKeywordsMode: Boolean;
     fPasStringKeywordMode: TSynPasStringMode;
     FCaseLabelAttriMatchesElseOtherwise: Boolean;
+    FResolveCompilerModeSwitchesWithCodeTools: Boolean;
     FDeclaredTypeAttributeMode: TSynPasTypeAttributeMode;
     FDeclaredValueAttributeMachesStringNum: Boolean;
     FDeclaredValueAttributeMode: TSynPasTypeAttributeMode;
@@ -1850,6 +1852,8 @@ type
       read fPasStringKeywordMode write fPasStringKeywordMode default spsmDefault;
     property CaseLabelAttriMatchesElseOtherwise: Boolean
        read FCaseLabelAttriMatchesElseOtherwise write FCaseLabelAttriMatchesElseOtherwise default True;
+    property ResolveCompilerModeSwitchesWithCodeTools: Boolean
+       read FResolveCompilerModeSwitchesWithCodeTools write FResolveCompilerModeSwitchesWithCodeTools default True;
     property DeclaredTypeAttributeMode: TSynPasTypeAttributeMode
        read FDeclaredTypeAttributeMode write FDeclaredTypeAttributeMode default tamIdentifierOnly;
     property DeclaredValueAttributeMode: TSynPasTypeAttributeMode
@@ -2944,7 +2948,7 @@ procedure RepairEditorFontSize(var FontSize: integer);
 begin
   if ((FontSize>=0) and (FontSize<=EditorOptionsMinimumFontSize))
   or ((FontSize<0) and (FontSize>=-EditorOptionsMinimumFontSize)) then
-    FontSize := SynDefaultFontSize;
+    FontSize := DefaultEditorFontHeight;
 end;
 
 const
@@ -4054,7 +4058,7 @@ begin
     SynInstance := LazSyntaxHighlighterClasses{%H-}[TheType].Create(nil);
     SetBothFilextensions('php;php3;php4');
     SampleSource :=
-      '<?if ( ($HTTP_HOST == "www.lazarus.com") || ($HTTP_HOST == "lazarus.com") ){'#10 + '   HEADER("Location:http://www.lazarus.freepascal.org/\n\n");'#10
+      '<?if ( ($HTTP_HOST == "www.lazarus.com") || ($HTTP_HOST == "lazarus.com") ){'#10 + '   HEADER("Location:https://www.lazarus-ide.org/\n\n");'#10
       + '};'#10 + '?>'#10 + #10;
     AddAttrSampleLines[ahaTextBlock] := 8;
     MappedAttributes := TStringList.Create;
@@ -5796,6 +5800,7 @@ begin
   fPasExtendedKeywordsMode := False;
   fPasStringKeywordMode := spsmDefault;
   FCaseLabelAttriMatchesElseOtherwise := True;
+  FResolveCompilerModeSwitchesWithCodeTools := True;
   FDeclaredTypeAttributeMode := tamIdentifierOnly;
   FDeclaredValueAttributeMode := tamIdentifierOnly;
   FGenericParamAttrMode := tamIdentifierOnly;
@@ -5967,7 +5972,7 @@ begin
   fBracketHighlightStyle := sbhsBoth;
   // Display options
   fEditorFont := SynDefaultFontName;
-  fEditorFontSize := SynDefaultFontSize;
+  fEditorFontSize := DefaultEditorFontHeight;
   fDisableAntialiasing := DefaultEditorDisableAntiAliasing;
   // Key Mappings
   fKeyMappingScheme := KeyMapSchemeNames[kmsLazarus];
@@ -6171,7 +6176,7 @@ begin
       fEditorFontSize := FontHeightToSize(fEditorFontSize);
     end else begin
       fEditorFontSize :=
-        XMLConfig.GetValue('EditorOptions/Display/EditorFontSize', SynDefaultFontSize);
+        XMLConfig.GetValue('EditorOptions/Display/EditorFontSize', DefaultEditorFontHeight);
     end;
     RepairEditorFontSize(fEditorFontSize);
     fExtraCharSpacing :=
@@ -6393,7 +6398,7 @@ begin
       fEditorFont, SynDefaultFontName);
     XMLConfig.DeleteValue('EditorOptions/Display/EditorFontHeight'); // unused old value
     XMLConfig.SetDeleteValue('EditorOptions/Display/EditorFontSize'
-      ,fEditorFontSize, SynDefaultFontSize);
+      ,fEditorFontSize, DefaultEditorFontHeight);
     XMLConfig.SetDeleteValue('EditorOptions/Display/ExtraCharSpacing'
       ,fExtraCharSpacing, 0);
     XMLConfig.SetDeleteValue('EditorOptions/Display/ExtraLineSpacing'
@@ -8253,6 +8258,9 @@ begin
         if Attri <> nil
           then Attri.ApplyTo(MarkupIfDef.MarkupInfoTempEnabled )
           else MarkupIfDef.MarkupInfoTempEnabled.Clear;
+        if Attri <> nil
+          then Attri.ApplyTo(MarkupIfDef.MarkupInfoTempDisabled )
+          else MarkupIfDef.MarkupInfoTempDisabled.Clear;
         Attri := AttributeByEnum[ahaIfDefNodeInactive];
         if Attri <> nil
           then Attri.ApplyTo(MarkupIfDef.MarkupInfoNodeDisabled )
@@ -8265,6 +8273,9 @@ begin
         if Attri <> nil
           then Attri.ApplyTo(MarkupIfDef.MarkupInfoTempNodeEnabled )
           else MarkupIfDef.MarkupInfoTempNodeEnabled.Clear;
+        if Attri <> nil
+          then Attri.ApplyTo(MarkupIfDef.MarkupInfoTempNodeDisabled )
+          else MarkupIfDef.MarkupInfoTempNodeDisabled.Clear;
       end;
     end;
     SetGutterColorByClass(ahaLineNumber,      TSynGutterLineNumber);
@@ -9128,8 +9139,41 @@ begin
   Result := CompareText(s1, s2);
 end;
 
+procedure InitIdeDefaultSynFont;
+  procedure CheckFont(f: String);
+  begin
+    if SynDefaultFontName <> '' then exit;
+    if Screen.Fonts.IndexOf(f) >= 0 then
+      SynDefaultFontName  := f;
+  end;
+var
+  s: String;
+begin
+  // stick to the old order of tests
+  s := SynDefaultFontName;
+  SynDefaultFontName := '';
+  {$IFDEF LCLcarbon}
+    // Note: carbon is case sensitive
+    CheckFont('Monaco'); // Note: carbon is case sensitive
+  {$ENDIF}
+  {$IFDEF LCLcocoa}
+    // Note: carbon is case sensitive
+    CheckFont('Andale Mono');
+  {$ENDIF}
+
+  CheckFont('Courier New');
+  CheckFont('DejaVu Sans Mono');
+  {$IFnDEF WINDOWS}
+  CheckFont('Monospace');
+  {$ENDIF}
+
+  if SynDefaultFontName <> '' then
+    exit;
+  SynDefaultFontName := s;
+end;
 
 initialization
+  InitIdeDefaultSynFont;
   RegisterIDEOptionsGroup(GroupEditor, TEditorOptions);
   IdeSyntaxHighlighters := HighlighterList;
 

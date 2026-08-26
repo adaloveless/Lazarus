@@ -4705,20 +4705,9 @@ makefiles: fpc_makefiles
 ifneq ($(wildcard fpcmake.loc),)
 include fpcmake.loc
 endif
-.PHONY: ide bigide starter lazbuilder all clean cleanide purge
-idepackages:
-	$(MAKE) -C packages/ideconfig
-	$(MAKE) -C packages/ideutils
-	$(MAKE) -C packages/idepackager
-	$(MAKE) -C packages/ideproject
-	$(MAKE) -C packages/idedebugger
+.PHONY: ide lazbuilder all clean cleanide purge
 ide: $(COMPILER_UNITTARGETDIR) revisioninc
 	$(MAKE) --assume-new=lazarus.pp lazarus$(EXEEXT) OPT='$(DEFAULT_IDE_OPTIONS) $(LAZARUS_OPT) $(OPT)'
-bigide: $(COMPILER_UNITTARGETDIR) revisioninc
-	-$(DEL) $(COMPILER_UNITTARGETDIR)/pkgmanager$(PPUEXT)
-	$(MAKE) --assume-new=lazarus.pp lazarus$(EXEEXT) OPT='$(BIG_IDE_OPTIONS) $(LAZARUS_OPT) $(OPT)'
-starter: $(COMPILER_UNITTARGETDIR)
-	$(MAKE) --assume-new=startlazarus.lpr startlazarus$(EXEEXT) OPT='$(DEFAULT_IDE_OPTIONS) $(LAZARUS_OPT) $(OPT)'
 lazbuilder: $(COMPILER_UNITTARGETDIR)
 	$(MAKE) --assume-new=lazbuild.lpr lazbuild$(EXEEXT) OPT='$(LAZBUILD_OPT) $(OPT)'
 all: lazbuilder ide starter
@@ -4726,10 +4715,6 @@ cleanide:
 	-$(DEL) $(wildcard *$(OEXT))
 	-$(DEL) $(wildcard *$(PPUEXT))
 	-$(DEL) $(wildcard *$(RSTEXT))
-	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*$(OEXT))
-	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*$(PPUEXT))
-	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*$(RSTEXT))
-	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*.lfm)
 	-$(DEL) $(wildcard ../*$(OEXT))
 	-$(DEL) $(wildcard ../*$(PPUEXT))
 	-$(DEL) $(wildcard ../designer/*$(OEXT))
@@ -4742,16 +4727,14 @@ cleanide:
 	-$(DEL) $(wildcard ../converter/*$(PPUEXT))
 	-$(DEL) $(wildcard ../doceditor/*$(OEXT))
 	-$(DEL) $(wildcard ../doceditor/*$(PPUEXT))
-ifneq ($(findstring $(OS_TARGET),win32 win64),)
-	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*.or)
-	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*.res)
-endif
 cleanlaz: clean cleanide
-	$(MAKE) -C packages/ideconfig clean
-	$(MAKE) -C packages/idepackager clean
-	$(MAKE) -C packages/ideproject clean
-	$(MAKE) -C packages/ideutils clean
-	$(MAKE) -C packages/idedebugger clean
+	$(DELTREE) packages/ideconfig/lib/*
+	$(DELTREE) packages/idepackager/lib/*
+	$(DELTREE) packages/ideproject/lib/*
+	$(DELTREE) packages/ideutils/lib/*
+	$(DELTREE) packages/idedebugger/lib/*
+	$(DELTREE) packages/idesynedit/lib/*
+	$(DELTREE) packages/idehelputils/lib/*
 	${DELTREE} ../units/*
 purge: cleanlaz
 distclean: cleanlaz

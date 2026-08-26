@@ -589,6 +589,7 @@ type
     Flags: TFindDeclarationFlags;
     Identifier: PChar;
     IdentifierNode: TCodeTreeNode;
+    IdentifierGenParamCount: integer;
     ContextNode: TCodeTreeNode;
     OnIdentifierFound: TOnIdentifierFound;
     IdentifierTool: TFindDeclarationTool;
@@ -626,6 +627,8 @@ type
     FNeedHelpers: Boolean;
     FKnownIdentifierLength: integer;
     FKnownIdentifierSpecializeParamCnt: integer;
+    FKnownIdentSpecializeParamCntValid: boolean;
+    FIdentifierGenParamCount: integer; // -1 = derive from IdentifierNode
     procedure ClearFoundProc;
     procedure FreeFoundProc(aFoundProc: PFoundProc; FreeNext: boolean);
     procedure RemoveFoundProcFromList(aFoundProc: PFoundProc);
@@ -685,7 +688,10 @@ type
     procedure SetIdentifier(NewIdentifierTool: TFindDeclarationTool;
                 NewIdentifier: PChar; NewOnIdentifierFound: TOnIdentifierFound;
                 const IdentifierLength: Integer = 0;
-                NewIdentifierNode: TCodeTreeNode = nil);
+                NewIdentifierNode: TCodeTreeNode = nil;
+                // NewGenParamCount: -1 = derive from NewIdentifierNode,
+                // 0 = must not be a generic, >0 = number of generic parameters
+                NewGenParamCount: integer = -1);
     procedure WriteDebugReport;
     function GetHelpers(HelperKind: TFDHelpersListKind; CreateIfNotExists: boolean = false): TFDHelpersList;
     function IdentSpecializeNodeParamCount: integer;
@@ -922,6 +928,8 @@ type
   protected
     function CheckSrcIdentifier(Params: TFindDeclarationParams;
       const FoundContext: TFindContext): TIdentifierFoundResult;
+    function CheckPathGenParamCount(Params: TFindDeclarationParams;
+      const FoundContext: TFindContext): TIdentifierFoundResult;
     function FindDeclarationOfIdentAtParam(
       Params: TFindDeclarationParams; out ExprType: TExpressionType;
       DefaultResultNode: TCodeTreeNode = nil): boolean;
@@ -1019,6 +1027,9 @@ type
     function FindDeclarationOfPropertyPath(const PropertyPath: string;
       out NewPos: TCodeXYPosition; out NewTopLine: integer;
       IgnoreTypeLess: boolean = false): boolean;
+    function FindDeclarationPathAt(StartNode: TCodeTreeNode; aPath: string;
+      Flags: TFindSmartFlags): TFindContext;
+    function GetNodeGenericParamCount(Node: TCodeTreeNode): integer;
     function FindPropertyWithType(aPropertyNode: TCodeTreeNode; out aPropertyCtx: TFindContext): boolean;
 
     function FindDeclarationNodeInInterface(const Identifier: string;
@@ -2999,6 +3010,313 @@ begin
   Result:=Context.Tool.JumpToNode(Context.Node,NewPos,NewTopLine,false);
 end;
 
+function TFindDeclarationTool.FindDeclarationPathAt(StartNode: TCodeTreeNode;
+  aPath: string; Flags: TFindSmartFlags): TFindContext;
+{ Search the declaration of aPath, starting the search at StartNode.
+  Examples for aPath:
+    'Size'
+    'TBird.TWing.Size'
+    'unit2.TBird.Fly'
+    'ns1.ns2.unit3.TBird'
+    'TFPList<T>.Add'
+    'TBird.Fly<T,U>'
+  The types of the generic parameters are irrelevant, only their number is
+  used, as in mode delphi. This works for generic types and generic procedures. In mode delphi a part without '<>' means zero
+  generic parameters, e.g. 'TBird' does not find 'TBird<T>'.
+  In the other modes a part without '<>' matches any number of parameters.
+  ToDo: For the other modes there will be a modeswitch to either search like
+        mode delphi (number of parameters) or to ignore the parameters and stop
+        at the first generic or non generic matching the name.
+        See StrictGenParams below.
+  Note: the tree must already be built, StartNode must belong to this tool.
+  Returns CleanFindContext if not found.
+}
+var
+  Path: TIdentifierPath;
+  Params: TFindDeclarationParams;
+  PartIndex: integer;
+  Ctx, PropCtx: TFindContext;
+  ContextTool: TFindDeclarationTool;
+  ContextNode, Node: TCodeTreeNode;
+  SearchFlags: TFindDeclarationFlags;
+  StrictGenParams: boolean;
+
+  procedure SetPathIdentifier(Index: integer);
+  var
+    GenParamCnt: integer;
+  begin
+    GenParamCnt:=Path[Index].GenParamCount;
+    if (GenParamCnt<0) and StrictGenParams then
+      GenParamCnt:=0; // no '<>' means zero generic parameters
+    Params.SetIdentifier(Self,PChar(Path[Index].Name),@CheckPathGenParamCount,
+                         0,nil,GenParamCnt);
+  end;
+
+  function StartsInImplementation: boolean;
+  // the implementation uses section is visible in the implementation,
+  // initialization and finalization section
+  var
+    n: TCodeTreeNode;
+  begin
+    n:=StartNode;
+    while n<>nil do begin
+      if n.Desc in [ctnImplementation,ctnInitialization,ctnFinalization] then
+        exit(true);
+      n:=n.Parent;
+    end;
+    Result:=false;
+  end;
+
+  function FindUnitPrefix(out NewContext: TFindContext): boolean;
+  // Check if aPath starts with the source name or the name of a used unit.
+  // The longest match wins, e.g. 'a.b.c' can be the unit 'a.b' or the unit 'a'.
+
+    function FindUseUnitNode(const AnUnitName: string): TCodeTreeNode;
+    var
+      UsesNode: TCodeTreeNode;
+    begin
+      Result:=nil;
+      if StartsInImplementation then begin
+        // the implementation uses section hides the interface uses section
+        UsesNode:=FindImplementationUsesNode;
+        if UsesNode<>nil then
+          Result:=FindNameInUsesSection(UsesNode,AnUnitName);
+        if Result<>nil then exit;
+      end;
+      UsesNode:=FindMainUsesNode;
+      if UsesNode<>nil then
+        Result:=FindNameInUsesSection(UsesNode,AnUnitName);
+    end;
+
+  var
+    i, Cnt: integer;
+    AnUnitName, InFilename, SrcName: string;
+    UseUnitNode: TCodeTreeNode;
+    NewTool: TFindDeclarationTool;
+  begin
+    Result:=false;
+    NewContext:=CleanFindContext;
+    // a unit name has no generic parameters
+    Cnt:=0;
+    while (Cnt<length(Path)) and (Path[Cnt].GenParamCount<0) do
+      inc(Cnt);
+    SrcName:=GetSourceName(false);
+    while Cnt>0 do begin
+      AnUnitName:=Path[0].Name;
+      for i:=1 to Cnt-1 do
+        AnUnitName:=AnUnitName+'.'+Path[i].Name;
+      NewTool:=nil;
+      if (SrcName<>'')
+      and (CompareDottedIdentifiers(PChar(AnUnitName),PChar(SrcName))=0) then
+        NewTool:=Self
+      else begin
+        UseUnitNode:=FindUseUnitNode(AnUnitName);
+        if UseUnitNode<>nil then begin
+          InFilename:='';
+          AnUnitName:=ExtractUsedUnitName(UseUnitNode,@InFilename);
+          NewTool:=FindCodeToolForUsedUnit(AnUnitName,InFilename,false);
+        end;
+      end;
+      if NewTool<>nil then begin
+        // FindCodeToolForUsedUnit does not parse
+        if (NewTool.Tree=nil) or (NewTool.Tree.Root=nil) then
+          NewTool.BuildTree(lsrImplementationStart);
+        if (NewTool.Tree<>nil) and (NewTool.Tree.Root<>nil) then begin
+          NewContext.Tool:=NewTool;
+          NewContext.Node:=NewTool.Tree.Root;
+          PartIndex:=Cnt;
+          exit(true);
+        end;
+      end;
+      dec(Cnt);
+    end;
+  end;
+
+begin
+  Result:=CleanFindContext;
+  if StartNode=nil then exit;
+  {$IFDEF CheckNodeTool}CheckNodeTool(StartNode);{$ENDIF}
+  if not SplitIdentifierPath(aPath,Path) then exit;
+  if length(Path)=0 then exit;
+
+  SearchFlags:=[fdfSearchInAncestors,fdfSearchInHelpers,fdfFindVariable];
+  if fsfSkipClassForward in Flags then
+    Include(SearchFlags,fdfSkipClassForward);
+
+  // ToDo: for the other modes there will be a modeswitch to either search like
+  //       mode delphi or to ignore the generic parameters and stop at the first
+  //       generic or non generic matching the name
+  StrictGenParams:=Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE];
+
+  ActivateGlobalWriteLock;
+  Params:=TFindDeclarationParams.Create(Self,StartNode);
+  try
+    // search the first part in the scope of StartNode
+    PartIndex:=0;
+    SetPathIdentifier(0);
+    Params.ContextNode:=StartNode;
+    Params.Flags:=SearchFlags+[fdfSearchInParentNodes,fdfTopLvlResolving];
+    if FindIdentifierInContext(Params) and (Params.NewNode<>nil) then begin
+      Result:=CreateFindContext(Params);
+      PartIndex:=1;
+      Node:=Result.Node;
+      // a unit name can be found as the ctnIdentifier of a source name
+      if (Node.Desc=ctnIdentifier) and (Node.Parent<>nil)
+      and (Node.Parent.Desc in [ctnSrcName,ctnUseUnit,ctnUseUnitClearName,
+                                ctnUseUnitNamespace]) then
+        Node:=Node.Parent;
+      if Node.Desc in (AllSourceTypes
+        +[ctnSrcName,ctnUseUnit,ctnUseUnitClearName,ctnUseUnitNamespace])
+      then begin
+        // the path starts with a unit name or a namespace
+        if not FindUnitPrefix(Result) then
+          exit(CleanFindContext);
+      end;
+    end else begin
+      // maybe the path starts with a unit name, that is not an identifier here
+      if not FindUnitPrefix(Result) then
+        exit(CleanFindContext);
+    end;
+
+    // search the remaining parts
+    while PartIndex<length(Path) do begin
+      if Result.Node.Desc in AllSourceTypes then begin
+        // a unit -> search in its interface
+        ContextTool:=Result.Tool;
+        ContextNode:=ContextTool.FindInterfaceNode;
+        if ContextNode=nil then
+          ContextNode:=Result.Node;
+      end else begin
+        // resolve aliases to get the class/record/enumeration with the members
+        // Note: clear the identifier, so that the generic parameter check of
+        // this path is not applied to the sub searches of FindBaseTypeOfNode
+        Params.SetIdentifier(Self,nil,nil);
+        Ctx:=Result.Tool.FindBaseTypeOfNode(Params,Result.Node);
+        if Ctx.Node=nil then
+          exit(CleanFindContext);
+        ContextTool:=Ctx.Tool;
+        ContextNode:=Ctx.Node;
+      end;
+
+      if ContextNode.Desc=ctnEnumerationType then begin
+        // an enum value, e.g. 'TColor.clRed'
+        // Note: search it independent of the modeswitch scopedenums
+        Node:=ContextNode.FirstChild;
+        while Node<>nil do begin
+          if (Node.Desc=ctnEnumIdentifier)
+          and (CompareIdentifiers(PChar(Path[PartIndex].Name),
+                                  @ContextTool.Src[Node.StartPos])=0) then
+            break;
+          Node:=Node.NextBrother;
+        end;
+        if Node=nil then
+          exit(CleanFindContext);
+        Result.Tool:=ContextTool;
+        Result.Node:=Node;
+        inc(PartIndex);
+        continue;
+      end;
+
+      SetPathIdentifier(PartIndex);
+      Params.Flags:=SearchFlags;
+      if ContextNode.Desc=ctnInterface then begin
+        // use the interface identifier cache
+        if not ContextTool.FindIdentifierInInterface(Self,Params) then
+          exit(CleanFindContext);
+      end else begin
+        Params.ContextNode:=ContextNode;
+        if not ContextTool.FindIdentifierInContext(Params) then
+          exit(CleanFindContext);
+      end;
+      if Params.NewNode=nil then
+        exit(CleanFindContext);
+      Result:=CreateFindContext(Params);
+      inc(PartIndex);
+    end;
+
+    // apply the flags
+    if Result.Node=nil then
+      exit(CleanFindContext);
+    if fsfFindMainDeclaration in Flags then
+      Result:=Result.Tool.FindMainDeclarationNode(Result.Node,
+                                          fsfSkipPropertyWithoutType in Flags)
+    else if (fsfSkipPropertyWithoutType in Flags)
+    and (Result.Node.Desc=ctnProperty) then begin
+      if Result.Tool.FindPropertyWithType(Result.Node,PropCtx)
+      and (PropCtx.Node<>nil) then
+        Result:=PropCtx;
+    end;
+    if (fsfSearchSourceName in Flags)
+    and (Result.Node.Desc in AllSourceTypes) then begin
+      Node:=Result.Tool.GetSourceNameNode;
+      if Node<>nil then
+        Result.Node:=Node;
+    end;
+  finally
+    Params.Free;
+    DeactivateGlobalWriteLock;
+  end;
+end;
+
+function TFindDeclarationTool.GetNodeGenericParamCount(Node: TCodeTreeNode
+  ): integer;
+// returns the number of generic parameters of a type or procedure declaration
+// 0 = not a generic
+var
+  ParamsNode: TCodeTreeNode;
+begin
+  Result:=0;
+  if Node=nil then exit;
+  case Node.Desc of
+  ctnGenericType:
+    begin
+      ParamsNode:=Node.FirstChild; // ctnGenericName
+      if ParamsNode=nil then exit;
+      ParamsNode:=ParamsNode.NextBrother;
+      if (ParamsNode=nil) or (ParamsNode.Desc<>ctnGenericParams) then exit;
+      Result:=ParamsNode.ChildCount;
+    end;
+  ctnProcedure,ctnProcedureHead:
+    begin
+      // the ctnGenericParams are children of the ctnProcedureHead
+      if Node.Desc=ctnProcedure then begin
+        Node:=Node.FirstChild;
+        if (Node=nil) or (Node.Desc<>ctnProcedureHead) then exit;
+      end;
+      // a method body can have two: 'procedure TBird<A>.Fly<T>;'
+      // the last one belongs to the procedure name
+      ParamsNode:=Node.FirstChild;
+      while ParamsNode<>nil do begin
+        if ParamsNode.Desc=ctnGenericParams then
+          Result:=ParamsNode.ChildCount;
+        ParamsNode:=ParamsNode.NextBrother;
+      end;
+    end;
+  end;
+end;
+
+function TFindDeclarationTool.CheckPathGenParamCount(
+  Params: TFindDeclarationParams; const FoundContext: TFindContext
+  ): TIdentifierFoundResult;
+// this is a TOnIdentifierFound function, used by FindDeclarationPathAt
+// It checks the number of generic parameters.
+// FindIdentifierInContext checks it for types, but not for procedures, and
+// FindIdentifierInInterface searches the interface identifier cache, which
+// does not check it at all.
+var
+  GenParamCnt: integer;
+begin
+  Result:=ifrSuccess;
+  GenParamCnt:=Params.IdentSpecializeNodeParamCount;
+  if GenParamCnt<0 then
+    exit; // do not check the number of generic parameters
+  if FoundContext.Node=nil then
+    exit(ifrProceedSearch);
+  if FoundContext.Tool.GetNodeGenericParamCount(FoundContext.Node)<>GenParamCnt
+  then
+    exit(ifrProceedSearch);
+end;
+
 function TFindDeclarationTool.FindPropertyWithType(aPropertyNode: TCodeTreeNode; out
   aPropertyCtx: TFindContext): boolean;
 // find property ancestor until it has a type
@@ -4891,11 +5209,12 @@ var
       {$ENDIF}
       // mode delphi can have overloads with different amount of gen param
       // in other mode they have to match anyway
-      if GenParamCnt > 0 then begin
-        if ContextNode.Desc<>ctnGenericType then
-          exit;
-        n := NameNode.NextBrother;
-        if n.ChildCount <> GenParamCnt then
+      if GenParamCnt >= 0 then begin
+        if ContextNode.Desc=ctnGenericType then begin
+          n := NameNode.NextBrother;
+          if (n=nil) or (n.ChildCount <> GenParamCnt) then
+            exit;
+        end else if GenParamCnt > 0 then
           exit;
       end;
 
@@ -4921,7 +5240,8 @@ var
     end;
   end;
 
-  function SearchInGenericType(GenParamCnt: integer = 0; SkipEnums: boolean = False): boolean;
+  function SearchInGenericType(GenParamCnt: integer = -1; SkipEnums: boolean = False): boolean;
+  // GenParamCnt: see SearchInTypeVarConstGlobPropDefinition
   // returns: true if ok to exit
   //          false if search should continue
   var
@@ -4940,11 +5260,12 @@ var
       {$ENDIF}
       // mode delphi can have overloads with different amount of gen param
       // in other mode they have to match anyway
-      if GenParamCnt > 0 then begin
-        if ContextNode.Desc<>ctnGenericType then
-          exit;
-        n := NameNode.NextBrother;
-        if n.ChildCount <> GenParamCnt then
+      if GenParamCnt >= 0 then begin
+        if ContextNode.Desc=ctnGenericType then begin
+          n := NameNode.NextBrother;
+          if (n=nil) or (n.ChildCount <> GenParamCnt) then
+            exit;
+        end else if GenParamCnt > 0 then
           exit;
       end;
 
@@ -7372,6 +7693,18 @@ var
     end;
   end;
 
+  function NodeHasParentNode(Node, ParentNode: TCodeTreeNode): boolean;
+  begin
+    Result:=false;
+    if Node=nil then exit;
+    if ParentNode=nil then exit;
+    while Node<>nil do begin
+      if Node=ParentNode then
+        exit(true);
+      Node:=Node.Parent;
+    end;
+  end;
+
   procedure ReadIdentifier(IsComment: boolean);
   var
     IdentStartPos: Integer;
@@ -7382,11 +7715,14 @@ var
     IdentStripped: string;
     aComment: string;
     UnitInFilename: ansistring;
-    Node: TCodeTreeNode;
+    Node, ClassNode: TCodeTreeNode;
     IsDotted: boolean;
-    dLen: integer;
+    dLen, i: integer;
     ExprType: TExpressionType;
     PropName: PChar;
+    PropNameStr: string;
+    ListOfPFindContext: TFPList;
+    AFindContext, FindContext: TFindContext;
   begin
     if (not IsComment) then
       UnitStartFound:=true;
@@ -7491,26 +7827,58 @@ var
         try
           if DeclarationNode.Desc=ctnProperty then begin // it needs additional checking
             Params.Flags:=[fdfSearchInAncestors,
-                          fdfExceptionOnNotFound,
                           fdfSearchInParentNodes,
                           fdfIgnoreCurContextNode,
                           fdfExceptionOnPredefinedIdent,
                           fdfTopLvlResolving];
             if FindDeclarationOfIdentAtParam(Params, ExprType) then begin
               Found := ExprType.Context.Node = DeclarationNode;
-              // first ancestor (if property found here) can be not enough
-              if not Found and (ExprType.Context.Node.Desc=ctnProperty) then begin
+              if not Found then begin
                 PropName:=ExprType.Context.Tool.GetPropertyNameIdentifier(ExprType.Context.Node);
+                i:=ExprType.Context.Tool.ConvertSrcPCharToPos(PropName);
+                PropNameStr:=GetIdentifier(@ExprType.Context.Tool.Src[i]);
                 Params.SetIdentifier(ExprType.Context.Tool, PropName,@CheckSrcIdentifier);
                 Params.ContextNode:=ExprType.Context.Node;
                 Params.IdentifierTool:=ExprType.Context.Tool;
                 Params.IdentifierNode:=ExprType.Context.Node;
                 Params.Flags:=[fdfSearchInAncestors,
-                              fdfExceptionOnNotFound,
                               fdfSearchInParentNodes,
-                              fdfExceptionOnPredefinedIdent];
+                              fdfSearchInHelpersInTheEnd];
                 if ExprType.Context.Tool.FindDeclarationOfIdentAtParam(Params, ExprType) then
                   Found:= ExprType.Context.Node = DeclarationNode;
+              end;
+              if not Found and (ExprType.Context.Node.Desc=ctnProperty) then begin
+              // try more ancestors classes
+                try
+                  ListOfPFindContext:=nil;
+                  ClassNode:= DeclarationTool.FindClassOfMethod(DeclarationNode,
+                    true,false);
+
+                  if DeclarationTool.
+                    FindClassAndAncestors(ClassNode,ListOfPFindContext,false) then
+                  begin
+                    i:=0;
+                    while i<=ListOfPFindContext.Count-1 do begin
+                      AFindContext:=TFindContext(ListOfPFindContext.Items[i]^);
+                      Found:= NodeHasParentNode(ExprType.Context.Node, AFindContext.Node);
+                      if not Found then begin
+                        FindContext:=FindClassMember(AFindContext.Node,
+                          PropNameStr,true);
+                        if FindContext.Node<>nil then
+                          Found:= NodeHasParentNode(FindContext.Node, AFindContext.Node);
+                      end;
+                      // Found = true -> declaration is in ancestor
+                      if Found then begin // show node as matching the declaration
+                        Params.NewNode:=DeclarationNode;
+                        Params.NewCodeTool:=DeclarationTool;
+                        break;
+                      end;
+                      inc(i);
+                    end;
+                  end;
+                finally
+                  FreeListOfPFindContext(ListOfPFindContext);
+                end;
               end;
             end;
           end else begin
@@ -7527,7 +7895,19 @@ var
             if E.Sender<>Self then begin
               // there is an error in another unit, which prevents searching
               // stop further searching in this unit
-              raise;
+
+              //debugln(['*** ID=',E.Id,', ', e.Message,', StartPos=',
+              //  e.Sender.CurPos.StartPos,' ', Params.IdentifierTool.GetSourceName(false),
+              //  ' IdentifierNode=nil -> ', Params.IdentifierNode=nil,
+              //  ' fdfExceptionOnNotFound in Flags -> ', fdfExceptionOnNotFound in Params.Flags
+              //]);
+
+              if not ((Params.IdentifierNode=nil) and
+                (Params.NewCodeTool=nil) and
+                (Params.NewNode=nil) and
+                (fdfExceptionOnNotFound in Params.Flags)) then
+              raise; // skip when symptoms of failure search in ancestors observed
+                     // to prevent gathered references
             end;
             // continue
           end;
@@ -12264,7 +12644,7 @@ var
       PointedNode:=FindPointedTypeBehind(NewTool,NewNode);
       if PointedNode<>nil then begin
         ExprType.Context:=NewTool.FindBaseTypeOfNode(Params,PointedNode);
-      end else begin
+      end else if CurAtomType=vatPoint then begin
         ExprType.Context:=NewTool.FindBaseTypeOfNode(Params,NewNode.FirstChild);
       end;
     end;
@@ -12409,12 +12789,12 @@ var
     end;
 
     if (ExprType.Desc=xtContext)
-    and (ExprType.Context.Node.Desc=ctnProperty) then begin
+    and (ExprType.Context.Node.Desc in [ctnProperty, ctnGlobalProperty]) then begin
       // [] behind a property
       // -> Check if this property has parameters
       ResolveTypeLessProperty;
       if (ExprType.Desc=xtContext)
-      and (ExprType.Context.Node.Desc=ctnProperty)
+      and (ExprType.Context.Node.Desc in [ctnProperty, ctnGlobalProperty])
       and ExprType.Context.Tool.PropertyNodeHasParamList(ExprType.Context.Node)
       then begin
         // use the property type
@@ -15488,10 +15868,11 @@ function TFindDeclarationTool.FindTermTypeAsString(TermPos: TAtomPosition;
   Params: TFindDeclarationParams;
   out ExprType: TExpressionType): string;
 var
-  EdgedBracketsStartPos : integer;
+  EdgedBracketsStartPos, i : integer;
   SetNode, ClassNode, ExprClassNode: TCodeTreeNode;
   SetTool: TFindDeclarationTool;
   AliasType, ProcContext: TFindContext;
+  Node: TCodeTreeNode;
 begin
   //debugln(['TFindDeclarationTool.FindTermTypeAsString START']);
   {$IFDEF CheckNodeTool}CheckNodeTool(Params.ContextNode);{$ENDIF}
@@ -15587,6 +15968,32 @@ begin
     ExprClassNode:= FindClassNode(Params.StartNode);
     if ExprClassNode = ClassNode then exit; // inside a class no full path needed
     Result:=ExtractClassName(ClassNode, false)+'.'+Result;
+  end else
+  if Params.NewNode<>nil then begin
+    i:=0;
+    repeat
+      if Params.NewNode.HasParentOfType(AllClassObjectsArray[i]) then begin
+        i:=-1; // mark as found in AllClassObjects
+        break;
+      end;
+      inc(i);
+    until  i>high(AllClassObjectsArray);
+    if i<0 then begin
+      // find type definition node
+      Node:=Params.NewNode;
+      while (Node<>nil) do begin
+        if Node.Desc=ctnTypeDefinition then break;
+        Node:=Node.Parent;
+      end;
+      if (Node<>nil) then begin
+        // find node of class of definition and check if it is parent of StartNode
+        ClassNode:= FindClassNode(Node);
+        ExprClassNode:= FindClassNode(Params.StartNode);
+        if (ClassNode<>nil) and (ExprClassNode<>ClassNode) and
+        ((ExprClassNode=nil) or not ExprClassNode.HasAsParent(ClassNode)) then
+          Result:=ExtractClassName(ClassNode, false)+'.'+Result;
+      end;
+    end;
   end;
 end;
 
@@ -17171,6 +17578,7 @@ begin
   Parent:=ParentParams;
   FKnownIdentifierLength:=0;
   FKnownIdentifierSpecializeParamCnt := -1;
+  FKnownIdentSpecializeParamCntValid := false;
 end;
 
 constructor TFindDeclarationParams.Create(Tool: TFindDeclarationTool;
@@ -17217,6 +17625,7 @@ begin
   Input.Flags:=Flags;
   Input.Identifier:=Identifier;
   Input.IdentifierNode:=IdentifierNode;
+  Input.IdentifierGenParamCount:=FIdentifierGenParamCount;
   Input.ContextNode:=ContextNode;
   Input.OnIdentifierFound:=OnIdentifierFound;
   Input.IdentifierTool:=IdentifierTool;
@@ -17242,6 +17651,9 @@ begin
   Flags:=Input.Flags;
   Identifier:=Input.Identifier;
   IdentifierNode:=Input.IdentifierNode;
+  FIdentifierGenParamCount:=Input.IdentifierGenParamCount;
+  FKnownIdentifierSpecializeParamCnt:=-1;
+  FKnownIdentSpecializeParamCntValid:=false;
   ContextNode:=Input.ContextNode;
   OnIdentifierFound:=Input.OnIdentifierFound;
   IdentifierTool:=Input.IdentifierTool;
@@ -17318,7 +17730,9 @@ begin
   Flags:=[];
   Identifier:=nil;
   IdentifierNode := nil;
+  FIdentifierGenParamCount := -1;
   FKnownIdentifierSpecializeParamCnt := -1;
+  FKnownIdentSpecializeParamCntValid := false;
   ContextNode:=nil;
   OnIdentifierFound:=nil;
   IdentifierTool:=nil;
@@ -17389,15 +17803,26 @@ begin
 end;
 
 function TFindDeclarationParams.IdentSpecializeNodeParamCount: integer;
+// -1 = the identifier has no generic parameters, do not check the number
+//  0 = the identifier has no generic parameters and must not be a generic
+// >0 = the identifier has this number of generic parameters
 var
   Nd: TCodeTreeNode;
 begin
-  Result := FKnownIdentifierSpecializeParamCnt;
-  if Result >= 0 then
-    exit;
+  if FKnownIdentSpecializeParamCntValid then
+    exit(FKnownIdentifierSpecializeParamCnt);
 
-  Result := 0;
-  FKnownIdentifierSpecializeParamCnt := 0;
+  FKnownIdentSpecializeParamCntValid := true;
+
+  if FIdentifierGenParamCount >= 0 then begin
+    // the count was given directly, e.g. by FindDeclarationPathAt
+    Result := FIdentifierGenParamCount;
+    FKnownIdentifierSpecializeParamCnt := Result;
+    exit;
+  end;
+
+  Result := -1;
+  FKnownIdentifierSpecializeParamCnt := -1;
 
   Nd := IdentifierNode;
   if Nd = nil then exit;
@@ -17419,12 +17844,14 @@ end;
 
 procedure TFindDeclarationParams.SetIdentifier(NewIdentifierTool: TFindDeclarationTool;
   NewIdentifier: PChar; NewOnIdentifierFound: TOnIdentifierFound; const IdentifierLength: Integer;
-  NewIdentifierNode: TCodeTreeNode);
+  NewIdentifierNode: TCodeTreeNode; NewGenParamCount: integer);
 begin
   Identifier:=NewIdentifier;
   IdentifierTool:=NewIdentifierTool;
   IdentifierNode:=NewIdentifierNode;
+  FIdentifierGenParamCount:=NewGenParamCount;
   FKnownIdentifierSpecializeParamCnt := -1;
+  FKnownIdentSpecializeParamCntValid := false;
   OnIdentifierFound:=NewOnIdentifierFound;
   ClearFoundProc;
   FKnownIdentifierLength:=IdentifierLength;

@@ -321,6 +321,7 @@ type
     csAutoSize0x0,           // If the preferred size is 0x0 then control is shrinked to 0x0. Default is minimum 1x1.
     csAutoSizeKeepChildLeft, // When AutoSize=True, do not move children horizontally.
     csAutoSizeKeepChildTop,  // When AutoSize=True, do not move children vertically.
+    csAutoSizeIgnoreByParent,// if parent is autosized, don't include this child in the calculation
     csRequiresKeyboardInput  // If the device has no physical keyboard then show the virtual keyboard when this control gets focus (therefore available only to TWinControl descendents).
     );
   TControlStyle = set of TControlStyleType;
@@ -4389,15 +4390,16 @@ begin
   end;
   ParentRectValid:=false;
   ChainLength:=0;
-  MaxChainLength:=OwnerParent.ControlCount;
+  MaxChainLength:=OwnerParent.ControlCount*2; // for both sides
   Found:=false;
   CurReferenceControl:=NewControl;
   CurReferenceSide:=NewSide;
   while CurReferenceControl<>nil do begin
 
     // check for circles
-    if CurReferenceControl=Owner then begin
+    if (CurReferenceControl=Owner) and (CurReferenceSide = ReferenceSide) then begin
       // circle
+      // Note: It is allowed to anchor the right side indirectly to the left side
       {$IFNDEF VerboseAnchorSide}
       DebugLn(['TAnchorSide.CheckSidePosition Circle, ',DbgSName(Owner),' ',dbgs(Kind)]);
       {$ENDIF}

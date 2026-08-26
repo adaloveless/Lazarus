@@ -231,7 +231,7 @@ type
     property RelationCount:integer read GetRelationCount;
   end;
 
-function IDEShortCutEmpty(const Key: TIDEShortCut): boolean;
+function IDEShortCutEmpty(const Key: TIDEShortCut): boolean; deprecated 'use IdeIntf.IdeCommands.IDEShortCutEmpty';
 function EditorCommandToDescriptionString(cmd: word): String;
 function EditorMouseCommandToDescriptionString(cmd: TSynEditorMouseCommand): String;
 function EditorMouseCommandToConfigString(cmd: TSynEditorMouseCommand): String;
@@ -4021,7 +4021,7 @@ var
   end;
 
 var
-  i, j: integer;
+  i: integer;
   Key: TSynEditKeyStroke;
   KeyStrokesByCmds: TAvlTree;
   KeyList: TKeyStrokeList;

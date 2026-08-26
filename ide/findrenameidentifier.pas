@@ -156,8 +156,6 @@ function GatherReferencesInFPDocFile(
   const FPDocFilename: string;
   var ListOfLazFPDocNode: TFPList): TModalResult;
 
-function LCLEncodeAmps(const AmpString: string): string;
-
 // identifier references in lfm
 function GatherLFMsReferences(Files:TStringList;
   const Identifier: string;
@@ -273,28 +271,6 @@ begin
     OldRefs.Tool:=Tool;
     OldRefs.NewLocalSrcName:=NewUnitName;
     ReplaceCodeInTreeOfPCodeXYPosition(OldRefs.TreeOfPCodeXYPosition,OldCode,NewCode);
-  end;
-end;
-
-function LCLEncodeAmps(const AmpString: string): string;
-var i, len: integer;
-begin
-  Result:='';
-  i:=1;
-  len:= length(AmpString);
-  while i<=len do begin
-    if AmpString[i]='&' then begin
-      Result:= Result + '&&';
-      inc(i);
-    end;
-    if (i<=len) and (isIdentStartChar[AmpString[i]]) then
-      while (i<=len) and isIdentChar[AmpString[i]] do begin
-        Result:= Result + AmpString[i];
-        inc(i);
-      end;
-    if (i>len) or (AmpString[i]<>'.') then break;
-    Result:= Result + AmpString[i];
-    inc(i);
   end;
 end;
 
@@ -784,9 +760,13 @@ begin
 
     // create the file list
     Files:=TStringList.Create;
-    Files.Add(DeclCodeXY.Code.Filename);
-    if CompareFilenames(DeclCodeXY.Code.Filename,StartSrcCode.Filename)<>0 then
+    if (Options.Scope = frCurrentUnit) then begin
       Files.Add(StartSrcCode.Filename);
+    end else begin
+      Files.Add(DeclCodeXY.Code.Filename);
+      if CompareFilenames(DeclCodeXY.Code.Filename,StartSrcCode.Filename)<>0 then
+        Files.Add(StartSrcCode.Filename);
+    end;
 
     // add packages, projects
     case Options.Scope of
@@ -1192,7 +1172,6 @@ begin
 
     OldSearchPageIndex:=SearchPageIndex;
     SearchPageIndex:=nil;
-    Identifier:=LCLEncodeAmps(Identifier);
     SearchResultsView.EndUpdate(OldSearchPageIndex.PageIndex, 'Ref: '+Identifier);
     IDEWindowCreators.ShowForm(SearchResultsView,true);
 
@@ -1906,7 +1885,7 @@ begin
   if CodeToolBoss.GetIdentifierAt(ACodeBuffer,
     NewIdentifierPosition.X,NewIdentifierPosition.Y,FOldIdentifier,FNode) then
   begin
-    CurrentGroupBox.Caption:= Format(lisFRIIdentifier,[''])+LCLEncodeAmps(FOldIdentifier);
+    CurrentGroupBox.Caption:=Format(lisFRIIdentifier,[StringReplace(FOldIdentifier,'&','&&',[rfReplaceAll])]);
     if (FNode<>nil) then begin
       if (FNode.Desc=ctnBeginBlock) then // 'Result', 'Self'
         IsPrivate:=true;

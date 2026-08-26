@@ -55,6 +55,7 @@ type
     FIsPartOfProject: boolean;
   protected
     procedure SetIsPartOfProject(const AValue: boolean); virtual;
+    procedure CallProjectFileRenamedHandler(AnOldName, ANewName: String);
   public
     constructor Create;
     destructor Destroy; override;
@@ -350,6 +351,32 @@ type
 
   TRunParamsRedirectMode = (rprOff, rprOverwrite, rprAppend);
 
+  (* Where the debuggee's console I/O appears. rpcmIdeConsole is capture: the
+     streams are taken into the IDE rather than served by a console of the OS.
+     What this does not say is which console then displays them -- that is
+     ConsoleId below, and it is the only part a registered provider names.
+
+     Two values today. When inherit-versus-new console stops being a hidden
+     backend property, rpcmOsConsole splits in two and this gains a value
+     rather than changing shape. *)
+  TRunParamsConsoleMode = (rpcmOsConsole, rpcmIdeConsole);
+
+const
+  (* Which console serves, once rpcmIdeConsole says it is not the OS. Held as a
+     string, not an enum, because terminal providers are to be registered at run
+     time and identified by an id; the built-in window is merely the first of
+     them.
+
+     An empty string means "follow the IDE-wide default" rather than any
+     particular console, the same sentinel role '' plays for
+     TProjectDebugLink.DebuggerBackend. Keeping it matters: without it every
+     project saved by this version would record an explicit choice and would go
+     on ignoring the IDE-wide setting once that setting exists. *)
+  RunParamsConsoleIdDefault   = '';
+  RunParamsConsoleIdIdeWindow = 'IDEConsole';
+
+type
+
   { TAbstractRunParamsOptionsMode }
 
   TAbstractRunParamsOptionsMode = class(TPersistent)
@@ -382,6 +409,8 @@ type
     FFileNameStdIn:  String;
     FFileNameStdOut: String;
     FFileNameStdErr: String;
+    FConsoleMode:    TRunParamsConsoleMode;
+    FIdeDbgConsoleId:      String;
 
     procedure AssignTo(Dest: TPersistent); override;
   public
@@ -423,6 +452,9 @@ type
     property FileNameStdIn:  String read FFileNameStdIn  write FFileNameStdIn;
     property FileNameStdOut: String read FFileNameStdOut write FFileNameStdOut;
     property FileNameStdErr: String read FFileNameStdErr write FFileNameStdErr;
+    // Console
+    property ConsoleMode: TRunParamsConsoleMode read FConsoleMode write FConsoleMode;
+    property IdeDbgConsoleId: String read FIdeDbgConsoleId write FIdeDbgConsoleId;
   end;
 
   { TAbstractRunParamsOptions }
@@ -595,6 +627,7 @@ type
     function GetUseManifest: boolean; virtual; abstract;
     procedure SetActiveBuildModeID(AValue: string); virtual; abstract;
     procedure SetExecutableType(const AValue: TProjectExecutableType); virtual;
+    procedure DoFlagsChanged; virtual;
     procedure SetFlags(const AValue: TProjectFlags); virtual;
     procedure SetMainFileID(const AValue: Integer); virtual; abstract;
     procedure SetModified(const AValue: boolean); virtual; abstract;
@@ -604,6 +637,7 @@ type
     procedure SetSessionStorage(const AValue: TProjectSessionStorage); virtual;
     procedure SetTitle(const AValue: String); virtual;
     procedure SetUseManifest(AValue: boolean); virtual; abstract;
+    procedure CallProjectDirChangedHandler(AnOldName, ANewName: String);
   public
     constructor Create({%H-}ProjectDescription: TProjectDescriptor); virtual; reintroduce;
     destructor Destroy; override;
@@ -716,7 +750,8 @@ const
   DefaultProjectFlags = DefaultProjectNoApplicationFlags+[
                          pfMainUnitHasCreateFormStatements,
                          pfMainUnitHasTitleStatement,
-                         pfMainUnitHasScaledStatement];
+                         pfMainUnitHasScaledStatement,
+                         pfCompatibilityMode];
 
 function ProjectFlagsToStr(Flags: TProjectFlags): string;
 function StrToProjectSessionStorage(const s: string): TProjectSessionStorage;
@@ -748,10 +783,49 @@ procedure RegisterProjectDescriptor(ProjDesc: TProjectDescriptor;
   const Category, Caption, Description, Units: string);
 }
 
-var
-  LazProject1: TLazProject = nil; // the main project
+type
+  TLazProjectNotifyHandler = procedure(ASender: TLazProject) of object;
+  TLazProjectDirectoryChangedHandler = procedure(ASender: TLazProject; AnOldName, ANewName: String) of object;
+  TLazProjectFileRenamedChangedHandler = procedure(ASender: TLazProjectFile; AnOldName, ANewName: String) of object;
+
+  { TGlobalLazProjectHooks }
+
+  TGlobalLazProjectHooks = class
+  private class var
+    TheInstance: TGlobalLazProjectHooks;
+  private type
+    TNewProjectList = specialize TFPGList<TLazProjectNotifyHandler>;
+    TDirChangedList = specialize TFPGList<TLazProjectDirectoryChangedHandler>;
+    TFileNameChangedList = specialize TFPGList<TLazProjectFileRenamedChangedHandler>;
+  private
+    FNewProjectList: TNewProjectList;
+    FDirChangedList: TDirChangedList;
+    FFileNameChangedList: TFileNameChangedList;
+  protected
+    procedure CallNewProjectHandler(ASender: TLazProject);
+    procedure CallProjectDirectoryChangedHandler(ASender: TLazProject; AnOldName, ANewName: String);
+    procedure CallProjectFileRenamedHandler(ASender: TLazProjectFile; AnOldName, ANewName: String);
+  public
+    destructor Destroy; override;
+    procedure RegisterNewProjectHandler(AHandler: TLazProjectNotifyHandler);
+    procedure UnregisterNewProjectHandler(AHandler: TLazProjectNotifyHandler);
+    procedure RegisterProjectDirectoryChangedHandler(AHandler: TLazProjectDirectoryChangedHandler);
+    procedure UnregisterProjectDirectoryChangedHandler(AHandler: TLazProjectDirectoryChangedHandler);
+    procedure RegisterProjectFileRenamedHandler(AHandler: TLazProjectFileRenamedChangedHandler);
+    procedure UnregisterProjectFileRenamedHandler(AHandler: TLazProjectFileRenamedChangedHandler);
+  end;
+
+function GetGlobalLazProjectHooks: TGlobalLazProjectHooks;
+
+function GetLazProject1: TLazProject; inline;
+procedure SetLazProject1(AProject: TLazProject); inline;
+property LazProject1: TLazProject read GetLazProject1 write SetLazProject1;
+
+property GlobalLazProjectHooks: TGlobalLazProjectHooks read GetGlobalLazProjectHooks;
 
 implementation
+var
+  TheLazProject1: TLazProject = nil; // the main project
 
 procedure RegisterProjectFileDescriptor(FileDesc: TProjectFileDescriptor);
 begin
@@ -909,6 +983,9 @@ begin
     ADest.FFileNameStdIn  := FFileNameStdIn;
     ADest.FFileNameStdOut := FFileNameStdOut;
     ADest.FFileNameStdErr := FFileNameStdErr;
+    // Console
+    ADest.FConsoleMode    := FConsoleMode;
+    ADest.FIdeDbgConsoleId      := FIdeDbgConsoleId;
 
     ADest.UserOverrides.Assign(UserOverrides);
     ADest.IncludeSystemVariables := IncludeSystemVariables;
@@ -940,6 +1017,9 @@ begin
   FFileNameStdIn  := '';
   FFileNameStdOut := '';
   FFileNameStdErr := '';
+  // Console
+  FConsoleMode    := rpcmOsConsole;
+  FIdeDbgConsoleId      := RunParamsConsoleIdDefault;
 
   // environment options
   fUserOverrides.Clear;
@@ -1493,6 +1573,7 @@ begin
   if FFlags=AValue then exit;
   FFlags:=AValue;
   Modified:=true;
+  DoFlagsChanged;
 end;
 
 procedure TLazProject.SetSessionStorage(const AValue: TProjectSessionStorage);
@@ -1571,11 +1652,22 @@ begin
   // not saved to lpi, so do not set Modified
 end;
 
+procedure TLazProject.DoFlagsChanged;
+begin
+  //
+end;
+
 procedure TLazProject.SetTitle(const AValue: String);
 begin
   if FTitle=AValue then exit;
   FTitle:=AValue;
   Modified:=true;
+end;
+
+procedure TLazProject.CallProjectDirChangedHandler(AnOldName, ANewName: String);
+begin
+  if TGlobalLazProjectHooks.TheInstance <> nil then
+    GlobalLazProjectHooks.TheInstance.CallProjectDirectoryChangedHandler(Self, AnOldName, ANewName);
 end;
 
 constructor TLazProject.Create(ProjectDescription: TProjectDescriptor);
@@ -1590,6 +1682,8 @@ end;
 
 destructor TLazProject.Destroy;
 begin
+  if TheLazProject1 = Self then
+    TheLazProject1 := nil;
   FreeAndNil(FCustomData);
   FreeAndNil(FCustomSessionData);
   inherited Destroy;
@@ -1669,6 +1763,12 @@ end;
 procedure TLazProjectFile.SetIsPartOfProject(const AValue: boolean);
 begin
   FIsPartOfProject:=AValue;
+end;
+
+procedure TLazProjectFile.CallProjectFileRenamedHandler(AnOldName, ANewName: String);
+begin
+  if TGlobalLazProjectHooks.TheInstance <> nil then
+    GlobalLazProjectHooks.TheInstance.CallProjectFileRenamedHandler(Self, AnOldName, ANewName);
 end;
 
 constructor TLazProjectFile.Create;
@@ -1784,9 +1884,130 @@ begin
     Caption, Description, Units), Category);
 end;
 }
+
+{ TGlobalLazProjectHooks }
+
+function GetGlobalLazProjectHooks: TGlobalLazProjectHooks;
+begin
+  if TGlobalLazProjectHooks.TheInstance = nil then
+    TGlobalLazProjectHooks.TheInstance := TGlobalLazProjectHooks.Create;
+  Result := TGlobalLazProjectHooks.TheInstance;
+end;
+
+function GetLazProject1: TLazProject;
+begin
+  Result := TheLazProject1;
+end;
+
+procedure SetLazProject1(AProject: TLazProject);
+begin
+  TheLazProject1 := AProject;
+  if TGlobalLazProjectHooks.TheInstance <> nil then
+    GlobalLazProjectHooks.CallNewProjectHandler(TheLazProject1);
+end;
+
+procedure TGlobalLazProjectHooks.CallNewProjectHandler(ASender: TLazProject);
+var
+  i: Integer;
+  h: TLazProjectNotifyHandler;
+begin
+  if FNewProjectList = nil then exit;
+  i := FNewProjectList.Count - 1;
+  while i >= 0 do begin
+    h := FNewProjectList[i];
+    h(ASender);
+    dec(i);
+  end;
+end;
+
+procedure TGlobalLazProjectHooks.CallProjectDirectoryChangedHandler(ASender: TLazProject;
+  AnOldName, ANewName: String);
+var
+  i: Integer;
+  h: TLazProjectDirectoryChangedHandler;
+begin
+  if FDirChangedList = nil then exit;
+  i := FDirChangedList.Count - 1;
+  while i >= 0 do begin
+    h := FDirChangedList[i];
+    h(ASender, AnOldName, ANewName);
+    dec(i);
+  end;
+end;
+
+procedure TGlobalLazProjectHooks.CallProjectFileRenamedHandler(ASender: TLazProjectFile;
+  AnOldName, ANewName: String);
+var
+  i: Integer;
+  h: TLazProjectFileRenamedChangedHandler;
+begin
+  if FFileNameChangedList = nil then exit;
+  i := FFileNameChangedList.Count - 1;
+  while i >= 0 do begin
+    h := FFileNameChangedList[i];
+    h(ASender, AnOldName, ANewName);
+    dec(i);
+  end;
+end;
+
+destructor TGlobalLazProjectHooks.Destroy;
+begin
+  inherited Destroy;
+  FNewProjectList.Free;
+  FDirChangedList.Free;
+  FFileNameChangedList.Free;
+end;
+
+procedure TGlobalLazProjectHooks.RegisterNewProjectHandler(
+  AHandler: TLazProjectNotifyHandler);
+begin
+  if FNewProjectList = nil then
+    FNewProjectList := TNewProjectList.Create;
+  FNewProjectList.Add(AHandler);
+end;
+
+procedure TGlobalLazProjectHooks.UnregisterNewProjectHandler(
+  AHandler: TLazProjectNotifyHandler);
+begin
+  if FNewProjectList = nil then exit;
+  FNewProjectList.Remove(AHandler);
+end;
+
+procedure TGlobalLazProjectHooks.RegisterProjectDirectoryChangedHandler(
+  AHandler: TLazProjectDirectoryChangedHandler);
+begin
+  if FDirChangedList = nil then
+    FDirChangedList := TDirChangedList.Create;
+  FDirChangedList.Add(AHandler);
+end;
+
+procedure TGlobalLazProjectHooks.UnregisterProjectDirectoryChangedHandler(
+  AHandler: TLazProjectDirectoryChangedHandler);
+begin
+  if FDirChangedList = nil then exit;
+  FDirChangedList.Remove(AHandler);
+end;
+
+procedure TGlobalLazProjectHooks.RegisterProjectFileRenamedHandler(
+  AHandler: TLazProjectFileRenamedChangedHandler);
+begin
+  if FFileNameChangedList = nil then
+    FFileNameChangedList := TFileNameChangedList.Create;
+  FFileNameChangedList.Add(AHandler);
+end;
+
+procedure TGlobalLazProjectHooks.UnregisterProjectFileRenamedHandler(
+  AHandler: TLazProjectFileRenamedChangedHandler);
+begin
+  if FFileNameChangedList = nil then exit;
+  FFileNameChangedList.Remove(AHandler);
+end;
+
 initialization
   ProjectFileDescriptors:=nil;
-
+finalization
+  GlobalLazProjectHooks.TheInstance.Free;
+  GlobalLazProjectHooks.TheInstance := nil;
 end.
 
 

@@ -56,7 +56,7 @@ uses
   LazStringUtils,
   // codetools
   BasicCodeTools, CodeBeautifier, CodeToolManager, CodeCache, SourceLog,
-  LinkScanner, CodeTree, SourceChanger, IdentCompletionTool,
+  LinkScanner, CodeTree, SourceChanger, IdentCompletionTool, DirectoryCacher,
   // synedit
   SynEditLines, SynEditStrConst, SynEditTypes, SynEdit, SynEditAutoComplete,
   SynEditKeyCmds, SynCompletion, SynEditMarkupHighAll, SynEditMarks, SynBeautifier,
@@ -330,7 +330,7 @@ type
     procedure SetVisible(Value: boolean);
     procedure UnbindEditor;
 
-    procedure UpdateIfDefNodeStates(Force: Boolean = False);
+    procedure UpdateEditorFromCodeTools(Force: Boolean = False);
   protected
     function GetPageCaption: string; override;
     function GetPageName: string; override;
@@ -545,7 +545,6 @@ type
     function  SourceToDebugLine(aLinePos: Integer): Integer;
     function  DebugToSourceLine(aLinePos: Integer): Integer; override;
 
-    procedure InvalidateAllIfdefNodes;
     procedure SetIfdefNodeState(ALinePos, AstartPos: Integer; AState: TSynMarkupIfdefNodeState);
     property OnIfdefNodeStateRequest: TSynMarkupIfdefStateRequest read FOnIfdefNodeStateRequest write FOnIfdefNodeStateRequest;
   public
@@ -1537,6 +1536,8 @@ function dbgSourceNoteBook(snb: TSourceNotebook): string;
 function CompareSrcEditIntfWithFilename(SrcEdit1, SrcEdit2: Pointer): integer;
 function CompareFilenameWithSrcEditIntf(FilenameStr, SrcEdit: Pointer): integer;
 function FilenameToLazSyntaxHighlighter(Filename: String): TIdeSyntaxHighlighterID;
+function CompilerModeToPascal(CompilerMode: TCompilerMode): TPascalCompilerMode;
+function CompilerModeSwitchesToPascal(CompilerModeSwitches: TCompilerModeSwitches): TPascalCompilerModeSwitches;
 
 var
   EnglishGPLNotice: string;
@@ -2008,6 +2009,29 @@ begin
   end;
 end;
 
+function CompilerModeToPascal(CompilerMode: TCompilerMode): TPascalCompilerMode;
+const
+  C: array[TCompilerMode] of TPascalCompilerMode = (
+    //cmFPC, cmDELPHI, cmDELPHIUNICODE, cmTP, cmOBJFPC, cmMacPas, cmISO, cmExtPas
+    pcmFPC, pcmDelphi, pcmDelphiUnicode, pcmTP, pcmObjFPC, pcmMacPas, pcmIso, pcmExtPas);
+begin
+  Result := C[CompilerMode];
+end;
+
+function CompilerModeSwitchesToPascal(CompilerModeSwitches: TCompilerModeSwitches): TPascalCompilerModeSwitches;
+const
+  C: array[TPascalCompilerModeSwitch] of TCompilerModeSwitch = (
+    // pcsNestedComments, pcsTypeHelpers, pcsObjectiveC1, pcsObjectiveC2, pcsFunctionReferences, pcsAnonymousFunctions
+    cmsNested_comment, cmsTypeHelpers, cmsObjectiveC1, cmsObjectiveC2, cmsFunctionReferences, cmsAnonymousFunctions);
+var
+  P: TPascalCompilerModeSwitch;
+begin
+  Result := [];
+  for P in TPascalCompilerModeSwitch do
+    if C[P] in CompilerModeSwitches then
+      Result := Result + [P];
+end;
+
 { TToolButton_GotoBookmarks }
 
 procedure TToolButton_GotoBookmarks.RefreshMenu;
@@ -2411,15 +2435,23 @@ var
   Cur: TPoint;
   OkX, OkY: Boolean;
   hw: THintWindow;
+  r: TRect;
 begin
   if HintIsVisible and not FAutoShown then Exit;
   FAutoHideHintTimer.Enabled := False;
   if HintIsVisible then begin
     Cur := Mouse.CursorPos; // Desktop coordinates
+    if PtInRect(CurHintWindow.BoundsRect, Cur) then // above the hint itself
+      Exit;
+
     if (not IsRectEmpty(FScreenRect)) then
     begin
       // Do not close, if mouse still over the same word, that triggered the hint
-      if PtInRect(FScreenRect, Cur) then
+      r := FScreenRect;
+      // extend for any gap
+      r.Top    := min(r.Top, CurHintWindow.Top + CurHintWindow.Height)-1;
+      r.Bottom := max(r.Bottom, CurHintWindow.Top)+1;
+      if PtInRect(r, Cur) then
         Exit;
     end else
     begin
@@ -3284,7 +3316,7 @@ begin
           if assigned(SharedEdit.FEditPlugin) then
             SharedEdit.FEditPlugin.Enabled := True;
           if SharedEdit.Visible then
-            SharedEdit.UpdateIfDefNodeStates(True);
+            SharedEdit.UpdateEditorFromCodeTools(True);
         end;
       end;
       for i := 0 to FSharedEditorList.Count - 1 do begin
@@ -3435,7 +3467,7 @@ begin
       for i := 0 to FSharedEditorList.Count - 1 do begin
         SharedEditors[i].FillExecutionMarks;
         if SharedEditors[i].Visible then
-          SharedEditors[i].UpdateIfDefNodeStates(True);
+          SharedEditors[i].UpdateEditorFromCodeTools(True);
       end;
     end;
     if CodeToolsInSync then begin
@@ -5181,7 +5213,7 @@ begin
 
       EditorOpts.GetSynEditSettings(FEditor, SimilarEditor, ActiveSyntaxHighlighterId);
       if Visible then
-        UpdateIfDefNodeStates(True);
+        UpdateEditorFromCodeTools(True);
     end
     else if ASkipEditorOpts then
       exit
@@ -5262,7 +5294,7 @@ Begin
 
     SourceNotebook.UpdateActiveEditColors(FEditor);
     if Visible then
-      UpdateIfDefNodeStates(True);
+      UpdateEditorFromCodeTools(True);
   finally
     FEditor.EndUpdate;
     FEditor.RestoreTopLineAfterFold(tl);
@@ -6702,20 +6734,15 @@ begin
   Result := FEditor.IDEGutterMarks.DebugLineToSourceLine(aLinePos);
 end;
 
-procedure TSourceEditor.InvalidateAllIfdefNodes;
-begin
-  FEditor.InvalidateAllIfdefNodes;
-end;
-
 procedure TSourceEditor.SetIfdefNodeState(ALinePos, AstartPos: Integer;
   AState: TSynMarkupIfdefNodeState);
 begin
   FEditor.SetIfdefNodeState(ALinePos, AstartPos, AState);
 end;
 
-procedure TSourceEditor.UpdateIfDefNodeStates(Force: Boolean = False);
-{off $DEFINE VerboseUpdateIfDefNodeStates}
-{$IFDEF VerboseUpdateIfDefNodeStates}
+procedure TSourceEditor.UpdateEditorFromCodeTools(Force: Boolean = False);
+{off $DEFINE VerboseUpdateEditorFromCodeTools}
+{$IFDEF VerboseUpdateEditorFromCodeTools}
 const
   VFilePattern='blaunit';
   VMinY=1;
@@ -6733,16 +6760,24 @@ var
   ActiveCnt: Integer;
   InactiveCnt: Integer;
   SkippedCnt: Integer;
+  PasSyn: TSynPasSyn;
+  ApplyModeSwitches: Boolean;
 begin
-  //debugln(['TSourceEditor.UpdateIfDefNodeStates START ',Filename]);
-  if not EditorComponent.IsIfdefMarkupActive then
+  ApplyModeSwitches := EditorOpts.ResolveCompilerModeSwitchesWithCodeTools and (EditorComponent.Highlighter is TSynPasSyn);
+
+  // reset CompilerModeLocked
+  if not ApplyModeSwitches and (EditorComponent.Highlighter is TSynPasSyn) and TSynPasSyn(EditorComponent.Highlighter).CompilerModeLocked then
+    TSynPasSyn(EditorComponent.Highlighter).CompilerModeLocked := False;
+
+  //debugln(['TSourceEditor.UpdateEditorFromCodeTools START ',Filename]);
+  if not (EditorComponent.IsIfdefMarkupActive or ApplyModeSwitches) then
     exit;
-  //debugln(['TSourceEditor.UpdateIfDefNodeStates CHECK ',Filename]);
+  //debugln(['TSourceEditor.UpdateEditorFromCodeTools CHECK ',Filename]);
   UpdateCodeBuffer;
   Scanner:=SharedValues.GetMainLinkScanner(true);
   if Scanner=nil then exit;
   if (Scanner.ChangeStep=FLastIfDefNodeScannerStep) and (not Force) then exit;
-  //debugln(['TSourceEditor.UpdateIfDefNodeStates UPDATING ',Filename]);
+  //debugln(['TSourceEditor.UpdateEditorFromCodeTools UPDATING ',Filename]);
   FLastIfDefNodeScannerStep:=Scanner.ChangeStep;
   EditorComponent.BeginUpdate;
   try
@@ -6753,7 +6788,7 @@ begin
     begin
       aDirective:=Scanner.DirectivesSorted[i];
       //if (Pos(VFilePattern,Code.Filename)>0) then
-      //  debugln(['TSourceEditor.UpdateIfDefNodeStates ',i+1,'/',Scanner.DirectiveCount,' ',dbgs(aDirective^.Kind)]);
+      //  debugln(['TSourceEditor.UpdateEditorFromCodeTools ',i+1,'/',Scanner.DirectiveCount,' ',dbgs(aDirective^.Kind)]);
       inc(i);
       if TCodeBuffer(aDirective^.Code)<>Code then continue;
       if not (aDirective^.Kind in (lsdkAllIf+lsdkAllElse)) then continue;
@@ -6762,9 +6797,9 @@ begin
       SynState:=idnInvalid;
       // a directive can be scanned multiple times (multi included include files)
       // => show it enabled if it was active at least once
-      {$IFDEF VerboseUpdateIfDefNodeStates}
+      {$IFDEF VerboseUpdateEditorFromCodeTools}
       if (Pos(VFilePattern,Code.Filename)>0) and (Y>=VMinY) and (Y<=VMaxY) then
-        debugln(['TSourceEditor.UpdateIfDefNodeStates ',i,'/',Scanner.DirectiveCount,' ',dbgs(Pointer(Code)),' ',Code.Filename,' X=',X,' Y=',Y,' SrcPos=',aDirective^.SrcPos,' State=',dbgs(aDirective^.State)]);
+        debugln(['TSourceEditor.UpdateEditorFromCodeTools ',i,'/',Scanner.DirectiveCount,' ',dbgs(Pointer(Code)),' ',Code.Filename,' X=',X,' Y=',Y,' SrcPos=',aDirective^.SrcPos,' State=',dbgs(aDirective^.State)]);
       {$ENDIF}
       SrcPos:=aDirective^.SrcPos;
       ActiveCnt:=0;
@@ -6778,9 +6813,9 @@ begin
         end;
         if i < Scanner.DirectiveCount then begin
           ADirective:=Scanner.DirectivesSorted[i];
-          {$IFDEF VerboseUpdateIfDefNodeStates}
+          {$IFDEF VerboseUpdateEditorFromCodeTools}
           if (Pos(VFilePattern,Code.Filename)>0) and (Y>=VMinY) and (Y<=VMaxY) and (ADirective^.SrcPos=SrcPos) then
-            debugln(['TSourceEditor.UpdateIfDefNodeStates ',i,'/',Scanner.DirectiveCount,' MERGING ',dbgs(ADirective^.Code),' ',Code.Filename,' X=',X,' Y=',Y,' SrcPos=',aDirective^.SrcPos,' State=',dbgs(aDirective^.State)]);
+            debugln(['TSourceEditor.UpdateEditorFromCodeTools ',i,'/',Scanner.DirectiveCount,' MERGING ',dbgs(ADirective^.Code),' ',Code.Filename,' X=',X,' Y=',Y,' SrcPos=',aDirective^.SrcPos,' State=',dbgs(aDirective^.State)]);
           {$ENDIF}
         end;
         inc(i);
@@ -6795,11 +6830,24 @@ begin
         SynState:=idnTempEnabled
       else
         SynState:=idnInvalid;
-      {$IFDEF VerboseUpdateIfDefNodeStates}
+      {$IFDEF VerboseUpdateEditorFromCodeTools}
       if (Pos(VFilePattern,Code.Filename)>0) and (Y>=VMinY) and (Y<=VMaxY) then
-        debugln(['TSourceEditor.UpdateIfDefNodeStates y=',y,' x=',x,' Counts:Inactive=',InactiveCnt,' Active=',ActiveCnt,' Skipped=',SkippedCnt,' SET SynState=',dbgs(SynState)]);
+        debugln(['TSourceEditor.UpdateEditorFromCodeTools y=',y,' x=',x,' Counts:Inactive=',InactiveCnt,' Active=',ActiveCnt,' Skipped=',SkippedCnt,' SET SynState=',dbgs(SynState)]);
       {$ENDIF}
       EditorComponent.SetIfdefNodeState(Y,X,SynState);
+    end;
+
+    if ApplyModeSwitches then
+    begin
+      PasSyn := TSynPasSyn(EditorComponent.Highlighter);
+
+      PasSyn.BeginUpdate;
+      PasSyn.CurrentLines := EditorComponent.ViewedTextBuffer;
+      PasSyn.CompilerModeLocked := true;
+      PasSyn.ModeSwitchesLocked := [Low(TPascalCompilerModeSwitches)..High(TPascalCompilerModeSwitches)];
+      PasSyn.CompilerMode := CompilerModeToPascal(Scanner.CompilerMode);
+      PasSyn.ModeSwitches := CompilerModeSwitchesToPascal(Scanner.CompilerModeSwitches);
+      PasSyn.EndUpdate;
     end;
   finally
     EditorComponent.EndUpdate;
@@ -7534,18 +7582,53 @@ var
   ASrcEdit: TSourceEditor;
   CurFilename: String;
 
-  function MaybeAddPopup(const ASuffix: String; ANewOnClick: TNotifyEvent = nil;
-    Filename: string = ''): TIDEMenuItem;
+  procedure AddSiblingTextFiles;
+  // Add a menu item for every other text file in the same directory sharing
+  // the base filename (case-insensitively) of the active editor file.
+  var
+    ActFile, Base, Dir, ShortName: String;
+    Files: TStrings;
+    BufList: TFPList;
+    Code: TCodeBuffer;
+    i: Integer;
   begin
-    Result:=nil;
-    if ANewOnClick=nil then
-      ANewOnClick:=@PopupMenuOpenFile;
-    if Filename='' then
-      Filename:=CurFilename;
-    Filename:=ChangeFileExt(Filename,ASuffix);
-    if FileExistsCached(Filename) then begin
-      Filename:=CreateRelativePath(Filename,ExtractFilePath(ASrcEdit.FileName));
-      Result:=AddContextPopupMenuItem(Format(lisOpenLfm,[Filename]), true, ANewOnClick);
+    ActFile:=ASrcEdit.FileName;
+    Base:=ExtractFileNameOnly(ActFile);
+    if Base='' then exit;
+    ShortName:=ExtractFileName(ActFile);
+    if FilenameIsAbsolute(ActFile) then begin
+      // saved file: scan the real directory
+      Dir:=ExtractFilePath(ActFile);
+      Files:=nil;
+      try
+        CodeToolBoss.DirectoryCachePool.GetListing(Dir,Files,false);
+        if Files<>nil then
+          for i:=0 to Files.Count-1 do begin
+            if UTF8CompareText(ExtractFileNameOnly(Files[i]),Base)<>0 then continue;
+            if UTF8CompareText(Files[i],ShortName)=0 then continue; // not itself
+            if not FileIsTextCached(Dir+Files[i]) then continue; // skip binaries
+            AddContextPopupMenuItem(Format(lisOpenLfm,[Files[i]]),true,
+                                    @PopupMenuOpenFile);
+          end;
+      finally
+        Files.Free;
+      end;
+    end else begin
+      // virtual (unsaved) file: no directory to list, enumerate in-memory buffers
+      BufList:=CodeToolBoss.SourceCache.FindFilesInDir('');
+      if BufList<>nil then
+        try
+          for i:=0 to BufList.Count-1 do begin
+            Code:=TCodeBuffer(BufList[i]);
+            if UTF8CompareText(ExtractFileNameOnly(Code.Filename),Base)<>0 then continue;
+            if UTF8CompareText(Code.Filename,ShortName)=0 then continue; // not itself
+            if Code.IsDeleted or (not Code.SourceIsText) then continue; // skip binaries
+            AddContextPopupMenuItem(Format(lisOpenLfm,[Code.Filename]),true,
+                                    @PopupMenuOpenFile);
+          end;
+        finally
+          BufList.Free;
+        end;
     end;
   end;
 
@@ -7608,21 +7691,9 @@ begin
                [CreateRelativePath(CurFilename,ExtractFilePath(ASrcEdit.Filename))]),
         true,@PopupMenuOpenFile);
     end;
-    if FilenameHasPascalExt(ShortFileName) then begin
-      MaybeAddPopup('.lfm');
-      MaybeAddPopup('.dfm');
-      MaybeAddPopup('.fmx');
-      MaybeAddPopup('.lrs');
-      MaybeAddPopup('.s');
-    end;
+    // add one "Open ..." item for each sibling text file with the same base name
+    AddSiblingTextFiles;
     // ToDo: unit resources
-    if FilenameExtIs(ShortFileName,'lfm',true)
-       or FilenameExtIs(ShortFileName,'dfm')
-       or FilenameExtIs(ShortFileName,'fmx') then begin
-      MaybeAddPopup('.pas');
-      MaybeAddPopup('.pp');
-      MaybeAddPopup('.p');
-    end;
     if FilenameExtIn(ShortFileName, ['lpi','lpk'], false) then begin
       AddContextPopupMenuItem(Format(lisOpenLfm,[ShortFileName]),true,@PopupMenuOpenFile);
     end;
@@ -7632,7 +7703,10 @@ begin
         Format(lisOpenLfm,
                [CreateRelativePath(FPDocSrc,ExtractFilePath(CurFilename))]),
         true,@PopupMenuOpenFile);
-  end;
+  end
+  else
+    // virtual (unsaved) file: offer related in-memory buffers
+    AddSiblingTextFiles;
 
   EditorPopupPoint:=EditorComp.ScreenToClient(SrcPopUpMenu.PopupPoint);
   if EditorPopupPoint.X<=EditorComp.Gutter.Width then begin
@@ -7807,6 +7881,8 @@ begin
 end;
 
 procedure TSourceNotebook.SetPageIndex(AValue: Integer);
+var
+  Editor: TSourceEditorInterface;
 begin
   if (fPageIndex = AValue) and (FNotebook.PageIndex = AValue) then begin
     //debugln(['>> TSourceNotebook.SetPageIndex PageIndex=', PageIndex, ' FPageIndex=', FPageIndex, ' Value=', AValue, ' FUpdateLock=', FUpdateLock]);
@@ -7815,6 +7891,9 @@ begin
   end;
   DebugLnEnter(SRCED_PAGES, ['>> TSourceNotebook.SetPageIndex Cur-PgIdx=', PageIndex, ' FPageIndex=', FPageIndex, ' Value=', AValue, ' FUpdateLock=', FUpdateLock]);
   //debugln(['>> TSourceNotebook.SetPageIndex CHANGE PageIndex=', PageIndex, ' FPageIndex=', FPageIndex, ' Value=', AValue, ' FUpdateLock=', FUpdateLock]);
+  Editor := GetActiveEditor;
+  if Editor<>nil then // force UpdateCodeBuffer on editor leave (in case CodeTools timer doesn't catch up with the PageIndex change)
+    Editor.UpdateCodeBuffer;
   FPageIndex := AValue;
   if FUpdateLock = 0 then
     ApplyPageIndex
@@ -8773,7 +8852,7 @@ begin
   SourceEditorManager.SendEditorCloned(NewEdit);
   // Creating a shared edit invalidates the tree in SynMarkup. Force setting it for all editors
   for i := 0 to SrcEdit.SharedEditorCount - 1 do
-    SrcEdit.SharedEditors[i].UpdateIfDefNodeStates(True);
+    SrcEdit.SharedEditors[i].UpdateEditorFromCodeTools(True);
   // Update IsVisibleTab; needs UnitEditorInfo created in DestWin.UpdateProjectFiles
   if Focus then begin
     Manager.ActiveEditor := NewEdit;
@@ -8809,12 +8888,19 @@ begin
   aFilename:=copy(aFilename,p,length(aFilename)-(length(ResStr)-2));
   if not FilenameIsAbsolute(aFilename) then
     aFilename:=TrimFilename(ExtractFilePath(GetActiveSE.Filename)+aFilename);
-  if FilenameExtIs(aFilename,'lpi',false) then
-    MainIDEInterface.DoOpenProjectFile(aFilename,[ofOnlyIfExists,ofAddToRecent,ofUseCache])
-  else if FilenameExtIs(aFilename,'lpk',true) then
-    PackageEditingInterface.DoOpenPackageFile(aFilename,[pofAddToRecent],false)
-  else
-    MainIDEInterface.DoOpenEditorFile(aFilename,
+  if FilenameIsAbsolute(aFilename) then begin
+    if FilenameExtIs(aFilename,'lpi',false) then
+    begin
+      MainIDEInterface.DoOpenProjectFile(aFilename,[ofOnlyIfExists,ofAddToRecent,ofUseCache]);
+      exit;
+    end
+    else if FilenameExtIs(aFilename,'lpk',true) then
+    begin
+      PackageEditingInterface.DoOpenPackageFile(aFilename,[pofAddToRecent],false);
+      exit;
+    end;
+  end;
+  MainIDEInterface.DoOpenEditorFile(aFilename,
       PageIndex+1, Manager.IndexOfSourceWindow(self),
       [ofOnlyIfExists,ofAddToRecent,ofRegularFile,ofUseCache,ofDoNotLoadResource]);
 end;
@@ -9743,7 +9829,7 @@ Begin
         SrcEdit.EditorComponent.CaretXY := CaretXY;
         SrcEdit.EditorComponent.TopLine := TopLine;
         TSynEditMarkupManager(SrcEdit.EditorComponent.MarkupMgr).DecPaintLock;
-        SrcEdit.UpdateIfDefNodeStates; // after editor is initialized
+        SrcEdit.UpdateEditorFromCodeTools; // after editor is initialized
       end;
       if (fAutoFocusLock=0) and (Screen.ActiveCustomForm=GetParentForm(Self)) and
          not(Manager.HasAutoFocusLock)
@@ -12069,7 +12155,7 @@ begin
   for i:=0 to SourceEditorCount-1 do begin
     SrcEdit:=SourceEditors[i];
     if not SrcEdit.EditorComponent.IsVisible then continue;
-    SrcEdit.UpdateIfDefNodeStates;
+    SrcEdit.UpdateEditorFromCodeTools;
   end;
 end;
 

@@ -28,6 +28,26 @@ msgstr "- Добавить новую группу -"
 msgid "No group"
 msgstr "Не в группе"
 
+#: idedebuggerstringconstants.brkhandleignorebreakpoints
+msgid "Handle/Ignore breakpoints"
+msgstr "Обрабатывать/игнорировать точки останова"
+
+#: idedebuggerstringconstants.brkhandleignoreexceptions
+msgid "Handle/Ignore exceptions"
+msgstr "Обрабатывать/игнорировать исключения"
+
+#: idedebuggerstringconstants.brkshowbreakpointsandwatchpo
+msgid "Show breakpoints and watchpoints"
+msgstr "Показывать точки останова и наблюдения"
+
+#: idedebuggerstringconstants.brkshowbreakwatchpointsandex
+msgid "Show break/watchpoints and exception-filter"
+msgstr "Показывать точки останова, наблюдения и фильтр исключений"
+
+#: idedebuggerstringconstants.brkshowexceptionfilter
+msgid "Show exception-filter"
+msgstr "Показывать фильтр исключений"
+
 #: idedebuggerstringconstants.dbgasmwindowlinktarget
 msgid "Link target line"
 msgstr "Целевая строка ссылки"
@@ -315,6 +335,10 @@ msgctxt "idedebuggerstringconstants.dispformatcharord"
 msgid "Ordinal"
 msgstr "Числовое значение"
 
+#: idedebuggerstringconstants.dispformatdlgaddrprefix
+msgid "Address marker"
+msgstr "Маркер адреса"
+
 #: idedebuggerstringconstants.dispformatdlgarraycombine
 msgid "Combine lengths"
 msgstr "Складывать длины"
@@ -359,6 +383,10 @@ msgstr "Учитывать вложенные"
 #: idedebuggerstringconstants.dispformatdlgbtnadrformat
 msgid "Address"
 msgstr "Адрес"
+
+#: idedebuggerstringconstants.dispformatdlgbtnadrformatdata
+msgid "Data-address"
+msgstr "Адрес данных"
 
 #: idedebuggerstringconstants.dispformatdlgbtnall
 msgid "All"
@@ -449,6 +477,10 @@ msgstr "(Типизированный)"
 msgctxt "idedebuggerstringconstants.dispformatdlgindent"
 msgid "Multiline"
 msgstr "Многострочность"
+
+#: idedebuggerstringconstants.dispformatdlgnumprefix
+msgid "Number marker"
+msgstr "Маркер числа"
 
 #: idedebuggerstringconstants.dispformatenumname
 msgctxt "idedebuggerstringconstants.dispformatenumname"
@@ -1263,6 +1295,10 @@ msgstr "Видимость"
 msgid "Condition"
 msgstr "Условие"
 
+#: idedebuggerstringconstants.lisconsolelocalecho
+msgid "Echo typed input"
+msgstr "Эхо-вывод набираемых символов"
+
 #: idedebuggerstringconstants.liscopyall
 msgid "Copy All"
 msgstr "Копировать все"
@@ -1883,7 +1919,7 @@ msgid "Assembler"
 msgstr "Ассемблер"
 
 #: idedebuggerstringconstants.lismenuviewbreakpointsandexceptions
-msgid "BreakPoints/Exceptions"
+msgid "Breakpoints/Exceptions"
 msgstr "Точки останова и исключения"
 
 #: idedebuggerstringconstants.lismenuviewcallstack

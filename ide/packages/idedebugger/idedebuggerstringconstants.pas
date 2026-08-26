@@ -191,6 +191,7 @@ resourcestring
   lisHexASCII = 'Hex + ASCII';
   lisLineLimit = 'Line limit';
   lisRawOutput = 'Raw Output';
+  lisConsoleLocalEcho = 'Echo typed input';
 
   // Call Stack Dialog
   lisCurrent = 'Select as context';
@@ -327,7 +328,7 @@ resourcestring
   lisGroupSetNone = 'Clear group(s)';
   lisGroupEmptyDelete = 'No more breakpoints are assigned to group "%s", delete it?';
   lisGroupEmptyDeleteMore = '%sThere are %d more empty groups, delete all?';
-  lisMenuViewBreakPointsAndExceptions = 'BreakPoints/Exceptions';
+  lisMenuViewBreakPointsAndExceptions = 'Breakpoints/Exceptions';
   lisBrkPointState = 'State';
   lisBrkPointAction = 'Action';
 
@@ -478,6 +479,7 @@ resourcestring
   DispFormatDlgBtnArray     = 'Array';
   DispFormatDlgBtnAdrFormat = 'Address';
   DispFormatDlgBtnOptions   = 'Options';
+  DispFormatDlgBtnAdrFormatData = 'Data-address';
 
   DispFormatDlgCaptionShowChar = '(Show Char)';
   DispFormatDlgCaptionAddress  = '(Address)';
@@ -539,6 +541,8 @@ resourcestring
   DispFormatPointerDerefOn       = 'Show deref data';
   DispFormatPointerDerefOnly     = 'Only deref data';
   DispFormatDlgIndent            = 'Multiline';
+  DispFormatDlgNumPrefix         = 'Number marker';
+  DispFormatDlgAddrPrefix        = 'Address marker';
   DispFormatIndentMaxWrap        = 'Max multiline level';
   DispFormatForceSingleLineToggle    = 'Keep singleline, if ...';
   DispFormatForceSingleLineArrayLen  = 'Max len';
@@ -636,6 +640,11 @@ resourcestring
   DbgValueNotEvaluated = 'Not evaluated';
   DbgValueInvalid = 'Invalid';
   DbgValueError = 'Error: %s';
+  brkHandleIgnoreBreakpoints = 'Handle/Ignore breakpoints';
+  brkHandleIgnoreExceptions = 'Handle/Ignore exceptions';
+  brkShowBreakpointsAndWatchpo = 'Show breakpoints and watchpoints';
+  brkShowExceptionFilter = 'Show exception-filter';
+  brkShowBreakWatchpointsAndEx = 'Show break/watchpoints and exception-filter';
 
 implementation
 

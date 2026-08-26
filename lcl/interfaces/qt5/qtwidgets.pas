@@ -7948,6 +7948,7 @@ var
   AState: QtWindowStates;
   AOldState: QtWindowStates;
   CanSendEvent: Boolean;
+  AAppMinimize: Boolean;
   {$IFDEF MSWINDOWS}
   i: Integer;
   AForm: TCustomForm;
@@ -8085,6 +8086,7 @@ begin
         end;
 
         CanSendEvent := True;
+        AAppMinimize := False;
         {$IFDEF HASX11}
         // for X11 we must ask state of each modified window.
         AState := getWindowState;
@@ -8128,7 +8130,7 @@ begin
               end;
             end;
             {$ENDIF}
-            Application.IntfAppMinimize;
+            AAppMinimize := True;
           end
           else
           if (AOldState and QtWindowMinimized <> 0) or
@@ -8193,6 +8195,8 @@ begin
           {$ENDIF}
           SlotWindowStateChange;
         end;
+        if AAppMinimize then
+          Application.IntfAppMinimize;
       end;
       QEventDrop,
       QEventDragMove,
@@ -14498,6 +14502,13 @@ begin
       end;
       inherited signalSelectionChanged();
     end;
+  end else
+  if (QEvent_type(Event) = QEventKeyPress) and
+    (QKeyEvent_key(QKeyEventH(Event)) = QtKey_Space) and
+    (QKeyEvent_modifiers(QKeyEventH(Event)) and QtControlModifier = 0) then
+  begin
+    inherited EventFilter(Sender, Event);
+    Result := True;
   end else
   if (QEvent_type(Event) = QEventMouseButtonDblClick) then
     // issue #25089

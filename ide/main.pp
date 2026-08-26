@@ -69,7 +69,7 @@ uses
   StdCodeTools, EventCodeTool, CodeCreationDlg, IdentCompletionTool,
   // LazUtils
   // use lazutf8, lazfileutils and lazfilecache after FileProcs and FileUtil
-  FileUtil, LazFileUtils, LazUtilities, LazUTF8, UTF8Process, ProjResProc,
+  FileUtil, LazFileUtils, LazUtilities, LazUTF8, UTF8Process, ProjResConvert,
   LConvEncoding, Laz2_XMLCfg, LazLoggerBase, LazLogger, LazFileCache, AvgLvlTree,
   GraphType, LazStringUtils, LazVersion, LazTracer,
   LCLExceptionStacktrace,
@@ -906,6 +906,8 @@ type
     function GetDesignerFormOfSource(AnUnitInfo: TEditableUnitInfo;
                                      LoadForm: boolean): TCustomForm;
     function GetUnitFileOfLFM(LFMFilename: string): string;
+    function GetUnitCodeOfLFMFile(AnUnitInfo: TEditableUnitInfo;
+                                  out PasCode: TCodeBuffer): boolean;
     function GetProjectFileWithRootComponent(AComponent: TComponent): TLazProjectFile; override;
     function GetProjectFileWithDesigner(ADesigner: TIDesigner): TLazProjectFile; override;
     procedure GetObjectInspectorUnit(
@@ -941,6 +943,11 @@ type
     function DoJumpToSourcePosition(const Filename: string;
                                NewX, NewY, NewTopLine: integer;
                                Flags: TJumpToCodePosFlags = [jfFocusEditor]): TModalResult; override;
+    function DoJumpToCodePosition(
+                        ActiveSrcEdit: TSourceEditorInterface;
+                        NewX, NewY, NewTopLine,
+                        BlockTopLine, BlockBottomLine: integer;
+                        Flags: TJumpToCodePosFlags = [jfFocusEditor]): TModalResult; override;
     function DoJumpToCodePosition(
                         ActiveSrcEdit: TSourceEditorInterface;
                         ActiveUnitInfo: TEditableUnitInfo;
@@ -990,7 +997,7 @@ type
     function DoJumpToCompilerMessage(FocusEditor: boolean; Msg: TMessageLine = nil
       ): boolean; override;
     procedure DoJumpToNextCompilerMessage(aMinUrgency: TMessageLineUrgency; DirectionDown: boolean); override;
-    procedure DoShowMessagesView(BringToFront: boolean = true); override;
+    procedure DoShowMessagesView; override;
 
     // methods for debugging, compiling and external tools
     function GetTestBuildDirectory: string; override;
@@ -1799,7 +1806,7 @@ begin
   TestCompilerOptions:=nil;
 
   // free project, if it is still there
-  FreeThenNil(Project1);
+  Project1.Free;
 
   // free IDE parts
   FreeFormEditor;
@@ -1841,7 +1848,7 @@ begin
   EnvironmentOptions.UnRegisterSubConfig(EnvironmentGuiOpts);
   FreeThenNil(EnvironmentDebugOpts);
   FreeThenNil(EnvironmentGuiOpts);
-  if ConsoleVerbosity>=0 then
+  if ConsoleVerbosity>0 then
     DebugLn('Hint: (lazarus) [TMainIDE.Destroy] B  -> inherited Destroy... ',ClassName);
   {$IFDEF IDE_MEM_CHECK}CheckHeapWrtMemCnt('TMainIDE.Destroy B ');{$ENDIF}
   FreeThenNil(MainBuildBoss);
@@ -4434,8 +4441,9 @@ end;
 
 procedure TMainIDE.mnuViewMessagesClick(Sender: TObject);
 begin
-  // it was already visible, but user does not see it, try to move in view
-  DoShowMessagesView;
+  MessagesView.ApplyIDEOptions;
+  // If it was already visible, but user does not see it, try to move in view
+  IDEWindowCreators.ShowForm(MessagesView, true);
 end;
 
 procedure TMainIDE.mnuViewSearchResultsClick(Sender: TObject);
@@ -4623,6 +4631,8 @@ begin
     MainBuildBoss.SetBuildTargetProject1(false);
     UpdateCaption;
     UpdateDefineTemplates;
+    if DebugBossMgr <> nil then
+      DebugBossMgr.BreakPoints.TriggerChanged;
   end;
 end;
 
@@ -5262,6 +5272,7 @@ begin
   finally
     SourceEditorManager.EndGlobalUpdate;
   end;
+  DebugBossMgr.UpdateDebugDialogFromOptions;
 end;
 
 procedure TMainIDE.CodetoolsOptionsAfterWrite(Sender: TObject; Restore: boolean);
@@ -5281,6 +5292,8 @@ procedure TMainIDE.ProjectOptionsBeforeRead(Sender: TObject);
 //var
 //  ActiveSrcEdit: TSourceEditor;
 //  ActiveUnitInfo: TUnitInfo;
+var
+  Cmd: TKeyCommandRelation;
 begin
   //DebugLn(['TMainIDE.DoProjectOptionsBeforeRead ',DbgSName(Sender)]);
   if not (Sender is TProjectIDEOptions) then exit;
@@ -5291,6 +5304,11 @@ begin
   Project1.UpdateExecutableType;
   Project1.UseAsDefault := False;
   TProjectIDEOptions(Sender).CheckLclApp;
+  if (CodeHelpBoss <> nil) then begin
+    Cmd:=EditorOpts.KeyMap.FindByCommand(ecFocusHint);
+    if (Cmd<>nil) then
+      CodeHelpBoss.FocusHintShortCut := Cmd.ShortcutA;
+  end;
 end;
 
 procedure TMainIDE.ProjectOptionsAfterWrite(Sender: TObject; Restore: boolean);
@@ -5318,6 +5336,8 @@ begin
                            mtWarning, [mbOk]);
     end;
     UpdateCaption;
+    if DebugBossMgr <> nil then
+      DebugBossMgr.BreakPoints.TriggerChanged;
     if Assigned(ProjInspector) then
       ProjInspector.UpdateTitle;
     if Project1.UseAsDefault then
@@ -5407,6 +5427,7 @@ begin
     SaveDesktopSettings(EnvironmentGuiOpts);
     DebuggerOptions.Save; // before environment
     EnvironmentOptions.Save(false);
+    DebugBossMgr.UpdateDebugDialogFromOptions;
     EditorMacroListViewer.SaveGlobalInfo;
     (IDEMacros as TLazIDEMacros).SaveBuildMacros;
     //debugln('TMainIDE.SaveEnvironment A ',dbgsName(ObjectInspector1.Favorites));
@@ -7010,13 +7031,17 @@ begin
 
   // show messages
   MessagesView.ApplyIDEOptions;
-  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaDefault then
     IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   // clear old error lines
   SourceEditorManager.ClearErrorLines;
 
   // check common mistakes in search paths
   Result:=PkgBoss.CheckUserSearchPaths(Project1.CompilerOptions);
+  if Result<>mrOk then exit;
+
+  // ask the user about untrusted compilers/commands before building anything
+  Result:=PkgBoss.CheckCompileTrust(Project1,nil);
   if Result<>mrOk then exit;
 
   CompilerParams:=nil;
@@ -7330,7 +7355,7 @@ begin
     // check sources
     DoCheckFilesOnDisk;
   end;
-  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaDefault then
     IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   if ConsoleVerbosity>=0 then
     debugln(['Info: (lazarus) [TMainIDE.DoBuildProject] Success']);
@@ -8101,7 +8126,7 @@ begin
 
   // show messages
   MessagesView.ApplyIDEOptions;
-  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaDefault then
     IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   // clear old error lines
   SourceEditorManager.ClearErrorLines;
@@ -8136,6 +8161,9 @@ begin
     MainBuildBoss.SetBuildTargetIDE;
 
     ErrMsg:=PackageGraph.SrcBasePackagesNeedLazbuild;
+    {$IFDEF TestBuildLazNeedsLazbuild}
+    ErrMsg:='TestBuildLazNeedsLazbuild';
+    {$ENDIF}
     if ErrMsg<>'' then
     begin
       r:=IDEQuestionDialog(lisMajorChangesDetected,
@@ -8716,8 +8744,8 @@ begin
   if CodeToolBoss.CheckSyntax(ActiveUnitInfo.Source,NewCode,NewX,NewY,
     NewTopLine,ErrorMsg) then
   begin
-    if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
-      DoShowMessagesView(false);
+    if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaDefault then
+      DoShowMessagesView;
     MessagesView.ClearCustomMessages;
     MessagesView.AddCustomMessage(mluImportant,lisMenuQuickSyntaxCheckOk);
   end else begin
@@ -9492,7 +9520,7 @@ begin
       if TopLine<1 then TopLine:=1;
       if FocusEditor then begin
         if EnvironmentGuiOpts.MsgViewShowAutomatically <> mwsaNever then
-          DoShowMessagesView(true);
+          DoShowMessagesView;
         SourceEditorManager.ShowActiveWindowOnTop(True);
       end;
       if IDETabMaster <> nil then
@@ -9612,13 +9640,13 @@ begin
   end;//if
 end;
 
-procedure TMainIDE.DoShowMessagesView(BringToFront: boolean);
+procedure TMainIDE.DoShowMessagesView;
 begin
   //debugln('TMainIDE.DoShowMessagesView');
   MessagesView.ApplyIDEOptions;
 
   // don't move the messagesview, if it was already visible.
-  IDEWindowCreators.ShowForm(MessagesView,BringToFront);
+  IDEWindowCreators.ShowForm(MessagesView, EnvironmentGuiOpts.MsgViewFocus);
 end;
 
 procedure TMainIDE.DoShowSearchResultsView(State: TIWGetFormState);
@@ -10339,6 +10367,68 @@ begin
   Result:=DoJumpToCodePosition(nil,nil,CodeBuffer,NewX,NewY,NewTopLine, Flags);
 end;
 
+function TMainIDE.DoJumpToCodePosition(ActiveSrcEdit: TSourceEditorInterface; NewX, NewY,
+  NewTopLine, BlockTopLine, BlockBottomLine: integer; Flags: TJumpToCodePosFlags): TModalResult;
+var
+  SrcEdit: TSourceEditor;
+  STB, FNStart: String;
+begin
+  Result:=mrCancel;
+
+  if ActiveSrcEdit = nil then
+    SrcEdit := SourceEditorManager.ActiveEditor
+  else
+    SrcEdit := ActiveSrcEdit as TSourceEditor;
+  if (SrcEdit = nil) or ((SrcEdit.EditorComponent = nil)) then
+    exit;
+
+  SourceEditorManager.BeginAutoFocusLock;
+  try
+    if (jfAddJumpPoint in Flags) and
+       ( (SrcEdit.EditorComponent.CaretX<>NewX) or
+         (SrcEdit.EditorComponent.CaretY<>NewY) )
+    then
+      SourceEditorManager.AddJumpPointClicked(Self);
+
+    if NewX<1 then NewX:=1;
+    if NewY<1 then NewY:=1;
+    if jfMapLineFromDebug in Flags then
+      NewY := SrcEdit.DebugToSourceLine(NewY);
+
+    try
+      SrcEdit.BeginUpdate;
+      SrcEdit.EditorComponent.MoveLogicalCaretIgnoreEOL(Point(NewX,NewY));
+      if not SrcEdit.IsLocked then begin
+        if NewTopLine < 1 then
+          SrcEdit.CenterCursor(True)
+        else
+        begin
+          if not(
+            CodeToolsOpts.AvoidUnnecessaryJumps and
+            (BlockTopLine>=SrcEdit.TopLine) and
+            (BlockBottomLine<=SrcEdit.EditorComponent.BottomLine)
+          )
+          then
+            SrcEdit.TopLine:=NewTopLine;
+        end;
+      end;
+      //DebugLn('TMainIDE.DoJumpToCodePosition NewY=',dbgs(NewY),' ',dbgs(TopLine),' ',dbgs(NewTopLine));
+      SrcEdit.CenterCursorHoriz(hcmSoftKeepEOL);
+    finally
+      SrcEdit.EndUpdate;
+    end;
+    if jfMarkLine in Flags then
+      SrcEdit.ErrorLine := NewY;
+
+    if jfFocusEditor in Flags then
+      SourceEditorManager.ShowActiveWindowOnTop(True);
+    UpdateSourceNames;
+    Result:=mrOk;
+  finally
+    SourceEditorManager.EndAutoFocusLock;
+  end;
+end;
+
 function TMainIDE.DoJumpToCodePosition(ActiveSrcEdit: TSourceEditorInterface;
   ActiveUnitInfo: TEditableUnitInfo; NewSource: TCodeBuffer; NewX, NewY, NewTopLine,
   BlockTopLine, BlockBottomLine: integer; Flags: TJumpToCodePosFlags
@@ -10583,7 +10673,7 @@ begin
   end;
   // syntax error -> show error in message view and jump
   if EnvironmentGuiOpts.MsgViewShowAutomatically <> mwsaNever then
-    DoShowMessagesView(false);
+    DoShowMessagesView;
   DoShowCodeToolBossError;
 
   // jump to error in source editor
@@ -10639,7 +10729,7 @@ procedure TMainIDE.DoFindDeclarationAtCaret(const LogCaretXY: TPoint);
 var
   ActiveSrcEdit: TSourceEditor;
   ActiveUnitInfo: TEditableUnitInfo;
-  NewSource, BodySource: TCodeBuffer;
+  NewSource, BodySource, PasCode: TCodeBuffer;
   NewX, NewY, NewTopLine, BodyX, BodyY, BodyTopLine, NewCleanPos,
     BlockTopLine, BlockBottomLine: integer;
   FindFlags: TFindSmartFlags;
@@ -10656,6 +10746,18 @@ begin
   {$ENDIF}
   {$IFDEF IDE_MEM_CHECK}CheckHeapWrtMemCnt('TMainIDE.DoFindDeclarationAtCaret A');{$ENDIF}
   //DebugLn(['TMainIDE.DoFindDeclarationAtCaret LogCaretXY=',dbgs(LogCaretXY),' SynEdit.Log=',dbgs(ActiveSrcEdit.EditorComponent.LogicalCaretXY),' SynEdit.Caret=',dbgs(ActiveSrcEdit.EditorComponent.CaretXY)]);
+
+  if GetUnitCodeOfLFMFile(ActiveUnitInfo,PasCode) then begin
+    // the source editor shows a form file -> search the identifier in its unit
+    if (PasCode<>nil)
+    and CodeToolBoss.FindLFMDeclaration(PasCode,ActiveUnitInfo.Source,
+      LogCaretXY.X,LogCaretXY.Y,NewSource,NewX,NewY)
+    then
+      DoJumpToCodePosition(ActiveSrcEdit, ActiveUnitInfo,
+          NewSource, NewX, NewY, -1, -1, -1,
+          [jfAddJumpPoint, jfFocusEditor]);
+    exit;
+  end;
 
   // do not jump twice, check if current node is procedure
   JumpToBody := False;
@@ -12369,7 +12471,7 @@ procedure TMainIDE.SrcNoteBookMouseLink(Sender: TObject; X, Y: Integer;
   var AllowMouseLink: Boolean);
 var
   ActiveUnitInfo: TEditableUnitInfo;
-  NewSource: TCodeBuffer;
+  NewSource, PasCode: TCodeBuffer;
   NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine: integer;
   SrcEdit: TSourceEditor;
 begin
@@ -12384,6 +12486,13 @@ begin
     {$IFDEF VerboseFindDeclarationFail}
     debugln(['TMainIDE.SrcNoteBookMouseLink BeginCodeTool failed ',SrcEdit.FileName,' X=',X,' Y=',Y]);
     {$ENDIF}
+    exit;
+  end;
+  if GetUnitCodeOfLFMFile(ActiveUnitInfo,PasCode) then begin
+    // the source editor shows a form file -> search the identifier in its unit
+    AllowMouseLink:=(PasCode<>nil)
+      and CodeToolBoss.FindLFMDeclaration(PasCode,ActiveUnitInfo.Source,X,Y,
+                                          NewSource,NewX,NewY);
     exit;
   end;
   AllowMouseLink := CodeToolBoss.FindDeclaration(
@@ -13174,6 +13283,27 @@ begin
     end;
   end;
   Result:='';
+end;
+
+function TMainIDE.GetUnitCodeOfLFMFile(AnUnitInfo: TEditableUnitInfo; out
+  PasCode: TCodeBuffer): boolean;
+{ Check if AnUnitInfo is a form file (lfm/dfm/fmx).
+  Result=true means it is a form file, no matter if the pascal unit was found.
+  PasCode is the code of the pascal unit or nil if there is none. }
+var
+  UnitFilename: String;
+begin
+  PasCode:=nil;
+  Result:=false;
+  if AnUnitInfo=nil then exit;
+  if not (FilenameExtIs(AnUnitInfo.Filename,'lfm',true)
+       or FilenameExtIs(AnUnitInfo.Filename,'dfm')
+       or FilenameExtIs(AnUnitInfo.Filename,'fmx')) then exit;
+  Result:=true;
+  UnitFilename:=GetUnitFileOfLFM(AnUnitInfo.Filename);
+  if UnitFilename='' then exit;
+  // Note: keep this quiet, it is called on every mouse move over a link
+  PasCode:=CodeToolBoss.LoadFile(UnitFilename,false,false);
 end;
 
 function TMainIDE.GetProjectFileWithRootComponent(AComponent: TComponent): TLazProjectFile;

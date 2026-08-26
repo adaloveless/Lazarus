@@ -445,7 +445,8 @@ begin
     end;
 
     // the clipboard needs a widget
-    if (ClipboardWidget = nil) then
+    if (ClipboardWidget = nil)
+    or ((Application <> nil) and (AWinControl = Application.MainForm)) then
       Gtk2WidgetSet.SetClipboardWidget(P);
   end
   else
@@ -493,7 +494,8 @@ begin
   Allocation.Y := AParams.Y;
   Allocation.Width := AParams.Width;
   Allocation.Height := AParams.Height;
-  gtk_widget_size_allocate(P, @Allocation);
+  if AWinControl.Visible then
+    gtk_widget_size_allocate(P, @Allocation);
 
   {$IFDEF DebugLCLComponents}
   DebugGtkWidgets.MarkCreated(P, dbgsName(AWinControl));

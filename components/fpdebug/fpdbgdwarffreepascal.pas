@@ -34,6 +34,7 @@ type
     class function GetInstanceForDbgInfo(ADbgInfo: TDbgInfo):TFpDwarfFreePascalSymbolClassMap;
   public
     constructor Create(ACU: TDwarfCompilationUnit; AHelperData: Pointer); override;
+    procedure InitCompUnit(ACU: TDwarfCompilationUnit; var AClassMapInfo: TFpSymbolDwarfClassMapCuInfo); override;
     function IgnoreCfiStackEnd: boolean; override;
     function GetDwarfSymbolClass(ATag: Cardinal): TDbgDwarfSymbolBaseClass; override;
     function CreateScopeForSymbol(ALocationContext: TFpDbgSimpleLocationContext; ASymbol: TFpSymbol;
@@ -87,6 +88,17 @@ type
     //  AInfo: PDwarfAddressInfo; AAddress: TDbgPtr): TDbgDwarfSymbolBase; override;
   end;
 
+  { TFpDwarfFreePascalSymbolDwarfClassMapCuInfo }
+
+  TFpDwarfFreePascalSymbolDwarfClassMapCuInfo = class(TFpSymbolDwarfClassMapCuInfo)
+  protected type
+    TFpDwarfFreePascalKnowUnit = (fpcUNotKnown, fpcUSystem, fpcUSysUtils, fpcUTypInfo);
+  private
+    FFpcKnownUnit: TFpDwarfFreePascalKnowUnit;
+  public
+    property FpcKnownUnit: TFpDwarfFreePascalKnowUnit read FFpcKnownUnit write FFpcKnownUnit;
+  end;
+
   {%EndRegion }
 
   {%Region * ***** Context ***** *}
@@ -99,9 +111,8 @@ type
     FOuterNotFound: Boolean;
     FClassVarStaticPrefix: String;
 
-    FSystemCU, FSysUtilsCU, FTypInfoCU: TDwarfCompilationUnit;
     FFoundSystemInfoEntry: TDwarfInformationEntry;
-    FInAllUnitSearch, FSearchSpecialCuDone: boolean;
+    FInAllUnitSearch: boolean;
   protected
     function FindExportedSymbolInUnit(CU: TDwarfCompilationUnit;
       const ANameInfo: TNameSearchInfo; out
@@ -615,7 +626,7 @@ begin
   if LastInfo <> nil then
     exit;
 
-  if not (ADbgInfo is TFpDwarfInfo) then
+  if (ADbgInfo = nil) or (not (ADbgInfo is TFpDwarfInfo)) then
     exit;
 
   for i := 0 to TFpDwarfInfo(ADbgInfo).CompilationUnitsCount - 1 do
@@ -633,6 +644,25 @@ constructor TFpDwarfFreePascalSymbolClassMap.Create(ACU: TDwarfCompilationUnit;
 begin
   FCompilerVersion := PtrUInt(AHelperData);
   inherited Create(ACU, AHelperData);
+end;
+
+procedure TFpDwarfFreePascalSymbolClassMap.InitCompUnit(ACU: TDwarfCompilationUnit;
+  var AClassMapInfo: TFpSymbolDwarfClassMapCuInfo);
+var
+  FpcClassMapInfo: TFpDwarfFreePascalSymbolDwarfClassMapCuInfo absolute AClassMapInfo;
+  s: String;
+begin
+  AClassMapInfo := TFpDwarfFreePascalSymbolDwarfClassMapCuInfo.Create;
+
+  s := LowerCase(ACU.UnitName);
+  if (s = 'system') then
+    FpcClassMapInfo.FpcKnownUnit := fpcUSystem
+  else
+  if (s = 'sysutils') then
+    FpcClassMapInfo.FpcKnownUnit := fpcUSysUtils
+  else
+  if (s = 'typinfo') and (pos('objpas', LowerCase(ACU.FileName)) > 0) then
+    FpcClassMapInfo.FpcKnownUnit := fpcUTypInfo;
 end;
 
 function TFpDwarfFreePascalSymbolClassMap.IgnoreCfiStackEnd: boolean;
@@ -674,16 +704,24 @@ function TFpDwarfFreePascalSymbolClassMap.GetInstanceClassNameFromPVmt(
   APVmt: TDbgPtr; AContext: TFpDbgLocationContext; ASizeOfAddr: Integer;
   AClassName, AUnitName: PString; out AnError: TFpError): boolean;
 begin
-  Result := TFpSymbolDwarfFreePascalTypeStructure.GetInstanceClassNameFromPVmt(APVmt,
-    AContext, ASizeOfAddr, AClassName, AUnitName, AnError, 0, FCompilerVersion);
+  if self = nil then
+    Result := TFpSymbolDwarfFreePascalTypeStructure.GetInstanceClassNameFromPVmt(APVmt,
+      AContext, ASizeOfAddr, AClassName, AUnitName, AnError, 0, FALLBACK_CompilerVersion)
+  else
+    Result := TFpSymbolDwarfFreePascalTypeStructure.GetInstanceClassNameFromPVmt(APVmt,
+      AContext, ASizeOfAddr, AClassName, AUnitName, AnError, 0, FCompilerVersion);
 end;
 
 function TFpDwarfFreePascalSymbolClassMap.GetInstanceSizeFromPVmt(APVmt: TDbgPtr;
   AContext: TFpDbgLocationContext; ASizeOfAddr: Integer; out AnInstSize: Int64; out
   AnError: TFpError; AParentClassIndex: integer): boolean;
 begin
-  Result := TFpSymbolDwarfFreePascalTypeStructure.GetInstanceSizeFromPVmt(APVmt,
-    AContext, ASizeOfAddr, AnInstSize, AnError, AParentClassIndex, FCompilerVersion);
+  if Self = nil then
+    Result := TFpSymbolDwarfFreePascalTypeStructure.GetInstanceSizeFromPVmt(APVmt,
+      AContext, ASizeOfAddr, AnInstSize, AnError, AParentClassIndex, FALLBACK_CompilerVersion)
+  else
+    Result := TFpSymbolDwarfFreePascalTypeStructure.GetInstanceSizeFromPVmt(APVmt,
+      AContext, ASizeOfAddr, AnInstSize, AnError, AParentClassIndex, FCompilerVersion);
 end;
 
 { TFpDwarfFreePascalSymbolClassMapDwarf2 }
@@ -811,15 +849,21 @@ function TFpDwarfFreePascalSymbolScope.FindExportedSymbolInUnit(
   CU: TDwarfCompilationUnit; const ANameInfo: TNameSearchInfo; out
   AnInfoEntry: TDwarfInformationEntry; out AnIsExternal: Boolean;
   AFindFlags: TFindExportedSymbolsFlags): Boolean;
+var
+  u: TFpDwarfFreePascalSymbolDwarfClassMapCuInfo.TFpDwarfFreePascalKnowUnit;
 begin
   // those units have scoped enums, that conflict with common types
-  if (CU = FSysUtilsCU) or (CU = FTypInfoCU) then
+  u := fpcUNotKnown;
+  if (CU.ClassMapInfo <> nil) and (CU.ClassMapInfo is TFpDwarfFreePascalSymbolDwarfClassMapCuInfo) then
+    u := TFpDwarfFreePascalSymbolDwarfClassMapCuInfo(CU.ClassMapInfo).FpcKnownUnit;
+
+  if u in [fpcUSysUtils, fpcUTypInfo] then
     Include(AFindFlags, fsfIgnoreEnumVals);
 
   Result := inherited FindExportedSymbolInUnit(CU, ANameInfo, AnInfoEntry,
     AnIsExternal, AFindFlags);
 
-  if Result and FInAllUnitSearch and (CU = FSystemCU) then begin
+  if Result and FInAllUnitSearch and (u = fpcUSystem) then begin
     FFoundSystemInfoEntry := AnInfoEntry;
     AnInfoEntry := nil;
     Result := False;
@@ -830,24 +874,8 @@ function TFpDwarfFreePascalSymbolScope.FindExportedSymbolInUnits(const AName: St
   const ANameInfo: TNameSearchInfo; SkipCompUnit: TDwarfCompilationUnit; out ADbgValue: TFpValue;
   const OnlyUnitNameLower: String; AFindFlags: TFindExportedSymbolsFlags): Boolean;
 var
-  i: Integer;
   CU: TDwarfCompilationUnit;
-  s: String;
 begin
-  if not FSearchSpecialCuDone then begin
-    for i := 0 to Dwarf.CompilationUnitsCount - 1 do begin
-      CU := Dwarf.CompilationUnits[i];
-      s := LowerCase(CU.UnitName);
-      if (s = 'system') then
-        FSystemCU := CU;
-      if (s = 'sysutils') then
-        FSysUtilsCU := CU;
-      if (s = 'typinfo') and (pos('objpas', LowerCase(CU.FileName)) > 0) then
-        FTypInfoCU := CU;
-    end;
-    FSearchSpecialCuDone := True;
-  end;
-
   FInAllUnitSearch := True;
   FFoundSystemInfoEntry := nil;
   Result := inherited FindExportedSymbolInUnits(AName, ANameInfo, SkipCompUnit,
@@ -2686,6 +2714,20 @@ end;
 function TFpSymbolDwarfFreePascalDataProc.ResolveInternalFinallySymbol(
   Process: Pointer): TFpSymbol;
 {$IfDef WINDOWS}
+
+  function MaybeRecurse(AFoundSym: TFpSymbolDwarfFreePascalDataProc): TFpSymbol;
+  begin
+    Result := nil;
+    if (StrLComp(PChar(AFoundSym.Name), PChar('$fin'), 4) = 0) and
+       (AFoundSym.Name <> Name) and
+       (AFoundSym.Address < Address) // a nested finally has a lower address / serves as recursion check
+    then begin
+      Result := AFoundSym.ResolveInternalFinallySymbol(Process);
+      if Result <> nil then
+        TFpSymbolDwarfFreePascalDataProc(Result).FOrigSymbol := Self;
+    end;
+  end;
+
 var
   StartPC, EndPC: TDBGPtr;
   HelpSymbol2: TFpSymbolDwarf;
@@ -2736,13 +2778,23 @@ begin
         if (AnAddresses[i] < StartPC) or (AnAddresses[i] > EndPC) then begin
           TFpSymbol(HelpSymbol2) := DbgInfo.FindProcSymbol(AnAddresses[i]);
           if (HelpSymbol2 <> nil) and (HelpSymbol2.CompilationUnit = CompilationUnit) and
-             (HelpSymbol2.InheritsFrom(TFpSymbolDwarfFreePascalDataProc)) and
-             ('$fin' <> copy(HelpSymbol2.Name,1, 4) )
+             (HelpSymbol2.InheritsFrom(TFpSymbolDwarfFreePascalDataProc))
           then begin
-            Result := HelpSymbol2;
-            // *** FOrigSymbol has now the reference that the caller had. ***
-            TFpSymbolDwarfFreePascalDataProc(Result).FOrigSymbol := Self;
-            exit;
+            if ('$fin' <> copy(HelpSymbol2.Name,1, 4) )
+            then begin
+              Result := HelpSymbol2;
+              // *** FOrigSymbol has now the reference that the caller had. ***
+              TFpSymbolDwarfFreePascalDataProc(Result).FOrigSymbol := Self;
+              exit;
+            end
+            else begin
+              Result := MaybeRecurse(TFpSymbolDwarfFreePascalDataProc(HelpSymbol2));
+              if Result <> nil then begin
+                HelpSymbol2.ReleaseReference;
+                exit;
+              end;
+              Result := Self;
+            end;
           end;
           HelpSymbol2.ReleaseReference;
         end;
@@ -2756,9 +2808,15 @@ begin
       if (HelpSymbol2 <> nil) and (HelpSymbol2.CompilationUnit = CompilationUnit) and
          (HelpSymbol2.InheritsFrom(TFpSymbolDwarfFreePascalDataProc))
       then begin
-        Result := HelpSymbol2;
-        // *** FOrigSymbol has now the reference that the caller had. ***
-        TFpSymbolDwarfFreePascalDataProc(Result).FOrigSymbol := Self;
+        Result := MaybeRecurse(TFpSymbolDwarfFreePascalDataProc(HelpSymbol2));
+        if Result <> nil then begin
+          HelpSymbol2.ReleaseReference;
+        end
+        else begin
+          Result := HelpSymbol2;
+          // *** FOrigSymbol has now the reference that the caller had. ***
+          TFpSymbolDwarfFreePascalDataProc(Result).FOrigSymbol := Self;
+        end;
         exit;
       end;
       HelpSymbol2.ReleaseReference;

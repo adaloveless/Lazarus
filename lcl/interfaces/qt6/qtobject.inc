@@ -1243,6 +1243,7 @@ begin
     if FAppActive then
     begin
       FAppActive := False;
+      Application.CancelHint;
       Application.IntfAppDeactivate;
     end;
   end;

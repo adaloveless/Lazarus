@@ -116,10 +116,9 @@ function ColorToGray(const AColor: TColor): Byte;
 var
   RGB: TColorRef;
 begin
-  if AColor = clNone
-  then RGB := 0
-  else RGB := ColorToRGB(AColor);
-  Result := Trunc(0.222 * (RGB and $FF) + 0.707 * ((RGB shr 8) and $FF) + 0.071 * (RGB shr 16 and $FF));
+  if AColor = clNone then exit(0);
+  RGB := ColorToRGB(AColor);
+  Result := (222 * (RGB and $FF) + 707 * ((RGB shr 8) and $FF) + 71 * (RGB shr 16 and $FF)) div 1000;
 end;
 
 procedure ColorToHLS(const AColor: TColor; out H, L, S: Byte);
@@ -217,7 +216,7 @@ end;
 { Returns true when the color is darker than clGray }
 function ColorIsDark(const AColor: TColor): Boolean;
 begin
-  Result := ColorToGray(AColor) <= ColorToGray(clGray);
+  Result := ColorToGray(AColor) < 128 {Gray};
 end;
 
 { Returns white when the color is darker than clGray, otherwise black.
@@ -904,7 +903,7 @@ var
   begin
     R := Rect(0, 0, AMaxWidth, 9999);
     DrawText(bmp.Canvas.Handle, P, ALength, R, DT_CALCRECT);
-    Result := R.Right > AMaxWidth;
+    Result := R.Right >= AMaxWidth;
   end;
 
   procedure AddLineToList(ALineStart, ALineEnd: PChar);
@@ -912,7 +911,7 @@ var
     len: Integer;
     sLine: String = '';
   begin
-    len := ALineEnd - ALineStart - 1;
+    len := ALineEnd - ALineStart; // - 1;
     SetLength(sLine, len);
     Move(ALineStart^, sLine[1], len);
     ALines.Add(sLine);
@@ -938,9 +937,18 @@ begin
     PWordStart := P;               // points to start of current word
     while P < PTextEnd do
     begin
+      if P^ in ['-'] then
+      begin
+        if TextIsTooWide(PLineStart, P - PLineStart + 1) then
+        begin
+          AddLineToList(PLineStart, PWordStart);
+          PLineStart := PWordStart;
+        end;
+        PWordStart := P + 1;
+      end else
       if P^ in [' ', #9] then
       begin
-        if TextIsTooWide(PLineStart, P - 1 - PLineStart) then
+        if TextIsTooWide(PLineStart, P - PLineStart) then
         begin
           AddLineToList(PLineStart, PWordStart);
           PLineStart := PWordStart; // Next line begins at position of previous word
@@ -1037,8 +1045,8 @@ var
     SetLength(Result, ALines.Count);
     bmp := TBitmap.Create;
     try
-//      ts := bmp.Canvas.TextStyle;
-//      ts.RightToLeft := IsRTL;
+      ts := bmp.Canvas.TextStyle;
+      ts.RightToLeft := IsRTL;   // Maybe obsolete: Does text width depend on RTL setting?
       bmp.Canvas.TextStyle := ts;
       bmp.Canvas.Font.Assign(ACanvas.Font);
       // At least on Windows, the text height is not correct when font is rotated.

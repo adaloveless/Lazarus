@@ -30,6 +30,7 @@
 unit DebugManager;
 
 {$mode objfpc}{$H+}
+{$IFDEF linux} {$DEFINE WITH_DBG_STARTER_APP} {$ENDIF}
 
 interface
 
@@ -40,7 +41,7 @@ uses
   {$IFDEF IDE_MEM_CHECK}
   MemCheck,
   {$ENDIF}
-  Classes, SysUtils,
+  Classes, SysUtils, Math,
   // LCL
   LCLType, LCLIntf, Forms, Controls, Dialogs, ExtCtrls,
   // LazUtils
@@ -74,14 +75,15 @@ uses
   IdeDebuggerBackendValueConv, Debugger, BaseDebugManager,
   IdeDebuggerValueFormatter, IdeDebuggerDisplayFormats,
   // IdeConfig
-  LazConf, CompilerOptions, BaseBuildManager, IdeConfStrConsts,
+  LazConf, CompilerOptions, BaseBuildManager, IdeConfStrConsts, TransferMacros,
   // IdeProject
   ProjectDefs, Project, RunParamOptions,
   // IdeDebugger
   ProjectDebugLink, IdeDebuggerExcludedRoutines,
   // IDE
+  {$IFDEF linux} LazDebuggerStarterUtils, {$ENDIF}
   DebugEventsForm, LazarusIDEStrConsts, SourceEditor, SourceMarks, MemViewerDlg,
-  MainBar, MainIntf, MainBase, EditableProject, EnvGuiOptions;
+  MainBar, MainIntf, MainBase, EditableProject, EnvGuiOptions, EditorOptions, KeyMapping, process;
 
 type
 
@@ -119,6 +121,10 @@ type
     function DoProjectClose(Sender: TObject; AProject: TLazProject): TModalResult;
     procedure DoProjectModified(Sender: TObject);
   private
+    {$IFDEF WITH_DBG_STARTER_APP}
+    FDebugTargetStarterApp: string;
+    FDebugTargetStarterParam, FDebugTargetStarterPipe: string;
+    {$ENDIF}
     FAsmWindowShouldAutoClose: Boolean;
     procedure DoDebugConfChanged(Sender: TObject);
     procedure DoDisplayFormatChanged(Sender: TObject);
@@ -220,7 +226,7 @@ type
     function GetDebugger: TDebuggerIntf; override;
     {$ENDIF}
     function GetCurrentDebuggerClass: TDebuggerClass; override;    (* TODO: workaround for http://bugs.freepascal.org/view.php?id=21834   *)
-    function AttachDebugger: TModalResult;
+    function AttachDebugger(AnAttachStarter: Boolean = False): TModalResult;
     procedure CallWatchesInvalidatedHandlers(Sender: TObject);
     function GetAvailableCommands: TDBGCommands;
     function CanRunDebugger: Boolean;
@@ -264,6 +270,7 @@ type
     function DoStopProject: TModalResult; override;
     procedure DoToggleCallStack; override;
     procedure DoSendConsoleInput(AText: String); override;
+    function ConsoleIsCaptured(AConsoleMode: TRunParamsConsoleMode): Boolean; override;
     procedure ProcessCommand(Command: word; var Handled: boolean); override;
 
     //Some debuugers may do things like ProcessMessages while processing commands
@@ -317,6 +324,7 @@ type
     // Dialog routines
     procedure CreateDebugDialog(Sender: TObject; aFormName: string;
                           var AForm: TCustomForm; DoDisableAutoSizing: boolean); override;
+    procedure UpdateDebugDialogFromOptions;
     procedure ViewDebugDialog(const ADialogType: TDebugDialogType;
                               BringToFront: Boolean = true;
                               Show: Boolean = true;
@@ -404,6 +412,7 @@ type
   private
     FManager: TDebugManager;
   protected
+    procedure SetIgnoreAll(AValue: boolean); override;
     procedure NotifyAdd(const ABreakPoint: TIDEBreakPoint); override;
     procedure NotifyRemove(const ABreakPoint: TIDEBreakPoint); override;
     procedure Update(Item: TCollectionItem); override;
@@ -594,6 +603,13 @@ begin
   inherited Create(TManagedBreakPoint);
 end;
 
+procedure TManagedBreakPoints.SetIgnoreAll(AValue: boolean);
+begin
+  if (IgnoreAll <> AValue) and (Project1 <> nil) then
+    Project1.Modified := True;
+  inherited SetIgnoreAll(AValue);
+end;
+
 procedure TManagedBreakPoints.NotifyAdd(const ABreakPoint: TIDEBreakPoint);
 begin
 {$ifdef VerboseDebugger}
@@ -736,17 +752,23 @@ end;
 procedure TManagedBreakPoint.UpdateSourceMarkImage;
 var
   Img: Integer;
+  Greyed: Boolean;
 begin
   if SourceMark = nil then Exit;
+  Greyed := DebugBossMgr.BreakPoints.IgnoreAll or
+    ( (Project1.CompilerOptions <> nil) and
+      Project1.CompilerOptions.RunWithoutDebug and
+      (DebugBoss.State in [dsNone, dsIdle, dsStop, dsDestroying])
+    );
   case Valid of
     vsValid:
-      Img := SourceEditorMarks.ActiveBreakPointImg[not DebugBossMgr.BreakPoints.IgnoreAll, Enabled];
+      Img := SourceEditorMarks.ActiveBreakPointImg[not Greyed, Enabled];
     vsInvalid:
-      Img := SourceEditorMarks.InvalidBreakPointImg[not DebugBossMgr.BreakPoints.IgnoreAll, Enabled];
+      Img := SourceEditorMarks.InvalidBreakPointImg[not Greyed, Enabled];
     vsPending:
-      Img := SourceEditorMarks.PendingBreakPointImg[not DebugBossMgr.BreakPoints.IgnoreAll, Enabled];
+      Img := SourceEditorMarks.PendingBreakPointImg[not Greyed, Enabled];
     else
-      Img := SourceEditorMarks.UnknownBreakPointImg[not DebugBossMgr.BreakPoints.IgnoreAll, Enabled];
+      Img := SourceEditorMarks.UnknownBreakPointImg[not Greyed, Enabled];
   end;
   SourceMark.ImageIndex := Img;
   SourceMark.Visible := True;
@@ -1574,8 +1596,13 @@ begin
     SourceEditorManager.ClearExecutionLines;
 
   if (FDebugger.State in [dsPause, dsInit]) and (SourceEditorManager <> nil)
-  then
+  then begin
     SourceEditorManager.FillExecutionMarks;
+    if FDialogs[ddtWatches]  <> nil then TWatchesDlg(FDialogs[ddtWatches]).WatchPrinter.TargetAddressSize := FDebugger.TargetWidth;
+    if FDialogs[ddtLocals]   <> nil then TLocalsDlg(FDialogs[ddtLocals]).WatchPrinter.TargetAddressSize := FDebugger.TargetWidth;
+    if FDialogs[ddtInspect]  <> nil then TIDEInspectDlg(FDialogs[ddtInspect]).WatchPrinter.TargetAddressSize := FDebugger.TargetWidth;
+    if FDialogs[ddtEvaluate] <> nil then TEvaluateDlg(FDialogs[ddtEvaluate]).WatchPrinter.TargetAddressSize := FDebugger.TargetWidth;
+  end;
 
   if not (FDebugger.State in [dsRun, dsPause, dsInit]) and (SourceEditorManager <> nil)
   then begin
@@ -1651,7 +1678,7 @@ end;
 
 procedure TDebugManager.DebuggerCurrentLine(Sender: TObject; const ALocation: TDBGLocationRec);
 var
-  SrcLine, TId: Integer;
+  SrcLine, TId, StackIdx: Integer;
 begin
   FCallStackNotification.OnChange := nil;
   if (Sender<>FDebugger) or (Sender=nil) then exit;
@@ -1666,7 +1693,9 @@ begin
   and not FAsmStepping
   then begin
     TId := Threads.CurrentThreads.CurrentThreadId;
-    if CallStack.CurrentCallStackList.EntriesForThreads[TId].HasAtLeastCount(30) = nbUnknown then begin
+    StackIdx := 30;
+    if SrcLine = -3 then StackIdx := FCurrentLocation.StackIndex + 1;
+    if CallStack.CurrentCallStackList.EntriesForThreads[TId].HasAtLeastCount(StackIdx) = nbUnknown then begin
       FCallStackNotification.OnChange := @DoDebuggerCurrentLine;
 
       if FDialogs[ddtAssembler] <> nil
@@ -1695,7 +1724,7 @@ var
   NewSource: TCodeBuffer;
   Editor: TSourceEditor;
   SrcLine: Integer;
-  c, i, TId: Integer;
+  c, i, TId, StackIdx: Integer;
   StackEntry: TIdeCallStackEntry;
   Flags: TJumpToCodePosFlags;
   CurrentSourceUnitInfo: TDebuggerUnitInfo;
@@ -1714,14 +1743,20 @@ begin
   then begin
     // jump to the deepest stack frame with debugging info
     // TODO: Only below the frame supplied by debugger
-    i:=0;
+    StackIdx := 30;
+    if SrcLine = -3 then StackIdx := FCurrentLocation.StackIndex + 1;
     TId := Threads.CurrentThreads.CurrentThreadId;
-    if CallStack.CurrentCallStackList.EntriesForThreads[TId].HasAtLeastCount(30) = nbUnknown then begin
+    if CallStack.CurrentCallStackList.EntriesForThreads[TId].HasAtLeastCount(StackIdx) = nbUnknown then begin
       FCallStackNotification.OnChange := @DoDebuggerCurrentLine;
       exit;
     end;
 
-    c := CallStack.CurrentCallStackList.EntriesForThreads[TId].CountLimited(30);
+    c := CallStack.CurrentCallStackList.EntriesForThreads[TId].CountLimited(StackIdx);
+    i:=0;
+    if SrcLine = -3 then begin
+      i := FCurrentLocation.StackIndex;
+      c := Min(c, i+1);
+    end;
     while (i < c) do
     begin
       StackEntry := CallStack.CurrentCallStackList.EntriesForThreads[TId].Entries[i];
@@ -2026,6 +2061,12 @@ begin
   TheDialog.CallStackMonitor := FCallStack;
   TheDialog.BreakPoints := FBreakPoints;
   TheDialog.SnapshotManager := FSnapshots;
+  if FDebugger <> nil then
+    TheDialog.WatchPrinter.TargetAddressSize := FDebugger.TargetWidth;
+  if DebuggerOptions.ShowHintForWatches then
+    TheDialog.HintTime := EditorOpts.AutoHintDelayInMSec
+  else
+    TheDialog.HintTime := 0;
   TheDialog.EndUpdate;
 end;
 
@@ -2058,6 +2099,12 @@ begin
   TheDialog.ThreadsMonitor := FThreads;
   TheDialog.CallStackMonitor := FCallStack;
   TheDialog.SnapshotManager := FSnapshots;
+  if FDebugger <> nil then
+    TheDialog.WatchPrinter.TargetAddressSize := FDebugger.TargetWidth;
+  if DebuggerOptions.ShowHintForWatches then
+    TheDialog.HintTime := EditorOpts.AutoHintDelayInMSec
+  else
+    TheDialog.HintTime := 0;
   TheDialog.EndUpdate;
 end;
 
@@ -2082,6 +2129,7 @@ begin
   TheDialog.BreakPoints := FBreakPoints;
   TheDialog.Disassembler := FDisassembler;
   TheDialog.DebugManager := Self;
+  UpdateDebugDialogFromOptions;
   TheDialog.EndUpdate;
 end;
 
@@ -2100,6 +2148,8 @@ var
   TheDialog: TIDEInspectDlg;
 begin
   TheDialog := TIDEInspectDlg(FDialogs[ddtInspect]);
+  if FDebugger <> nil then
+    TheDialog.WatchPrinter.TargetAddressSize := FDebugger.TargetWidth;
 end;
 
 procedure TDebugManager.InitHistoryDlg;
@@ -2130,6 +2180,8 @@ var
   TheDialog: TEvaluateDlg;
 begin
   TheDialog := TEvaluateDlg(FDialogs[ddtEvaluate]);
+  if FDebugger <> nil then
+    TheDialog.WatchPrinter.TargetAddressSize := FDebugger.TargetWidth;
 end;
 
 constructor TDebugManager.Create(TheOwner: TComponent);
@@ -2160,6 +2212,7 @@ begin
   FRegisters := TIdeRegistersMonitor.Create;
 
   FWatches.Debugger := Self;
+  FBreakPoints.Debugger := Self;
 
   FCallStackNotification := TCallStackNotification.Create;
   FCallStackNotification.AddReference;
@@ -2209,6 +2262,11 @@ var
   DialogType: TDebugDialogType;
 begin
   FDestroying := true;
+  {$IFDEF WITH_DBG_STARTER_APP}
+  if FDebugTargetStarterPipe <> '' then
+    LazDebuggerStarterUtils.RemovePipe(FDebugTargetStarterPipe);
+  {$ENDIF}
+
 
   if DbgProjectLink <> nil then begin
     DbgProjectLink.ValueFormatterConfig.RemoveChangeNotification(@DoDisplayFormatChanged);
@@ -2484,6 +2542,8 @@ end;
 ------------------------------------------------------------------------------}
 procedure TDebugManager.LoadProjectSpecificInfo(XMLConfig: TXMLConfig;
   Merge: boolean);
+var
+  b: Boolean;
 begin
   FBreakPointGroups.LoadFromXMLConfig(XMLConfig,
                                      'Debugging/'+XMLBreakPointGroupsNode+'/',
@@ -2494,9 +2554,12 @@ begin
     FIdeExceptions.LoadFromXMLConfig(XMLConfig,'Debugging/'+XMLExceptionsNode+'/', @FBreakPointGroups.GetGroupByName);
   end;
   // keep it simple: just load from the session and don't merge
+  b := FBreakPoints.IgnoreAll;
   FBreakPoints.LoadFromXMLConfig(XMLConfig,'Debugging/'+XMLBreakPointsNode+'/',
                                  @Project1.ConvertFromLPIFilename,
                                  @FBreakPointGroups.GetGroupByName);
+  if Merge and b then
+    FBreakPoints.IgnoreAll := True;
   FWatches.LoadFromXMLConfig(XMLConfig,'Debugging/'+XMLWatchesNode+'/');
 end;
 
@@ -2511,16 +2574,14 @@ procedure TDebugManager.SaveProjectSpecificInfo(XMLConfig: TXMLConfig;
 begin
   if not (pwfSkipSeparateSessionInfo in Flags) then
   begin
-    FBreakPointGroups.SaveToXMLConfig(XMLConfig,
-                                      'Debugging/'+XMLBreakPointGroupsNode+'/', pwfCompatibilityMode in Flags);
-    FBreakPoints.SaveToXMLConfig(XMLConfig,'Debugging/'+XMLBreakPointsNode+'/',
-      pwfCompatibilityMode in Flags, @Project1.ConvertToLPIFilename);
-    FWatches.SaveToXMLConfig(XMLConfig,'Debugging/'+XMLWatchesNode+'/', pwfCompatibilityMode in Flags);
+    FBreakPointGroups.SaveToXMLConfig(XMLConfig, 'Debugging/'+XMLBreakPointGroupsNode+'/');
+    FBreakPoints.SaveToXMLConfig(XMLConfig,'Debugging/'+XMLBreakPointsNode+'/', @Project1.ConvertToLPIFilename);
+    FWatches.SaveToXMLConfig(XMLConfig,'Debugging/'+XMLWatchesNode+'/');
   end;
   if not (pwfSkipProjectInfo in Flags) then
   begin
     // exceptions are not part of the project info (#0015256)
-    FIdeExceptions.SaveToXMLConfig(XMLConfig,'Debugging/'+XMLExceptionsNode+'/', pwfCompatibilityMode in Flags);
+    FIdeExceptions.SaveToXMLConfig(XMLConfig,'Debugging/'+XMLExceptionsNode+'/');
   end;
 end;
 
@@ -2593,6 +2654,38 @@ begin
       exit;
     end;
   raise Exception.Create('TDebugManager.CreateDebugDialog invalid FormName "'+aFormName+'"');
+end;
+
+procedure TDebugManager.UpdateDebugDialogFromOptions;
+var
+  cmd: TKeyCommandRelation;
+begin
+  if DebuggerOptions.ShowHintForWatches then begin
+    if FDialogs[ddtWatches] <> nil then TWatchesDlg(FDialogs[ddtWatches]).HintTime := EditorOpts.AutoHintDelayInMSec;
+    if FDialogs[ddtLocals] <> nil  then TLocalsDlg(FDialogs[ddtLocals]).HintTime   := EditorOpts.AutoHintDelayInMSec;
+  end
+  else begin
+    if FDialogs[ddtWatches] <> nil then TWatchesDlg(FDialogs[ddtWatches]).HintTime := 0;
+    if FDialogs[ddtLocals] <> nil  then TLocalsDlg(FDialogs[ddtLocals]).HintTime   := 0;
+  end;
+
+  if FDialogs[ddtAssembler] <> nil  then begin
+    cmd := EditorOpts.KeyMap.FindByCommand(ecStepIntoInstr);
+    if (cmd <> nil) then
+      TAssemblerDlg(FDialogs[ddtAssembler]).actStepIntoInstr.ShortCut := cmd.AsShortCut;
+    cmd := EditorOpts.KeyMap.FindByCommand(ecStepOverInstr);
+    if (cmd <> nil) then
+      TAssemblerDlg(FDialogs[ddtAssembler]).actStepOverInstr.ShortCut := cmd.AsShortCut;
+  end;
+
+  if FDialogs[ddtBreakpoints] <> nil  then begin
+    cmd := EditorOpts.KeyMap.FindByCommand(ecBreakIgnoreToggle);
+    if (cmd <> nil) then
+      TBreakPointsDlg(FDialogs[ddtBreakpoints]).actPowerBreak.ShortCut := cmd.AsShortCut;
+    cmd := EditorOpts.KeyMap.FindByCommand(ecExceptIgnoreToggle);
+    if (cmd <> nil) then
+      TBreakPointsDlg(FDialogs[ddtBreakpoints]).actPowerExcept.ShortCut := cmd.AsShortCut;
+  end;
 end;
 
 procedure TDebugManager.ClearDebugOutputLog;
@@ -2739,18 +2832,31 @@ begin
 end;
 
 function TDebugManager.InitDebugger(AFlags: TDbgInitFlags): Boolean;
+const
+  DbgTargetStarterApplication = '$(LazarusDir)/tools/lazdebugtargetstarter';
+  LauncherApplication = '$(LazarusDir)/tools/runwait.sh';
 var
-  LaunchingCmdLine, LaunchingApplication, LaunchingParams: String;
+  LaunchingCmdLine, LaunchingApplication, LaunchingParams, LaunchApp, StarterApp, s: String;
+  l: TStringList;
   NewWorkingDir: String;
   NewDebuggerClass: TDebuggerClass;
   DbgCfg: TDebuggerPropertiesConfig;
   AMode: TAbstractRunParamsOptionsMode;
+  i: SizeInt;
 begin
 {$ifdef VerboseDebugger}
   DebugLn('[TDebugManager.DoInitDebugger] A');
 {$endif}
 
   Result := False;
+  {$IFDEF WITH_DBG_STARTER_APP}
+  if FDebugTargetStarterPipe <> '' then
+    LazDebuggerStarterUtils.RemovePipe(FDebugTargetStarterPipe);
+  FDebugTargetStarterApp := '';
+  FDebugTargetStarterParam := '';
+  FDebugTargetStarterPipe := '';
+  {$ENDIF}
+
   if FIsInitializingDebugger then begin
     DebugLn('[TDebugManager.DoInitDebugger] *** Re-Entered');
     exit;
@@ -2836,6 +2942,39 @@ begin
       end;
     end;
 
+    {$IFDEF WITH_DBG_STARTER_APP}
+    if (not(difInitForAttach in AFlags)) and
+       (dfAttachToExecStarter in FDebugger.SupportedFeatures)
+    then begin
+      LaunchApp := LauncherApplication;
+      GlobalMacroList.SubstituteStr(LaunchApp);
+      i := Pos(LaunchApp, LaunchingParams);
+      if i > 0 then begin
+        StarterApp := DbgTargetStarterApplication;
+        GlobalMacroList.SubstituteStr(StarterApp);
+        if FileExistsUTF8(StarterApp) then begin
+          FDebugTargetStarterPipe := LazDebuggerStarterUtils.CreatePipe;
+          s := copy(LaunchingParams, i + Length(LaunchApp), Length(LaunchingParams));
+          l := TStringList.create;
+          CommandToList(s, l);
+          if FDebugTargetStarterPipe <> '' then begin
+            FDebugTargetStarterApp := LaunchingApplication;
+            FDebugTargetStarterParam :=
+              copy(LaunchingParams, 1, i + Length(LaunchApp) - 1)
+              + ' ' + StarterApp
+              + ' ' + FDebugTargetStarterPipe
+              + ' ' + s;
+            if l.Count > 0 then
+              LaunchingApplication := l[0];
+            l.Free;
+            Include(AFlags, difInitForAttach);
+          end;
+        end;
+      end;
+    end;
+    {$ENDIF}
+
+
     if not(difInitForAttach in AFlags) then begin
       Project1.RunParameterOptions.AssignEnvironmentTo(FDebugger.Environment);
       NewWorkingDir := BuildBoss.GetRunWorkingDir;
@@ -2868,24 +3007,54 @@ begin
       if FDebugger <> nil then begin
         AMode := Project1.RunParameterOptions.GetActiveMode;
         if (AMode <> nil) then begin
-          if AMode.RedirectStdIn <> rprOff then begin
-            FDebugger.FileNameStdIn := CreateAbsolutePath(AMode.FileNameStdIn, NewWorkingDir);
-            FDebugger.FileOverwriteStdIn := AMode.RedirectStdIn = rprOverwrite;
+          if ConsoleIsCaptured(AMode.ConsoleMode) then begin
+            (* All three streams or none: Windows cannot capture a subset,
+               because a pipe is handed to CreateProcess for the whole set of
+               standard handles at once. The dialog disables the per-stream
+               choices while a captured console is selected, so nothing here
+               is being overridden behind the user's back. *)
+            FDebugger.TargetIoStdInFileName  := '';
+            FDebugger.TargetIoStdOutFileName := '';
+            FDebugger.TargetIoStdErrFileName := '';
+            FDebugger.TargetIoStdInMode  := diomCaptureInternal;
+            FDebugger.TargetIoStdOutMode := diomCaptureInternal;
+            FDebugger.TargetIoStdErrMode := diomCaptureInternal;
           end
-          else
-            FDebugger.FileNameStdIn := '';
-          if AMode.RedirectStdOut <> rprOff then begin
-            FDebugger.FileNameStdOut := CreateAbsolutePath(AMode.FileNameStdOut, NewWorkingDir);
-            FDebugger.FileOverwriteStdOut := AMode.RedirectStdOut = rprOverwrite;
-          end
-          else
-            FDebugger.FileNameStdOut := '';
-          if AMode.RedirectStdErr <> rprOff then begin
-            FDebugger.FileNameStdErr := CreateAbsolutePath(AMode.FileNameStdErr, NewWorkingDir);
-            FDebugger.FileOverwriteStdErr := AMode.RedirectStdErr = rprOverwrite;
-          end
-          else
-            FDebugger.FileNameStdErr := '';
+          else begin
+            if AMode.RedirectStdIn <> rprOff then begin
+              FDebugger.TargetIoStdInFileName := CreateAbsolutePath(AMode.FileNameStdIn, NewWorkingDir);
+              if AMode.RedirectStdIn = rprOverwrite then
+                FDebugger.TargetIoStdInMode := diomRedirectFileOverwrite
+              else
+                FDebugger.TargetIoStdInMode := diomRedirectFileAppend;
+            end
+            else begin
+              FDebugger.TargetIoStdInFileName := '';
+              FDebugger.TargetIoStdInMode := diomDefault;
+            end;
+            if AMode.RedirectStdOut <> rprOff then begin
+              FDebugger.TargetIoStdOutFileName := CreateAbsolutePath(AMode.FileNameStdOut, NewWorkingDir);
+              if AMode.RedirectStdOut = rprOverwrite then
+                FDebugger.TargetIoStdOutMode := diomRedirectFileOverwrite
+              else
+                FDebugger.TargetIoStdOutMode := diomRedirectFileAppend;
+            end
+            else begin
+              FDebugger.TargetIoStdOutFileName := '';
+              FDebugger.TargetIoStdOutMode := diomDefault;
+            end;
+            if AMode.RedirectStdErr <> rprOff then begin
+              FDebugger.TargetIoStdErrFileName := CreateAbsolutePath(AMode.FileNameStdErr, NewWorkingDir);
+              if AMode.RedirectStdErr = rprOverwrite then
+                FDebugger.TargetIoStdErrMode := diomRedirectFileOverwrite
+              else
+                FDebugger.TargetIoStdErrMode := diomRedirectFileAppend;
+            end
+            else begin
+              FDebugger.TargetIoStdErrFileName := '';
+              FDebugger.TargetIoStdErrMode := diomDefault;
+            end;
+          end;
 
           if AMode.UseConsoleWinPos then
             FDebugger.SetConsoleWinPos(AMode.ConsoleWinPos.X, AMode.ConsoleWinPos.Y)
@@ -3120,6 +3289,14 @@ begin
     FDebugger.SendConsoleInput(AText);
 end;
 
+function TDebugManager.ConsoleIsCaptured(AConsoleMode: TRunParamsConsoleMode
+  ): Boolean;
+begin
+  Result := (AConsoleMode = rpcmIdeConsole) and
+            (DebuggerClass <> nil) and
+            (dfStdInOutCapture in DebuggerClass.SupportedFeatures);
+end;
+
 procedure TDebugManager.ProcessCommand(Command: word; var Handled: boolean);
 var
   AvailCommands: TDBGCommands;
@@ -3189,11 +3366,74 @@ begin
 end;
 
 function TDebugManager.StartDebugging: TModalResult;
+{$IFDEF WITH_DBG_STARTER_APP}
+  procedure ClearStarter;
+  begin
+    LazDebuggerStarterUtils.RemovePipe(FDebugTargetStarterPipe);
+    FDebugTargetStarterApp := '';
+    FDebugTargetStarterParam := '';
+    FDebugTargetStarterPipe := '';
+  end;
+{$ENDIF}
+var
+  p: TProcess;
+  pid, fd, i, j: Integer;
+  s: string;
 begin
   {$ifdef VerboseDebugger}
   DebugLn('TDebugManager.StartDebugging A ',DbgS(FDebugger<>nil),' Destroying=',DbgS(Destroying));
   {$endif}
   Result:=mrCancel;
+
+  {$IFDEF WITH_DBG_STARTER_APP}
+  if (FDebugTargetStarterApp <> '') and (FDebugTargetStarterPipe <> '') then begin
+    p := TProcess.Create(nil);
+    p.Executable := FDebugTargetStarterApp;
+    CommandToList(FDebugTargetStarterParam, p.Parameters);
+    p.Execute;
+    p.Free;
+    fd := LazDebuggerStarterUtils.OpenReadPipe(FDebugTargetStarterPipe);
+    if fd = -1 then
+      exit;
+    i := 50;
+    s := '';
+    pid := 0;
+    repeat
+      dec(i);
+      s := s + LazDebuggerStarterUtils.ReadPipe(fd, 500);
+      j := pos(#13, s);
+      if (pid = 0) and (j > 1) then begin
+        pid := StrToIntDef(copy(s,1,j-1), 0);
+        if pid = 0 then begin
+          LazDebuggerStarterUtils.ClosePipe(fd);
+          ClearStarter;
+          exit;
+        end;
+        FAttachToID := copy(s,1,j-1);
+        delete(s,1,j);
+      end
+      else if j > 0 then begin
+        delete(s, j, length(s));
+        break;
+      end;
+    until (i = 0);
+    LazDebuggerStarterUtils.ClosePipe(fd);
+    ClearStarter;
+    if (pid = 0) or (s = '') then begin
+      debugln(['TDebugManager.StartDebugging: failed waiting for target-starter ',pid]);
+      exit;
+    end;
+
+
+    Result := AttachDebugger(True);
+
+    fd := LazDebuggerStarterUtils.OpenWritePipe(s);
+    LazDebuggerStarterUtils.WritePipe(fd, #13);
+    LazDebuggerStarterUtils.ClosePipe(fd);
+    exit;
+  end;
+  {$ENDIF}
+
   FDidShowConsoleForSession := False;
   if Destroying then exit;
   if FManagerStates*[dmsWaitForRun, dmsWaitForAttach] <> [] then exit;
@@ -3593,7 +3833,7 @@ begin
   Result := GetDebuggerClass;
 end;
 
-function TDebugManager.AttachDebugger: TModalResult;
+function TDebugManager.AttachDebugger(AnAttachStarter: Boolean): TModalResult;
 begin
   Result:=mrCancel;
   if Destroying then exit;
@@ -3613,7 +3853,10 @@ begin
     FStepping:=False;
     FAsmStepping := False;
     try
-      FDebugger.Attach(FAttachToID);
+      if AnAttachStarter then
+        FDebugger.AttachToTargetStarter(FAttachToID)
+      else
+        FDebugger.Attach(FAttachToID);
     finally
       Exclude(FManagerStates,dmsRunning);
     end;

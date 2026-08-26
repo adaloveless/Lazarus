@@ -105,10 +105,12 @@ type
     FThread: TDbgThread;
     FIsSymbolResolved: boolean;
     FSymbol: TFpSymbol;
+    FOrigProcSymbol: TFpSymbol;
     FRegisterValueList: TDbgRegisterValueList;
     FIndex: integer;
     function GetContext: TFpDbgSimpleLocationContext;
     function GetFunctionName: string;
+    function GetOrigProcSymbol: TFpSymbol;
     function GetProcSymbol: TFpSymbol;
     function GetLine: integer;
     function GetRegisterValueList: TDbgRegisterValueList;
@@ -126,6 +128,7 @@ type
     property Line: integer read GetLine;
     property RegisterValueList: TDbgRegisterValueList read GetRegisterValueList;
     property ProcSymbol: TFpSymbol read GetProcSymbol;
+    property OrigProcSymbol: TFpSymbol read GetOrigProcSymbol;
     property Index: integer read FIndex;
     property AutoFillRegisters: boolean read FAutoFillRegisters write FAutoFillRegisters;
     property Context: TFpDbgSimpleLocationContext read GetContext write SetContext;
@@ -197,11 +200,6 @@ type
     suGuessed      // Got a frame, but may be wrong
   );
 
-  TDbgUnwinderFlag = (
-    ufSkipArtificialFrames  // e.g. in finally $fin_* methods, find the caller of the outer method
-  );
-  TDbgUnwinderFlags = set of TDbgUnwinderFlag;
-
   { TDbgStackUnwinder }
 
   TDbgStackUnwinder = class
@@ -218,7 +216,6 @@ type
                     ACurrentFrame: TDbgCallstackEntry; // nil for top frame
                     out ANewFrame: TDbgCallstackEntry
                    ): TTDbgStackUnwindResult; virtual; abstract;
-    procedure SetUnwindFlags(AFlags: TDbgUnwinderFlags); virtual; // will be cleared by next InitForThread
   end;
 
   { TDbgStackUnwinderEx }
@@ -325,6 +322,7 @@ type
     procedure SetRegisterValue(AName: string; AValue: QWord); virtual; abstract;
 
     function GetInstructionPointerRegisterValue: TDbgPtr; virtual; abstract;
+    function GetAdjustedInstructionPointerRegisterValue: TDbgPtr; virtual; // maybe replaces GetInstructionPointerForHasBreakpointInfoForAddress
     function GetStackBasePointerRegisterValue: TDbgPtr; virtual; abstract;
     function GetStackPointerRegisterValue: TDbgPtr; virtual; abstract;
     procedure SetStackPointerRegisterValue(AValue: TDbgPtr); virtual; abstract;
@@ -585,6 +583,7 @@ type
     function GetState: TFpDbgBreakpointState; virtual;
     function GetEnabled: boolean;
     procedure SetEnabled(AValue: boolean);
+    function GetCondition: String;
     function GetOn_Thread_StateChange: TFpDbgBreakpointStateChangeEvent;
     procedure SetOn_Thread_StateChange(AValue: TFpDbgBreakpointStateChangeEvent);
     procedure SetFreeByDbgProcess(AValue: Boolean); virtual;
@@ -604,6 +603,7 @@ type
 
     property State: TFpDbgBreakpointState read GetState;
     property Enabled: boolean read GetEnabled write SetEnabled;
+    property Condition: String read GetCondition write SetCondition;
     property FreeByDbgProcess: Boolean write SetFreeByDbgProcess;
     // Event runs in dbg-thread
     property On_Thread_StateChange: TFpDbgBreakpointStateChangeEvent read GetOn_Thread_StateChange write SetOn_Thread_StateChange;
@@ -634,6 +634,7 @@ type
     procedure SetOn_Thread_StateChange(AValue: TFpDbgBreakpointStateChangeEvent);
     function __FpDbgBrk: TFpDbgBreakpointBase;
     function GetEnabled: boolean;
+    function GetCondition: String;
     procedure SetProcessToNil;
   protected
     procedure ProcessAutoUpdate;
@@ -671,6 +672,7 @@ type
     // If the breakpoint does not have a process, it will be destroyed immediately
     property FreeByDbgProcess: Boolean read FFreeByDbgProcess write SetFreeByDbgProcess;
     property Enabled: boolean read FEnabled write SetEnabled;
+    property Condition: String read GetCondition write SetCondition;
     property State: TFpDbgBreakpointState read GetState;
     // Event runs in dbg-thread
     property On_Thread_StateChange: TFpDbgBreakpointStateChangeEvent read FOn_Thread_StateChange write FOn_Thread_StateChange;
@@ -932,8 +934,8 @@ type
   end;
 
   TDbgInstInfo = record
-    InstrType: (itAny, itJump);
-    InstrTargetOffs: Int64; // offset from the START address of instruction
+    InstrType: (itAny, itJump, itJumpAbs);
+    InstrTargetOffs: Int64; // offset from the START address of instruction, or absolute offset
   end;
 
   TDbgFrameBoundaryKind = (
@@ -963,7 +965,7 @@ type
 
     procedure Disassemble(var AAddress: Pointer; out ACodeBytes: String; out ACode: String; out AnInfo: TDbgInstInfo); virtual; overload;
     procedure Disassemble(var AAddress: Pointer; out ACodeBytes: String; out ACode: String); virtual; abstract; overload;
-    procedure ReverseDisassemble(var AAddress: Pointer; out ACodeBytes: String; out ACode: String); virtual;
+    procedure ReverseDisassemble(var AAddress: Pointer; out ACodeBytes: String; out ACode: String; out AnInfo: TDbgInstInfo); virtual;
 
     function GetInstructionInfo(AnAddress: TDBGPtr): TDbgAsmInstruction; virtual; abstract;
     function GetFrameBoundaryInfo(AnAddress: TDBGPtr; out AFrameBoundaryInfo: TDbgFrameBoundaryInfo; ARoutineStartAddr: TDBGPtr = 0): TDbgFrameBoundaryKind; virtual;
@@ -986,6 +988,7 @@ type
 
   TDbgProcess = class(TDbgInstance)
   private
+    FCheckingForConsoleOutputThread: TThread;
     FDisassembler: TDbgAsmDecoder;
     FExceptionClass: string;
     FExceptionMessage: string;
@@ -994,7 +997,9 @@ type
     FLastLibraryUnloaded: TDbgLibrary;
     FOnDebugOutputEvent: TDebugOutputEvent;
     FOSDbgClasses: TOSDbgClasses;
+    FPreAttach: boolean;
     FProcessID: Integer;
+    FStopCheckingForConsoleOutputRequested: boolean;
     FThreadID: Integer;
     FWatchPointData: TFpWatchPointData;
     FProcessConfig: TDbgProcessConfig;
@@ -1053,6 +1058,8 @@ type
     function CreateConfig: TDbgConfig;
     function CreateBreakPointTargetHandler: TFpBreakPointTargetHandler; virtual; abstract;
     procedure InitializeLoaders; override;
+    property CheckingForConsoleOutputThread: TThread read FCheckingForConsoleOutputThread;
+    property StopCheckingForConsoleOutputRequested: boolean read FStopCheckingForConsoleOutputRequested;
   public
     class function isSupported(ATargetInfo: TTargetDescriptor): boolean; virtual;
     constructor Create(const AFileName: string; AnOsClasses: TOSDbgClasses;
@@ -1111,6 +1118,11 @@ type
     procedure RemoveThread(const AID: DWord);
     function FormatAddress(const AAddress): String;
     function  Pause: boolean; virtual;
+    { Step-Out: may a genuine return leave the stack pointer unchanged?  True for
+      architectures whose "call" keeps the return address in a link register (e.g.
+      RISC-V ra), so a step-out before the prologue spills it returns with SP
+      unchanged.  Default False (x86: a real return always increases SP). }
+    function StepOutReturnMayKeepStackPointer: Boolean; virtual;
 
     function ReadData(const AAdress: TDbgPtr; const ASize: Cardinal; out AData): Boolean; virtual;
     function ReadData(const AAdress: TDbgPtr; const ASize: Cardinal; out AData; out APartSize: Cardinal): Boolean; virtual;
@@ -1137,6 +1149,9 @@ type
     procedure RemoveAllBreakPoints;
 
     function CheckForConsoleOutput(ATimeOutMs: integer): integer; virtual;
+    procedure SetCheckingForConsoleOutputThread(AThread: TThread);
+    procedure StopCheckingForConsoleOutput; virtual;
+    procedure ClearStopCheckingForConsoleOutputRequested;
     function GetConsoleOutput: string; virtual;
     procedure SendConsoleInput(AString: string); virtual;
 
@@ -1155,6 +1170,7 @@ type
     procedure TerminateProcess; virtual; abstract;
     function Detach(AProcess: TDbgProcess; AThread: TDbgThread): boolean; virtual;
 
+    property PreAttach: boolean read FPreAttach write FPreAttach;
     property OSDbgClasses: TOSDbgClasses read FOSDbgClasses;
     property RequiresExecutionInDebuggerThread: boolean read GetRequiresExecutionInDebuggerThread;
     property Handle: THandle read GetHandle;
@@ -1167,6 +1183,7 @@ type
     property CurrentWatchpoint: TFpInternalWatchpoint read FCurrentWatchpoint;
     property PauseRequested: boolean read GetPauseRequested write SetPauseRequested;
     function GetAndClearPauseRequested: Boolean;
+    property BreakTargetHandler: TFpBreakPointTargetHandler read FBreakTargetHandler;
 
     // Properties valid when last event was an deException
     property ExceptionMessage: string read FExceptionMessage write FExceptionMessage;
@@ -2002,17 +2019,17 @@ end;
 
 function TDbgCallstackEntry.GetProcSymbol: TFpSymbol;
 begin
-  if not FIsSymbolResolved then begin
-    if (FIndex > 0) and (FAnAddress <> 0) then
-      FSymbol := FThread.Process.FindProcSymbol(FAnAddress - 1) // -1 => inside the call instruction
-    else
-      FSymbol := FThread.Process.FindProcSymbol(FAnAddress);
-
-    if FSymbol is TFpSymbolDwarfDataProc then
-      FSymbol := TFpSymbolDwarfDataProc(FSymbol).ResolveInternalFinallySymbol(FThread.Process);
-
-
-    FIsSymbolResolved := FSymbol <> nil
+  if FSymbol = nil then begin
+    // FSymbol has no refcount of tis own.
+    FSymbol := GetOrigProcSymbol;
+    if (FSymbol <> nil) then begin
+      if (FSymbol is TFpSymbolDwarfDataProc) then begin
+        FSymbol := TFpSymbolDwarfDataProc(FSymbol).ResolveInternalFinallySymbol(FThread.Process);
+        if FSymbol = nil then
+          FSymbol := FOrigProcSymbol;
+      end;
+      FOrigProcSymbol.AddReference; // we lost our reference to FSymbol.FOrigSymbol // or we have 2 refs to the same sym now
+    end;
   end;
   result := FSymbol;
 end;
@@ -2034,6 +2051,19 @@ begin
   end
   else
     result := '';
+end;
+
+function TDbgCallstackEntry.GetOrigProcSymbol: TFpSymbol;
+begin
+  if not FIsSymbolResolved then begin
+    if (FIndex > 0) and (FAnAddress <> 0) then
+      FOrigProcSymbol := FThread.Process.FindProcSymbol(FAnAddress - 1) // -1 => inside the call instruction
+    else
+      FOrigProcSymbol := FThread.Process.FindProcSymbol(FAnAddress);
+
+    FIsSymbolResolved := FOrigProcSymbol <> nil
+  end;
+  result := FOrigProcSymbol;
 end;
 
 function TDbgCallstackEntry.GetContext: TFpDbgSimpleLocationContext;
@@ -2111,6 +2141,7 @@ destructor TDbgCallstackEntry.Destroy;
 begin
   FreeAndNil(FRegisterValueList);
   ReleaseRefAndNil(FSymbol);
+  ReleaseRefAndNil(FOrigProcSymbol);
   FContext.ReleaseReference;
   inherited Destroy;
 end;
@@ -2420,7 +2451,7 @@ end;
 // Many pitfalls with X86 instruction encoding...
 // Avr may give 130/65535 = 0.2% errors per instruction reverse decoded
 procedure TDbgAsmDecoder.ReverseDisassemble(var AAddress: Pointer; out
-  ACodeBytes: String; out ACode: String);
+  ACodeBytes: String; out ACode: String; out AnInfo: TDbgInstInfo);
 var
   instrLen: integer;
   tmpAddress: PtrUint;
@@ -2430,7 +2461,7 @@ begin
   repeat
     dec(instrLen, MinInstructionSize);
     tmpAddress := PtrUInt(AAddress) - instrLen;
-    Disassemble(pointer(tmpAddress), ACodeBytes, ACode);
+    Disassemble(pointer(tmpAddress), ACodeBytes, ACode, AnInfo);
   until (tmpAddress >= PtrUInt(AAddress)) or (instrLen = MinInstructionSize);
 
   // After disassemble tmpAddress points to the starting address of next instruction
@@ -3216,6 +3247,21 @@ begin
   result := -1;
 end;
 
+procedure TDbgProcess.SetCheckingForConsoleOutputThread(AThread: TThread);
+begin
+  FCheckingForConsoleOutputThread := AThread;
+end;
+
+procedure TDbgProcess.StopCheckingForConsoleOutput;
+begin
+  FStopCheckingForConsoleOutputRequested := True;
+end;
+
+procedure TDbgProcess.ClearStopCheckingForConsoleOutputRequested;
+begin
+  FStopCheckingForConsoleOutputRequested := False;
+end;
+
 function TDbgProcess.GetConsoleOutput: string;
 begin
   result := '';
@@ -3664,6 +3710,11 @@ begin
   Result := TFpWatchPointData.Create;
 end;
 
+function TDbgProcess.StepOutReturnMayKeepStackPointer: Boolean;
+begin
+  Result := False;
+end;
+
 procedure TDbgProcess.Init(const AProcessID, AThreadID: Integer);
 begin
   FProcessID := AProcessID;
@@ -3751,13 +3802,6 @@ end;
 procedure TDbgStackFrameInfo.FlagAsSteppedOut;
 begin
   FHasSteppedOut := True;
-end;
-
-{ TDbgStackUnwinder }
-
-procedure TDbgStackUnwinder.SetUnwindFlags(AFlags: TDbgUnwinderFlags);
-begin
-  //
 end;
 
 { TDbgStackUnwinderEx }
@@ -4111,6 +4155,11 @@ end;
 function TDbgThread.DetectHardwareWatchpoint: TFpInternalWatchpoint;
 begin
   result := nil;
+end;
+
+function TDbgThread.GetAdjustedInstructionPointerRegisterValue: TDbgPtr;
+begin
+  Result := GetInstructionPointerRegisterValue;
 end;
 
 function TDbgThread.GetCurrentStackFrameInfo: TDbgStackFrameInfo;
@@ -4482,6 +4531,17 @@ end;
 procedure TFpDbgBreakpointBase.SetCondition(ANewCondition: String);
 begin
   FCondition := ANewCondition;
+end;
+
+function TFpDbgBreakpointBase.GetCondition: String;
+begin
+  // Report a condition queued by SetAutoUpdateCondition, which is not applied
+  // to FCondition until the loop runs ProcessAutoUpdate. Same approach as
+  // GetEnabled, which reports a pending SetAutoDisable.
+  if bufNewCondition in FUpdateFlags then
+    Result := FNewCondition
+  else
+    Result := FCondition;
 end;
 
 function TFpDbgBreakpointBase.__FpDbgBrk: TFpDbgBreakpointBase;

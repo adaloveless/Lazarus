@@ -66,10 +66,13 @@ type
     FWMNameCached: boolean;
     FTrackBarKnobSize: Integer;
     FActivityCounter: integer;
+    FHandlesCS: TRTLCriticalSection;
+    FSavedHandlesList: TMap;
     FLastUserEventTime: guint32;
     FAppFocusTimerID: guint;
     FLastFocusIn: PGtkWidget;
     FLastFocusOut: PGtkWidget;
+    FMsgActivationLevel: Integer;
     {$IFDEF UNIX}
     FX11PollTimerID: guint;
     {$ENDIF}
@@ -205,12 +208,15 @@ type
     function IsValidDC(const DC: HDC): Boolean;
     function IsValidGDIObject(const AGdiObject: HGDIOBJ): Boolean;
     function IsValidHandle(const AHandle: HWND): Boolean;
+    procedure AddHandle(AHandle: TObject);
+    procedure RemoveHandle(AHandle: TObject);
 
     property ActivityCounter: integer read FActivityCounter write FActivityCounter;
     property AppFocusTimerID: guint read FAppFocusTimerID write FAppFocusTimerID;
     property AppIcon: PGdkPixbuf read FAppIcon;
     property LastFocusIn: PGtkWidget read FLastFocusIn write FLastFocusIn;
     property LastFocusOut: PGtkWidget read FLastFocusOut write FLastFocusOut;
+    property MsgActivationLevel: Integer read FMsgActivationLevel write FMsgActivationLevel;
     {$IFDEF UNIX}
     property X11PollTimerID: guint read FX11PollTimerID write FX11PollTimerID;
     {$ENDIF}
@@ -328,6 +334,13 @@ begin
   case ACapability of
   lcTextHint: Result := LCL_CAPABILITY_YES;
   lcCanDrawOutsideOnPaint: Result := LCL_CAPABILITY_NO;
+  lcNeedMininimizeAppWithMainForm:
+    begin
+      if IsWayland then
+        Result := LCL_CAPABILITY_NO
+      else
+        Result := LCL_CAPABILITY_YES;
+    end;
   else
     Result := inherited GetLCLCapability(ACapability);
   end;

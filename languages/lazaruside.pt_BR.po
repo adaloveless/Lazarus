@@ -486,11 +486,6 @@ msgstr "Árvore código retrátil"
 msgid "Code folding (current)"
 msgstr ""
 
-#: lazarusidestrconsts.dlgaddhiattrcustom
-#, object-pascal-format
-msgid "Custom %d"
-msgstr ""
-
 #: lazarusidestrconsts.dlgaddhiattrdefault
 msgid "Default Text"
 msgstr "Texto Padrão"
@@ -644,11 +639,6 @@ msgstr "Linha modificada"
 #: lazarusidestrconsts.dlgaddhiattrmouselink
 msgid "Mouse link"
 msgstr "Vínculo \"mouse\""
-
-#: lazarusidestrconsts.dlgaddhiattrnestedbracket
-#, object-pascal-format
-msgid "Nested bracket %d"
-msgstr ""
 
 #: lazarusidestrconsts.dlgaddhiattroutlinelevelcolor
 #, object-pascal-format
@@ -1355,8 +1345,33 @@ msgstr "Configuração e alvo"
 msgid "Config files"
 msgstr "Arquivos de configuração"
 
+#: lazarusidestrconsts.dlgconsolegroup
+msgid "Console"
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsoleidewindow
+msgid "IDE internal window"
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsolemodeide
+msgid "Internal IDE consoles"
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsolemodeos
+msgid "OS console"
+msgstr ""
+
 #: lazarusidestrconsts.dlgconsolesizenotsupported
 msgid "Current debugger does not support this."
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsoleunknown
+#, object-pascal-format
+msgid "Unknown console \"%s\""
+msgstr ""
+
+#: lazarusidestrconsts.dlgconsoleuseidedefault
+msgid "-- Use IDE default console --"
 msgstr ""
 
 #: lazarusidestrconsts.dlgcootherdebugginginfo
@@ -3751,6 +3766,10 @@ msgstr ""
 msgid "Generic highlight in procedure names (implementation)"
 msgstr ""
 
+#: lazarusidestrconsts.dlgpasresolvecompilermodeswitcheswithcodetools
+msgid "Resolve compiler mode switches with CodeTools"
+msgstr ""
+
 #: lazarusidestrconsts.dlgpassoptslinker
 msgid "Pass options to linker with \"-k\", delimiter is space"
 msgstr "Enviar opções ao vinculador  com \"-k\", espaço é o delimitador"
@@ -3906,7 +3925,9 @@ msgid "Session"
 msgstr "Sessão"
 
 #: lazarusidestrconsts.dlgpotitle
-msgid "Title:"
+#, fuzzy
+#| msgid "Title:"
+msgid "Title"
 msgstr "Título:"
 
 #: lazarusidestrconsts.dlgpouiaccess
@@ -5242,6 +5263,10 @@ msgstr "Abandonar alterações?"
 msgid "Abort all loading"
 msgstr "Abortar todo o carregamento"
 
+#: lazarusidestrconsts.lisabortifanycompilerpathorexecut
+msgid "Abort if any compiler path or execute-before/after command is missing in the IDE trust whitelist."
+msgstr ""
+
 #: lazarusidestrconsts.lisabortloadingproject
 msgid "Abort loading project"
 msgstr "Abortar carregamento do projeto"
@@ -5546,13 +5571,6 @@ msgstr "Todas as modificações para \"%s\"%sserão perdidas e o arquivo reabert
 #: lazarusidestrconsts.lisalpha
 msgid "Alpha"
 msgstr "Alpha"
-
-#: lazarusidestrconsts.lisalreadycontainsthehe
-#, object-pascal-format
-msgid ""
-"%s already contains the help:\n"
-"%s"
-msgstr ""
 
 #: lazarusidestrconsts.lisalternativekey
 msgid "Alternative key"
@@ -6044,10 +6062,22 @@ msgstr "Construir novo projeto"
 msgid "Build number"
 msgstr "Número da construção"
 
+#: lazarusidestrconsts.lisbuildreleasepackagesstorecompi
+msgid "Build release packages. Store compiler checksum instead of date in package.compiled files. Ignore session and environment options."
+msgstr ""
+
 #: lazarusidestrconsts.lisbuildstage
 msgctxt "lazarusidestrconsts.lisbuildstage"
 msgid "Build"
 msgstr "Construir"
+
+#: lazarusidestrconsts.lisbuildtheminimalidewithdefaults
+msgid "Build the minimal IDE with defaults."
+msgstr ""
+
+#: lazarusidestrconsts.lisbuildthereleaseidesameasminima
+msgid "Build the release IDE. Same as minimal plus a fixed set of extra packages."
+msgstr ""
 
 #: lazarusidestrconsts.lisbusy
 msgid "Busy"
@@ -6308,10 +6338,6 @@ msgstr "(Filtro)"
 #: lazarusidestrconsts.liscefollowcursor
 msgid "Follow cursor"
 msgstr "Seguir cursor"
-
-#: lazarusidestrconsts.lisceisarootcontrol
-msgid "Is a root control"
-msgstr "É um controle raiz"
 
 #: lazarusidestrconsts.liscelongparamlistcount
 msgid "Parameters count treated as \"many\""
@@ -6658,10 +6684,6 @@ msgstr "Escolha um nome diferente"
 msgid "Choose a file with CodeTools templates"
 msgstr "Escolha um arquivo com modelo CodeTools"
 
-#: lazarusidestrconsts.lischooseafpdoclink
-msgid "Choose a FPDoc link"
-msgstr "Escolha um vínculo \"FPDOC\""
-
 #: lazarusidestrconsts.lischooseakey
 msgid "Choose a key ..."
 msgstr "Escolha uma tecla ..."
@@ -6669,10 +6691,6 @@ msgstr "Escolha uma tecla ..."
 #: lazarusidestrconsts.lischooseanameforthecomponent
 msgid "Choose a name for the component"
 msgstr "Escolha um nome para o componente"
-
-#: lazarusidestrconsts.lischooseanexamplefile
-msgid "Choose an example file"
-msgstr "Escolha um arquivo exemplo"
 
 #: lazarusidestrconsts.lischooseanfpcmessagefile
 msgid "Choose an FPC message file"
@@ -7003,102 +7021,17 @@ msgstr "Opções geração de código"
 msgid "Add path"
 msgstr "Adicionar caminho"
 
-#: lazarusidestrconsts.liscodehelpbrowseexamplebutton
-msgctxt "lazarusidestrconsts.liscodehelpbrowseexamplebutton"
-msgid "Browse"
-msgstr "Navegar"
-
-#: lazarusidestrconsts.liscodehelpconfirmreplace
-msgid "Confirm replace"
-msgstr "Confirmar substituição"
-
-#: lazarusidestrconsts.liscodehelpcreatebutton
-msgid "Create help item"
-msgstr "Criar item ajuda"
-
 #: lazarusidestrconsts.liscodehelpdeletepathbutton
 msgid "Remove path"
 msgstr "Remover caminho"
 
 #: lazarusidestrconsts.liscodehelpdescrtag
-msgctxt "lazarusidestrconsts.liscodehelpdescrtag"
 msgid "Description"
-msgstr "Descrição"
-
-#: lazarusidestrconsts.liscodehelperrorstag
-msgctxt "lazarusidestrconsts.liscodehelperrorstag"
-msgid "Errors"
-msgstr "Erros"
-
-#: lazarusidestrconsts.liscodehelpexampletag
-msgid "Example"
-msgstr "Exemplo"
+msgstr ""
 
 #: lazarusidestrconsts.liscodehelpgroupbox
 msgid "FPDoc settings"
 msgstr "Ajustes FPDoc"
-
-#: lazarusidestrconsts.liscodehelphintboldformat
-msgid "Insert bold formatting tag"
-msgstr "Inserir \"tag\" formatação em negrito"
-
-#: lazarusidestrconsts.liscodehelphintinsertcodetag
-msgid "Insert code formatting tag"
-msgstr "Inserir \"tag\" de formatação de código"
-
-#: lazarusidestrconsts.liscodehelphintitalicformat
-msgid "Insert italic formatting tag"
-msgstr "Inserir \"tag\" de formatação itálico"
-
-#: lazarusidestrconsts.liscodehelphintremarktag
-msgid "Insert remark formatting tag"
-msgstr "Inserir \"tag\" de comentário da formatação"
-
-#: lazarusidestrconsts.liscodehelphintunderlineformat
-msgid "Insert underline formatting tag"
-msgstr "Inserir \"tag\" de formatação de sublinhado"
-
-#: lazarusidestrconsts.liscodehelphintvartag
-msgid "Insert var formatting tag"
-msgstr "Inserir \"tag\" de formatação de variável"
-
-#: lazarusidestrconsts.liscodehelpinherited
-msgctxt "lazarusidestrconsts.liscodehelpinherited"
-msgid "Inherited"
-msgstr "Herança"
-
-#: lazarusidestrconsts.liscodehelpinsertalink
-msgid "Insert a link ..."
-msgstr "Inserir um vínculo ..."
-
-#: lazarusidestrconsts.liscodehelpinsertparagraphformattingtag
-msgid "Insert paragraph formatting tag"
-msgstr "Inserir \"tag\" de formatação de parágrafo"
-
-#: lazarusidestrconsts.liscodehelpmainformcaption
-msgctxt "lazarusidestrconsts.liscodehelpmainformcaption"
-msgid "FPDoc Editor"
-msgstr "Editor FPDoc"
-
-#: lazarusidestrconsts.liscodehelpnoinheriteddescriptionfound
-msgid "(no inherited description found)"
-msgstr "(nenhuma descrição de herança encontrada)"
-
-#: lazarusidestrconsts.liscodehelpnotagcaption
-msgid "<NONE>"
-msgstr "<NENHUM>"
-
-#: lazarusidestrconsts.liscodehelpseealsotag
-msgid "See also"
-msgstr "Veja também"
-
-#: lazarusidestrconsts.liscodehelpshortdescriptionof
-msgid "Short description of"
-msgstr "Descrição curta de"
-
-#: lazarusidestrconsts.liscodehelpshorttag
-msgid "Short"
-msgstr "Curto"
 
 #: lazarusidestrconsts.liscodeobignoreconstinfuncs
 msgctxt "lazarusidestrconsts.liscodeobignoreconstinfuncs"
@@ -8431,10 +8364,6 @@ msgstr "Restaurar configuração Fppkg"
 msgid "Create function"
 msgstr "Criar função"
 
-#: lazarusidestrconsts.liscreatehelpnode
-msgid "Create Help node"
-msgstr "Criar nó Ajuda"
-
 #: lazarusidestrconsts.liscreateit
 msgid "Create it"
 msgstr "Criá-lo"
@@ -8665,6 +8594,10 @@ msgstr ""
 
 #: lazarusidestrconsts.lisdebugdialogconfirmdelwatches
 msgid "Confirm to delete all Watches"
+msgstr ""
+
+#: lazarusidestrconsts.lisdebugdialogshowwatcheshint
+msgid "Show hint for watches/locals (with same delay as source hint)"
 msgstr ""
 
 #: lazarusidestrconsts.lisdebugger
@@ -8944,6 +8877,12 @@ msgstr "Excluir arquivo antigo \"%s\"?"
 msgid "Delete selected macro?"
 msgstr "Excluir macro selecionada?"
 
+#: lazarusidestrconsts.lisdeleteselectedtrustedcompilers
+#, fuzzy
+msgctxt "lazarusidestrconsts.lisdeleteselectedtrustedcompilers"
+msgid "Delete selected"
+msgstr "Excluir selecionado"
+
 #: lazarusidestrconsts.lisdeletethisaddition
 msgid "Delete this addition"
 msgstr "Excluir esta adição"
@@ -9157,11 +9096,6 @@ msgctxt "lazarusidestrconsts.lisdlgimport"
 msgid "Import ..."
 msgstr "Importar ..."
 
-#: lazarusidestrconsts.lisdlgopen
-msgctxt "lazarusidestrconsts.lisdlgopen"
-msgid "Open ..."
-msgstr "Abrir ..."
-
 #: lazarusidestrconsts.lisdoesnotexists
 #, object-pascal-format
 msgid "%s does not exist: %s"
@@ -9200,6 +9134,10 @@ msgstr "Não exibir este diálogo para este projeto"
 #: lazarusidestrconsts.lisdonotshowthismessageagain
 msgid "Do not show this message again"
 msgstr "Não exibir esta mensagem novamente"
+
+#: lazarusidestrconsts.lisdonottrustcompiler
+msgid "Do not trust"
+msgstr ""
 
 #: lazarusidestrconsts.lisdonotwriteupdatedprojectinfoafterbuild
 msgid "Do not write updated project info file after build. If not specified, build number will be incremented if configured."
@@ -9383,10 +9321,6 @@ msgstr "Editar ajuda adicional para mensagens"
 msgid "Edit build modes"
 msgstr ""
 
-#: lazarusidestrconsts.liseditcontexthelp
-msgid "Edit context help"
-msgstr "Editar ajuda contextual"
-
 #: lazarusidestrconsts.liseditfpcmessagehelp
 msgid "Edit FPC Message Help ..."
 msgstr ""
@@ -9443,19 +9377,24 @@ msgid "Macros"
 msgstr "Macros"
 
 #: lazarusidestrconsts.lisedtexttoolparameters
-msgid "Parameters:"
+#, fuzzy
+#| msgid "Parameters:"
+msgctxt "lazarusidestrconsts.lisedtexttoolparameters"
+msgid "Parameters"
 msgstr "Parâmetros:"
 
-#: lazarusidestrconsts.lisedtexttoolprogramfilename
-msgid "Program Filename:"
-msgstr "Nome do programa:"
+#: lazarusidestrconsts.lisedtexttoolprogramexecutable
+msgid "Program Executable"
+msgstr ""
 
 #: lazarusidestrconsts.lisedtexttooltitleandfilenamerequired
 msgid "Title and Filename required"
 msgstr "Título e Nome do Arquivo requerido"
 
 #: lazarusidestrconsts.lisedtexttoolworkingdirectory
-msgid "Working Directory:"
+#, fuzzy
+#| msgid "Working Directory:"
+msgid "Working Directory"
 msgstr "Diretório trabalho:"
 
 #: lazarusidestrconsts.liselevatethemessageprioritytoalwaysshowitbydefaultit
@@ -9711,15 +9650,6 @@ msgstr "Erro na análise do fluxo de componente no arquivo LFM."
 msgid "Error reading package list from file%s%s%s%s"
 msgstr "Erro na leitura da lista de pacotes do arquivo%s%s%s%s"
 
-#: lazarusidestrconsts.liserrorreadingxml
-msgid "Error reading XML"
-msgstr "Erro lendo XML"
-
-#: lazarusidestrconsts.liserrorreadingxmlfile
-#, object-pascal-format
-msgid "Error reading xml file \"%s\"%s%s"
-msgstr "Erro lendo arquivo xml \"%s\"%s%s"
-
 #: lazarusidestrconsts.liserrors
 msgctxt "lazarusidestrconsts.liserrors"
 msgid "Errors"
@@ -9734,6 +9664,11 @@ msgstr ", Erros: %s"
 msgid "Error saving form"
 msgstr "Erro ao salvar formulário"
 
+#: lazarusidestrconsts.liserrorscount
+#, object-pascal-format
+msgid "Errors: %s"
+msgstr ""
+
 #: lazarusidestrconsts.liserrorsettingthenameofacomponentto
 #, object-pascal-format
 msgid "Error setting the name of a component %s to %s"
@@ -9742,7 +9677,7 @@ msgstr "Erro ao definir o nome de um componente %s para %s"
 #: lazarusidestrconsts.liserrorwritingfile
 #, object-pascal-format
 msgid "Error writing file \"%s\""
-msgstr "Erro ao gravar arquivo \"%s\""
+msgstr ""
 
 #: lazarusidestrconsts.liserrorwritingpackagelisttofile
 #, object-pascal-format
@@ -9758,11 +9693,6 @@ msgstr "Todo enésimo número linha"
 #: lazarusidestrconsts.lisexamplefile
 msgid "Example file:"
 msgstr "Arquivo exemplo:"
-
-#: lazarusidestrconsts.lisexamplesidentifiertmyenumenumunitnameidentifierpac
-#, object-pascal-format
-msgid "Examples:%sIdentifier%sTMyEnum.Enum%sUnitname.Identifier%s#PackageName.UnitName.Identifier"
-msgstr "Exemplos:%sIdentificador%sTMyEnum.Enum%sNomeUnidade.Identificador%s#NomePacote.NomeUnidade.Identificador"
 
 #: lazarusidestrconsts.lisexclude
 msgid "Exclude"
@@ -10224,13 +10154,13 @@ msgstr "&Primeiro teste"
 msgid "Fix LFM file"
 msgstr "Corrigir arquivo LFM"
 
-#: lazarusidestrconsts.lisfocusatcompilation
-msgid "Focus at compilation"
-msgstr ""
-
 #: lazarusidestrconsts.lisfocushint
 msgid "Focus hint"
 msgstr "Dica de foco"
+
+#: lazarusidestrconsts.lisfocuswindow
+msgid "Focus window"
+msgstr ""
 
 #: lazarusidestrconsts.lisforcerenaming
 msgid "Force renaming"
@@ -10291,15 +10221,6 @@ msgctxt "lazarusidestrconsts.lisfpdoceditor"
 msgid "FPDoc Editor"
 msgstr "Editor FPDoc"
 
-#: lazarusidestrconsts.lisfpdocerrorwriting
-#, object-pascal-format
-msgid "Error writing \"%s\"%s%s"
-msgstr "Erro gravando \"%s\"%s%s"
-
-#: lazarusidestrconsts.lisfpdocfpdocsyntaxerror
-msgid "FPDoc syntax error"
-msgstr "Erro sintaxe FPDoc"
-
 #: lazarusidestrconsts.lisfpdocpackagename
 msgid "FPDoc package name:"
 msgstr "Nome do pacote FPDoc:"
@@ -10307,11 +10228,6 @@ msgstr "Nome do pacote FPDoc:"
 #: lazarusidestrconsts.lisfpdocpackagenamedefaultisprojectfilename
 msgid "FPDoc package name. Default is project file name."
 msgstr "Nome do pacote FPDoc. Padrão é o nome do arquivo de projeto."
-
-#: lazarusidestrconsts.lisfpdocthereisasyntaxerrorinthefpdocelement
-#, object-pascal-format
-msgid "There is a syntax error in the fpdoc element \"%s\":%s%s"
-msgstr "Há um erro de sintaxe no elemento fpdoc \"%s\":%s%s"
 
 #: lazarusidestrconsts.lisfppkgcompilerproblem
 msgid "there is a problem with the Free Pascal compiler executable, "
@@ -10587,10 +10503,6 @@ msgstr ""
 msgid "Width"
 msgstr ""
 
-#: lazarusidestrconsts.lishashelp
-msgid "Has Help"
-msgstr "Tem Ajuda"
-
 #: lazarusidestrconsts.lisheadercolors
 msgid "Header colors"
 msgstr "Cores cabeçalho"
@@ -10598,10 +10510,6 @@ msgstr "Cores cabeçalho"
 #: lazarusidestrconsts.lisheadercommentforclass
 msgid "Header comment for class"
 msgstr "Cabeçalho de comentário para classe"
-
-#: lazarusidestrconsts.lishelpentries
-msgid "Help entries"
-msgstr "Entradas da Ajuda"
 
 #: lazarusidestrconsts.lishelpselectordialog
 msgid "Help selector"
@@ -10636,6 +10544,11 @@ msgstr "Ocultar Localizar"
 msgctxt "lazarusidestrconsts.lishidewindow"
 msgid "Hide window"
 msgstr "Ocultar janela"
+
+#: lazarusidestrconsts.lishidewithpackageoptioniffpcfullversion
+#, object-pascal-format
+msgid "Hide with package option IF FPC_FULLVERSION>=%s THEN CustomOptions+=' -vm%s'"
+msgstr ""
 
 #: lazarusidestrconsts.lishidewithpackageoptionvm
 #, object-pascal-format
@@ -10755,10 +10668,6 @@ msgstr "A IDE mantém Application.Scaled (DPI-Alto) na unidade principal."
 #: lazarusidestrconsts.lisidemaintainsthetitleinmainunit
 msgid "The IDE maintains the title in main unit."
 msgstr "A IDE mantém o título na unidade principal."
-
-#: lazarusidestrconsts.lisidentifier
-msgid "identifier"
-msgstr "identificador"
 
 #: lazarusidestrconsts.lisidentifierbeginswith
 msgid "Identifier begins with ..."
@@ -11112,10 +11021,6 @@ msgstr "Inserir Macro"
 msgid "Insert name of current procedure."
 msgstr "Inserir nome do procedimento atual"
 
-#: lazarusidestrconsts.lisinsertprintshorttag2
-msgid "Insert printshort tag"
-msgstr "Inserir \"tag printshort\""
-
 #: lazarusidestrconsts.lisinsertprocedurehead
 msgid "insert procedure head"
 msgstr "inserir cabeçalho procedimento"
@@ -11135,10 +11040,6 @@ msgstr "inserir hora"
 #: lazarusidestrconsts.lisinserttimeoptionalformatstring
 msgid "Insert time. Optional: format string."
 msgstr "Inserir hora. Opcional: formatar \"string\""
-
-#: lazarusidestrconsts.lisinserturltag
-msgid "Insert url tag"
-msgstr "Inserir \"tag\" url"
 
 #: lazarusidestrconsts.lisinsession
 msgid "In session"
@@ -11188,10 +11089,6 @@ msgstr "Interativo"
 #, object-pascal-format
 msgid "internal error: %s"
 msgstr "erro interno: %s"
-
-#: lazarusidestrconsts.lisinvaliddeclaration
-msgid "Invalid Declaration"
-msgstr ""
 
 #: lazarusidestrconsts.lisinvaliddelete
 msgid "Invalid delete"
@@ -11940,32 +11837,6 @@ msgstr "Atualizar informações de revisão no diálogo \"Sobre Lazarus\""
 msgid "Package distributed with Lazarus"
 msgstr ""
 
-#: lazarusidestrconsts.lisldaddlinktoinherited
-msgid "Add link to inherited"
-msgstr "Adicionar vínculo ao herdado"
-
-#: lazarusidestrconsts.lisldcopyfrominherited
-msgid "Copy from inherited"
-msgstr "Copiar do herdado"
-
-#: lazarusidestrconsts.lislddoesnothaveanyvalidfpdocpathunabletocreatethefpdo
-#, object-pascal-format
-msgid "%s does not have any valid FPDoc path.%sUnable to create the fpdoc file for %s"
-msgstr "%s não tem um caminho FPDoc válido.%sIncapaz de criar o arquivo fpdoc para %s"
-
-#: lazarusidestrconsts.lisldmoveentriestoinherited
-msgid "Move entries to inherited"
-msgstr "Mover entradas para herdado"
-
-#: lazarusidestrconsts.lisldnovalidfpdocpath
-msgid "No valid FPDoc path"
-msgstr "Nenhum caminho FPDoc válido"
-
-#: lazarusidestrconsts.lisldtheunitisnotownedbeanypackageorprojectpleaseaddthe
-#, object-pascal-format
-msgid "The unit %s is not owned be any package or project.%sPlease add the unit to a package or project.%sUnable to create the fpdoc file."
-msgstr "A unidade %s não é propriedade de nenhum pacote ou projeto.%sFavor adicionar a unidade a um pacote ou projeto.%sIncapaz de criar o arquivo \"fpdoc\"."
-
 #: lazarusidestrconsts.lisleft
 msgctxt "lazarusidestrconsts.lisleft"
 msgid "Left"
@@ -12062,17 +11933,9 @@ msgstr "caminho biblioteca."
 msgid "A Free Pascal shared library (.dll under Windows, .so under Linux, .dylib under macOS)."
 msgstr "Uma biblioteca compartilhada Free Pascal (.dll no Windows, .so no Linux, .dylib no macOS)."
 
-#: lazarusidestrconsts.lislink
-msgid "Link:"
-msgstr "Vínculo:"
-
 #: lazarusidestrconsts.lislinkeroptions
 msgid "linker options"
 msgstr "Opções do Vinculador"
-
-#: lazarusidestrconsts.lislinktarget
-msgid "Link target"
-msgstr "Alvo vínculo"
 
 #: lazarusidestrconsts.lislistofallcasevalues
 msgid "list of all case values"
@@ -12104,7 +11967,9 @@ msgid "Maximize compatibility of project files (LPI and LPS)"
 msgstr "Maximizar a compatibilidade dos arquivos de projeto (LPI e LPS)."
 
 #: lazarusidestrconsts.lislpicompatibilitymodecheckboxhint
-msgid "Check this if you want to open your project in legacy (2.0 and older) Lazarus versions."
+#, fuzzy
+#| msgid "Check this if you want to open your project in legacy (2.0 and older) Lazarus versions."
+msgid "Check this if you want to open your project in legacy (2.2 - 4.8) Lazarus versions."
 msgstr "Verifique se você deseja abrir projetos em versões legadas do Lazarus (2.0 e mais antigas)."
 
 #: lazarusidestrconsts.lislpkcompatibilitymodecheckbox
@@ -12112,7 +11977,9 @@ msgid "Maximize compatibility of package file (LPK)"
 msgstr "Maximizar compatibilidade de arquivo de pacote (LPK)"
 
 #: lazarusidestrconsts.lislpkcompatibilitymodecheckboxhint
-msgid "Check this if you want to open your package in legacy (2.0 and older) Lazarus versions."
+#, fuzzy
+#| msgid "Check this if you want to open your package in legacy (2.0 and older) Lazarus versions."
+msgid "Check this if you want to open your package in legacy (2.2 - 4.8) Lazarus versions."
 msgstr "Marcar isto se você deseja abrir seu pacote em versões legadas do Lazarus (2.0 e mais antigas)."
 
 #: lazarusidestrconsts.lislpkhasvanishedondiskusingasalternative
@@ -12358,7 +12225,9 @@ msgid "Configure Custom Components ..."
 msgstr "Configurar componentes personalizados ..."
 
 #: lazarusidestrconsts.lismenuconfigexternaltools
-msgid "Configure External Tools ..."
+#, fuzzy
+#| msgid "Configure External Tools ..."
+msgid "Configure &External Tools ..."
 msgstr "Configurar ferramentas externas ..."
 
 #: lazarusidestrconsts.lismenuconfigurebuildlazarus
@@ -14209,10 +14078,6 @@ msgstr "Prefixo do compilador Free Pascal vazio."
 msgid "no hints"
 msgstr "nenhuma dica"
 
-#: lazarusidestrconsts.lisnoidewindowselected
-msgid "No IDE window selected"
-msgstr "Nenhuma janela da IDE selecionada"
-
 #: lazarusidestrconsts.lisnolfmfile
 msgid "No LFM file"
 msgstr "Nenhum arquivo LFM"
@@ -14240,10 +14105,6 @@ msgstr "(Nenhum selecionado)"
 #: lazarusidestrconsts.lisnonewfilefound
 msgid "No new file found"
 msgstr ""
-
-#: lazarusidestrconsts.lisnonodeselected
-msgid "no node selected"
-msgstr "Nenhum nó selecionado"
 
 #: lazarusidestrconsts.lisnopascalfile
 msgid "No Pascal file"
@@ -14492,6 +14353,25 @@ msgstr "Abrir"
 msgid "Open as XML file"
 msgstr "Abrir como arquivo XML"
 
+#: lazarusidestrconsts.lisopenautomatically
+msgid "Open automatically"
+msgstr ""
+
+#: lazarusidestrconsts.lisopenautonever
+#, fuzzy
+msgctxt "lazarusidestrconsts.lisopenautonever"
+msgid "Never"
+msgstr "Nunca"
+
+#: lazarusidestrconsts.lisopenautoonlywhenerrorsoccur
+msgctxt "lazarusidestrconsts.lisopenautoonlywhenerrorsoccur"
+msgid "Only when errors occur"
+msgstr ""
+
+#: lazarusidestrconsts.lisopenautowhencompiling
+msgid "When getting messages"
+msgstr ""
+
 #: lazarusidestrconsts.lisopencontexthelpinbrowser
 msgid "Open context help in the browser"
 msgstr ""
@@ -14601,10 +14481,6 @@ msgstr "Abrir unidade"
 #: lazarusidestrconsts.lisopenurl
 msgid "Open URL"
 msgstr "Abrir URL"
-
-#: lazarusidestrconsts.lisopenxml
-msgid "Open XML"
-msgstr "Abrir XML"
 
 #: lazarusidestrconsts.lisoptions
 msgctxt "lazarusidestrconsts.lisoptions"
@@ -14720,10 +14596,6 @@ msgstr "Diretórios de fontes de pacotes"
 msgid "packages=%s/%s units=%s/%s identifiers=%s/%s lines=%s bytes=%s"
 msgstr "pacotes=%s/%s unidades=%s/%s identificadores=%s/%s linhas=%s bytes=%s"
 
-#: lazarusidestrconsts.lispackageunit
-msgid "package unit"
-msgstr "unidade pacote"
-
 #: lazarusidestrconsts.lispage
 msgctxt "lazarusidestrconsts.lispage"
 msgid "Page"
@@ -14742,6 +14614,11 @@ msgstr "Nome de página \"%s\" já existe. Não adicionado."
 msgctxt "lazarusidestrconsts.lispanic"
 msgid "Panic"
 msgstr "Pânico"
+
+#: lazarusidestrconsts.lisparameters
+msgctxt "lazarusidestrconsts.lisparameters"
+msgid "Parameters:"
+msgstr ""
 
 #: lazarusidestrconsts.lisparsed
 msgid ", parsed "
@@ -14771,10 +14648,6 @@ msgstr "Colar da área de transferência."
 #: lazarusidestrconsts.lispastelcolors
 msgid "Pastel Colors"
 msgstr "Cores pastéis"
-
-#: lazarusidestrconsts.lispath
-msgid "Path"
-msgstr "Caminho"
 
 #: lazarusidestrconsts.lispatheditbrowse
 msgctxt "lazarusidestrconsts.lispatheditbrowse"
@@ -15839,10 +15712,6 @@ msgstr "Favor corrigir o erro mostrado na janela de mensagens, que se localiza n
 msgid "Please open a unit before run."
 msgstr "Favor abrir uma unidade antes de executar."
 
-#: lazarusidestrconsts.lispleaseplacetheeditorcaretonanidentifierifthisisane
-msgid "Please place the editor caret on an identifier. If this is a new unit, please save the file first."
-msgstr ""
-
 #: lazarusidestrconsts.lispleaseselectsomecodetoextractanewproceduremethod
 msgid "Please select some code to extract a new procedure/method."
 msgstr "Favor selecionar algum código para extrair um novo procedimento/método."
@@ -16172,10 +16041,6 @@ msgstr "%0:s%0:s No arquivo '%1:s' na linha %2:d"
 msgid "%0:s%0:s In file '%1:s' at line %2:d:%0:s%3:s"
 msgstr "%0:s%0:s No arquivo '%1:s' na linha %2:d:%0:s%3:s"
 
-#: lazarusidestrconsts.lisprojectunit
-msgid "project unit"
-msgstr "unidade projeto"
-
 #: lazarusidestrconsts.lisprojectwizard
 msgid "Project Wizard"
 msgstr "Assistente de Projeto"
@@ -16327,6 +16192,14 @@ msgstr "Abrir projeto &recente"
 #: lazarusidestrconsts.lispwviewexampleprojects
 msgid "View &Example Projects"
 msgstr "&Exibir projetos de exemplo"
+
+#: lazarusidestrconsts.lisquerycompilerfortargets
+msgid "Query installed compiler for available targets"
+msgstr ""
+
+#: lazarusidestrconsts.lisquerycompilerfortargetshint
+msgid "List only the targets, processors and controllers the configured compiler actually supports"
+msgstr ""
 
 #: lazarusidestrconsts.lisquickcheckfppkgconfigurationatstart
 msgid "Quick check Fppkg configuration at start"
@@ -17077,10 +16950,6 @@ msgstr ""
 msgid "(Set up default indentation)"
 msgstr "(Configurar identação padrão)"
 
-#: lazarusidestrconsts.lisshort
-msgid "Short:"
-msgstr "Curto:"
-
 #: lazarusidestrconsts.lisshortnopath
 msgid "Short, no path"
 msgstr "Curto, nenhum caminho"
@@ -17098,24 +16967,6 @@ msgstr "Exibir"
 #, object-pascal-format
 msgid "Show abstract methods of \"%s\""
 msgstr "Exibir métodos abstratos de \"%s\""
-
-#: lazarusidestrconsts.lisshowautomatically
-msgid "Show automatically"
-msgstr ""
-
-#: lazarusidestrconsts.lisshowautonever
-#, fuzzy
-msgctxt "lazarusidestrconsts.lisshowautonever"
-msgid "Never"
-msgstr "Nunca"
-
-#: lazarusidestrconsts.lisshowautoonlywhenerrorsoccur
-msgid "Only when errors occur"
-msgstr ""
-
-#: lazarusidestrconsts.lisshowautowhencompiling
-msgid "When compiling"
-msgstr ""
 
 #: lazarusidestrconsts.lisshowcomponenttreeinobjectinspector
 msgid "Show component tree"
@@ -17612,6 +17463,10 @@ msgstr "Tabs para %s"
 msgid "Target:"
 msgstr "Alvo:"
 
+#: lazarusidestrconsts.listargetcontroller
+msgid "Target controller"
+msgstr ""
+
 #: lazarusidestrconsts.listargetfilenameemptyuseunitoutputdirectory
 msgid "Target file name: (-o, empty = use unit output directory)"
 msgstr "Nome arquivo alvo: (-o, vazio = usar diretório de saída de unidades)"
@@ -17958,6 +17813,21 @@ msgstr "O pacote %s não é de tempo de projeto. Ele não pode ser instalado na 
 msgid "The package \"%s\" is used by"
 msgstr ""
 
+#: lazarusidestrconsts.listhepackagewantstorunthecommand
+#, object-pascal-format
+msgid "The package \"%s\" wants to run the command:%s%s%sBuilding with a custom command can run arbitrary programs.%sDo you want to trust and run this command?"
+msgstr ""
+
+#: lazarusidestrconsts.listhepackagewantstousethecompiler
+#, object-pascal-format
+msgid "The package \"%s\" wants to use the compiler:%s%s%sThis is not the default compiler configured in the IDE. Opening a package with a custom compiler can run arbitrary programs.%sDo you want to trust and use this compiler?"
+msgstr ""
+
+#: lazarusidestrconsts.listhepackagewantstousethecompilerbuild
+#, object-pascal-format
+msgid "The package \"%s\" wants to use the compiler:%s%s%sThis is not the default compiler configured in the IDE. Building with a custom compiler can run arbitrary programs.%sDo you want to trust and use this compiler?"
+msgstr ""
+
 #: lazarusidestrconsts.listhepathofmakeisnotcorrect
 #, object-pascal-format
 msgid "The path of \"make\" is not correct: \"%s\""
@@ -18020,6 +17890,21 @@ msgstr "O projeto deve ser salvo antes de construir%sSe você definir o diretór
 #: lazarusidestrconsts.listheprojectusesfpcresourceswhichrequireatleast
 msgid "The project uses FPC resources which require at least FPC 2.4"
 msgstr "O projeto usa recursos FPC, que requerem ao menos FPC 2.4"
+
+#: lazarusidestrconsts.listheprojectwantstorunthecommand
+#, object-pascal-format
+msgid "The project \"%s\" wants to run the command:%s%s%sBuilding with a custom command can run arbitrary programs.%sDo you want to trust and run this command?"
+msgstr ""
+
+#: lazarusidestrconsts.listheprojectwantstousethecompiler
+#, object-pascal-format
+msgid "The project \"%s\" wants to use the compiler:%s%s%sThis is not the default compiler configured in the IDE. Opening a project with a custom compiler can run arbitrary programs.%sDo you want to trust and use this compiler?"
+msgstr ""
+
+#: lazarusidestrconsts.listheprojectwantstousethecompilerbuild
+#, object-pascal-format
+msgid "The project \"%s\" wants to use the compiler:%s%s%sThis is not the default compiler configured in the IDE. Building with a custom compiler can run arbitrary programs.%sDo you want to trust and use this compiler?"
+msgstr ""
 
 #: lazarusidestrconsts.listheprojectwritesthedebugsymbolstoanexternalfilethe
 #, object-pascal-format
@@ -18182,11 +18067,6 @@ msgstr "A unidade tem este nome"
 msgid "The unit filename \"%s\" is not lowercase.%sThe Free Pascal compiler does not search for all cases. It is recommended to use lowercase filename.%sRename file lowercase?"
 msgstr "O nome de arquivo da unidade \"%s\" não está em minúsculas.%sO compilador Free Pascal não procura por maiúsc./minúsc. É recomendado usar nomes de arquivos em minúsculas.%sRenomear arquivo para minúsculas?"
 
-#: lazarusidestrconsts.listheunitispartofthefpcsourcesbutthecorrespondingfpd
-#, object-pascal-format
-msgid "The unit %s is part of the FPC sources but the corresponding fpdoc xml file was not found.%sEither you have not yet added the fpcdocs directory to the search path or the unit is not yet documented.%sThe fpdoc files for the FPC sources can be downloaded from: %s%sPlease add the directory in the fpdoc editor options.%sIn order to create a new file the directory must be writable."
-msgstr "A unidade %s é parte dos fontes do FPC, mas o arquivo fpdoc xml correspondente não foi encontrado.%sOu você ainda não adicionou o diretório dos fpdocs ao caminhos de busca ou a unidade ainda não foi documentada.%sOs arquivos fpdoc dos fontes FPC poder ser baixados de: %s%sFavor adicionar o diretório nas opções do editor fpdoc.%sA fim de criar um novo arquivo o diretório deve ter acesso de escrita."
-
 #: lazarusidestrconsts.listheunitisusedbyotherfilesupdatereferencesautomatic
 #, object-pascal-format
 msgid "The unit %s is used by other files.%sUpdate references automatically?"
@@ -18267,10 +18147,6 @@ msgstr "&Título"
 msgid "Show the custom IDE title before the IDE's name and other info in the title. Example: project1 - Lazarus."
 msgstr "Título na barra de tarefas mostra por exemplo: project1.lpi - Lazarus"
 
-#: lazarusidestrconsts.listitleleaveemptyfordefault
-msgid "Title (leave empty for default)"
-msgstr "Título (deixar vazio para padrão)"
-
 #: lazarusidestrconsts.listofpcpath
 msgid "Path:"
 msgstr "Caminho:"
@@ -18286,10 +18162,6 @@ msgstr "Cabeçalho ferramenta: Falhou"
 #: lazarusidestrconsts.listoolheaderrunning
 msgid "Tool Header: Running"
 msgstr "Cabeçalho ferramenta: Executando"
-
-#: lazarusidestrconsts.listoolheaderscrolledup
-msgid "Tool Header: Scrolled up"
-msgstr "Cabeçalho ferramenta: Deslocado acima"
 
 #: lazarusidestrconsts.listoolheadersuccess
 msgid "Tool Header: Success"
@@ -18347,6 +18219,34 @@ msgstr "Páginas totais: %s"
 #: lazarusidestrconsts.listreeneedsrefresh
 msgid "Tree needs refresh"
 msgstr "Árvore necessita atualização"
+
+#: lazarusidestrconsts.listrustcommandcaption
+msgid "Trust build command?"
+msgstr ""
+
+#: lazarusidestrconsts.listrustcompileralways
+msgid "Trust always"
+msgstr ""
+
+#: lazarusidestrconsts.listrustcompilercaption
+msgid "Trust project compiler?"
+msgstr ""
+
+#: lazarusidestrconsts.listrustcompilerthistime
+msgid "Trust this time"
+msgstr ""
+
+#: lazarusidestrconsts.listrustedcommands
+msgid "Trusted commands"
+msgstr ""
+
+#: lazarusidestrconsts.listrustedcompilers
+msgid "Trusted compilers"
+msgstr ""
+
+#: lazarusidestrconsts.listrustpkgcompilercaption
+msgid "Trust package compiler?"
+msgstr ""
 
 #: lazarusidestrconsts.listwomovedfileswillhavethesamefilenamein
 #, object-pascal-format
@@ -18996,6 +18896,10 @@ msgstr "Usar \"checkbox\" para valores boleanos"
 msgid "Use comments in custom options"
 msgstr "Usar comentários em opções customizadas"
 
+#: lazarusidestrconsts.lisusedefaultcompiler
+msgid "Use default compiler"
+msgstr ""
+
 #: lazarusidestrconsts.lisusedesigntimepackages
 msgid "Use design time packages"
 msgstr "Usar pacotes de tempo de projeto"
@@ -19238,6 +19142,10 @@ msgstr "Diretório de trabalho para construção"
 msgid "Working directory for run"
 msgstr "Diretório de trabalho para execução"
 
+#: lazarusidestrconsts.liswraplongmessagelinesotherwisetheyareclippedandahi
+msgid "Wrap long message lines into several rows. Otherwise they are clipped and a hint shows the full text."
+msgstr ""
+
 #: lazarusidestrconsts.liswriteconfiginsteadofcommandlineparameters
 msgid "Write config instead of command line parameters"
 msgstr ""
@@ -19289,6 +19197,7 @@ msgid "Source Editor"
 msgstr "Editor de Código"
 
 #: lazarusidestrconsts.lrsplddeleteselected
+msgctxt "lazarusidestrconsts.lrsplddeleteselected"
 msgid "Delete selected"
 msgstr "Excluir selecionado"
 
@@ -19623,10 +19532,6 @@ msgstr "Tipo"
 #: lazarusidestrconsts.rsrevision
 msgid "&Revision:"
 msgstr "&Revisão:"
-
-#: lazarusidestrconsts.rsselectaninheritedentry
-msgid "Select an inherited entry"
-msgstr "Selecionar uma entrada herdada"
 
 #: lazarusidestrconsts.rsshowabspath
 msgid "Absolute path"
@@ -21234,38 +21139,6 @@ msgstr "Editar teclas do comando"
 msgid "Continue with next mouse up action"
 msgstr "Continuar com a próxima ação \"mouse\" acima"
 
-#: lazarusidestrconsts.synffoldcomments
-msgid "Fold comments"
-msgstr "Retrair comentários"
-
-#: lazarusidestrconsts.synffoldcommentsinselection
-msgid "Fold comments in selection"
-msgstr "Retrair comentários na seleção"
-
-#: lazarusidestrconsts.synffoldinactiveifdef
-msgid "Fold inactive Ifdef"
-msgstr "Retrair Ifdef inativo"
-
-#: lazarusidestrconsts.synffoldinactiveifdefexcludemixedstate
-msgid "Fold inactive Ifdef (exclude mixed state)"
-msgstr "Retrair Ifdef inativo (exclue estado misto)"
-
-#: lazarusidestrconsts.synffoldinactiveifdefinselection
-msgid "Fold inactive Ifdef in selection"
-msgstr "Retrair Ifdef inativo na seleção"
-
-#: lazarusidestrconsts.synffoldinactiveifdefinselectionexcludemixedstate
-msgid "Fold inactive Ifdef in selection (exclude mixed state)"
-msgstr "Retrair Ifdef inativo na seleção (exclue estado misto)"
-
-#: lazarusidestrconsts.synfhidecomments
-msgid "Hide comments"
-msgstr "Ocultar comentários"
-
-#: lazarusidestrconsts.synfhidecommentsinselection
-msgid "Hide comments in selection"
-msgstr "Ocultar comentários na seleção"
-
 #: lazarusidestrconsts.synfmatchactionbuttonofmousedown
 msgid "Match action button of mouse down"
 msgstr "Botão de ação correspondente ao \"mouse\" abaixo"
@@ -21285,47 +21158,6 @@ msgstr "Posição de ação correspondente ao \"mouse\" abaixo"
 #: lazarusidestrconsts.synfsearchallactionofmousedown
 msgid "Search all action of mouse down"
 msgstr "Localizar todas as ações do \"mouse\" abaixo"
-
-#: lazarusidestrconsts.synfunfoldactiveifdef
-msgid "Unfold active Ifdef"
-msgstr "Expandir Ifdef ativo"
-
-#: lazarusidestrconsts.synfunfoldactiveifdefinselection
-msgid "Unfold active Ifdef in selection"
-msgstr "Expandir Ifdef ativo na seleção"
-
-#: lazarusidestrconsts.synfunfoldall
-msgctxt "lazarusidestrconsts.synfunfoldall"
-msgid "Unfold all"
-msgstr "Expandir tudo"
-
-#: lazarusidestrconsts.synfunfoldallifdef
-msgid "Unfold all Ifdef"
-msgstr "Expandir todos Ifdef"
-
-#: lazarusidestrconsts.synfunfoldallifdefinselection
-msgid "Unfold all Ifdef in selection"
-msgstr "Expandir todos Ifdef na seleção"
-
-#: lazarusidestrconsts.synfunfoldallinselection
-msgid "Unfold all in selection"
-msgstr "Expandir tudo na seleção"
-
-#: lazarusidestrconsts.synfunfoldcomments
-msgid "Unfold comments"
-msgstr "Expandir comentários"
-
-#: lazarusidestrconsts.synfunfoldcommentsinselection
-msgid "Unfold comments in selection"
-msgstr "Expandir comentários na seleção"
-
-#: lazarusidestrconsts.synfunfoldinactiveifdef
-msgid "Unfold inactive Ifdef"
-msgstr "Expandir Ifdef inativo"
-
-#: lazarusidestrconsts.synfunfoldinactiveifdefinselection
-msgid "Unfold inactive Ifdef in selection"
-msgstr "Expandir Ifdef inativo na seleção"
 
 #: lazarusidestrconsts.synspelloptmousewheelchangestabs
 msgid "Mouse-wheel changes tabs"
