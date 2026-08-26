@@ -404,6 +404,13 @@ pull_lazarus_upstream() {
         log_ok "Merge from upstream complete"
     fi
 
+    # Fold in any commits other developers pushed to origin that upstream/main
+    # does not contain (upstream merged one side of history, origin the other),
+    # so the push below is a clean fast-forward of origin/main. No-op when local
+    # already descends from origin/main; without this the push would be rejected
+    # as non-fast-forward and abort the auto-update.
+    git -C "$LAZARUS_DIR" merge --no-edit -X ours origin/main 2>&1 || resolve_ours_conflicts
+
     log_info "Pushing to origin..."
     git -C "$LAZARUS_DIR" push origin main 2>&1
     log_ok "Pushed to adaloveless/Lazarus"
