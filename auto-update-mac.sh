@@ -394,8 +394,13 @@ pull_lazarus_upstream() {
         git -C "$LAZARUS_DIR" merge --ff-only upstream/main 2>&1
         log_ok "Fast-forward merge from upstream"
     else
+        # This fork carries its own IDE/build changes, so a plain merge hits
+        # conflicts whenever upstream rewrote the same files (upstream even
+        # deleted lcl/Makefile* which this fork's make-based build still uses).
+        # -X ours keeps the fork side on overlapping hunks; resolve_ours_conflicts
+        # finishes the merge for the add/delete cases -X ours cannot decide.
         log_info "Merging upstream into local branch ($local_commits local commit(s) preserved)..."
-        git -C "$LAZARUS_DIR" merge --no-edit upstream/main 2>&1
+        git -C "$LAZARUS_DIR" merge --no-edit -X ours upstream/main 2>&1 || resolve_ours_conflicts
         log_ok "Merge from upstream complete"
     fi
 
@@ -405,15 +410,45 @@ pull_lazarus_upstream() {
     LAZARUS_UPDATED=1
 }
 
+# git leaves add/delete (modify/delete) conflicts hanging even after -X ours,
+# which would wedge an unattended auto-update. Prefer the fork version of every
+# remaining conflicted path, then commit the in-progress merge. Returns non-zero
+# only if the merge still cannot be completed.
+resolve_ours_conflicts() {
+    local conflicted
+    conflicted=$(git -C "$LAZARUS_DIR" ls-files -u 2>/dev/null | awk '{print $4}' | sort -u)
+    if [ -n "$conflicted" ]; then
+        log_warn "Resolving $(echo "$conflicted" | wc -l | tr -d ' ') conflicted path(s) in favor of the fork version"
+        local f
+        while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            git -C "$LAZARUS_DIR" checkout --ours -- "$f" 2>/dev/null
+            git -C "$LAZARUS_DIR" add -- "$f"
+        done <<< "$conflicted"
+    fi
+    if [ -f "$LAZARUS_DIR/.git/MERGE_HEAD" ]; then
+        git -C "$LAZARUS_DIR" commit --no-edit 2>&1 || return 1
+    fi
+    return 0
+}
+
 pull_lazarus_origin() {
     if [ "$LAZARUS_UPDATED" -eq 1 ] && [ "$UPSTREAM_UPDATED" -eq 0 ]; then
-        # If ff-only pull fails (local branch diverged from origin/main), reset to origin/main.
         log_header "Pulling Lazarus origin changes"
-        if ! git -C "$LAZARUS_DIR" pull --ff-only origin main 2>&1; then
-            log_warn "Lazarus --ff-only pull failed; reset --hard origin/main (pristine mode)"
-            git -C "$LAZARUS_DIR" reset --hard origin/main || { log_err "Lazarus reset failed"; return 1; }
+        # If HEAD already carries a fresh upstream merge, origin/main diverged
+        # from it and ff-only/reset --hard origin/main would silently DROP that
+        # merge. Merge origin in instead (fork-preferring on conflict). Plain
+        # pristine envs (no upstream merge) keep the old ff-only + reset fallback.
+        if git -C "$LAZARUS_DIR" merge-base --is-ancestor upstream/main HEAD 2>/dev/null; then
+            git -C "$LAZARUS_DIR" merge --no-edit -X ours origin/main 2>&1 || resolve_ours_conflicts
+            log_ok "Lazarus origin merged"
+        else
+            if ! git -C "$LAZARUS_DIR" pull --ff-only origin main 2>&1; then
+                log_warn "Lazarus --ff-only pull failed; reset --hard origin/main (pristine mode)"
+                git -C "$LAZARUS_DIR" reset --hard origin/main || { log_err "Lazarus reset failed"; return 1; }
+            fi
+            log_ok "Lazarus origin pulled"
         fi
-        log_ok "Lazarus origin pulled"
     fi
 }
 
