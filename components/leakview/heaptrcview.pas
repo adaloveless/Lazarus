@@ -105,7 +105,7 @@ resourcestring
   sfrmSelectFileWithDebugInfo = 'Select file with debug info';
   sfrmSelectTrcFile = 'Select file with trace log';
   brkFailedToOpenFile = 'Failed to open file';
-  brkFailedToOpenSJumpToCurren = 'Failed to open "%s". Jump to current editor instead?';
+  brkFailedToOpenSJumpToCurren = 'Failed to open "%s". Jump to appropriate line in current editor instead?';
   brkFailedToOpenS = 'Failed to open "%s".';
 
 var
@@ -390,6 +390,11 @@ begin
   finally
     trvTraceInfo.EndUpdate;
   end;
+  if trvTraceInfo.Items.Count <> 0 then
+  begin
+    trvTraceInfo.SetFocus;
+    trvTraceInfo.Items.GetFirstNode.Selected := true;
+  end;
   if trvTraceInfo.Items.TopLvlCount = 1 then
     trvTraceInfo.Items.TopLvlItems[0].Expand(False);
 end;
@@ -612,14 +617,14 @@ begin
 
   r := False;
   try
-    r := LazarusIDE.DoOpenFileAndJumpToPos(nm, Point(Column, Line), -1, -1, -1, [ofOnlyIfExists, ofRegularFile]) = mrOK;
+    r := LazarusIDE.DoOpenFileAndJumpToPos(nm, Point(Column, Line), -1, -1, -1, [ofOnlyIfExists, ofRegularFile, ofQuiet]) = mrOK;
   except
   end;
   if not r then begin
     try
       nm := LazarusIDE.FindSourceFile(SrcFile, '', [fsfSearchForProject, fsfUseDebugPath, fsfMapTempToVirtualFiles, fsfUseIncludePaths, fsfWrongLeftPath, fsReturnFullPath] );
       if nm <> '' then
-        r := LazarusIDE.DoOpenFileAndJumpToPos(nm, Point(Column, Line), -1, -1, -1, [ofOnlyIfExists, ofRegularFile]) = mrOK;
+        r := LazarusIDE.DoOpenFileAndJumpToPos(nm, Point(Column, Line), -1, -1, -1, [ofOnlyIfExists, ofRegularFile, ofQuiet]) = mrOK;
     except
     end;
   end;

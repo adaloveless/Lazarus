@@ -60,9 +60,11 @@ type
     procedure ReadPie(const AParams: TWMFParamArray);
     procedure ReadPolyFillMode(const AParams: TWMFParamArray);
     procedure ReadPolygon(const AParams: TWMFParamArray; Filled: Boolean);
+    procedure ReadPolyPolygon(const AParams: TWMFParamArray);
     procedure ReadRectangle(const AParams: TWMFParamArray);
     procedure ReadRoundRect(const AParams: TWMFParamArray);
     procedure ReadSetDIBtoDEV(const AParams: TWMFParamArray);
+    procedure ReadSetPixel(const AParams: TWMFParamArray);
     procedure ReadStretchDIB(const AParams: TWMFParamArray);
     function ReadString(const AParams: TWMFParamArray; AStartIndex, ALength: Integer): String;
     procedure ReadTextAlign(const AParams: TWMFParamArray);
@@ -476,7 +478,7 @@ begin
   x := SmallInt(LEToN(AParams[1]));
   len := SmallInt(LEToN(AParams[2]));
   opts := LEToN(AParams[3]);
-  if opts <> 0 then begin
+  if opts and (ETO_OPAQUE or ETO_CLIPPED) <> 0 then begin
     R.Bottom := SmallInt(LEToN(AParams[4]));
     R.Right := SmallInt(LEToN(AParams[5]));
     R.Top := SmallInt(LEToN(AParams[6]));
@@ -759,6 +761,77 @@ begin
   FImage.List.InsertComponent(item);
 end;
 
+{ Reads a series of closed polygons which can contain holes.
+  See https://wiki.freepascal.org/Developing_with_Graphics#Polygon_with_a_hole
+  how this is handled by the LCL. }
+procedure TlmfWMFReader.ReadPolyPolygon(const AParams: TWMFParamArray);
+var
+  numPolygons: word;
+  numPtsPerPolygon: array of word;
+  pts: TPointArray;
+  startPts: TPointArray;
+  P: TPoint;
+  i, j, k, numPts: Integer;
+  item: TlmfPolygon;
+  penStyle: TPenStyle;
+begin
+  numPolygons := LEToN(AParams[0]);
+
+  SetLength(numPtsPerPolygon, numPolygons);
+  SetLength(startPts, numPolygons);
+  numPts := 0;
+  k := 1;    // k is the index into the AParams array.
+  for i := 0 to numPolygons-1 do
+  begin
+    numPtsPerPolygon[i] := LEToN(AParams[k]);
+    inc(numPts, numPtsPerPolygon[i]);
+    inc(k);
+  end;
+
+  // Set length of points array, but overdimension to take care of the fact
+  // that each polygon may need to be closed explicitely.
+  SetLength(pts, numPts + Length(startPts)*2);
+
+  // Read points of each polygon from params array
+  numPts := 0;
+  for i := 0 to numPolygons-1 do
+  begin
+    for j := 0 to numPtsPerPolygon[i]-1 do
+    begin
+      P.X := SmallInt(LEToN(AParams[k]));
+      P.Y := SmallInt(LEToN(AParams[k+1]));
+      pts[numPts] := P;
+      if j = 0 then
+        // Remember the start points of each polygon
+        startPts[i] := P;
+      inc(k, 2);
+      inc(numPts);
+    end;
+    // Close polygon if required.
+    if not (pts[numPts-1] = startPts[i]) then
+    begin
+      pts[numPts] := startPts[i];
+      inc(numPts);
+    end;
+  end;
+
+  // Now define the "retreat" back to the very start point.
+  // See wiki article https://wiki.freepascal.org/Developing_with_Graphics#Polygon_with_a_hole
+  // why this is needed.
+  for i := Length(startPts)-2 downto 0 do
+  begin
+    pts[numPts] := startPts[i];
+    inc(numPts);
+  end;
+
+  // Fix length of points array
+  SetLength(pts, numPts);
+
+  // Add the polygon to the metafile image.
+  item := TlmfPolygon.Create(@pts[0], numPts, false, numPolygons-1);
+  FImage.List.InsertComponent(item);
+end;
+
 procedure TlmfWMFReader.ReadRecords(AStream: TStream);
 var
   recordStartPos: Int64;
@@ -834,7 +907,7 @@ begin
       META_FILLREGION:
         ;
       META_FLOODFILL:
-        ;
+        ReadFloodFill(params);
       META_FRAMEREGION:
         ;
       META_INVERTREGION:
@@ -853,16 +926,14 @@ begin
         ReadPolygon(params, true);
       META_POLYLINE:
         ReadPolygon(params, false);
-      {
       META_POLYPOLYGON:
-        ReadPolyPolygon(page, params);
-        }
+        ReadPolyPolygon(params);
       META_RECTANGLE:
         ReadRectangle(params);
       META_ROUNDRECT:
         ReadRoundRect(params);
       META_SETPIXEL:
-        ;
+        ReadSetPixel(params);
       META_TEXTOUT:
         ReadTextOut(params);
 
@@ -1029,6 +1100,23 @@ begin
       LogError('Image reading error: ' + E.Message);
     end;
   end;
+end;
+
+procedure TlmfWMFReader.ReadSetPixel(const AParams: TWMFParamArray);
+var
+  ptRec: PWMFPointRecord;
+  clrRec: PWMFColorRecord;
+  item: TlmfColor;
+begin
+  clrRec := PWMFColorRecord(@AParams[0]);
+  ptRec := PWMFPointRecord(@AParams[2]);
+
+  item := TlmfColor.Create(LEToN(ptRec^.X), LEToN(ptRec^.Y), colBlack);
+  item.r := clrRec^.ColorRED shl 8;
+  item.g := clrRec^.ColorGREEN shl 8;
+  item.b := clrRec^.ColorBLUE shl 8;
+  item.a := clrRec^.Reserved shl 8;
+  FImage.List.InsertComponent(item);
 end;
 
 procedure TlmfWMFReader.ReadStretchDIB(const AParams: TWMFParamArray);
