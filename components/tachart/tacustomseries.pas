@@ -387,8 +387,17 @@ end;
 
 procedure TCustomChartSeries.AfterAdd;
 begin
-  Legend.SetOwner(FChart);
-  Shadow.SetOwner(FChart);
+  // AfterAdd can run BEFORE this series' own fields exist: TCustomChartSeries.Create
+  // calls "inherited Create(AOwner)" first, which does InsertComponent -> the owning
+  // form broadcasts opInsert -> TChart.Notification (tagraph.pas) -> TChart.AddSeries
+  // -> AfterAdd -- all while FLegend/FShadow are still nil (they are assigned a few
+  // lines further down in the constructor). Dereferencing them here is an AV on any
+  // design-time series streamed from a .lfm.
+  // Skipping the calls is safe: AddSeries assigns FChart before calling AfterAdd, so
+  // the constructor's TChartSeriesLegend.Create(FChart)/TChartShadow.Create(FChart)
+  // already receive the correct owner.
+  if FLegend <> nil then Legend.SetOwner(FChart);
+  if FShadow <> nil then Shadow.SetOwner(FChart);
 end;
 
 procedure TCustomChartSeries.Assign(ASource: TPersistent);
