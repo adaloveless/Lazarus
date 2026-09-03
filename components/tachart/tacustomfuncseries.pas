@@ -617,7 +617,10 @@ end;
 procedure TBasicFuncSeries.AfterAdd;
 begin
   inherited AfterAdd;
-  FExtent.SetOwner(FChart);
+  // FExtent is created after "inherited Create" but AfterAdd can be reached from inside
+  // that inherited constructor (InsertComponent -> opInsert -> TChart.AddSeries).
+  if FExtent <> nil then
+    FExtent.SetOwner(FChart);
 end;
 
 procedure TBasicFuncSeries.Assign(ASource: TPersistent);

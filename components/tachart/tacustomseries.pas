@@ -791,9 +791,17 @@ end;
 procedure TChartSeries.AfterAdd;
 begin
   inherited;
-  Marks.SetOwner(FChart);
-  Marks.Arrow.SetOwner(FChart);
-  Marks.Margins.SetOwner(FChart);
+  // Same early-AfterAdd hazard as TCustomChartSeries.AfterAdd: FMarks is assigned in
+  // TChartSeries.Create only AFTER "inherited Create(AOwner)", but that inherited
+  // constructor can already reach here via InsertComponent -> opInsert ->
+  // TChart.Notification -> TChart.AddSeries -> AfterAdd. TBasicPointSeries.AfterAdd
+  // already guards its own fields the same way. AddSeries sets FChart before calling
+  // AfterAdd, so the constructor's TChartMarks.Create(FChart) still gets the right owner.
+  if FMarks <> nil then begin
+    Marks.SetOwner(FChart);
+    Marks.Arrow.SetOwner(FChart);
+    Marks.Margins.SetOwner(FChart);
+  end;
 end;
 
 procedure TChartSeries.AfterDraw;
