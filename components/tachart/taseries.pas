@@ -1086,7 +1086,10 @@ end;
 procedure TConstantLine.AfterAdd;
 begin
   inherited;
-  Arrow.SetOwner(ParentChart);
+  // FArrow is created after "inherited Create" but AfterAdd can be reached from inside
+  // that inherited constructor (InsertComponent -> opInsert -> TChart.AddSeries).
+  if FArrow <> nil then
+    Arrow.SetOwner(ParentChart);
 end;
 
 procedure TConstantLine.Assign(ASource: TPersistent);
