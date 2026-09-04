@@ -600,7 +600,13 @@ var
   AImageRes: TScaledImageListResolution;
   AEffect: TGraphicsDrawEffect;
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // Measure with the LCL Font (MeasureTextForControl), not the window font: WM_GETFONT
+  // is 0 while the handle is being created, so MeasureText falls back to the stock
+  // system font and under-measures. Same reason the button/checkbox/edit/statictext/
+  // groupbox sites were moved (6102d439d8). Measured C455: with the window font cleared
+  // and the LCL Font at Times New Roman 20pt, the fixed sites hold their numbers while
+  // this class's WM_GETFONT reading drops from (125,31) to (75,16).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     if BitBtn.CanShowGlyph(True) then
     begin

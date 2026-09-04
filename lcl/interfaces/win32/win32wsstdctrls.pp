@@ -2305,7 +2305,12 @@ end;
 class procedure TWin32WSToggleBox.GetPreferredSize(const AWinControl: TWinControl;
   var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // MeasureTextForControl (LCL Font), not MeasureText (WM_GETFONT) -- the last check-box
+  // family site still on the window font. TCustomCheckBox and TRadioButton were moved by
+  // 6102d439d8; a toggle box paints the same caption with the same Font, so it must
+  // measure the same way. Measured C455 with the window font cleared: this site's
+  // preferred size collapsed 145x35 -> 95x20 while the moved sites did not move at all.
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     Inc(PreferredWidth, 20);
     Inc(PreferredHeight, 4);
