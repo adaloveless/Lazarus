@@ -3417,7 +3417,7 @@ begin
     Result:='csDestroying'
   else if cfLoading in FControlFlags then
     Result:='cfLoading'
-  else if IsControlVisible then
+  else if not IsControlVisible then
     Result:='not IsControlVisible'
   else if AutoSizeDelayedHandle then
     Result:='AutoSizeDelayedHandle'
