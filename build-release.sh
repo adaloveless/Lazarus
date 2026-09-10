@@ -14,6 +14,73 @@ ARM_LINUX_CFG="$VP_DIR/vibepascal-arm-linux.cfg"
 DARWIN_X86_64_CFG="$VP_DIR/vibepascal-darwin-x86_64.cfg"
 DARWIN_AARCH64_CFG="$VP_DIR/vibepascal-darwin-aarch64.cfg"
 
+# --- Build-step status + artifact freshness (Lars, c645 2026-09-10) ---------
+# A darwin re-roll was one step from publishing a FOUR-MONTH-OLD IDE binary.
+# Two independent mechanisms allowed that, and both are addressed here.
+#
+# 1. STATUS LAUNDERING. Build steps were written `make ... 2>&1 | tail -N` with
+#    pipefail OFF, so the pipeline reports tail's exit 0 and a failed build walks
+#    on. build_lazbuild's `| grep -E "...|Error"` was worse: it matched the very
+#    word that signals failure and returned 0 for it. Measured, not assumed: a
+#    make returning 2 produced exit 0 through both shapes.
+# 2. PRESENCE, NEVER FRESHNESS. Every artifact copy tested only `[ -f "$x" ]`, so
+#    a binary left by an earlier roll -- or by a DIFFERENT TARGET, when a later
+#    link fails after an earlier one succeeded -- was packaged as if just built.
+#
+# Anything older than BUILD_EPOCH was not produced by this roll.
+BUILD_EPOCH="$(date +%s)"
+BUILD_LOG_DIR="${BUILD_LOG_DIR:-$HOME/lazarus-build-logs/$DATE_STAMP}"
+
+# run_build_step <logname> <summary-regex> -- <cmd...>
+# Runs cmd with the FULL output tee'd to a log that outlives the roll, prints a
+# filtered summary, and returns the COMMAND's status -- never the filter's.
+# Keeping the whole log is the point: the undefined-symbol list that root-caused
+# the darwin startlazarus failure had been cut off by `tail -10` for a month.
+run_build_step() {
+    local logname=$1; shift
+    local summary_re=$1; shift
+    [ "$1" = "--" ] && shift
+    mkdir -p "$BUILD_LOG_DIR"
+    local log="$BUILD_LOG_DIR/${logname}.log"
+    local rc=0
+    "$@" > "$log" 2>&1 || rc=$?
+    grep -E "$summary_re" "$log" | tail -40 || true
+    if [ "$rc" -ne 0 ]; then
+        echo "ERROR: build step '$logname' FAILED (exit $rc)."
+        echo "       Full log retained at: $log"
+        # Reprint the causal lines INSIDE the failure block. A human reading a
+        # long roll log truncates it from the top, so the one line that names
+        # the cause is exactly the line that never comes back.
+        echo "--- diagnostics ---"
+        grep -nE 'Undefined symbols|symbol\(s\) not found|^ld:|Fatal:|Error:' "$log" | head -20 || true
+        echo "--- tail ---"
+        tail -20 "$log"
+    fi
+    return $rc
+}
+
+# require_fresh_artifact <path> <label>
+# Fails unless <path> exists AND was written by THIS roll. Presence alone is not
+# evidence of a build.
+require_fresh_artifact() {
+    local path=$1
+    local label=$2
+    if [ ! -f "$path" ]; then
+        echo "ERROR: $label MISSING at $path -- this roll never produced it."
+        return 1
+    fi
+    local mtime
+    mtime=$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null || echo 0)
+    if [ "$mtime" -lt "$BUILD_EPOCH" ]; then
+        echo "ERROR: $label at $path is STALE."
+        echo "       mtime $(date -d "@$mtime" 2>/dev/null || echo "$mtime") predates this roll" \
+             "(started $(date -d "@$BUILD_EPOCH" 2>/dev/null || echo "$BUILD_EPOCH"))."
+        echo "       Refusing to package a binary this roll did not build."
+        return 1
+    fi
+    return 0
+}
+
 get_compiler_for_target() {
     local target=$1
     case "$target" in
@@ -278,12 +345,16 @@ build_lazbuild() {
     local os_target=$(echo "$target" | cut -d- -f2)
     local cpu_target=$(echo "$target" | cut -d- -f1)
 
-    make -C "$LAZARUS_DIR" lazbuild \
+    # Was `| grep -E "Linking|lines compiled|Fatal|Error"` with pipefail off,
+    # which returned grep's status: a make that failed while printing "Error"
+    # matched, and the step reported SUCCESS.
+    run_build_step "lazbuild-$target" "Linking|lines compiled|Fatal|Error" -- \
+        make -C "$LAZARUS_DIR" lazbuild \
         PP="$compiler" \
         FPCDIR="$VP_DIR" \
         OS_TARGET="$os_target" \
         CPU_TARGET="$cpu_target" \
-        OPT="-n @$cfg" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+        OPT="-n @$cfg"
 }
 
 build_darwin_ide() {
@@ -291,8 +362,14 @@ build_darwin_ide() {
     local cfg=$2
     local compiler=$(get_compiler_for_target "$target")
     local cpu_target=$(echo "$target" | cut -d- -f1)
-    local wrapper="/tmp/ppc${cpu_target}-darwin-wrapper"
-    local pcp="/tmp/lazbuild-pcp-${target}"
+    # NOT /tmp: on this builder /tmp is a 2G tmpfs shared by ~30 agents and has
+    # been observed at 97% full and cleared under running builds. A cross-target
+    # --build-ide whose PrimaryConfigPath vanishes mid-run can complete without
+    # linking an IDE at all. Keep both under a real filesystem.
+    local build_state="$HOME/.cache/lazarus-build"
+    mkdir -p "$build_state"
+    local wrapper="$build_state/ppc${cpu_target}-darwin-wrapper"
+    local pcp="$build_state/lazbuild-pcp-${target}"
 
     echo "=== Building Darwin IDE for $target ==="
 
@@ -317,12 +394,21 @@ EOF
     # "I want to have customdrawn LCL controls as a default fucking package").
     # --add-package registers + links customdrawn; --build-ide (NOT --build-ide-minimal)
     # is required because TBuildIDE.Minimal skips LoadAutoInstallPackages.
-    set -o pipefail
-    "$LAZARUS_DIR/lazbuild" --pcp="$pcp" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
+    # `--build-ide 2>&1 | tail -40` kept only the last 40 lines -- all of them
+    # routine unit compiles -- so a run that produced no "Linking" line and no
+    # IDE binary was indistinguishable from a good one. Keep the whole log.
+    run_build_step "darwin-ide-$target" "Linking|lines compiled|Fatal|Error|Fatal:" -- \
+        "$LAZARUS_DIR/lazbuild" --pcp="$pcp" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
         --cpu="$cpu_target" --os=darwin --ws=cocoa \
         --add-package "$LAZARUS_DIR/components/customdrawn/customdrawn.lpk" \
-        --build-ide 2>&1 | tail -40
-    set +o pipefail
+        --build-ide
+
+    # lazbuild has been observed exiting 0 for this call WITHOUT linking an IDE.
+    # Exit status alone is therefore not evidence; assert the artifact.
+    if ! require_fresh_artifact "$HOME/.lazarus/bin/${target}/lazarus" "Darwin IDE binary for $target"; then
+        echo "       lazbuild --build-ide reported success but produced no fresh IDE binary."
+        return 1
+    fi
 
     # Rewrite the build-side wrapper path in every .compiled state file so user
     # invocations of `lazbuild --compiler=<tarball>/compiler/ppcX` don't trip
@@ -590,12 +676,28 @@ build_darwin_starter() {
     local os_target=$(echo "$target" | cut -d- -f2)
     local cpu_target=$(echo "$target" | cut -d- -f1)
 
-    make -C "$LAZARUS_DIR" starter \
+    # -weak_framework UserNotifications: startlazarus links the cocoa widgetset,
+    # and cocoawsextctrls references five UserNotifications.framework ObjC classes
+    # (UNUserNotificationCenter, UNMutableNotificationContent, UNNotificationRequest,
+    # UNNotificationSound, UNTimeIntervalNotificationTrigger) from
+    # TCocoaWSCustomTrayIcon.newUserNotify. That framework is declared ONLY as
+    # UsageLinkerOptions in lcl/interfaces/lcl.lpk, which the package system
+    # applies -- so lazbuild-built targets link and make-built ones do not. This
+    # is why startlazarus has been absent from every darwin .app we have shipped.
+    # WEAK, matching the .lpk: the call site has no runtime availability guard,
+    # so hard-linking would break app LOAD on macOS older than 10.14.
+    # Non-fatal on purpose: a missing startlazarus degrades the bundle, whereas
+    # aborting the roll ships nothing at all. The copy sites assert freshness, so
+    # a failure here can no longer produce a symlink to a file we never bundled.
+    if ! run_build_step "darwin-starter-$target" "Linking|lines compiled|Fatal|Error|Undefined symbols|symbol\(s\) not found" -- \
+        make -C "$LAZARUS_DIR" starter \
         PP="$compiler" \
         FPCDIR="$VP_DIR" \
         OS_TARGET="$os_target" \
         CPU_TARGET="$cpu_target" \
-        OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -10
+        OPT="-n @$cfg -k-weak_framework -kUserNotifications" LCL_PLATFORM=cocoa; then
+        echo "WARNING: startlazarus did not build for $target; the .app will ship without it."
+    fi
 }
 
 build_darwin_lhelp() {
@@ -878,16 +980,23 @@ create_darwin_app_bundle() {
     mkdir -p "$LAZARUS_DIR/$app_name/Contents/MacOS"
     rm -f "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus"
 
-    # Copy IDE binary (from lazbuild primary config path or fallback)
-    if [ -f "$pcp_bin" ]; then
-        cp "$pcp_bin" "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus"
-    else
-        echo "WARNING: IDE binary not found at $pcp_bin"
+    # Copy IDE binary. FATAL if it is not fresh: this guard used to be a bare
+    # `[ -f "$pcp_bin" ]`, and a roll was caught about to package an IDE binary
+    # four months old because the file merely existed. Shipping nothing beats
+    # shipping a stale IDE under a new version number.
+    if ! require_fresh_artifact "$pcp_bin" "IDE binary for $target"; then
+        return 1
     fi
+    cp "$pcp_bin" "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus"
 
-    # Copy startlazarus
-    if [ -f "$LAZARUS_DIR/startlazarus" ]; then
+    # Copy startlazarus. Non-fatal, but freshness still required: the tree root
+    # holds ONE startlazarus for all targets, so a failed link here after a
+    # successful one for the other target would otherwise copy the WRONG
+    # ARCHITECTURE's binary into this bundle.
+    if require_fresh_artifact "$LAZARUS_DIR/startlazarus" "startlazarus for $target"; then
         cp "$LAZARUS_DIR/startlazarus" "$LAZARUS_DIR/$app_name/Contents/MacOS/startlazarus"
+    else
+        echo "WARNING: bundling $app_name WITHOUT startlazarus."
     fi
 
     file "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus" 2>/dev/null || true
@@ -1022,11 +1131,15 @@ package_release() {
     # Darwin: include IDE binary, startlazarus, and .app bundle
     if [[ "$target" == *-darwin ]]; then
         local cpu_target=$(echo "$target" | cut -d- -f1)
+        # Same presence-not-freshness guard as create_darwin_app_bundle had.
+        # Both sites must assert, or the .app is fixed while the tarball's
+        # bin/lazarus stays stale.
         local pcp_bin="$HOME/.lazarus/bin/${target}/lazarus"
-        if [ -f "$pcp_bin" ]; then
-            cp "$pcp_bin" "$staging/bin/lazarus"
+        if ! require_fresh_artifact "$pcp_bin" "staged IDE binary for $target"; then
+            return 1
         fi
-        if [ -f "$LAZARUS_DIR/startlazarus" ]; then
+        cp "$pcp_bin" "$staging/bin/lazarus"
+        if require_fresh_artifact "$LAZARUS_DIR/startlazarus" "staged startlazarus for $target"; then
             cp "$LAZARUS_DIR/startlazarus" "$staging/bin/startlazarus"
         fi
         local app_name="lazarus-${cpu_target}-darwin.app"
@@ -1043,7 +1156,17 @@ package_release() {
             # ../../../../MacOS/startlazarus lands on the outer Contents/MacOS/startlazarus
             # binary that create_darwin_app_bundle already places, so the .app stays
             # self-contained no matter where it lives.
-            ln -sf ../../../../MacOS/startlazarus "$app_resources/startlazarus.app/Contents/MacOS/startlazarus"
+            # Only if the target actually exists in this bundle. Every darwin
+            # .app shipped so far carries a startlazarus.app pointing at a
+            # Contents/MacOS/startlazarus that was never built, because the link
+            # was written unconditionally while the build that produced it had
+            # been failing silently.
+            if [ -f "$app_macos/startlazarus" ]; then
+                ln -sf ../../../../MacOS/startlazarus "$app_resources/startlazarus.app/Contents/MacOS/startlazarus"
+            else
+                echo "WARNING: no startlazarus in $app_name; removing the inner startlazarus.app rather than shipping a dangling symlink."
+                rm -rf "$app_resources/startlazarus.app"
+            fi
 
             # Also make the app self-contained for Finder drag-to-/Applications installs.
             # LazarusDirectory quality checks require these source-tree neighbors; if they
