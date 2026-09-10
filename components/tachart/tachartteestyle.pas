@@ -1,4 +1,4 @@
-{
+{ ♦
  *****************************************************************************
   See the file COPYING.modifiedLGPL.txt, included in this distribution,
   for details about the license.
@@ -17,7 +17,9 @@
       TPieSeries.InnerRadiusPercent (a single donut hole) but no concentric
       ring decoration, so this overlays three hollow ellipse outlines through
       TChart.OnAfterDraw, which fires for the screen canvas and for any export
-      drawer alike.
+      drawer alike. The rings are sized from the radii the pie series ACTUALLY
+      drew at, not from the plot rectangle -- see TThreeRingPieFramer.AfterDraw
+      for why sizing from ClipRect does not frame the pie.
 
   Plus SetupStackedBandSeries, which builds the N same-axis stacked
   THorizBarSeries that a VCLTee "MultiBar = mbStacked" chart uses for a
@@ -43,11 +45,21 @@ type
   end;
 
   TChartBandSpecArray = array of TChartBandSpec;
+  TPieRadiusArray = array of Integer;
   TChartBandSeriesArray = array of THorizBarSeries;
 
-  { Draws three concentric hollow rings over a chart's plot area, at 1/3, 2/3
-    and 3/3 of the largest circle that fits. This is DECORATION only -- the
-    rings are not driven by series data. Owned by the chart it frames. }
+  { Draws three concentric hollow rings centred on a chart's plot area.
+
+    On a chart carrying THREE OR MORE pie series -- a multi-level donut built
+    from TPieSeries.FixedRadius + InnerRadiusPercent -- each ring traces one of
+    the three outermost series, so the frame outlines real data boundaries.
+    On a chart with one or two pie series the rings fall at 1/3, 2/3 and 3/3 of
+    the largest pie's radius, so the outer ring still lands on its rim. Only
+    when there is no pie series at all does it fall back to the plot rectangle.
+
+    The ring OUTLINES themselves carry no value -- they are decoration; what
+    changed is that they now align with the chart instead of floating over it.
+    Owned by the chart it frames. }
   TThreeRingPieFramer = class(TComponent)
   private
     FInnerColor: TColor;
@@ -87,6 +99,14 @@ function AttachThreeRingFrame(AChart: TChart): TThreeRingPieFramer;
 
 implementation
 
+uses
+  TARadialSeries;
+
+type
+  { TCustomPieSeries.Radius is protected. A descendant declared here may read
+    it; this type is never instantiated, it exists only for that access. }
+  TPieRadiusAccess = class(TCustomPieSeries);
+
 constructor TThreeRingPieFramer.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -96,31 +116,79 @@ begin
   FRingWidth := 3;
 end;
 
+{ Every pie radius drawn on AChart, ascending. TCustomPieSeries computes
+  FRadius during its own Draw, and OnAfterDraw fires after all series have
+  drawn, so the values are current by the time the framer runs. }
+function CollectPieRadii(AChart: TChart): TPieRadiusArray;
+var
+  i, j, t: Integer;
+  s: TBasicChartSeries;
+begin
+  Result := nil;
+  for i := 0 to AChart.SeriesCount - 1 do begin
+    s := AChart.Series[i];
+    if not (s is TCustomPieSeries) then continue;
+    t := TPieRadiusAccess(s).Radius;
+    if t <= 0 then continue;
+    SetLength(Result, Length(Result) + 1);
+    Result[High(Result)] := t;
+  end;
+  { Insertion sort: N is the number of pie series on one chart, i.e. tiny. }
+  for i := 1 to High(Result) do begin
+    t := Result[i];
+    j := i - 1;
+    while (j >= 0) and (Result[j] > t) do begin
+      Result[j + 1] := Result[j];
+      Dec(j);
+    end;
+    Result[j + 1] := t;
+  end;
+end;
+
 procedure TThreeRingPieFramer.AfterDraw(ASender: TChart; ADrawer: IChartDrawer);
 var
   pr: TRect;
   cx, cy, radius: Integer;
+  radii: TPieRadiusArray;
 
-  procedure Ring(ANum: Integer; AColor: TColor);
-  var
-    rr: Integer;
+  procedure Ring(ARadius: Integer; AColor: TColor);
   begin
-    rr := (radius * ANum) div 3;
-    if rr <= 0 then exit;
+    if ARadius <= 0 then exit;
     ADrawer.SetBrushParams(bsClear, clBlack);
     ADrawer.SetPenParams(psSolid, AColor, FRingWidth);
-    ADrawer.Ellipse(cx - rr, cy - rr, cx + rr, cy + rr);
+    ADrawer.Ellipse(cx - ARadius, cy - ARadius, cx + ARadius, cy + ARadius);
   end;
 
 begin
   pr := ASender.ClipRect;
   cx := (pr.Left + pr.Right) div 2;
   cy := (pr.Top + pr.Bottom) div 2;
-  radius := Min(pr.Right - pr.Left, pr.Bottom - pr.Top) div 2;
+
+  { Size the rings from the pie, not from the plot rectangle. TCustomPieSeries
+    shrinks its radius until its MARKS fit inside ClipRect, and FixedRadius
+    ignores ClipRect entirely, so a ClipRect-sized frame does not frame the
+    pie: the outer ring floats outside it and the middle ring cuts across the
+    slices at no meaningful radius. The centres never needed fixing -- a pie
+    already centres on CenterPoint(ClipRect), which is what cx,cy are. }
+  radii := CollectPieRadii(ASender);
+
+  if Length(radii) >= 3 then begin
+    { A real multi-level donut: outline its three outermost rings. }
+    Ring(radii[High(radii)], FOuterColor);
+    Ring(radii[High(radii) - 1], FMiddleColor);
+    Ring(radii[High(radii) - 2], FInnerColor);
+    exit;
+  end;
+
+  if Length(radii) > 0 then
+    radius := radii[High(radii)]
+  else
+    { No pie on this chart: the largest circle that fits, as before. }
+    radius := Min(pr.Right - pr.Left, pr.Bottom - pr.Top) div 2;
   if radius <= 0 then exit;
-  Ring(3, FOuterColor);
-  Ring(2, FMiddleColor);
-  Ring(1, FInnerColor);
+  Ring(radius, FOuterColor);
+  Ring((radius * 2) div 3, FMiddleColor);
+  Ring(radius div 3, FInnerColor);
 end;
 
 function AttachThreeRingFrame(AChart: TChart): TThreeRingPieFramer;
