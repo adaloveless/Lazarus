@@ -358,6 +358,14 @@ function Extract-VPBinaries {
     # is present but has no versioned_tarball field, and that case still has to invalidate.
     # One-time effect on upgrade: every existing install re-extracts once, because the key format
     # changed. That is the cheap direction to be wrong in.
+    # c641 -- EXECUTED on lazdev (native pwsh 7.6.6), this block verbatim, four cases, fixed
+    # archive names AND fixed mtimes throughout so only LATEST.txt varies:
+    #   v42 vs v43 sidecar -> the OLD names+mtimes key is IDENTICAL in both (the defect: the
+    #     early return fires and the box never re-extracts); the new key DIFFERS. Fix works.
+    #   sidecar present but NO versioned_tarball -> Read-LATESTTxt returns $null, the WARN
+    #     fires, and the key STILL busts off the file hash. This is exactly why the FILE is
+    #     hashed rather than $latestData being reused, and it is now measured, not argued.
+    #   no sidecar at all -> key degrades to byte-identical to the old names+mtimes form.
     $latestFile = Join-Path $distDir "LATEST.txt"
     if (Test-Path $latestFile) {
         $latestHash = (Get-FileHash -Path $latestFile -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
@@ -941,9 +949,22 @@ function Remove-PackageFromAutoInstall {
     #     It did NOT finish a whole IDE: that throwaway pcp later tripped an unrelated
     #     "Can't find unit FpImgReaderMachoFile" in LazDebuggerFp. Unrelated to this fix
     #     (both units are fpdebug.lpk members) and it is downstream of what is under test.
-    # NOT proven: this PowerShell has never executed. lazdev has no pwsh (re-measured
-    # 2026-09-10). What was verified here is the Lazarus-side mechanism and the XML shape,
-    # not the XML rewrite code itself. It needs one real Windows run before it is trusted.
+    # c641 -- the "this PowerShell has never executed" caveat that stood here is GONE, and
+    # the boundary behind it was never real. lazdev had no pwsh only because nobody had
+    # downloaded one; PowerShell 7 ships a self-contained linux-x64 tarball needing no
+    # installer and no root. This function has now been EXECUTED on lazdev with both
+    # controls, driving the block extracted verbatim from this file:
+    #   POSITIVE: a 3-entry StaticAutoInstallPackages containing PackageCommonX_LCL ->
+    #     entry removed, Count 3->2, survivors RENUMBERED contiguously Item1/Item2 with
+    #     their original order preserved, staticpackages.inc line dropped, both Log-Info
+    #     lines fired.
+    #   NEGATIVE: the same two files with the package absent -> BOTH left byte-identical
+    #     (MD5 unchanged) and ZERO log lines. It does not rewrite what it should not touch.
+    # One measured cosmetic effect: [xml]::Save normalises <ItemN Value="X"/> to
+    # <ItemN Value="X" />. Standard XML, and laz2_XMLRead reads it back fine.
+    # STILL NOT PROVEN, and do not let the above be quoted as if it were: no run on real
+    # Windows. Parsing and Linux-side execution of the XML rewrite say nothing about the
+    # registry, lazbuild.exe, or path semantics on GOD's box.
     param(
         [Parameter(Mandatory)] [string] $PcpDir,
         [Parameter(Mandatory)] [string] $PackageName
