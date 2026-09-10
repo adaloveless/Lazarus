@@ -351,6 +351,38 @@ usage() {
     exit 1
 }
 
+# A package whose loadcheck failure is KNOWN-BENIGN on a given target. Kept tiny and
+# dated on purpose: an allowlist is a liability, so every entry names what was measured
+# and when, and anything NOT listed still aborts the roll.
+vp_loadcheck_known_benign() {
+    case "$1:$2" in
+        # 2026-09-10, re-measured against loadcheck f5d7308485: x86_64-win64 is 108/109
+        # with exactly ONE failure, librsvg -- "Can't find unit glib2 used by rsvg".
+        # rsvg.ppu is a genuine consumable unit we ship that genuinely cannot load on
+        # this target. It is not staleness and no rebuild fixes it; r25's shipped win64
+        # asset was cut from this same unit set.
+        #
+        # gtk2 WAS listed here and has been REMOVED, because the tool now handles it
+        # structurally and an allowlist entry that never fires is just a lie waiting to
+        # be believed. packages/gtk2/units/x86_64-win64/ holds buildgtk2.ppu and nothing
+        # else; buildgtk2 is an fpmake BUILD DRIVER -- a dummy unit whose whole interface
+        # is a uses clause over its own package -- so it became the package's sole "unit"
+        # and reported "Can't find unit gtk2 used by buildgtk2". loadcheck now skips build
+        # drivers (7 names, 37 ppus tree-wide) and prints SKIPPED with the denominator
+        # dropped to 109, so the package cannot vanish from the count silently.
+        #
+        # And do NOT restore the old justification that "gtk2/glib2 are not built for
+        # win64 at all". True as a fact, FALSE as a rule: glib2 lives IN the gtk2 package
+        # and gtk2's fpmake.pp declares
+        #   P.OSes:=AllUnixOSes+[Win32,Win64]-[darwin,iphonesim,ios]
+        # so win64 IS a declared target and nothing is mis-declared. What happened is
+        # that our win64 roll produced buildgtk2 and none of the units. That is not
+        # chased here and does not need chasing (Policy #13).
+        x86_64-win64:librsvg) return 0 ;;
+    esac
+    return 1
+}
+
 ensure_vp_packages() {
     local target=$1
     local cfg=$2
@@ -363,16 +395,275 @@ ensure_vp_packages() {
         exit 1
     fi
 
-    local pkg_count=$(find "$VP_DIR/packages" -type d -name "$target" -path "*/units/*" 2>/dev/null | wc -l)
+    # WHY THIS GATE EXISTS. It used to be `pkg_count -lt 10`, an EXISTENCE test standing
+    # in for a usability test -- the same shape as D003 (r16 shipped a v39 compiler
+    # announced as v42 because packaging checked shape and never content). Measured
+    # 2026-09-10: 118 x86_64-darwin package unit dirs sat beside a freshly rebuilt RTL,
+    # so this printed "VibePascal packages ready for x86_64-darwin (118 packages)" and
+    # SKIPPED -- and the roll died five seconds later with
+    # `Fatal: (10022) Can't find unit Variants used by DB`. A count of 118 was true and
+    # meaningless. "How many are there" is the wrong question.
+    #
+    # WHY IT IS NOT AN MTIME SWEEP, WHICH IS WHAT I WROTE FIRST AND PUSHED TO THIS BRANCH.
+    # The first version asked "is any package unit older than rtl/units/<target>/system.ppu"
+    # and rebuilt a majority-stale set. That predicate is WRONG, and the one target it
+    # changed behaviour on is the target it is wrong about:
+    #
+    #   x86_64-linux, 2026-09-10: 146 of 146 unit dirs are SIXTEEN DAYS older than the
+    #   RTL -- and all 146 load clean. The 09-03 RTL rebuild re-emitted BYTE-IDENTICAL
+    #   ppus (105 of 105 identical to the installed 3.3.1 set, system.ppu md5
+    #   19bbad742165a073b148d8c650cc632c on both sides), so it moved mtimes and changed
+    #   nothing else. The mtime gate moved 146 GOOD unit dirs to .stale-units/ and forced
+    #   a pointless 146-package rebuild -- driven and confirmed on a fixture, not argued.
+    #
+    # mtime and ABI validity are INDEPENDENT. What actually kills a roll is a unit whose
+    # recorded dependency CRCs no longer match the RTL it is about to be compiled against,
+    # so measure THAT, with Otto's dist/unit-set-loadcheck.sh (vibepascal f5d7308485):
+    # one program per package using every unit it ships, `-Cn` so a missing .so cannot
+    # fake a failure, `-n` so the host's ~/.fpc.cfg cannot resolve units from OUTSIDE the
+    # tree, `-FU` at a scratch dir so a silent recompile can neither touch the tree nor
+    # pass unnoticed. 45s for x86_64-linux's 146 packages against a 40-minute roll.
+    # Verified in BOTH directions before being trusted -- a harness that has quietly
+    # stopped being able to fail proves nothing: real tree 146/146 rc=0, and the
+    # negative-control tree (~/src/vibepascal-slices/linux-pkg-freshness/) 123/146,
+    # 23 problems, rc=1, reproducing this roll's own "Can't find unit Variants used by
+    # DB" verbatim.
+    #
+    # WHY A FAILED LOADCHECK DOES NOT AUTO-REBUILD, WHICH IS THE THIRD VERSION OF THIS
+    # GATE AND THE REASON THE SIX-TARGET SWEEP IS MANDATORY. Sweeping all six with the
+    # real script on 2026-09-10 says a bare `rc!=0 -> rebuild` rule ALSO over-fires, on
+    # two of six targets, for two DIFFERENT reasons neither of which is staleness:
+    #
+    # FIRST SWEEP, 2026-09-10 22:45Z, against loadcheck de075cff4e -- kept because it is
+    # what bought two of the rules below, and deleting the measurement that justified a
+    # rule leaves the rule looking arbitrary:
+    #
+    #   x86_64-linux   146/146 clean      rc=0
+    #   arm-linux      142/142 clean      rc=0
+    #   x86_64-darwin  118/118 clean      rc=0
+    #   aarch64-darwin 115/115 clean      rc=0
+    #   x86_64-win64   108/110, 2 fail    -> gtk2 + librsvg
+    #   aarch64-linux    0/143, all fail  -> "Fatal error: invalid -march= option:
+    #                                        `armv8-a'" -- the HOST ASSEMBLER refusing
+    #                                        the job, not a unit failing to load.
+    #
+    # Both of those were reported to Otto rather than worked around here, and BOTH ARE
+    # NOW FIXED IN THE TOOL. RE-SWEPT 2026-09-10 23:20Z against f5d7308485, both changed
+    # targets re-measured with the compiler get_compiler_for_target actually passes:
+    #
+    #   aarch64-linux  143/143 clean      rc=0   <-- was 0/143
+    #   x86_64-win64   108/109, 1 fail    rc=1   <-- was 108/110, 2 fail
+    #   (the clean four are byte-for-byte the same numbers as above)
+    #
+    # THE aarch64 FIX WAS `-s`, NOT A CFG OR AN `-XP` PREFIX, and the reason matters to
+    # anyone tempted to "help" this gate along by feeding loadcheck a cfg: `-Cn` already
+    # suppressed the LINK, but the compiler still ASSEMBLED, while unit loading and
+    # dependency-CRC checking both happen at COMPILE time -- so the script never needed
+    # an assembler at all. `-s` ("do not call assembler and linker") deletes the binutils
+    # dependency outright and needs nothing installed or kept in sync with a roll. A cfg
+    # would have been WORSE: it puts the INSTALLED /home/jason/fpc/.../units/<target>
+    # dirs back on the search path and defeats the `-n` that stops the sweep resolving
+    # units from outside the tree. DO NOT ADD A CFG HERE.
+    # (Why arm-linux passed all along while aarch64 did not: arm uses FPC's INTERNAL
+    # assembler and never hands arguments to as(1); aarch64 uses external GAS. The host
+    # as(1) rejects arm's arguments too -- arm simply never asks. Different code path,
+    # not a more robust target.)
+    #
+    # win64's gtk2 was the tool miscounting an fpmake BUILD DRIVER as a unit; loadcheck
+    # now SKIPs build drivers and drops the denominator to 109. librsvg survives as the
+    # ONE genuine benign failure -- see vp_loadcheck_known_benign.
+    #
+    # So: an ALL-FAIL result means the harness cannot run here, not that 143 unit sets
+    # rotted simultaneously -- warn and continue. NOTE THAT NO LIVE TARGET TRIGGERS THAT
+    # ARM ANY MORE, and it STAYS, because it is what stopped a bad harness answer moving
+    # 143 healthy unit dirs aside: a unit set does not rot all at once, a toolchain does.
+    # A short, dated allowlist covers the one remaining benign win64 failure. ANYTHING
+    # ELSE ABORTS THE ROLL rather than rebuilding it, because on a starved box a
+    # half-finished rebuild leaves a PARTIAL unit set that is strictly worse than the one
+    # it replaced, and Policy #13 forbids unrequested rebuilding.
+    # VP_FORCE_STALE_REBUILD=1 opts into the repair; VP_SKIP_LOADCHECK=1 opts out of the
+    # measurement. Either way this NEVER AGAIN prints a bare "ready" over a set it has
+    # been told is broken -- that false claim is the actual defect being fixed here.
+    #
+    # HONEST LIMIT, carry it wherever a green run is quoted: this proves the unit set
+    # LOADS, i.e. its recorded dependency CRCs still match. It does NOT prove those
+    # objects assemble, link or run -- `-Cn` skips the link and `-s` skips the assembler
+    # ON PURPOSE, so a wrong-arch or truncated .o PASSES here. Runtime proof is a
+    # separate artifact (dist/arm-runtime-proof.sh, dist/win64-runtime-proof.sh).
+    local pkg_dirs pkg_count
+    pkg_dirs=$(find "$VP_DIR/packages" -type d -name "$target" -path "*/units/*" 2>/dev/null)
+    pkg_count=$(printf '%s' "$pkg_dirs" | grep -c . || true)
+
+    local loadcheck="$VP_DIR/dist/unit-set-loadcheck.sh"
+    # NOT /tmp: same reason as build_darwin_ide -- /tmp here is a 2G tmpfs shared by ~30
+    # agents and has been seen at 97% full and cleared under a running build.
+    local lc_scratch="$BUILD_STATE_DIR/loadcheck"
+    local need_rebuild="" verdict="" lc_out="$lc_scratch/$target.loadcheck.log"
+
     if [ "$pkg_count" -lt 10 ]; then
-        echo "Only $pkg_count VibePascal packages found for $target. Building packages..."
+        need_rebuild="count"
+    elif [ -n "${VP_FORCE_STALE_REBUILD:-}" ]; then
+        echo "VP_FORCE_STALE_REBUILD set: rebuilding $target packages without measuring."
+        need_rebuild="forced"
+    elif [ -n "${VP_SKIP_LOADCHECK:-}" ]; then
+        verdict="loadcheck SKIPPED at operator request"
+        echo "WARNING: VP_SKIP_LOADCHECK is set, so the $target package unit set is NOT"
+        echo "         being verified. The count below is an existence check, not a"
+        echo "         usability one -- the exact blind spot that let a doomed unit set"
+        echo "         into a 40-minute build on 2026-09-10."
+    elif [ -x "$loadcheck" ]; then
+        echo "Verifying the $target VibePascal package unit set actually LOADS (~45s)..."
+        mkdir -p "$lc_scratch"
+        local lc_rc=0
+        TMPDIR="$lc_scratch" "$loadcheck" "$target" "$compiler" "$VP_DIR" > "$lc_out" 2>&1 || lc_rc=$?
+        cat "$lc_out"
+        if [ "$lc_rc" = 0 ]; then
+            verdict="loadcheck PASS"
+        elif [ "$lc_rc" != 1 ]; then
+            # rc>=2 is the SCRIPT failing (no compiler, no RTL, cannot mktemp), not the
+            # unit set failing. Do not rebuild 146 packages because a harness broke, and
+            # do not silently claim the set is fine either.
+            verdict="loadcheck UNAVAILABLE (rc=$lc_rc)"
+            echo "WARNING: $loadcheck could not run (rc=$lc_rc)."
+            echo "         The $target unit set is UNVERIFIED. If this roll fails with"
+            echo "         \"Can't find unit <X> used by <Y>\", it is the unit set, not the source."
+        else
+            local lc_bad lc_total lc_real=0 p
+            lc_bad=$(grep -c -E '^(FAILED|RECOMPILED) ' "$lc_out" 2>/dev/null || true)
+            lc_total=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
+            [ -n "$lc_total" ] || lc_total=0
+            for p in $(sed -n 's/^\(FAILED\|RECOMPILED\) \([^:]*\):.*/\2/p' "$lc_out"); do
+                vp_loadcheck_known_benign "$target" "$p" || lc_real=$((lc_real + 1))
+            done
+            if [ "$lc_total" -gt 0 ] && [ "$lc_bad" -ge "$lc_total" ]; then
+                # EVERY package failed. A unit set does not rot all at once; a toolchain
+                # does fail all at once. Treat this as an unusable harness, not as 143
+                # simultaneously broken packages.
+                verdict="loadcheck UNUSABLE on this host ($lc_bad/$lc_total failed)"
+                echo "WARNING: every $target package failed the loadcheck ($lc_bad of $lc_total)."
+                echo "         That is a harness/toolchain problem, not a unit set problem --"
+                echo "         check the first error above for an assembler or linker message."
+                echo "         The $target unit set is UNVERIFIED; continuing."
+            elif [ "$lc_real" -gt 0 ]; then
+                echo "ERROR: $lc_real of $lc_total $target package unit set(s) do not load against"
+                echo "       rtl/units/$target. Named above; full log: $lc_out"
+                echo "       Refusing to start a build on them -- it dies on its first unit with"
+                echo "       \"Can't find unit <X>\" and blames the SOURCE rather than the unit set."
+                echo "       Re-run with VP_FORCE_STALE_REBUILD=1 to rebuild the unit set first."
+                exit 1
+            else
+                verdict="loadcheck PASS ($lc_bad known-benign)"
+                echo "NOTE: $lc_bad $target package(s) failed the loadcheck and ALL of them are"
+                echo "      known-benign for this target (see vp_loadcheck_known_benign). Continuing."
+            fi
+        fi
+    else
+        verdict="loadcheck ABSENT"
+        echo "WARNING: no $loadcheck, so the $target unit set is UNVERIFIED."
+        echo "         Expected it in the VibePascal tree (de075cff4e, fixed in f5d7308485)."
+    fi
+
+    # INFORMATIONAL ONLY -- NEVER A GATE. Reported because the mtime skew is real, looks
+    # alarming, and cost two of us an evening on 2026-09-10 before we established it was
+    # harmless. Printing it next to a loadcheck PASS is what stops the next person
+    # rediscovering "the landmine" and rebuilding 146 good packages over it.
+    case "$verdict" in
+    "loadcheck PASS"*)
+        if [ -f "$rtl_units/system.ppu" ]; then
+            local d older=0
+            while IFS= read -r d; do
+                [ -n "$d" ] || continue
+                if [ -n "$(find "$d" -name '*.ppu' ! -newer "$rtl_units/system.ppu" -print -quit 2>/dev/null)" ]; then
+                    older=$((older + 1))
+                fi
+            done <<EOF
+$pkg_dirs
+EOF
+            if [ "$older" -gt 0 ]; then
+                echo "NOTE: $older of $pkg_count $target unit dir(s) predate rtl/units/$target/system.ppu"
+                echo "      ($(date -r "$rtl_units/system.ppu" '+%F %T' 2>/dev/null)) and ALL OF THEM LOAD CLEAN."
+                echo "      mtime is not the discriminator here -- do not rebuild on this alone."
+            fi
+        fi ;;
+    esac
+
+    if [ -n "$need_rebuild" ]; then
+        if [ "$need_rebuild" = count ]; then
+            echo "Only $pkg_count VibePascal package unit set(s) found for $target. Building packages..."
+        else
+            # A plain `make packages` here is a NO-OP and that is the trap: fpmake compares
+            # package SOURCES to their units, the sources have not changed, so it returns
+            # rc=0 in about a second having rebuilt nothing. Measured 2026-09-10. Moving
+            # the unit dir aside is not a workaround for a stubborn tool -- an ABSENT unit
+            # dir is the exact input that makes fpmake rebuild it cleanly (Otto recovered
+            # 15 x86_64-darwin dirs this way the same day). Moved, never deleted, so a bad
+            # rebuild is recoverable.
+            local attic="$VP_DIR/.stale-units/$target-$(date -u '+%Y%m%dT%H%M%SZ')"
+            mkdir -p "$attic"
+            printf '%s\n' "$pkg_dirs" | while IFS= read -r d; do
+                [ -n "$d" ] || continue
+                mv "$d" "$attic/$(printf '%s' "${d#$VP_DIR/packages/}" | tr / _)" 2>/dev/null || true
+            done
+            echo "  Previous units moved to $attic"
+        fi
+
         cd "$VP_DIR"
         local os_target=$(echo "$target" | cut -d- -f2)
         local cpu_target=$(echo "$target" | cut -d- -f1)
         make packages PP="$compiler" OS_TARGET="$os_target" CPU_TARGET="$cpu_target" OPT="-n @$cfg" 2>&1 | grep -E "^\[|Compiled package|Fatal|Error" || true
         cd "$LAZARUS_DIR"
+
+        # Re-measure rather than assume. Declaring "ready" over a set that is still broken
+        # IS the original defect, so refuse loudly instead of handing a doomed unit set to
+        # a 40-minute IDE build that dies on its first unit and blames the source.
+        pkg_dirs=$(find "$VP_DIR/packages" -type d -name "$target" -path "*/units/*" 2>/dev/null)
+        pkg_count=$(printf '%s' "$pkg_dirs" | grep -c . || true)
+        if [ "$pkg_count" -lt 10 ]; then
+            echo "ERROR: only $pkg_count VibePascal package unit set(s) for $target after a rebuild."
+            echo "       Previous units are in $VP_DIR/.stale-units if this needs unpicking."
+            exit 1
+        fi
+        if [ -x "$loadcheck" ] && [ -z "${VP_SKIP_LOADCHECK:-}" ]; then
+            echo "Re-verifying the rebuilt $target unit set..."
+            mkdir -p "$lc_scratch"
+            local lc_rc2=0
+            TMPDIR="$lc_scratch" "$loadcheck" "$target" "$compiler" "$VP_DIR" > "$lc_out" 2>&1 || lc_rc2=$?
+            cat "$lc_out"
+            if [ "$lc_rc2" = 1 ]; then
+                local lc_bad2 lc_total2 lc_real2=0 p2
+                lc_bad2=$(grep -c -E '^(FAILED|RECOMPILED) ' "$lc_out" 2>/dev/null || true)
+                lc_total2=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
+                [ -n "$lc_total2" ] || lc_total2=0
+                for p2 in $(sed -n 's/^\(FAILED\|RECOMPILED\) \([^:]*\):.*/\2/p' "$lc_out"); do
+                    vp_loadcheck_known_benign "$target" "$p2" || lc_real2=$((lc_real2 + 1))
+                done
+                if [ "$lc_total2" -gt 0 ] && [ "$lc_bad2" -ge "$lc_total2" ]; then
+                    verdict="loadcheck UNUSABLE on this host ($lc_bad2/$lc_total2 failed)"
+                    echo "WARNING: every $target package failed after the rebuild -- harness/toolchain,"
+                    echo "         not the unit set. Continuing UNVERIFIED."
+                elif [ "$lc_real2" -gt 0 ]; then
+                    echo "ERROR: the $target VibePascal package unit set STILL does not load after a"
+                    echo "       rebuild ($lc_real2 of $lc_total2). Refusing to continue."
+                    echo "       Previous units are in $VP_DIR/.stale-units if this needs unpicking."
+                    exit 1
+                else
+                    verdict="loadcheck PASS after rebuild ($lc_bad2 known-benign)"
+                fi
+            elif [ "$lc_rc2" != 0 ]; then
+                echo "WARNING: could not re-verify $target after the rebuild (rc=$lc_rc2); continuing UNVERIFIED."
+                verdict="loadcheck UNAVAILABLE (rc=$lc_rc2)"
+            else
+                verdict="loadcheck PASS after rebuild"
+            fi
+        else
+            verdict="rebuilt, UNVERIFIED"
+        fi
+        # A rebuild legitimately yields FEWER package dirs than the previous set: on
+        # 2026-09-10 the x86_64-darwin rebuild returned 103 of 118, and the 15 that
+        # dropped out are not Lazarus IDE dependencies -- the IDE build ran straight past
+        # them. A shrinking count is not an error; only the <10 floor is.
     fi
-    echo "VibePascal packages ready for $target ($pkg_count packages)"
+    echo "VibePascal packages ready for $target ($pkg_count packages, $verdict)"
 }
 
 build_lazbuild() {
