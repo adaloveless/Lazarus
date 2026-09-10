@@ -927,8 +927,15 @@ package_release() {
             echo "Bundled native x86_64-darwin VibePascal compiler from $(basename "$native_dir")." > "$staging/COMPILER_NOTES.txt"
             [ -f "$native_dir/COMPILER_NOTES.txt" ] && cat "$native_dir/COMPILER_NOTES.txt" >> "$staging/COMPILER_NOTES.txt"
         else
-            echo "NOTE: Native x86_64-darwin compiler not yet available (linker issue under investigation)." > "$staging/COMPILER_NOTES.txt"
-            echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
+            # A missing native compiler must be LOUD, and the shipped note must not assert a
+            # stale cause. r25 shipped both darwin tarballs with no compiler/ and a note reading
+            # "not yet available (linker issue under investigation)"; the staging dir simply did not
+            # exist yet, and that guessed cause was then read downstream as a current fact.
+            echo "WARNING: x86_64-darwin roll is DEGRADED -- no native compiler found under" >&2
+            echo "         $VP_DIR/dist/darwin-native (wanted vibepascal-native-x86_64-darwin-*/bin/ppcx64)." >&2
+            echo "         The tarball will ship WITHOUT compiler/ppcx64." >&2
+            echo "NOTE: this build does not bundle a native x86_64-darwin compiler." > "$staging/COMPILER_NOTES.txt"
+            echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately." >> "$staging/COMPILER_NOTES.txt"
         fi
     elif [ "$target" = "aarch64-darwin" ]; then
         local native_dir=$(find "$VP_DIR/dist/darwin-native" -maxdepth 1 -type d -name 'vibepascal-native-aarch64-darwin-*' 2>/dev/null | sort | tail -1)
@@ -938,8 +945,15 @@ package_release() {
             echo "Bundled native aarch64-darwin VibePascal compiler from $(basename "$native_dir")." > "$staging/COMPILER_NOTES.txt"
             [ -f "$native_dir/COMPILER_NOTES.txt" ] && cat "$native_dir/COMPILER_NOTES.txt" >> "$staging/COMPILER_NOTES.txt"
         else
-            echo "NOTE: Native aarch64-darwin compiler not yet available (self-compile crash under investigation)." > "$staging/COMPILER_NOTES.txt"
-            echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
+            # A missing native compiler must be LOUD, and the shipped note must not assert a
+            # stale cause. r25 shipped both darwin tarballs with no compiler/ and a note reading
+            # "not yet available (self-compile crash under investigation)"; the staging dir simply did not
+            # exist yet, and that guessed cause was then read downstream as a current fact.
+            echo "WARNING: aarch64-darwin roll is DEGRADED -- no native compiler found under" >&2
+            echo "         $VP_DIR/dist/darwin-native (wanted vibepascal-native-aarch64-darwin-*/bin/ppca64)." >&2
+            echo "         The tarball will ship WITHOUT compiler/ppca64." >&2
+            echo "NOTE: this build does not bundle a native aarch64-darwin compiler." > "$staging/COMPILER_NOTES.txt"
+            echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately." >> "$staging/COMPILER_NOTES.txt"
         fi
     fi
 
