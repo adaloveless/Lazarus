@@ -837,18 +837,27 @@ strip_stale_host_arch_artifacts() {
     # about which ARCH the dir belongs to -- so match the suffix and decide on the
     # arch token instead.
     #
-    # Hence the keep-guard is PREFIX-aware ($target or $target-*), not equality:
-    # aarch64-darwin-cocoa must survive an aarch64-darwin build. The stricter BGRA
-    # rule above (which also pins the WIDGET) runs first and still wins for the two
-    # BGRA libroots, so widening this catch-all cannot resurrect a wrong-widget
-    # BGRA dir. Simulated over all 5 targets before commit: every kept dir is
-    # target-arch, nothing target-arch is stripped.
+    # Hence the keep-guard is PREFIX-aware ($target or $target-$widget*), not
+    # equality: aarch64-darwin-cocoa must survive an aarch64-darwin build. The
+    # suffix is pinned to THIS target's widget rather than left open as $target-*,
+    # so a right-arch/WRONG-widget dir (aarch64-darwin-gtk2 in an aarch64-darwin
+    # build) is stripped as well. Outside the two BGRA libroots that shape is
+    # covered by no targeted strip above: components/virtualtreeview/lib and
+    # components/lclextensions/lib name their dirs <arch>-<widget>, so a
+    # $target-* guard would ship a wrong-widget lib dir -- the same stale-unit
+    # class this whole function exists to keep off the search path.
+    # Measured 2026-09-10 over BOTH the real shipped r25 tarball landscape and
+    # the live workdir landscape, all 6 targets: pinning the widget changes
+    # NOTHING that exists today (survivor sets byte-identical to the $target-*
+    # form in all 12 runs). With a wrong-widget dir planted in those two libroots
+    # the $target-* form keeps it while this form removes it and leaves every
+    # right-widget dir intact.
     local cross_arch_dir=""
     local cross_arch_base=""
     while IFS= read -r -d '' cross_arch_dir; do
         cross_arch_base=$(basename "$cross_arch_dir")
         case "$cross_arch_base" in
-            "$target"|"$target"-*) continue ;;
+            "$target"|"$target"-"$widget"*) continue ;;
         esac
         rm -rf "$cross_arch_dir"
     done < <(find "$staging" -type d -regextype posix-extended \
