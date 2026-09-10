@@ -1107,6 +1107,73 @@ create_darwin_app_bundle() {
     file "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus" 2>/dev/null || true
 }
 
+get_latest_darwin_native_dir() {
+    # Pick the newest macOS-hosted VibePascal compiler staging dir for $1 (a darwin target).
+    # Prints the path. rc: 0 = found, 1 = none staged, 2 = AMBIGUOUS (two tie for newest).
+    #
+    # WHY THIS IS NOT `sort | tail -1`, which is what it replaces: the names are
+    # vibepascal-native-<target>-<YYYYMMDD>[-v<N>]-<git-sha>, and a git sha carries NO
+    # ordering. A lexicographic sort therefore ranks two same-day builds by the hex of
+    # their commit -- a coin flip, and it looks completely healthy whichever way it lands.
+    # On 2026-09-10 it came up heads only because Otto tagged the newer directory: v56 is
+    # sha a187bbac34, v55 is eae5d3e919, same date, and 'a' sorts before 'e'. Untagged,
+    # `tail -1` would have bundled the OLDER compiler into both Mac tarballs and nothing
+    # anywhere would have said so. That is D003 exactly -- r16 shipped a v39 compiler
+    # announced as v42, because packaging checked shape and never content.
+    #
+    # The linux half of this script has never had the hole: get_latest_vp_bin_tarball
+    # parses v<N> and sorts NUMERICALLY. Two halves of one script disagreeing about what
+    # "latest" means is the same drift that produced the darwin IDE pickup bug, so this is
+    # deliberately written in that function's shape rather than a cleverer one.
+    #
+    # Key is (date, version), both numeric, version 0 when the name carries no -v<N>-.
+    # If the top two candidates TIE on that key, the names genuinely do not say which is
+    # newer, so this REFUSES instead of guessing: the caller then ships a tarball with no
+    # compiler and a note saying why -- loud and recoverable -- instead of a 50/50 pick
+    # that ships silently. The fix for a tie is one rename by whoever staged the build.
+    local target=$1 ranked top second top_path second_path
+    ranked=$(find "$VP_DIR/dist/darwin-native" -maxdepth 1 -type d \
+                  -name "vibepascal-native-${target}-*" 2>/dev/null |
+        while IFS= read -r dir; do
+            local base rest date_part version
+            base=$(basename "$dir")
+            rest=${base#vibepascal-native-${target}-}
+            date_part=${rest%%-*}
+            case "$date_part" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            version=0
+            case "$rest" in
+                *-v[0-9]*)
+                    version=${rest#*-v}
+                    version=${version%%-*}
+                    case "$version" in
+                        ''|*[!0-9]*) version=0 ;;
+                    esac
+                    ;;
+            esac
+            printf '%s %08d %s\n' "$date_part" "$version" "$dir"
+        done |
+        sort -k1,1n -k2,2n)
+
+    [ -z "$ranked" ] && return 1
+
+    top=$(printf '%s\n' "$ranked" | tail -1)
+    second=$(printf '%s\n' "$ranked" | tail -2 | head -1)
+    top_path=$(printf '%s\n' "$top" | cut -d' ' -f3-)
+    second_path=$(printf '%s\n' "$second" | cut -d' ' -f3-)
+    if [ "$top" != "$second" ] && \
+       [ "$(printf '%s\n' "$top" | cut -d' ' -f1,2)" = "$(printf '%s\n' "$second" | cut -d' ' -f1,2)" ]; then
+        echo "ERROR: cannot tell which $target compiler is newest -- these tie on date+version:" >&2
+        echo "         $(basename "$top_path")" >&2
+        echo "         $(basename "$second_path")" >&2
+        echo "       A git sha does not sort. Rename one to carry its version segment" >&2
+        echo "       (vibepascal-native-${target}-<date>-v<N>-<sha>) and re-run." >&2
+        return 2
+    fi
+    printf '%s\n' "$top_path"
+}
+
 copy_native_darwin_compiler_to_staging() {
     # Bundle the NATIVE macOS-hosted VibePascal compiler for a darwin target.
     # $1 staging  $2 target  $3 native exename  $4 expected `file` arch substring
@@ -1140,8 +1207,22 @@ copy_native_darwin_compiler_to_staging() {
     local notes="$staging/COMPILER_NOTES.txt"
     local native_dir declared actual out="$staging/compiler/$exename"
 
-    native_dir=$(find "$VP_DIR/dist/darwin-native" -maxdepth 1 -type d \
-                      -name "vibepascal-native-${target}-*" 2>/dev/null | sort | tail -1)
+    native_dir=$(get_latest_darwin_native_dir "$target")
+    if [ $? -eq 2 ]; then
+        # Ambiguous, not missing. The shipped note must say which one it is: r25's darwin
+        # pair shipped a note that guessed a cause, and the guess was read downstream as a
+        # current fact for months.
+        echo "WARNING: $target roll is DEGRADED -- the newest native compiler is not decidable" >&2
+        echo "         from the staging directory names (see the tie reported above)." >&2
+        echo "         The tarball will ship WITHOUT compiler/$exename." >&2
+        {
+            echo "NOTE: this build does not bundle a native $target compiler. Two staged builds on"
+            echo "the build host tie on date and version, so which is newer is not decidable from"
+            echo "their names, and this script will not guess. Nothing is wrong with this download."
+            echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately."
+        } > "$notes"
+        return 1
+    fi
 
     if [ -z "$native_dir" ] || [ ! -x "$native_dir/bin/$exename" ]; then
         echo "WARNING: $target roll is DEGRADED -- no native compiler found under" >&2
