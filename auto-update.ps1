@@ -892,6 +892,68 @@ function Rebuild-Lazbuild {
     Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
 }
 
+function Remove-PackageFromAutoInstall {
+    # Purge a package from the IDE's PERSISTED auto-install list so a subsequent
+    # --build-ide does not recompile it FROM CONFIG.
+    #
+    # Why Sanitize-PackageRegistrations is not enough: it deletes staticpackages.inc
+    # so "lazbuild will regenerate" it -- and lazbuild regenerates it FROM
+    # miscellaneousoptions.xml <StaticAutoInstallPackages>, which is the authoritative
+    # list and which nothing in this script touched. lazbuild --add-package ADDS to
+    # that list and it is cumulative, so a package that broke the build stays wired in
+    # and is recompiled on every retry. Dropping the --add-package argument on attempt
+    # 2+ therefore does NOT drop the package: all three attempts fail identically and
+    # the box is left with no IDE (GOD mrxp2wpx follow-up, confirmed on GOD's Windows
+    # box with commonx PRESENT). Both files have to be cleaned for the fallback to work.
+    param(
+        [Parameter(Mandatory)] [string] $PcpDir,
+        [Parameter(Mandatory)] [string] $PackageName
+    )
+
+    # 1) miscellaneousoptions.xml -- the authoritative list the IDE reads.
+    $miscXml = Join-Path $PcpDir "miscellaneousoptions.xml"
+    if (Test-Path $miscXml) {
+        try {
+            [xml]$mx = Get-Content $miscXml -Raw
+            $listNode = $mx.SelectSingleNode("//StaticAutoInstallPackages")
+            if ($listNode) {
+                $items = @($listNode.ChildNodes | Where-Object { $_.LocalName -match '^Item\d+$' })
+                $kept  = @($items | Where-Object { $_.GetAttribute("Value") -ne $PackageName } |
+                          ForEach-Object { $_.GetAttribute("Value") })
+                if ($kept.Count -ne $items.Count) {
+                    foreach ($i in $items) { [void]$listNode.RemoveChild($i) }
+                    for ($n = 0; $n -lt $kept.Count; $n++) {
+                        $e = $mx.CreateElement("Item$($n+1)")
+                        $e.SetAttribute("Value", $kept[$n])
+                        [void]$listNode.AppendChild($e)
+                    }
+                    $listNode.SetAttribute("Count", "$($kept.Count)")
+                    $mx.Save($miscXml)
+                    Log-Info "Purged $PackageName from StaticAutoInstallPackages (miscellaneousoptions.xml)"
+                }
+            }
+        } catch {
+            Log-Warn "Could not rewrite miscellaneousoptions.xml to drop $PackageName -- $($_.Exception.Message)"
+        }
+    }
+
+    # 2) staticpackages.inc -- generated include; drop the line so a stale copy is not reused.
+    #    Sanitize-PackageRegistrations may already have deleted this file; that is fine.
+    $incFile = Join-Path $PcpDir "staticpackages.inc"
+    if (Test-Path $incFile) {
+        try {
+            $lines = Get-Content $incFile
+            $filtered = $lines | Where-Object { $_ -notmatch [regex]::Escape($PackageName) }
+            if (@($filtered).Count -ne @($lines).Count) {
+                Set-Content -Path $incFile -Value $filtered -Encoding utf8
+                Log-Info "Purged $PackageName from staticpackages.inc"
+            }
+        } catch {
+            Log-Warn "Could not rewrite staticpackages.inc to drop $PackageName -- $($_.Exception.Message)"
+        }
+    }
+}
+
 function Sanitize-PackageRegistrations {
     # Strip stale UserPkgLinks from packagefiles.xml that point at OTHER Lazarus
     # checkouts (typically C:\temp\lazarus-* or sibling worktrees). When such a
@@ -1279,6 +1341,12 @@ function Rebuild-IDE {
             $keptLpks = @($addPkgLpks | Where-Object { $_ -ne $commonxLpkPath })
             $attemptPkgArgs = @()
             if ($keptLpks.Count -gt 0) { $attemptPkgArgs = @("--add-package") + $keptLpks }
+            # Dropping the --add-package argument is NOT enough on its own: the package is
+            # still in the IDE's PERSISTED auto-install list and would be recompiled from
+            # config, failing this attempt identically to the last one. Purge it from the
+            # pcp dir lazbuild actually uses ($envDir -- note Sanitize-PackageRegistrations
+            # cleans $env:LOCALAPPDATA\lazarus, which is not necessarily the same dir).
+            Remove-PackageFromAutoInstall -PcpDir $envDir -PackageName "PackageCommonX_LCL"
             Log-Warn "Retrying WITHOUT commonx (PackageCommonX_LCL) so the IDE still builds."
             Log-Warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
             Log-Warn "  The first 'Error:' line printed above is the cause. If it names a commonx unit with error 3069, the svn update did not take effect (see the svn messages from earlier in this run)."
