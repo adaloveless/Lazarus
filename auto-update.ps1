@@ -283,6 +283,11 @@ function Get-VPArchiveSet {
             Log-Warn "Otto ships v33 units as the stable baseline -- ensure dist/win64 contains vibepascal-v33-win64-units.tar.gz (or newer)"
             return @()
         }
+        # HIGHEST-VERSION units, deliberately NOT "units matching the bin's version number".
+        # A bin-only refresh over an older units baseline is Otto's intended steady state for
+        # compiler-internal fixes -- it keeps consumers on a ~3.4 MB pull instead of ~104 MB.
+        # v53 (2026-09-02) is the first ship to use it: bin v53 paired with units v52. A strict
+        # version-match here would break that pairing and every one after it. (Otto, 2026-09-02.)
         $units = (Sort-VPArchives $unitsCandidates)[0]
 
         # RTL overlay: prefer commit-hash prefix match against the bin's sha (e.g. v42-bin c7617b0
