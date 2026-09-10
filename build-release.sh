@@ -728,16 +728,35 @@ strip_stale_host_arch_artifacts() {
     # built in the shared workdir. The targeted strips above only cover the
     # test/BGRA/mouse/lhelp leaks; this catch-all removes any NON-target arch's
     # units|lib state tree so the tarball ships only its own arch's .compiled/
-    # .ppu/.o. The fully-anchored regex matches only clean arch-token leaf dirs
-    # (e.g. units/x86_64-darwin) -- never the widget-suffixed BGRA dirs
-    # (lib/<target>-gtk2-<hash>) handled above, nor arch-neutral Makefile.compiled
-    # at package roots. -prune stops find descending into a dir we then rm.
+    # .ppu/.o. -prune stops find descending into a dir we then rm.
+    #
+    # The optional (-[^/]*)? suffix is REQUIRED, not cosmetic. This regex was
+    # originally anchored at the bare arch token on the theory that a widget
+    # suffix meant "BGRA dir, already handled above". That was wrong, and it
+    # shipped: r25's aarch64-darwin tarball still carried 202 x86_64-darwin files
+    # (incl. 4 orphan .compiled) from components/virtualtreeview/lib/ and
+    # components/lclextensions/lib/, whose dirs are named <arch>-<widget>
+    # (x86_64-darwin-cocoa) and are covered by NO targeted strip above. Verified
+    # 2026-09-10 by listing the shipped r25 tarball. A widget suffix says nothing
+    # about which ARCH the dir belongs to -- so match the suffix and decide on the
+    # arch token instead.
+    #
+    # Hence the keep-guard is PREFIX-aware ($target or $target-*), not equality:
+    # aarch64-darwin-cocoa must survive an aarch64-darwin build. The stricter BGRA
+    # rule above (which also pins the WIDGET) runs first and still wins for the two
+    # BGRA libroots, so widening this catch-all cannot resurrect a wrong-widget
+    # BGRA dir. Simulated over all 5 targets before commit: every kept dir is
+    # target-arch, nothing target-arch is stripped.
     local cross_arch_dir=""
+    local cross_arch_base=""
     while IFS= read -r -d '' cross_arch_dir; do
-        [ "$(basename "$cross_arch_dir")" = "$target" ] && continue
+        cross_arch_base=$(basename "$cross_arch_dir")
+        case "$cross_arch_base" in
+            "$target"|"$target"-*) continue ;;
+        esac
         rm -rf "$cross_arch_dir"
     done < <(find "$staging" -type d -regextype posix-extended \
-        -regex '.*/(units|lib)/(x86_64|aarch64|arm|i386)-(linux|darwin|win64|win32)' \
+        -regex '.*/(units|lib)/(x86_64|aarch64|arm|i386)-(linux|darwin|win64|win32)(-[^/]*)?' \
         -prune -print0 2>/dev/null)
 }
 
