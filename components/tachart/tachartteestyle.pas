@@ -165,6 +165,12 @@ var
   i: Integer;
   s: THorizBarSeries;
 begin
+  // Result := nil first: SetLength takes Result as a var parameter, and the
+  // compiler's flow analysis counts that as a READ of an as-yet unassigned
+  // managed-type result (warning 5093). The IDE build compiles this package
+  // with -vewnhibq, so an unfixed 5093 would print in every user's IDE
+  // rebuild once this unit joins the package.
+  Result := nil;
   SetLength(Result, Length(ABands));
   for i := 0 to High(ABands) do begin
     s := THorizBarSeries.Create(AChart);
