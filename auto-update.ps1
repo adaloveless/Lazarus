@@ -905,6 +905,25 @@ function Remove-PackageFromAutoInstall {
     # 2+ therefore does NOT drop the package: all three attempts fail identically and
     # the box is left with no IDE (GOD mrxp2wpx follow-up, confirmed on GOD's Windows
     # box with commonx PRESENT). Both files have to be cleaned for the fallback to work.
+    #
+    # c640 -- what is PROVEN and what is not. The MECHANISM was reproduced end to end on
+    # lazdev with a real lazbuild and a deliberately-broken throwaway design-time package:
+    #   * `lazbuild --add-package <lpk>` persisted the package NAME into
+    #     miscellaneousoptions.xml as <StaticAutoInstallPackages Count="2"><ItemN Value=..>,
+    #     exactly the shape rewritten below (ide/lazbuild.lpr:1202 stores Package.Name).
+    #   * NEGATIVE control: re-running `--build-ide` with NO --add-package argument at all
+    #     still compiled that package and died -- "Building IDE: Compile AutoInstall
+    #     Packages failed", exit 2. Dropping the argument really does not drop the package
+    #     (ide/lazbuild.lpr:679 loads the persisted list, not the command line).
+    #   * POSITIVE control: with the entry removed from the list -- the end state this
+    #     function produces -- the IDENTICAL command stopped compiling it entirely (0
+    #     mentions) and ran on through LCL/codetools/SynEdit, 4691 log lines vs 119.
+    #     It did NOT finish a whole IDE: that throwaway pcp later tripped an unrelated
+    #     "Can't find unit FpImgReaderMachoFile" in LazDebuggerFp. Unrelated to this fix
+    #     (both units are fpdebug.lpk members) and it is downstream of what is under test.
+    # NOT proven: this PowerShell has never executed. lazdev has no pwsh (re-measured
+    # 2026-09-10). What was verified here is the Lazarus-side mechanism and the XML shape,
+    # not the XML rewrite code itself. It needs one real Windows run before it is trusted.
     param(
         [Parameter(Mandatory)] [string] $PcpDir,
         [Parameter(Mandatory)] [string] $PackageName
@@ -938,7 +957,16 @@ function Remove-PackageFromAutoInstall {
     }
 
     # 2) staticpackages.inc -- generated include; drop the line so a stale copy is not reused.
-    #    Sanitize-PackageRegistrations may already have deleted this file; that is fine.
+    #    Sanitize-PackageRegistrations may already have deleted this file; that is fine (it
+    #    returns early when packagefiles.xml is absent, so this is not dead code).
+    #    c640 NAME CAVEAT, measured on a real generated file: the entries here are NOT package
+    #    names. TLazPackageGraph.SaveAutoInstallConfig writes
+    #    ExtractFileNameOnly(APackage.GetCompileSourceFilename) -- e.g. package "syneditdsgn"
+    #    appears as "allsyneditdsgn". The name match below is safe for PackageCommonX_LCL only
+    #    because commonx ships lcl/PackageCommonX_LCL.pas, so its compile source happens to
+    #    share the package name. Before reusing this helper for any OTHER package, check what
+    #    that package's compile source unit is actually called -- part 1 (the authoritative
+    #    miscellaneousoptions.xml list) keys on the real package name and is unaffected.
     $incFile = Join-Path $PcpDir "staticpackages.inc"
     if (Test-Path $incFile) {
         try {
@@ -1344,8 +1372,11 @@ function Rebuild-IDE {
             # Dropping the --add-package argument is NOT enough on its own: the package is
             # still in the IDE's PERSISTED auto-install list and would be recompiled from
             # config, failing this attempt identically to the last one. Purge it from the
-            # pcp dir lazbuild actually uses ($envDir -- note Sanitize-PackageRegistrations
-            # cleans $env:LOCALAPPDATA\lazarus, which is not necessarily the same dir).
+            # pcp dir lazbuild is actually passed ($envDir).
+            # c640 correction: an earlier note here warned that $envDir might differ from the
+            # dir Sanitize-PackageRegistrations hardcodes. Measured -- it does not. Both are
+            # Join-Path $env:LOCALAPPDATA "lazarus", computed identically, and --pcp=$envDir is
+            # the only pcp this script ever passes. Do not "fix" a divergence that is not there.
             Remove-PackageFromAutoInstall -PcpDir $envDir -PackageName "PackageCommonX_LCL"
             Log-Warn "Retrying WITHOUT commonx (PackageCommonX_LCL) so the IDE still builds."
             Log-Warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
