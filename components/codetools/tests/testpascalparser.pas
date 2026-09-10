@@ -1275,6 +1275,11 @@ procedure TTestPascalParser.TestUnleashedInlineVarInitTypeDisplay;
 // {$mode unleashed} and {$mode delphi} alike (SizeOf 8, RTTI name Int64).
 // A leading sign is a separate atom, so -1 and -1.0 used to miss the literal
 // scan entirely and come back with a different answer than 1 and 1.0 did.
+// The i..n cases are constant EXPRESSIONS rather than bare literals: a
+// literal that merely starts the term does not give the term's type
+// (1/2 is Double, 1+0.5 is a real), and an integer constant expression
+// reaching the generic resolver used to display the shared 'Integer'
+// default instead of the Int64 the compiler gives it.
 var
   Tool: TCodeTool;
   Node: TCodeTreeNode;
@@ -1296,7 +1301,12 @@ begin
   '  var f := ''hello'';',
   '  var g := true;',
   '  var h := nil;',
-  '  Writeln(a,b,c,d,e,f,g);',
+  '  var i := 1/2;',
+  '  var j := 1+0.5;',
+  '  var k := 2*3;',
+  '  var m := -(1);',
+  '  var n := 1 div 2;',
+  '  Writeln(a,b,c,d,e,f,g,i,j,k,m,n);',
   'end;',
   'end.']);
   Add('end.');
@@ -1310,7 +1320,8 @@ begin
     Node:=Node.Next;
   end;
   AssertEquals('inline var init type display',
-    'a=Int64 b=Int64 c=Int64 d=Double e=Double f=String g=Boolean h=Pointer ',
+    'a=Int64 b=Int64 c=Int64 d=Double e=Double f=String g=Boolean h=Pointer '
+   +'i=Double j=Double k=Int64 m=Int64 n=Int64 ',
     Actual);
 end;
 

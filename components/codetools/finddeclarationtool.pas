@@ -16084,16 +16084,19 @@ end;
 function TFindDeclarationTool.ExtractInlineVarInitType(
   VarDefNode: TCodeTreeNode): string;
 // Infer a display type string for `var x := expr` declarations without an
-// explicit type annotation. Handles simple literals (Integer, Double, String,
+// explicit type annotation. Handles simple literals (Int64, Double, String,
 // Char, Boolean, Pointer), tuple literals with scalar or nested elements,
 // and identifier/function-call expressions resolved via FindTermTypeAsString.
 // Returns '' when inference is not possible.
 
-  function ScanLiteralType: string;
+  function ScanLiteralType(out WholeTerm: boolean): string;
+  // WholeTerm reports whether the literal is the ENTIRE initialiser. A literal
+  // that only starts the term (`1` in `1/2`) does not give the term's type.
   var
-    SignStartPos: integer;
+    SignStartPos, LiteralStartPos: integer;
   begin
     Result:='';
+    WholeTerm:=false;
     if CurPos.StartPos>SrcLen then exit;
     // A leading sign is its own atom, so `var x := -1` would otherwise miss the
     // literal path entirely and fall through to the generic term resolver,
@@ -16112,9 +16115,18 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
       end;
     end;
     if AtomIsRealNumber then
-      // The compiler picks the narrowest real type the constant fits, so this
-      // is a display default, not the declared type: 1.0 compiles as Single
-      // and 1.5e300 as Extended (both measured against VibePascal 3.3.1).
+      // A display default, NOT what the compiler currently infers. A real
+      // literal is typed by {$MINFPCONSTPREC} (default 32): Single when the
+      // constant round-trips exactly through single, Extended otherwise --
+      // so Double is unreachable at the default and the split is on exact
+      // representability, not on magnitude. Measured 2026-09-10 against
+      // VibePascal 3.3.1 x86_64, type read at runtime via PTypeInfo:
+      // 1.0 and 0.5 -> Single, but 0.1, 3.4e38 (inside Single's RANGE, yet
+      // not exact) and 1.5e300 -> Extended. A lexical scan cannot evaluate
+      // that predicate. Double is what Delphi shows, and FPCDeveloper
+      // (2026-09-10) is changing the inference site so an un-annotated real
+      // inline var takes the default real type instead of inheriting the
+      // literal's narrowed one -- i.e. the compiler converges on this.
       Result:='Double'
     else if AtomIsNumber then
       // Not Integer: an inline var initialised from an integer literal is
@@ -16137,12 +16149,22 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
       MoveCursorToCleanPos(SignStartPos);
       ReadNextAtom;
     end;
+    if Result<>'' then begin
+      // peek one atom to see whether the literal ends the initialiser, then
+      // put the cursor back on the literal: callers rely on that position
+      LiteralStartPos:=CurPos.StartPos;
+      ReadNextAtom;
+      WholeTerm:=(CurPos.StartPos>SrcLen) or (CurPos.Flag=cafSemicolon);
+      MoveCursorToCleanPos(LiteralStartPos);
+      ReadNextAtom;
+    end;
   end;
 
   function ScanTupleType: string;
   var
     ElemType, FieldName: string;
     SavedPos: integer;
+    ElemWholeTerm: boolean;
   begin
     Result:='';
     if CurPos.Flag<>cafRoundBracketOpen then exit;
@@ -16167,7 +16189,9 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
       if CurPos.Flag=cafRoundBracketOpen then
         ElemType:=ScanTupleType()
       else
-        ElemType:=ScanLiteralType();
+        // inside a tuple the element, not the term, is being scanned, so the
+        // whole-term flag does not apply
+        ElemType:=ScanLiteralType(ElemWholeTerm);
       if ElemType='' then exit('');
       if FieldName<>'' then
         Result:=Result+FieldName+': '+ElemType
@@ -16184,13 +16208,14 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
   end;
 
 var
-  ExprStart, ExprEnd, BracketDepth: integer;
+  ExprStart, ExprEnd, BracketDepth, TermStartPos: integer;
   TermPos: TAtomPosition;
   Params: TFindDeclarationParams;
   ExprType: TExpressionType;
   FieldContext: TFindContext;
   FieldTypeNode: TCodeTreeNode;
-  IsForIn: boolean;
+  IsForIn, LiteralIsWholeTerm: boolean;
+  LiteralFallback: string;
 begin
   Result:='';
   if (VarDefNode=nil) or (VarDefNode.Desc<>ctnVarDefinition) then exit;
@@ -16263,10 +16288,24 @@ begin
     exit;
   end;
   // literal paths first
+  LiteralFallback:='';
+  TermStartPos:=CurPos.StartPos;
   if CurPos.Flag=cafRoundBracketOpen then
     Result:=ScanTupleType()
-  else
-    Result:=ScanLiteralType();
+  else begin
+    Result:=ScanLiteralType(LiteralIsWholeTerm);
+    if (Result<>'') and (not LiteralIsWholeTerm) then begin
+      // The literal only STARTS the initialiser, so its own type is not the
+      // term's type: `var x := 1/2` is Double and `var x := 1+0.5` is a real,
+      // both measured, where the literal alone says Int64. Let the expression
+      // resolver answer, keeping the literal's type only as a backstop for
+      // when it cannot (it never answered better than this before).
+      LiteralFallback:=Result;
+      Result:='';
+      MoveCursorToCleanPos(TermStartPos);
+      ReadNextAtom;
+    end;
+  end;
   if Result<>'' then exit;
   // fallback: resolve the expression (identifier, function call, ...)
   // scan from first atom to end of term (';', or matched brackets)
@@ -16295,12 +16334,27 @@ begin
   try
     try
       Result:=FindTermTypeAsString(TermPos, Params, ExprType);
+      if Result<>'' then
+        case ExprType.Desc of
+        // FindExprTypeAsString serves every context codetools renders a type
+        // in, so it answers a constant expression with the historic defaults
+        // 'Integer'/'Extended'. For an inline var the constant's own type IS
+        // the variable's type: measured 2026-09-10 on VibePascal 3.3.1,
+        // `var n := -(1)`, `var n := 2*3` and `var n := 1 div 2` are all
+        // SizeOf 8 / Int64. Reals keep the Double display default the literal
+        // path uses (see ScanLiteralType). Inline-var-only on purpose --
+        // xtConstOrdInteger itself is shared far too widely to redefine.
+        xtConstOrdInteger: Result:='Int64';
+        xtConstReal: Result:='Double';
+        end;
     except
       Result:='';
     end;
   finally
     Params.Free;
   end;
+  if Result='' then
+    Result:=LiteralFallback;
 end;
 
 function TFindDeclarationTool.FindInlineVarTupleFieldDef(
