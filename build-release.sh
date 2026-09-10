@@ -14,6 +14,11 @@ ARM_LINUX_CFG="$VP_DIR/vibepascal-arm-linux.cfg"
 DARWIN_X86_64_CFG="$VP_DIR/vibepascal-darwin-x86_64.cfg"
 DARWIN_AARCH64_CFG="$VP_DIR/vibepascal-darwin-aarch64.cfg"
 
+# Where cross-target IDE builds keep their PrimaryConfigPath and compiler wrapper.
+# NOT /tmp -- see build_darwin_ide. Single-sourced because three call sites have to
+# agree on it: the one that BUILDS the IDE and the two that PACKAGE it.
+BUILD_STATE_DIR="$HOME/.cache/lazarus-build"
+
 # --- Build-step status + artifact freshness (Lars, c645 2026-09-10) ---------
 # A darwin re-roll was one step from publishing a FOUR-MONTH-OLD IDE binary.
 # Two independent mechanisms allowed that, and both are addressed here.
@@ -97,6 +102,28 @@ get_compiler_for_target() {
             echo "$VP_DIR/compiler/ppcx64"
             ;;
     esac
+}
+
+# get_darwin_ide_binary <target>
+# Path of the IDE binary that `lazbuild --pcp=<pcp> --build-ide` produces.
+#
+# MEASURED 2026-09-10 (Bruno), not inferred: TBuildLazarusProfile's
+# DefaultTargetDirectory is '$(ConfDir)/bin' (ide/packages/ideconfig/miscoptions.pas),
+# ConfDir being the PrimaryConfigPath, and lazbuild appends $(TargetCPU)-$(TargetOS).
+# A full-log run of build_darwin_ide's exact invocation ends the compiler call with
+#     Info: (lazarus) Param[12]="-o<pcp>/bin/x86_64-darwin/lazarus"
+# and leaves a 69497312-byte Mach-O 64-bit x86_64 executable there.
+#
+# It is NOT the same path under the DEFAULT pcp. Since --pcp was introduced
+# (da5c70f139, 2026-05-13 06:29) nothing writes the default one -- the copy on this
+# builder was last written 2026-05-13 05:27, 62 minutes BEFORE that commit. Reading
+# it is what let r25 ship a four-month-old IDE in BOTH darwin .apps: each shipped
+# Contents/MacOS/lazarus-bin is byte-identical (md5 d939a2af2427d8515deffd4494243766
+# x86_64, 42845d195b0879fdce30a28cf3fac5af aarch64) to that May-13 binary run
+# through `rcodesign sign`. The 905KB size difference was the ad-hoc signature.
+get_darwin_ide_binary() {
+    local target=$1
+    echo "$BUILD_STATE_DIR/lazbuild-pcp-${target}/bin/${target}/lazarus"
 }
 
 get_cfg_for_target() {
@@ -366,7 +393,7 @@ build_darwin_ide() {
     # been observed at 97% full and cleared under running builds. A cross-target
     # --build-ide whose PrimaryConfigPath vanishes mid-run can complete without
     # linking an IDE at all. Keep both under a real filesystem.
-    local build_state="$HOME/.cache/lazarus-build"
+    local build_state="$BUILD_STATE_DIR"
     mkdir -p "$build_state"
     local wrapper="$build_state/ppc${cpu_target}-darwin-wrapper"
     local pcp="$build_state/lazbuild-pcp-${target}"
@@ -403,9 +430,14 @@ EOF
         --add-package "$LAZARUS_DIR/components/customdrawn/customdrawn.lpk" \
         --build-ide
 
-    # lazbuild has been observed exiting 0 for this call WITHOUT linking an IDE.
-    # Exit status alone is therefore not evidence; assert the artifact.
-    if ! require_fresh_artifact "$HOME/.lazarus/bin/${target}/lazarus" "Darwin IDE binary for $target"; then
+    # Exit status alone is not evidence -- assert the artifact, at the step that
+    # produces it rather than three functions downstream.
+    #
+    # The absent "Linking" line that prompted this check was a LOGGING artifact,
+    # not a build failure (Bruno, 2026-09-10, full-log re-run): the IDE link
+    # happens ~400 lines before lazbuild's last output, so `| tail -40` never
+    # showed it. The build was fine; the PICKUP PATH was wrong. Both are fixed.
+    if ! require_fresh_artifact "$(get_darwin_ide_binary "$target")" "Darwin IDE binary for $target"; then
         echo "       lazbuild --build-ide reported success but produced no fresh IDE binary."
         return 1
     fi
@@ -973,7 +1005,7 @@ create_darwin_app_bundle() {
 
     echo "=== Creating Lazarus.app for $target ==="
     local app_name="lazarus-${cpu_target}-darwin.app"
-    local pcp_bin="$HOME/.lazarus/bin/${target}/lazarus"
+    local pcp_bin="$(get_darwin_ide_binary "$target")"
 
     rm -rf "$LAZARUS_DIR/$app_name"
     cp -r "$LAZARUS_DIR/lazarus.app" "$LAZARUS_DIR/$app_name"
@@ -1134,7 +1166,7 @@ package_release() {
         # Same presence-not-freshness guard as create_darwin_app_bundle had.
         # Both sites must assert, or the .app is fixed while the tarball's
         # bin/lazarus stays stale.
-        local pcp_bin="$HOME/.lazarus/bin/${target}/lazarus"
+        local pcp_bin="$(get_darwin_ide_binary "$target")"
         if ! require_fresh_artifact "$pcp_bin" "staged IDE binary for $target"; then
             return 1
         fi
