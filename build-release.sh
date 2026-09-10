@@ -1428,6 +1428,46 @@ MACINSTALL
     cd "$LAZARUS_DIR"
 }
 
+restore_host_lazbuild() {
+    # Put an x86_64-linux lazbuild back at the SHARED tree root after a cross roll.
+    #
+    # The branches in build_platform deliberately restore the TARGET lazbuild to
+    # $LAZARUS_DIR/lazbuild before packaging, because package_release copies from exactly
+    # that path into the tarball. Nothing then put the host one back, so a darwin,
+    # aarch64-linux or arm-linux build ENDED with a binary at the tree root that cannot
+    # execute on this box. That root is shared with ~30 other agents who run ./lazbuild;
+    # after an arm-linux roll on 2026-09-10 every one of them got
+    #   arm-binfmt-P: Could not open '/lib/ld-linux-armhf.so.3'
+    # until Lars rebuilt it by hand -- and the next roll clobbered it again 12 minutes later.
+    #
+    # HABITS has carried "after an osxarm build, rebuild the host lazbuild" as a MANUAL step
+    # for months. A manual step that four of six targets need is a missing script step, and it
+    # only ever named osxarm because nobody noticed aarch64-linux doing the same thing.
+    # x86_64-win64 is exempt for a real reason, not by omission: its lazbuild is lazbuild.exe,
+    # a different filename, so it never occupies the host path.
+    local target=$1
+    [ "$target" = "x86_64-linux" ] && return 0
+    [ "$(get_lazbuild_path_for_target "$target")" != "$LAZARUS_DIR/lazbuild" ] && return 0
+
+    echo "=== Restoring host x86_64-linux lazbuild at tree root (last target: $target) ==="
+    make -C "$LAZARUS_DIR" lazbuild \
+        PP="$VP_DIR/compiler/ppcx64" \
+        FPCDIR="$VP_DIR" \
+        OS_TARGET=linux \
+        CPU_TARGET=x86_64 \
+        OPT="-n @$LINUX_CFG" 2>&1 | tail -3
+
+    # Assert rather than assume -- a silent failure here is what makes the box unusable,
+    # and the failure mode is invisible until another agent runs ./lazbuild.
+    if file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null | grep -q "x86-64"; then
+        echo "Host lazbuild restored at tree root: $(file -b "$LAZARUS_DIR/lazbuild" | cut -d, -f1-2)"
+        return 0
+    fi
+    echo "ERROR: tree-root lazbuild is NOT x86-64 after restore -- the shared workdir is left broken." >&2
+    echo "ERROR: file says: $(file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null)" >&2
+    return 1
+}
+
 build_platform() {
     local target=$1
     local cfg=$2
@@ -1497,6 +1537,11 @@ build_platform() {
     fi
 
     package_release "$target"
+
+    # Must come AFTER package_release: the tarball is cut from $LAZARUS_DIR/lazbuild, so the
+    # target binary has to still be there when packaging runs. By the time package_release
+    # returns, the tarball exists and the root is free to hold a host binary again.
+    restore_host_lazbuild "$target"
 }
 
 TARGET="${1:-all}"
