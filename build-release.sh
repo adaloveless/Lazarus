@@ -1613,7 +1613,11 @@ restore_host_lazbuild() {
 
     # Assert rather than assume -- a silent failure here is what makes the box unusable,
     # and the failure mode is invisible until another agent runs ./lazbuild.
-    if file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null | grep -q "x86-64"; then
+    # ELF-qualified: a bare "x86-64" match also accepts a win64 PE, whose file(1)
+    # line reads `PE32+ executable (console) x86-64`. Not reachable from here
+    # (win64 is exempt above, its lazbuild is lazbuild.exe) but the loose form is
+    # worth removing while the change is provably a no-op on everything present.
+    if file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null | grep -q "ELF 64-bit.*x86-64"; then
         echo "Host lazbuild restored at tree root: $(file -b "$LAZARUS_DIR/lazbuild" | cut -d, -f1-2)"
         return 0
     fi
@@ -1628,7 +1632,13 @@ build_platform() {
 
     ensure_vp_packages "$target" "$cfg"
 
-    make -C "$LAZARUS_DIR" clean 2>&1 | tail -1
+    # A silently failing clean leaves stale objects on the search path, which is
+    # the exact class that has twice produced a compiler crash in a shipped IDE.
+    if ! run_build_step "clean-$target" "Fatal|Error" -- \
+        make -C "$LAZARUS_DIR" clean; then
+        echo "ERROR: 'make clean' failed for $target; refusing to build on a dirty tree." >&2
+        return 1
+    fi
 
     build_lazbuild "$target" "$cfg"
 
@@ -1637,12 +1647,26 @@ build_platform() {
         # Save darwin lazbuild and restore native lazbuild for IDE build
         local saved_lazbuild="$LAZARUS_DIR/lazbuild-${target}"
         cp "$LAZARUS_DIR/lazbuild" "$saved_lazbuild"
-        make -C "$LAZARUS_DIR" lazbuild \
+        # Swaps the tree-root lazbuild back to a NATIVE one so package builds can
+        # actually execute it. Was `| tail -5` with pipefail off, so a failed
+        # rebuild left the CROSS-TARGET binary in place and the next step invoked
+        # a non-executable file. restore_host_lazbuild asserts this at the END of
+        # the roll; assert it here too, where it can still be acted on.
+        if ! run_build_step "native-lazbuild-restore-$target" "Linking|lines compiled|Fatal|Error" -- \
+            make -C "$LAZARUS_DIR" lazbuild \
             PP="$VP_DIR/compiler/ppcx64" \
             FPCDIR="$VP_DIR" \
             OS_TARGET=linux \
             CPU_TARGET=x86_64 \
-            OPT="-n @$LINUX_CFG" 2>&1 | tail -5
+            OPT="-n @$LINUX_CFG"; then
+            echo "ERROR: could not rebuild the native lazbuild for $target package builds." >&2
+            return 1
+        fi
+        if ! file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null | grep -q "ELF 64-bit.*x86-64"; then
+            echo "ERROR: tree-root lazbuild is not x86-64 after the native rebuild for $target;" >&2
+            echo "       package builds would invoke a cross-target binary." >&2
+            return 1
+        fi
 
         build_darwin_ide "$target" "$cfg"
         build_darwin_starter "$target" "$cfg"
@@ -1673,12 +1697,26 @@ build_platform() {
             return 1
         fi
         cp "$target_lazbuild" "$saved_lazbuild"
-        make -C "$LAZARUS_DIR" lazbuild \
+        # Swaps the tree-root lazbuild back to a NATIVE one so package builds can
+        # actually execute it. Was `| tail -5` with pipefail off, so a failed
+        # rebuild left the CROSS-TARGET binary in place and the next step invoked
+        # a non-executable file. restore_host_lazbuild asserts this at the END of
+        # the roll; assert it here too, where it can still be acted on.
+        if ! run_build_step "native-lazbuild-restore-$target" "Linking|lines compiled|Fatal|Error" -- \
+            make -C "$LAZARUS_DIR" lazbuild \
             PP="$VP_DIR/compiler/ppcx64" \
             FPCDIR="$VP_DIR" \
             OS_TARGET=linux \
             CPU_TARGET=x86_64 \
-            OPT="-n @$LINUX_CFG" 2>&1 | tail -5
+            OPT="-n @$LINUX_CFG"; then
+            echo "ERROR: could not rebuild the native lazbuild for $target package builds." >&2
+            return 1
+        fi
+        if ! file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null | grep -q "ELF 64-bit.*x86-64"; then
+            echo "ERROR: tree-root lazbuild is not x86-64 after the native rebuild for $target;" >&2
+            echo "       package builds would invoke a cross-target binary." >&2
+            return 1
+        fi
 
         if ! build_bgra_release_packages "$target" "$cfg"; then
             cp "$saved_lazbuild" "$target_lazbuild"
