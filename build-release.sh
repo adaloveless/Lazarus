@@ -826,6 +826,48 @@ sign_darwin_app_machos() {
     echo "Signed $signed_count Mach-O file(s) inside $(basename "$app_root")."
 }
 
+stamp_shipped_compiler_hashes() {
+    # COMPILER_NOTES.txt is written when the compiler is COPIED into staging, but darwin
+    # packaging then ad-hoc signs every bundled Mach-O (sign_darwin_app_machos), and the
+    # bundled compiler is hard-linked into the .app by `cp -al`, so that signature rewrites
+    # the top-level compiler/ppc* too. The md5 the notes declare -- taken from the UNSIGNED
+    # staging binary and quoted as "matches VERSION.txt" -- therefore never matches the file
+    # that ships: the 2026-09-10 x86_64 tarball documents 29f2a740e3e79c1dd168843d0ad0f7e8
+    # while compiler/ppcx64 inside the archive is 3f10e570fcad85205276ce7fd3ce52c5 (both
+    # measured; running `rcodesign sign` on the staged copy reproduces the shipped hash and
+    # size exactly). A user who verifies the documented hash concludes the download is
+    # corrupt. Stamp the AS-SHIPPED digests last, after every mutation, so the notes
+    # describe the artifact instead of an intermediate.
+    local staging=$1
+    local notes="$staging/COMPILER_NOTES.txt"
+    local header_written=0
+    local compiler_bin=""
+
+    [ -f "$notes" ] || return 0
+    for compiler_bin in "$staging"/compiler/ppc*; do
+        [ -f "$compiler_bin" ] || continue
+        if [ "$header_written" -eq 0 ]; then
+            {
+                echo ""
+                echo "AS SHIPPED IN THIS TARBALL"
+                echo "--------------------------"
+                echo "Digests of the bundled compiler(s) as they exist in this archive, computed"
+                echo "after packaging finished. Darwin packaging ad-hoc signs every bundled Mach-O"
+                echo "with rcodesign, which appends a code signature and CHANGES the file's hash,"
+                echo "so any md5/sha256 quoted above (those describe the unsigned staging binary,"
+                echo "or VibePascal's own VERSION.txt) will NOT match what you received. These do:"
+            } >> "$notes"
+            header_written=1
+        fi
+        {
+            echo "  compiler/$(basename "$compiler_bin")"
+            echo "    size   $(stat -c%s "$compiler_bin") bytes"
+            echo "    md5    $(md5sum "$compiler_bin" | cut -d' ' -f1)"
+            echo "    sha256 $(sha256sum "$compiler_bin" | cut -d' ' -f1)"
+        } >> "$notes"
+    done
+}
+
 rewrite_darwin_lpk_output_dirs() {
     local bundle_root=$1
     local lpk_file=""
@@ -1634,6 +1676,10 @@ pause_if_interactive "Press Return to close this window..."
 MACINSTALL
         chmod +x "$staging/install-macos.command"
     fi
+
+    # Last mutation before the archive is sealed: make COMPILER_NOTES.txt describe the
+    # files that actually ship (ad-hoc signatures included), not the staging intermediates.
+    stamp_shipped_compiler_hashes "$staging"
 
     cd "$RELEASE_DIR"
     tar czf "${release_name}.tar.gz" "$release_name"
