@@ -16090,13 +16090,38 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
 // Returns '' when inference is not possible.
 
   function ScanLiteralType: string;
+  var
+    SignStartPos: integer;
   begin
     Result:='';
     if CurPos.StartPos>SrcLen then exit;
+    // A leading sign is its own atom, so `var x := -1` would otherwise miss the
+    // literal path entirely and fall through to the generic term resolver,
+    // which reports a different type than `var x := 1` does (measured
+    // 2026-09-10: -1.0 came out Extended while 1.0 came out Double). Consume
+    // the sign, and rewind if what follows is not a literal after all.
+    SignStartPos:=-1;
+    if (CurPos.EndPos-CurPos.StartPos=1) and (Src[CurPos.StartPos] in ['-','+'])
+    then begin
+      SignStartPos:=CurPos.StartPos;
+      ReadNextAtom;
+      if CurPos.StartPos>SrcLen then begin
+        MoveCursorToCleanPos(SignStartPos);
+        ReadNextAtom;
+        exit;
+      end;
+    end;
     if AtomIsRealNumber then
+      // The compiler picks the narrowest real type the constant fits, so this
+      // is a display default, not the declared type: 1.0 compiles as Single
+      // and 1.5e300 as Extended (both measured against VibePascal 3.3.1).
       Result:='Double'
     else if AtomIsNumber then
-      Result:='Integer'
+      // Not Integer: an inline var initialised from an integer literal is
+      // Int64 in every mode that accepts inline vars. Measured against
+      // VibePascal 3.3.1 x86_64 -- 1, -1 and 2147483648 all report SizeOf 8
+      // and RTTI name Int64, under {$mode unleashed} and {$mode delphi} alike.
+      Result:='Int64'
     else if AtomIsStringConstant then
       // Char literals are promoted to String in inline vars.
       Result:='String'
@@ -16105,6 +16130,12 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
         Result:='Boolean'
       else if UpAtomIs('NIL') then
         Result:='Pointer';
+    end;
+    if (Result='') and (SignStartPos>=0) then begin
+      // signed, but not a literal -- put the cursor back on the sign so the
+      // caller's fallback sees the whole term
+      MoveCursorToCleanPos(SignStartPos);
+      ReadNextAtom;
     end;
   end;
 

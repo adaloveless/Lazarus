@@ -87,6 +87,7 @@ type
     procedure TestParseUnleashedFunctionReference;
     procedure TestParseUnleashedAnonFunc;
     procedure TestParseUnleashedInlineVar;
+    procedure TestUnleashedInlineVarInitTypeDisplay;
     procedure TestParseUnleashedMultilineString;
     procedure TestParseUnleashedInlineGenerics;
     procedure TestParseUnleashedPrefixedAttribute;
@@ -1264,6 +1265,53 @@ begin
   'end;',
   'end.']);
   ParseModule;
+end;
+
+procedure TTestPascalParser.TestUnleashedInlineVarInitTypeDisplay;
+// The type string identifier completion shows for an inline var that has no
+// explicit type annotation (ide/sourceeditprocs.pas ctnVarDefinition ->
+// ExtractInlineVarInitType). Ground truth is the compiler: VibePascal 3.3.1
+// x86_64 infers Int64 for every integer literal, sign or no sign, under
+// {$mode unleashed} and {$mode delphi} alike (SizeOf 8, RTTI name Int64).
+// A leading sign is a separate atom, so -1 and -1.0 used to miss the literal
+// scan entirely and come back with a different answer than 1 and 1.0 did.
+var
+  Tool: TCodeTool;
+  Node: TCodeTreeNode;
+  Actual: string;
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'procedure Test;',
+  'implementation',
+  'procedure Test;',
+  'begin',
+  '  var a := 1;',
+  '  var b := -1;',
+  '  var c := 2147483648;',
+  '  var d := 1.0;',
+  '  var e := -1.0;',
+  '  var f := ''hello'';',
+  '  var g := true;',
+  '  var h := nil;',
+  '  Writeln(a,b,c,d,e,f,g);',
+  'end;',
+  'end.']);
+  Add('end.');
+  DoParseModule(Code,Tool);
+  Actual:='';
+  Node:=Tool.Tree.Root;
+  while Node<>nil do begin
+    if Node.Desc=ctnVarDefinition then
+      Actual:=Actual+Tool.ExtractIdentifier(Node.StartPos)+'='
+             +Tool.ExtractInlineVarInitType(Node)+' ';
+    Node:=Node.Next;
+  end;
+  AssertEquals('inline var init type display',
+    'a=Int64 b=Int64 c=Int64 d=Double e=Double f=String g=Boolean h=Pointer ',
+    Actual);
 end;
 
 procedure TTestPascalParser.TestParseUnleashedMultilineString;
