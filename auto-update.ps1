@@ -349,6 +349,26 @@ function Extract-VPBinaries {
     # Marker fingerprints every archive in the set so any change invalidates the cache.
     $archiveKey = ($archiveSet | ForEach-Object { "$($_.Name)|$($_.LastWriteTime.Ticks)" }) -join ';'
 
+    # LATEST.txt sidecar (GOD mrghu0l5). The .sh half of this landed long ago; the .ps1 half did
+    # not, and Windows is GOD's own workstation. Without it the key above is names + mtimes only,
+    # so a ship where Otto bumps version/source_commit but the tarball comes out byte-identical
+    # leaves the name AND the mtime untouched (git does not restat an unchanged file) -- the key
+    # matches, the early return fires, and the box never re-extracts.
+    # Hash the FILE rather than reuse $latestData: Read-LATESTTxt returns $null when the sidecar
+    # is present but has no versioned_tarball field, and that case still has to invalidate.
+    # One-time effect on upgrade: every existing install re-extracts once, because the key format
+    # changed. That is the cheap direction to be wrong in.
+    $latestFile = Join-Path $distDir "LATEST.txt"
+    if (Test-Path $latestFile) {
+        $latestHash = (Get-FileHash -Path $latestFile -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
+        $archiveKey = "$latestHash;$archiveKey"
+        if ($latestData) {
+            Log-Info "LATEST.txt present: version $($latestData['version']) source_commit $($latestData['source_commit']) -- included in extraction key"
+        } else {
+            Log-Info "LATEST.txt present (unparsed, sha256 $latestHash) -- included in extraction key"
+        }
+    }
+
     if ((Test-Path $compilerExe) -and (Test-Path $markerFile)) {
         $lastExtracted = (Get-Content $markerFile -Raw -ErrorAction SilentlyContinue).Trim()
         if ($lastExtracted -eq $archiveKey) { return }
