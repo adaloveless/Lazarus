@@ -1541,11 +1541,24 @@ build_platform() {
     # Must come AFTER package_release: the tarball is cut from $LAZARUS_DIR/lazbuild, so the
     # target binary has to still be there when packaging runs. By the time package_release
     # returns, the tarball exists and the root is free to hold a host binary again.
-    restore_host_lazbuild "$target"
+    #
+    # NON-FATAL BY DECISION, not by oversight (Lars measured the alternative and asked me to
+    # choose). This script is `set -e` and the `all` path calls build_platform bare, so a bare
+    # call here aborted the WHOLE roll: simulated on aarch64-linux, target 3 of 6, arm-linux
+    # and both darwins never built and "Release builds complete" never printed. That is
+    # strictly worse than continuing, because restore runs AFTER package_release -- this
+    # target's tarball is already cut and safe -- so aborting throws away the remaining
+    # targets AND still leaves the shared tree root broken, since nothing downstream repairs
+    # it. Continuing costs nothing that was not already lost. The roll still fails loudly at
+    # the end with a non-zero exit so a degraded roll cannot be mistaken for a clean one.
+    restore_host_lazbuild "$target" || HOST_LAZBUILD_BROKEN=1
 }
 
 TARGET="${1:-all}"
 mkdir -p "$RELEASE_DIR"
+
+# Set by build_platform when restore_host_lazbuild fails. Checked once at the end.
+HOST_LAZBUILD_BROKEN=0
 
 echo "Lazarus Release Builder (VibePascal)"
 echo "Compiler: $VP_COMPILER"
@@ -1587,3 +1600,30 @@ esac
 echo ""
 echo "=== Release builds complete ==="
 ls -lh "$RELEASE_DIR"/*.tar.gz 2>/dev/null
+
+# One last repair attempt, then fail the roll if the shared root is still not executable here.
+# ~30 agents share this tree and run ./lazbuild; leaving a cross binary at the root breaks all
+# of them, and the artifacts above are worthless to me if I cannot say the box is intact.
+if [ "$HOST_LAZBUILD_BROKEN" = "1" ]; then
+    echo ""
+    echo "=== Host lazbuild restore FAILED earlier -- retrying once at end of roll ===" >&2
+    # "aarch64-linux" here is not a target being restored FOR -- it is any value that clears
+    # both of restore_host_lazbuild's early-return guards, so the rebuild actually runs.
+    if restore_host_lazbuild "aarch64-linux"; then
+        echo "Host lazbuild recovered on the end-of-roll retry. Artifacts above are complete." >&2
+    else
+        echo "" >&2
+        echo "########################################################################" >&2
+        echo "#                          RELEASE DEGRADED                            #" >&2
+        echo "########################################################################" >&2
+        echo "The tarballs listed above were built and are valid, but the tree root" >&2
+        echo "lazbuild is NOT an x86_64-linux binary. Every agent sharing this tree" >&2
+        echo "will fail on ./lazbuild until it is rebuilt. Do not announce a release" >&2
+        echo "until this is fixed. Rebuild by hand with:" >&2
+        echo "" >&2
+        echo "  make -C $LAZARUS_DIR lazbuild PP=$VP_DIR/compiler/ppcx64 \\" >&2
+        echo "    FPCDIR=$VP_DIR OS_TARGET=linux CPU_TARGET=x86_64 OPT=\"-n @$LINUX_CFG\"" >&2
+        echo "" >&2
+        exit 1
+    fi
+fi
