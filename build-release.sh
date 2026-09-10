@@ -105,25 +105,37 @@ get_compiler_for_target() {
 }
 
 # get_darwin_ide_binary <target>
-# Path of the IDE binary that `lazbuild --pcp=<pcp> --build-ide` produces.
+# Where the darwin IDE binary is STAGED for packaging, once build_darwin_ide has
+# lifted it out of the per-build PrimaryConfigPath.
 #
-# MEASURED 2026-09-10 (Bruno), not inferred: TBuildLazarusProfile's
-# DefaultTargetDirectory is '$(ConfDir)/bin' (ide/packages/ideconfig/miscoptions.pas),
-# ConfDir being the PrimaryConfigPath, and lazbuild appends $(TargetCPU)-$(TargetOS).
-# A full-log run of build_darwin_ide's exact invocation ends the compiler call with
+# lazbuild writes it INSIDE that pcp. MEASURED 2026-09-10 (Bruno), not inferred:
+# TBuildLazarusProfile's DefaultTargetDirectory is '$(ConfDir)/bin'
+# (ide/packages/ideconfig/miscoptions.pas:267), ConfDir being the PrimaryConfigPath,
+# and lazbuild appends $(TargetCPU)-$(TargetOS). A full-log run of build_darwin_ide's
+# exact invocation ends the compiler call with
 #     Info: (lazarus) Param[12]="-o<pcp>/bin/x86_64-darwin/lazarus"
-# and leaves a 69497312-byte Mach-O 64-bit x86_64 executable there.
+# and leaves a 69497312-byte Mach-O 64-bit x86_64 executable there. The aarch64 half
+# of that shape is corroborated by the May-13 default-pcp artifacts, which lazbuild
+# wrote to bin/aarch64-darwin/lazarus back when the default pcp was still in use.
 #
-# It is NOT the same path under the DEFAULT pcp. Since --pcp was introduced
-# (da5c70f139, 2026-05-13 06:29) nothing writes the default one -- the copy on this
-# builder was last written 2026-05-13 05:27, 62 minutes BEFORE that commit. Reading
-# it is what let r25 ship a four-month-old IDE in BOTH darwin .apps: each shipped
-# Contents/MacOS/lazarus-bin is byte-identical (md5 d939a2af2427d8515deffd4494243766
-# x86_64, 42845d195b0879fdce30a28cf3fac5af aarch64) to that May-13 binary run
-# through `rcodesign sign`. The 905KB size difference was the ad-hoc signature.
+# But build_darwin_ide TEARS THE pcp DOWN when it returns, deliberately -- per-build
+# isolation, no cross-target leak through staticpackages.inc -- so the packaging
+# sites cannot read it there. Pointing them into the pcp only swaps a stale-binary
+# abort for a missing-binary abort, and the roll still never finishes. Hence a
+# staging path that OUTLIVES the pcp, single-sourced because three sites have to
+# agree on it: the one that BUILDS and the two that PACKAGE. That drift is the bug.
+#
+# It is NOT $HOME/.lazarus/bin/<target>/lazarus. That is the same expression under
+# the DEFAULT pcp, and nothing has written it since --pcp came in (da5c70f139,
+# 2026-05-13 06:29) -- the copy on this builder is dated 2026-05-13 05:27, 62 minutes
+# BEFORE that commit. Reading it is what let r25 ship a four-month-old IDE in BOTH
+# darwin .apps: each shipped Contents/MacOS/lazarus-bin is byte-identical (md5
+# d939a2af2427d8515deffd4494243766 x86_64, 42845d195b0879fdce30a28cf3fac5af aarch64)
+# to that May-13 binary run through `rcodesign sign`. The 905KB size difference was
+# the ad-hoc signature, not a rebuild.
 get_darwin_ide_binary() {
     local target=$1
-    echo "$BUILD_STATE_DIR/lazbuild-pcp-${target}/bin/${target}/lazarus"
+    echo "$BUILD_STATE_DIR/ide/${target}/lazarus"
 }
 
 get_cfg_for_target() {
@@ -416,6 +428,10 @@ EOF
     # staticpackages.inc keeps the user-install list deterministic across runs.
     rm -rf "$pcp"
     mkdir -p "$pcp"
+    # A previous roll's staged IDE binary must not be able to reach packaging if
+    # THIS build fails. require_fresh_artifact would catch it on mtime; not leaving
+    # it lying there at all is one fewer way to publish the wrong binary.
+    rm -f "$(get_darwin_ide_binary "$target")"
 
     # Build IDE with customdrawn LCL controls installed by default (GOD mp3l6s84:
     # "I want to have customdrawn LCL controls as a default fucking package").
@@ -437,8 +453,23 @@ EOF
     # not a build failure (Bruno, 2026-09-10, full-log re-run): the IDE link
     # happens ~400 lines before lazbuild's last output, so `| tail -40` never
     # showed it. The build was fine; the PICKUP PATH was wrong. Both are fixed.
-    if ! require_fresh_artifact "$(get_darwin_ide_binary "$target")" "Darwin IDE binary for $target"; then
+    local built_ide="$pcp/bin/${target}/lazarus"
+    if ! require_fresh_artifact "$built_ide" "Darwin IDE binary for $target"; then
         echo "       lazbuild --build-ide reported success but produced no fresh IDE binary."
+        return 1
+    fi
+
+    # Lift it out of the pcp BEFORE the teardown at the end of this function
+    # removes it. -p so the staged copy keeps the link mtime and the downstream
+    # freshness asserts still measure when the IDE was LINKED, not when it was
+    # copied -- a copy-time mtime would pass require_fresh_artifact by construction
+    # and quietly turn it back into a presence check.
+    local staged_ide
+    staged_ide=$(get_darwin_ide_binary "$target")
+    mkdir -p "$(dirname "$staged_ide")"
+    rm -f "$staged_ide"
+    if ! cp -p "$built_ide" "$staged_ide"; then
+        echo "ERROR: could not stage the $target IDE binary out of the build pcp." >&2
         return 1
     fi
 
