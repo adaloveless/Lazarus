@@ -1280,6 +1280,17 @@ procedure TTestPascalParser.TestUnleashedInlineVarInitTypeDisplay;
 // (1/2 is Double, 1+0.5 is a real), and an integer constant expression
 // reaching the generic resolver used to display the shared 'Integer'
 // default instead of the Int64 the compiler gives it.
+// o..q pin the REAL literal rule to the compiler after FPCDeveloper's v56
+// (VibePascal 3.3.1 2026/09/10) made an un-annotated real inline var take
+// the default real type: every real literal a Double can hold is Double
+// whatever its own precision (o), and only one that a Double CANNOT hold
+// widens to Extended -- too large (p) or underflowing to zero (q). Ground
+// truth for all three read at runtime via PTypeInfo, not inferred.
+// NOT covered here, and deliberately: `var r := s` for a declared
+// s: single, and `var t := single(1.0)`. Both take the identifier path
+// into FindTermTypeAsString and both come back EMPTY under this harness,
+// which has no search paths to resolve against -- asserting that would
+// pin a harness artifact rather than the IDE's behaviour.
 var
   Tool: TCodeTool;
   Node: TCodeTreeNode;
@@ -1306,7 +1317,10 @@ begin
   '  var k := 2*3;',
   '  var m := -(1);',
   '  var n := 1 div 2;',
-  '  Writeln(a,b,c,d,e,f,g,i,j,k,m,n);',
+  '  var o := 1.5e300;',
+  '  var p := 1.0e400;',
+  '  var q := 1.0e-4000;',
+  '  Writeln(a,b,c,d,e,f,g,i,j,k,m,n,o,p,q);',
   'end;',
   'end.']);
   Add('end.');
@@ -1321,7 +1335,7 @@ begin
   end;
   AssertEquals('inline var init type display',
     'a=Int64 b=Int64 c=Int64 d=Double e=Double f=String g=Boolean h=Pointer '
-   +'i=Double j=Double k=Int64 m=Int64 n=Int64 ',
+   +'i=Double j=Double k=Int64 m=Int64 n=Int64 o=Double p=Extended q=Extended ',
     Actual);
 end;
 

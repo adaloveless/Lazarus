@@ -16089,6 +16089,49 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
 // and identifier/function-call expressions resolved via FindTermTypeAsString.
 // Returns '' when inference is not possible.
 
+  function RealLiteralIsDouble(const ALiteral: string): boolean;
+  // Does the compiler's default real type actually hold this literal?
+  // See the AtomIsRealNumber comment below for the measurement this encodes.
+  // Val parses into an Extended and never raises, so an out-of-range literal
+  // is answered rather than crashing the IDE's identifier completion.
+  const
+    // largest finite double, and the smallest positive DENORMAL double --
+    // denormals count as representable (1.0e-320 measured Double, 1.0e-330
+    // measured Extended).
+    MaxDbl = 1.7976931348623157e308;
+    MinDbl = 4.9406564584124654e-324;
+  var
+    Clean: string;
+    i, Code: integer;
+    Value: extended;
+    InExponent, MantissaIsZero: boolean;
+  begin
+    Result:=true;
+    Clean:='';
+    InExponent:=false;
+    MantissaIsZero:=true;
+    for i:=1 to length(ALiteral) do begin
+      // digit separators are lexical only; AtomIsRealNumber accepts them but
+      // Val does not
+      if ALiteral[i]='_' then continue;
+      if (ALiteral[i]='e') or (ALiteral[i]='E') then
+        InExponent:=true
+      else if (not InExponent) and (ALiteral[i]>='1') and (ALiteral[i]<='9') then
+        MantissaIsZero:=false;
+      Clean:=Clean+ALiteral[i];
+    end;
+    Val(Clean,Value,Code);
+    // not evaluable here (a form Val rejects) -- keep the default rather than
+    // guess
+    if Code<>0 then exit;
+    if Value=0 then
+      // either a true zero, or a magnitude so small it underflowed to zero
+      // even in an Extended -- and what a Extended cannot hold, a Double
+      // certainly cannot
+      exit(MantissaIsZero);
+    Result:=(Abs(Value)<=MaxDbl) and (Abs(Value)>=MinDbl);
+  end;
+
   function ScanLiteralType(out WholeTerm: boolean): string;
   // WholeTerm reports whether the literal is the ENTIRE initialiser. A literal
   // that only starts the term (`1` in `1/2`) does not give the term's type.
@@ -16114,20 +16157,40 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
         exit;
       end;
     end;
-    if AtomIsRealNumber then
-      // A display default, NOT what the compiler currently infers. A real
-      // literal is typed by {$MINFPCONSTPREC} (default 32): Single when the
-      // constant round-trips exactly through single, Extended otherwise --
-      // so Double is unreachable at the default and the split is on exact
-      // representability, not on magnitude. Measured 2026-09-10 against
-      // VibePascal 3.3.1 x86_64, type read at runtime via PTypeInfo:
-      // 1.0 and 0.5 -> Single, but 0.1, 3.4e38 (inside Single's RANGE, yet
-      // not exact) and 1.5e300 -> Extended. A lexical scan cannot evaluate
-      // that predicate. Double is what Delphi shows, and FPCDeveloper
-      // (2026-09-10) is changing the inference site so an un-annotated real
-      // inline var takes the default real type instead of inheriting the
-      // literal's narrowed one -- i.e. the compiler converges on this.
-      Result:='Double'
+    if AtomIsRealNumber then begin
+      // No longer a display default: this is what the compiler infers, as of
+      // VibePascal 3.3.1 2026/09/10 (FPCDeveloper's v56, compiler rebuilt
+      // 18:46). An un-annotated real inline var now takes the DEFAULT REAL
+      // TYPE instead of inheriting the literal's own narrowed precision, so
+      // the answer no longer depends on {$MINFPCONSTPREC} or on whether the
+      // constant round-trips exactly through single.
+      //
+      // THE EARLIER COMMENT HERE IS REFUTED, do not restore it: it recorded
+      // "Single when the constant round-trips exactly, Extended otherwise, so
+      // Double is unreachable at the default", measured hours before v56
+      // landed the same day. Re-measured after v56 against VibePascal 3.3.1
+      // x86_64, {$mode unleashed}, type read at runtime via PTypeInfo:
+      // 1.0, 0.5, 0.1, 3.4e38 and 1.5e300 all -> Double. All five of those
+      // were previously Single or Extended.
+      //
+      // The one thing magnitude still decides is whether a Double can hold
+      // the literal at all; when it cannot, the compiler widens to Extended.
+      // Measured the same way, and this is the whole boundary:
+      //   1.7976931348623157e308 -> Double     1.8e308   -> Extended
+      //   2.2250738585072014e-308 -> Double    1.0e400   -> Extended
+      //   1.0e-310, 1.0e-320 (denormals) -> Double
+      //   1.0e-330, 1.0e-4000 -> Extended      0.0       -> Double
+      // RealLiteralIsDouble reproduces every one of those.
+      //
+      // HONEST LIMIT: at the denormal floor the true predicate is "rounds to
+      // zero in a double", which splits at half the min denormal rather than
+      // at it, so literals in that ~2x window are called Extended when the
+      // compiler says Double. No such literal has been observed in real code.
+      if RealLiteralIsDouble(GetAtom) then
+        Result:='Double'
+      else
+        Result:='Extended';
+    end
     else if AtomIsNumber then
       // Not Integer: an inline var initialised from an integer literal is
       // Int64 in every mode that accepts inline vars. Measured against
