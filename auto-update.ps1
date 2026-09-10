@@ -1003,16 +1003,31 @@ function Remove-PackageFromAutoInstall {
     #    c640 NAME CAVEAT, measured on a real generated file: the entries here are NOT package
     #    names. TLazPackageGraph.SaveAutoInstallConfig writes
     #    ExtractFileNameOnly(APackage.GetCompileSourceFilename) -- e.g. package "syneditdsgn"
-    #    appears as "allsyneditdsgn". The name match below is safe for PackageCommonX_LCL only
+    #    appears as "allsyneditdsgn". The match below is safe for PackageCommonX_LCL only
     #    because commonx ships lcl/PackageCommonX_LCL.pas, so its compile source happens to
-    #    share the package name. Before reusing this helper for any OTHER package, check what
-    #    that package's compile source unit is actually called -- part 1 (the authoritative
-    #    miscellaneousoptions.xml list) keys on the real package name and is unaffected.
+    #    share the package name. Part 1 (the authoritative miscellaneousoptions.xml list) keys
+    #    on the real package name and is unaffected.
+    #    c642 -- that caveat named the WRONG failure mode, and I only found out by EXECUTING it.
+    #    It said a mismatched name would silently no-op here. It would not: the old test was
+    #    `-notmatch [regex]::Escape($PackageName)`, i.e. a case-INSENSITIVE SUBSTRING regex, so
+    #    it OVER-matched. Two controls, run on lazdev against this exact block:
+    #      * purge "SynEditDsgn" -> it DID strip "allsyneditdsgn", by accident, because that
+    #        string contains "syneditdsgn". Right outcome, uncontrolled mechanism.
+    #      * purge "CommonX" from a list also holding "PackageCommonX_LCL" -> it stripped BOTH
+    #        inc lines. The xml half kept PackageCommonX_LCL (that half uses an exact -ne), so
+    #        the two files ended up DISAGREEING and an unrelated package was silently
+    #        deregistered from the generated include.
+    #    Latent, not live: the only call site passes the literal "PackageCommonX_LCL", and that
+    #    path is byte-for-byte unchanged by this fix (re-run and confirmed). But the comment
+    #    above invites reuse, and a reader who did the compile-source check it asks for would
+    #    still have hit the collateral delete. Now an exact whole-entry match: no over-match, no
+    #    collateral, and a mismatched compile-source name no-ops exactly as documented -- the
+    #    xml is authoritative and lazbuild regenerates this include from it anyway.
     $incFile = Join-Path $PcpDir "staticpackages.inc"
     if (Test-Path $incFile) {
         try {
             $lines = Get-Content $incFile
-            $filtered = $lines | Where-Object { $_ -notmatch [regex]::Escape($PackageName) }
+            $filtered = $lines | Where-Object { $_.Trim().TrimEnd(',').Trim() -ne $PackageName }
             if (@($filtered).Count -ne @($lines).Count) {
                 Set-Content -Path $incFile -Value $filtered -Encoding utf8
                 Log-Info "Purged $PackageName from staticpackages.inc"
