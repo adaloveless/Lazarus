@@ -2271,22 +2271,6 @@ if ($FixLpi) {
     exit 0
 }
 
-if (-not $KeepLocal) {
-    Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
-    if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
-        Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
-    }
-} else {
-    Log-Info "Keeping local changes (-KeepLocal)"
-}
-
-# Extract VibePascal AFTER wipe: extracted binaries (bin\ppcx64.exe, units\x86_64-win64\*.ppu,
-# bin\fpc.cfg, .auto-update-extracted.txt marker) live at untracked paths inside $VPDir, so
-# `git clean -fdx` during the VibePascal wipe deletes them. Extract first leaves the rebuild
-# step with no compiler (GOD mp8h9y4b/mp8har98).
-Extract-VPBinaries
-
-$scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
 
 $upstreamRemote = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("remote", "get-url", "upstream")
 if ($upstreamRemote) {
@@ -2308,6 +2292,33 @@ if ($Check) {
     Print-Summary
     exit 0
 }
+
+# c642 -- ORDER IS THE FIX, not a tidy-up. This block used to sit ABOVE the -Check early exit,
+# so `auto-update.bat -Check` -- advertised and used as a read-only dry run -- ran
+# `git reset --hard HEAD` + `git clean -fdx` over BOTH repos and extracted the VP binaries
+# before printing its summary and exiting. A developer asking "is there anything new?" lost
+# every uncommitted and untracked file in $LazarusDir and $VPDir to a command that then said
+# "Nothing to do." Nothing between the old and new positions needs a clean tree: the fetch and
+# all three Check-* helpers are git-query-only (Check-VPUpdates is rev-list HEAD..origin/main),
+# and Print-Summary reads only $script: flags that are set further down, past this point.
+# $scriptPreHash moves WITH the block so the wipe -> extract -> hash order a non-Check run sees
+# is byte-for-byte what it was; for those runs this commit is a pure relocation.
+if (-not $KeepLocal) {
+    Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
+    if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
+        Wipe-LocalChanges -RepoDir $VPDir -Label "VibePascal"
+    }
+} else {
+    Log-Info "Keeping local changes (-KeepLocal)"
+}
+
+# Extract VibePascal AFTER wipe: extracted binaries (bin\ppcx64.exe, units\x86_64-win64\*.ppu,
+# bin\fpc.cfg, .auto-update-extracted.txt marker) live at untracked paths inside $VPDir, so
+# `git clean -fdx` during the VibePascal wipe deletes them. Extract first leaves the rebuild
+# step with no compiler (GOD mp8h9y4b/mp8har98).
+Extract-VPBinaries
+
+$scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
 
 if (-not $UpstreamOnly) {
     Pull-VP
