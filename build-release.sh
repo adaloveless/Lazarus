@@ -107,6 +107,94 @@ copy_win64_compiler_to_staging() {
     return 1
 }
 
+get_latest_vp_bin_tarball() {
+    # $1 = dist/<subdir>, $2 = target token in the filename.
+    # Same version-selection rule as get_latest_win64_bin_tarball (highest numeric v<N>),
+    # generalised so the Linux cross targets can use it too.
+    find "$VP_DIR/dist/$1" -maxdepth 1 -type f -name "vibepascal-v*-$2-bin.tar.gz" 2>/dev/null |
+        while IFS= read -r tarball; do
+            local base version
+            base=$(basename "$tarball")
+            version=${base#vibepascal-v}
+            version=${version%%-*}
+            case "$version" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            printf '%08d %s\n' "$version" "$tarball"
+        done |
+        sort -n |
+        tail -1 |
+        cut -d' ' -f2-
+}
+
+copy_native_linux_compiler_to_staging() {
+    # Bundle the NATIVE target-arch VibePascal compiler for a Linux cross target.
+    # $1 staging  $2 target  $3 native exename  $4 expected `file` arch substring
+    #
+    # WHY (D006 class -- "can a user go from extract to a working build with only what is
+    # inside?"): these tarballs bundled compiler/ppcross<cpu>, which is an x86_64 ELF. On the
+    # Pi the tarball targets it cannot run at all, so the answer was no. Otto ships a genuinely
+    # native compiler in dist/<target>/vibepascal-v*-<target>-bin.tar.gz. The cross compiler is
+    # still copied alongside (useful on the build host), so this is additive.
+    #
+    # TWO GUARDS, both learned the hard way -- neither is optional:
+    #   D003: hash the extracted binary against the md5 the tarball's own VERSION.txt declares,
+    #         so a stale or swapped member cannot ship unnoticed.
+    #   ppcarm clobber (2026-09-10): cross and native builds for the same non-host CPU BOTH
+    #         default to exename ppc<cpu>, so a native build silently overwrites the cross one.
+    #         It had already happened in the shared tree -- compiler/ppcarm was an x86_64 ELF.
+    #         The FILENAME is not evidence of the architecture; check `file` output.
+    # Either guard failing leaves the cross compiler in place and says so loudly in
+    # COMPILER_NOTES.txt, rather than silently shipping a compiler that cannot run.
+    local staging=$1 target=$2 exename=$3 arch_pattern=$4
+    local notes="$staging/COMPILER_NOTES.txt"
+    local tarball member declared actual out="$staging/compiler/$exename"
+
+    tarball=$(get_latest_vp_bin_tarball "$target" "$target")
+    if [ -z "$tarball" ]; then
+        echo "WARNING: no native $target compiler tarball under dist/$target."
+        echo "NOTE: no native $target compiler bundled. compiler/ppcross* is an x86_64 binary and will NOT run on $target." > "$notes"
+        return 1
+    fi
+
+    member=$(tar -tzf "$tarball" | awk -v n="$exename" '$0 ~ "(^|/)bin/" n "$" { print; exit }')
+    if [ -z "$member" ]; then
+        echo "WARNING: $(basename "$tarball") does not contain bin/$exename."
+        echo "NOTE: no native $target compiler bundled ($(basename "$tarball") has no bin/$exename)." > "$notes"
+        return 1
+    fi
+
+    tar -xOzf "$tarball" "$member" > "$out" || { rm -f "$out"; return 1; }
+
+    declared=$(tar -xOzf "$tarball" --wildcards '*VERSION.txt' 2>/dev/null |
+               awk -v n="$exename" '$0 ~ "bin/" n "[[:space:]]" { for (i=1;i<=NF;i++) if ($i=="md5") { print $(i+1); exit } }')
+    actual=$(md5sum "$out" | cut -d' ' -f1)
+    if [ -n "$declared" ] && [ "$declared" != "$actual" ]; then
+        echo "ERROR: $exename md5 $actual does not match $declared declared in $(basename "$tarball") VERSION.txt."
+        rm -f "$out"
+        echo "NOTE: native $target compiler REJECTED (md5 mismatch vs its own VERSION.txt). Not bundled." > "$notes"
+        return 1
+    fi
+
+    if ! file -b "$out" | grep -q "$arch_pattern"; then
+        echo "ERROR: $exename is not a $target binary: $(file -b "$out")"
+        rm -f "$out"
+        echo "NOTE: native $target compiler REJECTED (wrong architecture -- exename clobber). Not bundled." > "$notes"
+        return 1
+    fi
+
+    chmod +x "$out"
+    {
+        echo "Bundled native $target VibePascal compiler as compiler/$exename"
+        echo "  source: $(basename "$tarball")"
+        echo "  md5:    $actual${declared:+ (matches VERSION.txt)}"
+        echo "  arch:   $(file -b "$out")"
+        echo "compiler/ppcross* is the x86_64 CROSS compiler and runs on the BUILD host, not on $target."
+    } > "$notes"
+    echo "Bundled native $target compiler $exename from $(basename "$tarball")."
+    return 0
+}
+
 build_darwin_fpcres() {
     local target=$1
     local dest=$2
@@ -810,8 +898,10 @@ package_release() {
         copy_win64_compiler_to_staging "$staging"
     elif [ "$target" = "aarch64-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcrossaarch64"
+        copy_native_linux_compiler_to_staging "$staging" aarch64-linux ppca64 "ARM aarch64" || true
     elif [ "$target" = "arm-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcrossarm"
+        copy_native_linux_compiler_to_staging "$staging" arm-linux ppcarm "ARM, EABI5" || true
     elif [ "$target" = "x86_64-darwin" ]; then
         local native_dir=$(find "$VP_DIR/dist/darwin-native" -maxdepth 1 -type d -name 'vibepascal-native-x86_64-darwin-*' 2>/dev/null | sort | tail -1)
         if [ -n "$native_dir" ] && [ -x "$native_dir/bin/ppcx64" ]; then
