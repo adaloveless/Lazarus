@@ -1206,9 +1206,24 @@ copy_native_darwin_compiler_to_staging() {
     local staging=$1 target=$2 exename=$3 arch_pattern=$4
     local notes="$staging/COMPILER_NOTES.txt"
     local native_dir declared actual out="$staging/compiler/$exename"
+    local sel_rc=0
 
-    native_dir=$(get_latest_darwin_native_dir "$target")
-    if [ $? -eq 2 ]; then
+    # `|| sel_rc=$?` is load-bearing, not defensive noise. A bare
+    #     native_dir=$(get_latest_darwin_native_dir "$target")
+    # is a SIMPLE COMMAND under this script's `set -e`, so on the rc=2 (ambiguous)
+    # return the shell exits AT THE ASSIGNMENT and the branch below never runs. Today
+    # that is masked because both call sites in package_release wrap this function in
+    # `|| true`, which suspends errexit for the call's whole dynamic extent -- so the
+    # degraded path works by accident of the CALLER rather than by anything here.
+    # Driven both ways against a genuine tie fixture:
+    #   with the caller's `|| true`: rc=2 branch runs, COMPILER_NOTES.txt written, warnings print
+    #   without it (bare call):      script DIES here, rc=2, NO note, NO warning -- a silent
+    #                                exit 2 with no diagnosis, the exact opposite of the point
+    # Capturing the status makes the diagnosis independent of how we are called.
+    # (The linux twin needs no such fix: get_latest_vp_bin_tarball ends in a `cut`
+    # pipeline, always rc=0, and its caller guards on emptiness rather than on `$?`.)
+    native_dir=$(get_latest_darwin_native_dir "$target") || sel_rc=$?
+    if [ "$sel_rc" -eq 2 ]; then
         # Ambiguous, not missing. The shipped note must say which one it is: r25's darwin
         # pair shipped a note that guessed a cause, and the guess was read downstream as a
         # current fact for months.
