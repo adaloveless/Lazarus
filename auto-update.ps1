@@ -659,6 +659,61 @@ function Get-GitOutput {
     return $result.Output
 }
 
+# --- Unpushed-work guard for `reset --hard origin/main` (Lars, c668 2026-09-11) -------------
+# Both Pull-*Origin functions fall back to `reset --hard origin/main` when an --ff-only pull
+# fails. The fallback exists for a real reason (GOD mrghu0l5: a stale local commit pinned VP
+# on an old version forever), but it could silently DESTROY commits the remote does not have.
+# Measured on the bash twin with the real shipped function: a clean-tree checkout carrying 2
+# unpushed commits came out with both commits unreachable from every ref while the log read
+# "[OK] Lazarus origin pulled". Steve reported the live instance on 2026-09-11 -- E:\lazarus,
+# clean working tree, HEAD 205d77ed3f plus 098e5739c6 and 1b9f60f35c on no remote at all.
+function Get-UnpushedCommitCount {
+    # Returns an [int] count of commits on HEAD that origin/main does not contain, or the
+    # string "UNKNOWN" when git could not answer. It must NEVER return 0 for a failed
+    # measurement: Get-GitOutput discards git's exit code and yields "" on failure, and the
+    # `if (-not $x) { $x = "0" }` idiom turned that empty string into "no local work" --
+    # which then authorised the destructive reset. A zero from an instrument that cannot see
+    # is not a clean answer, it is no answer.
+    param([string]$WorkDir)
+    $r = Invoke-Git -WorkDir $WorkDir -GitArgs @("rev-list", "--count", "origin/main..HEAD")
+    if ($r.ExitCode -ne 0) { return "UNKNOWN" }
+    if ("$($r.Output)" -notmatch '^\d+$') { return "UNKNOWN" }
+    return [int]$r.Output
+}
+
+function Invoke-AnchorBeforeReset {
+    # Call immediately before `reset --hard origin/main`. $true = the reset may proceed,
+    # $false = the caller must NOT reset.
+    param([string]$WorkDir, [string]$Label)
+    $n = Get-UnpushedCommitCount -WorkDir $WorkDir
+    if ($n -is [string]) {
+        Log-Err       "${Label}: cannot determine whether $WorkDir carries unpushed commits (git rev-list failed)."
+        Log-ErrDetail "${Label}: REFUSING to reset --hard -- that would silently discard local work if any exists."
+        Log-ErrDetail "${Label}: check the repo (git -C `"$WorkDir`" fsck), then reset by hand if you are sure:"
+        Log-ErrDetail "    git -C `"$WorkDir`" reset --hard origin/main"
+        return $false
+    }
+    if ($n -eq 0) { return $true }
+
+    $sha    = (Invoke-Git -WorkDir $WorkDir -GitArgs @("rev-parse", "HEAD")).Output
+    $branch = (Invoke-Git -WorkDir $WorkDir -GitArgs @("rev-parse", "--abbrev-ref", "HEAD")).Output -replace '/', '-'
+    if (-not $branch) { $branch = "detached" }
+    $stamp  = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
+    $tag    = "autoupdate-rescue/$branch-$stamp"
+    Log-Warn "${Label}: $WorkDir has $n commit(s) that origin/main does not contain."
+    Log-Warn "${Label}: HEAD $sha"
+    $t = Invoke-Git -WorkDir $WorkDir -GitArgs @("tag", $tag, "HEAD")
+    if ($t.ExitCode -eq 0) {
+        Log-Warn "${Label}: anchored in local tag '$tag' before resetting. Recover with:"
+        Log-Warn "    git -C `"$WorkDir`" log $tag"
+        Log-Warn "    git -C `"$WorkDir`" push origin $tag     # the tag is LOCAL ONLY until you do this"
+        return $true
+    }
+    Log-Err       "${Label}: could not create rescue tag '$tag'. REFUSING to reset --hard and lose $n commit(s)."
+    Log-ErrDetail "    git -C `"$WorkDir`" branch rescue-$stamp HEAD     # save them, then re-run"
+    return $false
+}
+
 function Check-VPUpdates {
     Log-Header "Checking VibePascal (adaloveless/vibepascal)"
 
@@ -692,6 +747,11 @@ function Pull-VP {
     $result = Invoke-Git -WorkDir $VPDir -GitArgs @("pull", "--ff-only", "origin", "main")
     if ($result.ExitCode -ne 0) {
         Log-Warn "VP --ff-only pull failed; reset --hard origin/main (pristine mode)"
+        # The failed pull above already fetched, so origin/main is fresh for this check (c668).
+        if (-not (Invoke-AnchorBeforeReset -WorkDir $VPDir -Label "VP")) {
+            Log-ErrDetail "VibePascal origin pull ABORTED to protect local commits; tree left as-is."
+            return
+        }
         $reset = Invoke-Git -WorkDir $VPDir -GitArgs @("reset", "--hard", "origin/main")
         if ($reset.ExitCode -ne 0) {
             Log-Err "VP reset --hard origin/main failed: $($reset.Error)"
@@ -808,6 +868,13 @@ function Pull-LazarusOrigin {
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("pull", "--ff-only", "origin", "main")
         if ($result.ExitCode -ne 0) {
             Log-Warn "Lazarus --ff-only pull failed; reset --hard origin/main (pristine mode)"
+            # The failed pull above already fetched, so origin/main is fresh for this check --
+            # the $localCommits reading further up was taken against the PRE-fetch ref and is
+            # stale here, which is how a force-pushed origin could still drop local work (c668).
+            if (-not (Invoke-AnchorBeforeReset -WorkDir $LazarusDir -Label "Lazarus")) {
+                Log-ErrDetail "Lazarus origin pull ABORTED to protect local commits; tree left as-is."
+                return
+            }
             $reset = Invoke-Git -WorkDir $LazarusDir -GitArgs @("reset", "--hard", "origin/main")
             if ($reset.ExitCode -ne 0) {
                 Log-Err "Lazarus reset --hard origin/main failed: $($reset.Error)"

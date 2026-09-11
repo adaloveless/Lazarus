@@ -73,6 +73,60 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 log_header(){ echo -e "\n${CYAN}=== $1 ===${NC}"; }
 
+# --- Unpushed-work guard for `reset --hard origin/main` (Lars, c668 2026-09-11) -------------
+# Both `pull_*_origin` functions below fall back to `reset --hard origin/main` when an
+# --ff-only pull fails. That fallback exists for a real reason (GOD mrghu0l5: a stale local
+# commit pinned VP on an old version forever), but as written it silently DESTROYED any
+# commit the remote does not have -- measured, not argued: a synthetic clean-tree checkout
+# carrying 2 unpushed commits came out of the shipped function with both commits unreachable
+# from every ref and the log reading "[OK] Lazarus origin pulled".
+# This is not hypothetical. Steve (SiteManager_DESKTOP-IO9QJQ4) reported E:\lazarus on
+# 2026-09-11: a CLEAN working tree whose HEAD (205d77ed3f) and two Jason Nelson commits
+# (098e5739c6, 1b9f60f35c) exist on no remote. A clean tree is what makes this look safe.
+unpushed_commit_count() {
+    # Echo the number of commits on HEAD that origin/main does not contain, or the literal
+    # UNKNOWN when git could not answer. NEVER echo 0 for a failed measurement: a zero from
+    # an instrument that cannot see is not a clean answer, and this number gates a
+    # destructive reset.
+    local dir="$1" out
+    out="$(git -C "$dir" rev-list --count origin/main..HEAD 2>/dev/null)" || { echo UNKNOWN; return 0; }
+    case "$out" in
+        ''|*[!0-9]*) echo UNKNOWN ;;
+        *)           echo "$out" ;;
+    esac
+}
+
+anchor_before_reset() {
+    # Call immediately before `reset --hard origin/main`. Returns 0 when the reset may
+    # proceed, non-zero when the caller must NOT reset.
+    local dir="$1" label="$2" n sha branch stamp tag
+    n="$(unpushed_commit_count "$dir")"
+    if [ "$n" = "UNKNOWN" ]; then
+        log_err "$label: cannot determine whether $dir carries unpushed commits (git rev-list failed)."
+        log_err "$label: REFUSING to reset --hard -- that would silently discard local work if any exists."
+        log_err "$label: check the repo (git -C \"$dir\" fsck), then reset by hand if you are sure:"
+        log_err "    git -C \"$dir\" reset --hard origin/main"
+        return 1
+    fi
+    [ "$n" -eq 0 ] && return 0
+
+    sha="$(git -C "$dir" rev-parse HEAD 2>/dev/null)"
+    branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null | tr '/' '-')"
+    stamp="$(date -u +%Y%m%d-%H%M%S)"
+    tag="autoupdate-rescue/${branch:-detached}-${stamp}"
+    log_warn "$label: $dir has $n commit(s) that origin/main does not contain."
+    log_warn "$label: HEAD $sha"
+    if git -C "$dir" tag "$tag" HEAD >/dev/null 2>&1; then
+        log_warn "$label: anchored in local tag '$tag' before resetting. Recover with:"
+        log_warn "    git -C \"$dir\" log $tag"
+        log_warn "    git -C \"$dir\" push origin $tag     # the tag is LOCAL ONLY until you do this"
+        return 0
+    fi
+    log_err "$label: could not create rescue tag '$tag'. REFUSING to reset --hard and lose $n commit(s)."
+    log_err "    git -C \"$dir\" branch rescue-$stamp HEAD     # save them, then re-run"
+    return 1
+}
+
 # GOD mp8g1me3 (2026-05-16): auto-update is for pristine test envs, not local dev.
 # Wipe ALL local changes (tracked + untracked) so test machines pull cleanly.
 # If you are a developer with local work, do NOT run auto-update.sh -- use git directly.
@@ -152,6 +206,11 @@ pull_vp() {
     # (GOD mrghu0l5; Finn/ZENBOOK r23 win64 smoke: --ff-only failure + no fallback = pinned forever).
     if ! git -C "$VP_DIR" pull --ff-only origin main 2>&1; then
         log_warn "VP --ff-only pull failed; reset --hard origin/main (pristine mode)"
+        # The failed pull above already fetched, so origin/main is fresh for this check (c668).
+        if ! anchor_before_reset "$VP_DIR" "VP"; then
+            log_err "VibePascal origin pull ABORTED to protect local commits; tree left as-is."
+            return 1
+        fi
         git -C "$VP_DIR" reset --hard origin/main || { log_err "VP reset failed"; return 1; }
     fi
     log_ok "VibePascal pulled successfully"
@@ -234,6 +293,11 @@ pull_lazarus_origin() {
         log_header "Pulling Lazarus origin changes"
         if ! git -C "$LAZARUS_DIR" pull --ff-only origin main 2>&1; then
             log_warn "Lazarus --ff-only pull failed; reset --hard origin/main (pristine mode)"
+            # The failed pull above already fetched, so origin/main is fresh for this check (c668).
+            if ! anchor_before_reset "$LAZARUS_DIR" "Lazarus"; then
+                log_err "Lazarus origin pull ABORTED to protect local commits; tree left as-is."
+                return 1
+            fi
             git -C "$LAZARUS_DIR" reset --hard origin/main || { log_err "Lazarus reset failed"; return 1; }
         fi
         log_ok "Lazarus origin pulled"
