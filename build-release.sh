@@ -193,6 +193,77 @@ resolve_exec_compiler() {
     echo "$copy"
 }
 
+# assert_shipped_cross_compiler_matches_exec <staging> <target> <staged-exename>
+# Abort the roll if the compiler about to SHIP is not the compiler this roll EXEC'd.
+#
+# WHY -- D003, and it is my own demerit. r16 shipped a Win64 ppcx64.exe cut from a mutable
+# staging path while the roll had been driven by a different build, so the release advertised
+# a compiler fix it did not contain and GOD taskboard 3ea8500dfe4feb6f stayed blocked behind
+# it. The rule that came out of that: hash the member you are about to ship against the
+# compiler you actually used, BEFORE upload. Two paths holding the same FILENAME are not
+# evidence that they hold the same BYTES.
+#
+# resolve_exec_compiler re-opens exactly that gap on the three targets below, deliberately and
+# for a good reason. The five exec sites now run $VP_DIR/bin/<cc> so the compiler's own
+# 207-file source directory stays off the unit path, while package_release still ships
+# $VP_DIR/compiler/<cc> -- also correct, because the in-tree compiler is the one this tree is
+# built around and resolving it could stage a stale copy (the comment at that `cp` says so).
+# Both halves are right, and together they mean the roll now BUILDS with one path and SHIPS
+# another BY DESIGN. MEASURED 2026-09-11 (Bruno), not inferred: bin/ppcx64, bin/ppcrossaarch64
+# and bin/ppcrossarm are byte-identical regular files to their compiler/ twins, and $VP_DIR/bin
+# holds 0 .pas against compiler/'s 207 -- so realized risk today is ZERO and no re-roll is owed.
+# NOTHING ASSERTS IT. $VP_DIR/bin is untracked and is Otto's install target; the day a rebuild
+# lands in compiler/ without being re-installed to bin/, the divergence is silent, and it is
+# D003 again with no symptom until a user runs the shipped binary.
+#
+# HONEST LIMIT: this re-derives the exec'd path at packaging time rather than recording what
+# was actually exec'd hours earlier. That is a proxy. It is the RIGHT proxy -- if the two
+# diverged mid-roll, that is the condition worth aborting on too.
+#
+# SCOPED TO THE THREE TARGETS WHERE SHIPPED AND EXEC'D ARE SUPPOSED TO BE THE SAME BINARY.
+# x86_64-win64 and both darwin ship a NATIVE host-<os> compiler that is deliberately a
+# different binary from the Linux-hosted cross compiler that did the building -- there the
+# difference IS the feature, and those paths already carry their own D003 guard (md5 against
+# the source tarball's own VERSION.txt). The internal case below is kept even though the call
+# site already selects, so that a later "finish the sweep" edit cannot break a darwin roll.
+# Driven read-only against all six targets before shipping: fires on none of them today.
+assert_shipped_cross_compiler_matches_exec() {
+    local staging=$1 target=$2 staged_name=$3
+    local notes="$staging/COMPILER_NOTES.txt"
+    local named execd shipped
+
+    case "$target" in
+        x86_64-linux|aarch64-linux|arm-linux) ;;
+        *) return 0 ;;
+    esac
+
+    shipped="$staging/compiler/$staged_name"
+    if [ ! -f "$shipped" ]; then
+        echo "ERROR: $target staged no compiler/$staged_name -- nothing to verify."
+        echo "NOTE: release ABORTED -- compiler/$staged_name was never staged." > "$notes"
+        return 1
+    fi
+
+    named=$(get_compiler_for_target "$target")
+    execd=$(resolve_exec_compiler "$named")
+
+    if cmp -s "$shipped" "$execd"; then
+        echo "    compiler check: compiler/$staged_name ships the bytes this roll built with (md5 $(md5sum "$shipped" | cut -d' ' -f1))"
+        return 0
+    fi
+
+    echo "ERROR: $target would ship a compiler this roll did not build with (D003)."
+    echo "       shipped  $shipped"
+    echo "                md5 $(md5sum "$shipped" | cut -d' ' -f1)"
+    echo "       exec'd   $execd"
+    echo "                md5 $(md5sum "$execd" | cut -d' ' -f1)"
+    echo "       named    $named"
+    echo "       $VP_DIR/bin and $VP_DIR/compiler have diverged. Re-install the compiler so the"
+    echo "       two agree (or ask Otto to), then re-run packaging. Do NOT ship this tarball."
+    echo "NOTE: release ABORTED -- compiler/$staged_name is not the compiler this build used." > "$notes"
+    return 1
+}
+
 # get_darwin_ide_binary <target>
 # Where the darwin IDE binary is STAGED for packaging, once build_darwin_ide has
 # lifted it out of the per-build PrimaryConfigPath.
@@ -2002,6 +2073,15 @@ package_release() {
     elif [ "$target" = "aarch64-darwin" ]; then
         copy_native_darwin_compiler_to_staging "$staging" aarch64-darwin ppca64 "Mach-O 64-bit arm64" || true
     fi
+
+    # D003 gate. Bare calls: `set -e` is on, so a mismatch ABORTS the roll here rather
+    # than uploading a tarball whose compiler is not the one that built it. Re-running
+    # packaging is cheap; a wrong shipped compiler cost a blocked GOD taskboard once.
+    case "$target" in
+        x86_64-linux)   assert_shipped_cross_compiler_matches_exec "$staging" "$target" ppcx64 ;;
+        aarch64-linux)  assert_shipped_cross_compiler_matches_exec "$staging" "$target" ppcrossaarch64 ;;
+        arm-linux)      assert_shipped_cross_compiler_matches_exec "$staging" "$target" ppcrossarm ;;
+    esac
 
     if [[ "$target" == *-darwin ]]; then
         echo "Bundling native Darwin fpcres for $target..."
