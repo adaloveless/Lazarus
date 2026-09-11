@@ -191,6 +191,7 @@ type
     procedure MainIDEFormCloseQuery(Sender: TObject; var CanClose: boolean);
     procedure HandleApplicationUserInput(Sender: TObject; var {%H-}Msg: TLMessage);
     procedure HandleApplicationIdle(Sender: TObject; var {%H-}Done: Boolean);
+    procedure FlushPendingComponentAddedDesigner;
     procedure HandleApplicationActivate(Sender: TObject);
     procedure HandleApplicationDeActivate(Sender: TObject);
     procedure HandleApplicationKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -5848,11 +5849,13 @@ end;
 
 function TMainIDE.DoSaveEditorFile(AEditor: TSourceEditorInterface; Flags: TSaveFlags): TModalResult;
 begin
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(AEditor, Flags);
 end;
 
 function TMainIDE.DoSaveEditorFile(const Filename: string; Flags: TSaveFlags): TModalResult;
 begin
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(Filename, Flags);
 end;
 
@@ -5861,6 +5864,7 @@ function TMainIDE.DoSaveEditorFileAs(AEditor: TSourceEditorInterface;
 begin
   if not FilenameIsAbsolute(NewFilename) then
     raise Exception.Create('TMainIDE.DoSaveEditorFileAs: NewFilename must be absolute: '+NewFilename);
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(AEditor, Flags+[sfSaveAs], NewFilename);
 end;
 
@@ -6552,6 +6556,11 @@ end;
 
 function TMainIDE.DoSaveProject(Flags: TSaveFlags): TModalResult;
 begin
+  // Ensure a designer-added component is written to the form unit's .pas
+  // BEFORE save runs. Without this, a drag-drop-then-save (or run) sequence
+  // can race the Application.OnIdle flush and leave the .pas out of sync
+  // with the .lfm. See GOD mp262c0s (2026-05-12).
+  FlushPendingComponentAddedDesigner;
   Result:=SaveProject(Flags);
 end;
 
@@ -12526,6 +12535,35 @@ begin
     ToolStatus:=itCodeToolAborting;    // abort codetools
 end;
 
+procedure TMainIDE.FlushPendingComponentAddedDesigner;
+// Flush any designer-added component into the form unit's .pas source.
+// Called from HandleApplicationIdle (the asynchronous path) AND from every
+// synchronous save entry point -- DoSaveProject (Save Project / Save All /
+// Run+Build, via DoSaveForBuild) and DoSaveEditorFile/DoSaveEditorFileAs
+// (plain Ctrl+S) -- so a save or build that follows a component drop never
+// writes a .pas that lacks the component field while the .lfm references it.
+// Without the synchronous flush, dropping a component then immediately
+// saving/building races Application.OnIdle; the resulting .pas misses the
+// new published field and LFM streaming fails at runtime with
+// "no field of type 'TXxxx' exists on 'TForm1'" (GOD mp262c0s, 2026-05-12).
+// Measured on lazdev c661 with synthetic X input: on unpatched main the .lfm
+// gains the component and the .pas does not, on BOTH save paths.
+var
+  Ancestor: TComponent;
+begin
+  if not Assigned(FComponentAddedDesigner) then
+    Exit;
+  {$IFDEF VerboseIdle}
+  DebugLn(['TMainIDE.FlushPendingComponentAddedDesigner']);
+  {$ENDIF}
+  // Remember cursor position
+  SourceEditorManager.AddJumpPointClicked(Self);
+  // Add component definitions to form's source code
+  Ancestor:=GetAncestorLookupRoot(FComponentAddedUnit);
+  CompleteUnitComponent(FComponentAddedUnit,FComponentAddedDesigner.LookupRoot,Ancestor);
+  FComponentAddedDesigner:=nil;
+end;
+
 procedure TMainIDE.HandleApplicationIdle(Sender: TObject; var Done: Boolean);
 var
   SrcEdit: TSourceEditor;
@@ -12540,18 +12578,7 @@ begin
   GetDefaultProcessList.FreeStoppedProcesses;
   if (SplashForm<>nil) then FreeThenNil(SplashForm);
 
-  if Assigned(FComponentAddedDesigner) then
-  begin
-    {$IFDEF VerboseIdle}
-    DebugLn(['TMainIDE.HandleApplicationIdle FComponentAddedDesigner']);
-    {$ENDIF}
-    // Remember cursor position
-    SourceEditorManager.AddJumpPointClicked(Self);
-    // Add component definitions to form's source code
-    Ancestor:=GetAncestorLookupRoot(FComponentAddedUnit);
-    CompleteUnitComponent(FComponentAddedUnit,FComponentAddedDesigner.LookupRoot,Ancestor);
-    FComponentAddedDesigner:=nil;
-  end;
+  FlushPendingComponentAddedDesigner;
 
   if Assigned(FDesignerToBeFreed) then begin
     for FileItem in FDesignerToBeFreed do begin
