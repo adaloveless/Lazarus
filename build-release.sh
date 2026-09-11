@@ -355,49 +355,53 @@ usage() {
 # dated on purpose: an allowlist is a liability, so every entry names what was measured
 # and when, and anything NOT listed still aborts the roll.
 vp_loadcheck_known_benign() {
-    # $1=target  $2=MODE (FAILED|RECOMPILED)  $3=package
+    # $1=target  $2=MODE (the leading all-caps token of the loadcheck line)  $3=package
     #
-    # THE MODE IS PART OF THE KEY ON PURPOSE AND IT IS NOT A TIDY-UP. Every justification
-    # below is a story about ONE SYMPTOM, so the entry may only fire on that symptom.
-    # librsvg is waved through because rsvg.ppu cannot RESOLVE glib2 on win64 -- a FAILED.
-    # A `RECOMPILED librsvg` is very nearly the opposite finding: the units WERE found and
-    # loaded, and FPC rebuilt them anyway because the recorded dependency CRCs no longer
-    # matched. That is STALENESS -- the exact thing this gate exists to catch, and the
-    # reason loadcheck compiles with -FU into a scratch dir. I have never measured a
-    # RECOMPILED librsvg, and I am not waving through a symptom I have never seen on the
-    # strength of a sentence written about a different one.
+    # THIS ALLOWLIST IS EMPTY, AND THAT IS THE FINDING RATHER THAN AN OVERSIGHT.
+    # It carried exactly one entry for the whole of its life -- x86_64-win64:FAILED:librsvg
+    # -- on the justification that rsvg.ppu "genuinely cannot load on this target, it is
+    # not staleness and no rebuild fixes it". THAT JUSTIFICATION WAS FALSE, and the
+    # measurement that retired it is my own: 2026-09-11, live shared tree,
+    #   dist/unit-set-loadcheck.sh x86_64-win64 compiler/ppcx64 $VP_DIR
+    #   -> loadcheck x86_64-win64: 111/111 packages load clean, 0 problem(s)   rc=0
+    # librsvg loads. So does gstreamer, which had never built for win64 at all.
     #
-    # Until 2026-09-11 this was FAILED-only BY ACCIDENT RATHER THAN BY DESIGN, and the
-    # accident was a bug: the caller captured with `[^:]*`, which stops at a colon, and a
-    # RECOMPILED line carries no colon after the package name -- so the name never reached
-    # this function intact and no entry could match it. It failed CLOSED, which is the
-    # right direction, but an allowlist whose scope is set by a word-splitting bug is one
-    # refactor away from silently widening. Found by Lars 2026-09-10; the extractor is
-    # fixed below and the scope is now written down instead of inferred.
+    # WHY IT WAS REALLY FAILING (Otto, vibepascal 30e82e4fee): a FAILED win64 gtk2 build on
+    # 2026-08-18 left buildgtk2.ppu behind as an ORPHAN. The fpmake build driver is the
+    # package's only EXPLICIT target, so with that one ppu present fpmake reported
+    # "[100%] Compiled package gtk2" and built NOTHING, on every run, forever. Deleting the
+    # orphan and re-running the UNCHANGED make line built all 12 units in seconds, and
+    # rsvg.ppu then resolved glib2. Nothing in the package sources needed changing and
+    # nothing needed allowlisting.
+    #
+    # SO THE ENTRY WAS NEVER WAVING THROUGH A LIMIT OF THE TARGET. It was waving through a
+    # wrecked unit dir for three weeks, and r25's shipped win64 asset was cut from that
+    # set. An allowlist entry is a standing promise that a symptom is harmless; this one
+    # outlived its evidence and would now HIDE a regression of the exact defect that was
+    # just fixed. Removed rather than kept "just in case": a benign failure that nobody can
+    # currently reproduce is not benign, it is unmeasured.
+    #
+    # THE MECHANISM STAYS, KEYED target:MODE:package, because the KEY is the part worth
+    # keeping. Every justification is a story about ONE symptom, so an entry may only ever
+    # fire on that symptom. FAILED means the unit could not be RESOLVED. RECOMPILED means
+    # it resolved and FPC rebuilt it anyway because recorded dependency CRCs no longer
+    # matched -- staleness, the exact thing this gate exists to catch. DRIVER-ONLY means
+    # the dir holds nothing but the wreckage of a failed build. Three different findings;
+    # one entry must never cover two of them.
+    #
+    # Until 2026-09-11 that scope was FAILED-only BY ACCIDENT: the caller captured with
+    # `[^:]*`, which stops at a colon, and a RECOMPILED line carries no colon after the
+    # package name -- so the name never reached this function intact and no entry could
+    # match it. It failed CLOSED, which is the right direction, but a scope set by a
+    # word-splitting bug is one refactor away from silently widening. Found by Lars
+    # 2026-09-10; extractor fixed below, scope now written down instead of inferred.
+    #
+    # TO ADD AN ENTRY: reproduce the symptom on the real tool first and paste the run into
+    # the comment. Do not add one from a sentence written about a different symptom.
     case "$1:$2:$3" in
-        # 2026-09-10, re-measured against loadcheck f5d7308485: x86_64-win64 is 108/109
-        # with exactly ONE failure, librsvg -- "Can't find unit glib2 used by rsvg".
-        # rsvg.ppu is a genuine consumable unit we ship that genuinely cannot load on
-        # this target. It is not staleness and no rebuild fixes it; r25's shipped win64
-        # asset was cut from this same unit set.
-        #
-        # gtk2 WAS listed here and has been REMOVED, because the tool now handles it
-        # structurally and an allowlist entry that never fires is just a lie waiting to
-        # be believed. packages/gtk2/units/x86_64-win64/ holds buildgtk2.ppu and nothing
-        # else; buildgtk2 is an fpmake BUILD DRIVER -- a dummy unit whose whole interface
-        # is a uses clause over its own package -- so it became the package's sole "unit"
-        # and reported "Can't find unit gtk2 used by buildgtk2". loadcheck now skips build
-        # drivers (7 names, 37 ppus tree-wide) and prints SKIPPED with the denominator
-        # dropped to 109, so the package cannot vanish from the count silently.
-        #
-        # And do NOT restore the old justification that "gtk2/glib2 are not built for
-        # win64 at all". True as a fact, FALSE as a rule: glib2 lives IN the gtk2 package
-        # and gtk2's fpmake.pp declares
-        #   P.OSes:=AllUnixOSes+[Win32,Win64]-[darwin,iphonesim,ios]
-        # so win64 IS a declared target and nothing is mis-declared. What happened is
-        # that our win64 roll produced buildgtk2 and none of the units. That is not
-        # chased here and does not need chasing (Policy #13).
-        x86_64-win64:FAILED:librsvg) return 0 ;;
+        # No live entries. The shape, deliberately left inert:
+        #   x86_64-win64:FAILED:librsvg) return 0 ;;
+        *) ;;
     esac
     return 1
 }
@@ -547,10 +551,40 @@ ensure_vp_packages() {
             echo "         The $target unit set is UNVERIFIED. If this roll fails with"
             echo "         \"Can't find unit <X> used by <Y>\", it is the unit set, not the source."
         else
-            local lc_bad lc_total lc_real=0 lc_mode p
-            lc_bad=$(grep -c -E '^(FAILED|RECOMPILED) ' "$lc_out" 2>/dev/null || true)
+            local lc_bad lc_total lc_prob lc_unknown lc_real=0 lc_mode p
+            # WHAT COUNTS AS A PROBLEM LINE IS THE EMITTER'S DECISION, NOT MINE.
+            # loadcheck prints ONE header line per problem package and the leading ALL-CAPS
+            # token is the mode: FAILED (could not resolve), RECOMPILED (resolved, then
+            # rebuilt on load -- staleness) and, since vibepascal 30e82e4fee, DRIVER-ONLY
+            # (the dir holds only fpmake build drivers, i.e. the wreckage of a failed build,
+            # whose mere presence then makes every later fpmake run report the package built
+            # while doing no work).
+            # MATCHING THE TOKEN CLASS RATHER THAN THE THREE NAMES IS DELIBERATE. This file
+            # named FAILED|RECOMPILED for exactly one day and the emitter grew a third shape
+            # that same night (01:06Z). Measured on the real tool against a real driver-only
+            # dir before this change: the name-list version printed
+            #   "NOTE: 0 x86_64-win64 package(s) failed the loadcheck and ALL of them are
+            #          known-benign for this target. Continuing."
+            # and returned PASS on rc=1 -- a green gate asserting a clean bill of health
+            # over the precise defect that had kept win64 gtk2 unbuilt for three weeks.
+            # A gate that must be edited every time the tool learns a new word is a gate
+            # that is silently green in between.
+            # SKIPPED IS EXCLUDED, and only SKIPPED: it is the one all-caps line that was
+            # never a problem -- the pre-30e82e4fee tool printed it for driver-only dirs and
+            # deliberately left them out of its own count. Excluding it keeps this gate
+            # correct against an older tool as well as the current one.
+            lc_bad=$(grep -E '^[A-Z][A-Z0-9-]* ' "$lc_out" 2>/dev/null | grep -c -v '^SKIPPED ' || true)
             lc_total=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
             [ -n "$lc_total" ] || lc_total=0
+            # THE TOOL'S OWN PROBLEM COUNT, reconciled against my line count. It is the only
+            # number in the log that is authoritative about how many packages the tool
+            # considered broken, and comparing the two is what catches a shape I cannot
+            # parse AT ALL: a problem the tool counted and this gate never saw must not be
+            # read as "no problem". -1 means the summary line is missing entirely.
+            lc_prob=$(sed -n 's/.*packages load clean, \([0-9]*\) problem(s).*/\1/p' "$lc_out" | tail -1)
+            [ -n "$lc_prob" ] || lc_prob=-1
+            lc_unknown=0
+            [ "$lc_prob" -gt "$lc_bad" ] && lc_unknown=$((lc_prob - lc_bad))
             # ONE LOG LINE IN, ONE PACKAGE NAME OUT. `[^ :]*` stops at the first space OR
             # colon, which is what makes BOTH emitted shapes yield a bare package name:
             #     FAILED <pkg>:                                    <- stops at the colon
@@ -565,9 +599,25 @@ ensure_vp_packages() {
                 [ -n "$p" ] || continue
                 vp_loadcheck_known_benign "$target" "$lc_mode" "$p" || lc_real=$((lc_real + 1))
             done <<EOF
-$(sed -n 's/^\(FAILED\|RECOMPILED\) \([^ :]*\).*/\1 \2/p' "$lc_out")
+$(sed -n 's/^\([A-Z][A-Z0-9-]*\) \([^ :]*\).*/\1 \2/p' "$lc_out" | grep -v '^SKIPPED ')
 EOF
-            if [ "$lc_total" -gt 0 ] && [ "$lc_bad" -ge "$lc_total" ]; then
+            if [ "$lc_prob" -lt 0 ]; then
+                # rc=1 but NO summary line: the tool died part-way through its own sweep.
+                # That is a harness failure, not a unit set failure, so it is handled like
+                # rc>=2 -- loud and UNVERIFIED, not a reason to rebuild 146 packages and
+                # not a reason to abort a roll.
+                verdict="loadcheck UNUSABLE (no summary line)"
+                echo "WARNING: $loadcheck exited 1 but printed no summary line, so its own"
+                echo "         problem count cannot be read and this gate cannot reconcile"
+                echo "         against it. The $target unit set is UNVERIFIED; continuing."
+            elif [ "$lc_unknown" -gt 0 ]; then
+                echo "ERROR: $loadcheck reported $lc_prob problem(s) on $target but only $lc_bad"
+                echo "       of them are in a line shape this gate can classify -- $lc_unknown"
+                echo "       problem(s) went unread. A PASS here would be an assertion about"
+                echo "       lines that were never examined. Full log: $lc_out"
+                echo "       Fix: teach the extractor above the new shape, then re-run."
+                exit 1
+            elif [ "$lc_total" -gt 0 ] && [ "$lc_bad" -ge "$lc_total" ]; then
                 # EVERY package failed. A unit set does not rot all at once; a toolchain
                 # does fail all at once. Treat this as an unusable harness, not as 143
                 # simultaneously broken packages.
@@ -583,10 +633,20 @@ EOF
                 echo "       \"Can't find unit <X>\" and blames the SOURCE rather than the unit set."
                 echo "       Re-run with VP_FORCE_STALE_REBUILD=1 to rebuild the unit set first."
                 exit 1
-            else
+            elif [ "$lc_bad" -gt 0 ]; then
                 verdict="loadcheck PASS ($lc_bad known-benign)"
                 echo "NOTE: $lc_bad $target package(s) failed the loadcheck and ALL of them are"
                 echo "      known-benign for this target (see vp_loadcheck_known_benign). Continuing."
+            else
+                # rc=1 with nothing to show for it. DO NOT print "0 package(s) failed and
+                # ALL of them are known-benign" -- that sentence is vacuously true and reads
+                # as a clean bill of health. It is exactly what this gate printed over a
+                # real DRIVER-ONLY defect on 2026-09-11. Belt and braces with lc_unknown
+                # above: that branch catches a miscount, this one catches a miscount whose
+                # summary line ALSO says zero.
+                verdict="loadcheck UNUSABLE (rc=1, no problem package named)"
+                echo "WARNING: $loadcheck exited 1 but named no problem package that this gate"
+                echo "         could read. The $target unit set is UNVERIFIED; continuing."
             fi
         fi
     else
@@ -662,10 +722,14 @@ EOF
             TMPDIR="$lc_scratch" "$loadcheck" "$target" "$compiler" "$VP_DIR" > "$lc_out" 2>&1 || lc_rc2=$?
             cat "$lc_out"
             if [ "$lc_rc2" = 1 ]; then
-                local lc_bad2 lc_total2 lc_real2=0 lc_mode2 p2
-                lc_bad2=$(grep -c -E '^(FAILED|RECOMPILED) ' "$lc_out" 2>/dev/null || true)
+                local lc_bad2 lc_total2 lc_prob2 lc_unknown2 lc_real2=0 lc_mode2 p2
+                lc_bad2=$(grep -E '^[A-Z][A-Z0-9-]* ' "$lc_out" 2>/dev/null | grep -c -v '^SKIPPED ' || true)
                 lc_total2=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
                 [ -n "$lc_total2" ] || lc_total2=0
+                lc_prob2=$(sed -n 's/.*packages load clean, \([0-9]*\) problem(s).*/\1/p' "$lc_out" | tail -1)
+                [ -n "$lc_prob2" ] || lc_prob2=-1
+                lc_unknown2=0
+                [ "$lc_prob2" -gt "$lc_bad2" ] && lc_unknown2=$((lc_prob2 - lc_bad2))
                 # Same extractor, same heredoc-not-a-pipe rule as the first call site --
                 # see the comment there. THIS SITE CARRIED THE IDENTICAL DEFECT and it is
                 # the easier one to miss, because it only runs after VP_FORCE_STALE_REBUILD
@@ -674,9 +738,18 @@ EOF
                     [ -n "$p2" ] || continue
                     vp_loadcheck_known_benign "$target" "$lc_mode2" "$p2" || lc_real2=$((lc_real2 + 1))
                 done <<EOF
-$(sed -n 's/^\(FAILED\|RECOMPILED\) \([^ :]*\).*/\1 \2/p' "$lc_out")
+$(sed -n 's/^\([A-Z][A-Z0-9-]*\) \([^ :]*\).*/\1 \2/p' "$lc_out" | grep -v '^SKIPPED ')
 EOF
-                if [ "$lc_total2" -gt 0 ] && [ "$lc_bad2" -ge "$lc_total2" ]; then
+                if [ "$lc_prob2" -lt 0 ]; then
+                    verdict="loadcheck UNUSABLE after rebuild (no summary line)"
+                    echo "WARNING: the re-verify exited 1 with no summary line; its own problem"
+                    echo "         count cannot be read. $target is UNVERIFIED; continuing."
+                elif [ "$lc_unknown2" -gt 0 ]; then
+                    echo "ERROR: the $target re-verify reported $lc_prob2 problem(s) but only"
+                    echo "       $lc_bad2 are in a shape this gate can classify. Refusing to"
+                    echo "       continue on $lc_unknown2 unread problem(s). Log: $lc_out"
+                    exit 1
+                elif [ "$lc_total2" -gt 0 ] && [ "$lc_bad2" -ge "$lc_total2" ]; then
                     verdict="loadcheck UNUSABLE on this host ($lc_bad2/$lc_total2 failed)"
                     echo "WARNING: every $target package failed after the rebuild -- harness/toolchain,"
                     echo "         not the unit set. Continuing UNVERIFIED."
@@ -685,8 +758,16 @@ EOF
                     echo "       rebuild ($lc_real2 of $lc_total2). Refusing to continue."
                     echo "       Previous units are in $VP_DIR/.stale-units if this needs unpicking."
                     exit 1
-                else
+                elif [ "$lc_bad2" -gt 0 ]; then
                     verdict="loadcheck PASS after rebuild ($lc_bad2 known-benign)"
+                else
+                    # Same reason as the first call site: rc=1 with nothing named is not a
+                    # pass. This site is the easier one to miss and the worse one to get
+                    # wrong -- its number is read by someone already half-convinced the
+                    # tree is broken.
+                    verdict="loadcheck UNUSABLE after rebuild (rc=1, no problem package named)"
+                    echo "WARNING: the $target re-verify exited 1 but named no problem package"
+                    echo "         this gate could read. UNVERIFIED; continuing."
                 fi
             elif [ "$lc_rc2" != 0 ]; then
                 echo "WARNING: could not re-verify $target after the rebuild (rc=$lc_rc2); continuing UNVERIFIED."
