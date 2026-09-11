@@ -36,6 +36,58 @@ BUILD_STATE_DIR="$HOME/.cache/lazarus-build"
 BUILD_EPOCH="$(date +%s)"
 BUILD_LOG_DIR="${BUILD_LOG_DIR:-$HOME/lazarus-build-logs/$DATE_STAMP}"
 
+# report_oom_evidence -- call this when a step was KILLED rather than when it
+# FAILED. A SIGKILL from the OOM killer and a genuine compile failure look the
+# same in a build log, and that ambiguity has already cost us a cycle: a roll that
+# died of host memory got written up as a compiler AV.
+#
+# The instrument is the whole problem. `dmesg` is the obvious one and it is VOID
+# on lazdev -- kernel.dmesg_restrict=1, so an unprivileged `dmesg` exits 1 with
+# ZERO lines, which reads exactly like "no OOM happened". A zero from an
+# instrument that cannot see is not a clean answer, it is no answer. So: prefer
+# kern.log and `journalctl -k`, which carry the victim name and its RSS, and fall
+# back to /proc/vmstat's oom_kill counter, which needs no privileges at all and is
+# the one reading that is always available. Say plainly when nothing was readable.
+report_oom_evidence() {
+    local n hits
+
+    n="$(awk '/^oom_kill /{print $2}' /proc/vmstat 2>/dev/null)"
+    case "$n" in ''|*[!0-9]*) n="" ;; esac
+
+    hits="$(cat /var/log/kern.log /var/log/kern.log.1 2>/dev/null \
+            | grep 'Out of memory: Killed process' | tail -3)"
+    if [ -z "$hits" ]; then
+        hits="$(journalctl -k --no-pager 2>/dev/null \
+                | grep 'Out of memory: Killed process' | tail -3)"
+    fi
+
+    if [ -n "$hits" ]; then
+        echo "         OOM EVIDENCE -- the kernel killed a process for memory on this host."
+        echo "         A build that dies this way is NOT a source or compiler defect:"
+        printf '%s\n' "$hits" | sed 's/^/           /'
+        return 0
+    fi
+
+    if [ -n "$n" ] && [ "$n" -gt 0 ]; then
+        echo "         OOM EVIDENCE: /proc/vmstat oom_kill = $n -- the kernel HAS killed at"
+        echo "         least one process for memory since this host booted, but no kernel log"
+        echo "         was readable from here to name the victim."
+        echo "         Run: sudo dmesg | grep -i 'oom-kill'"
+        return 0
+    fi
+
+    if [ -z "$n" ]; then
+        echo "         NOTE: neither /proc/vmstat nor any kernel log was readable, so whether"
+        echo "         the OOM killer fired is UNKNOWN here. That is not the same as 'it did"
+        echo "         not' -- do not read this silence as a clean result."
+        return 1
+    fi
+
+    echo "         (/proc/vmstat oom_kill = 0 since boot and no kernel-log OOM lines, so this"
+    echo "         kill was probably NOT the OOM killer -- look for a manual kill or a timeout.)"
+    return 1
+}
+
 # run_build_step <logname> <summary-regex> -- <cmd...>
 # Runs cmd with the FULL output tee'd to a log that outlives the roll, prints a
 # filtered summary, and returns the COMMAND's status -- never the filter's.
@@ -865,6 +917,7 @@ EOF
                     echo "       Full log: $lc_out"
                     echo "       Re-run the loadcheck to completion; if it still names packages,"
                     echo "       re-run this with VP_FORCE_STALE_REBUILD=1 to rebuild the set."
+                    report_oom_evidence || true
                     exit 1
                 fi
                 verdict="loadcheck INTERRUPTED (rc=$lc_rc, $lc_ok/$lc_total judged)"
@@ -873,7 +926,8 @@ EOF
                 echo "         but the rest were never measured, so this is NOT a pass. The"
                 echo "         $target unit set is UNVERIFIED; continuing."
                 echo "         If something is killing builds on this box, that is the thing to"
-                echo "         fix -- check dmesg for the OOM killer before re-rolling."
+                echo "         fix -- so do not send the reader off to look for it, read it here:"
+                report_oom_evidence || true
             elif [ "$lc_total" -gt 0 ] && [ "$lc_bad" -ge "$lc_total" ]; then
                 # EVERY package failed. A unit set does not rot all at once; a toolchain
                 # does fail all at once. Treat this as an unusable harness, not as 143
@@ -1023,12 +1077,14 @@ EOF
                         echo "       did NOT fix them and the rest were never judged. Refusing to"
                         echo "       continue. Log: $lc_out"
                         echo "       Previous units are in $VP_DIR/.stale-units if this needs unpicking."
+                        report_oom_evidence || true
                         exit 1
                     fi
                     verdict="loadcheck INTERRUPTED after rebuild (rc=$lc_rc2, $lc_ok2/$lc_total2 judged)"
                     echo "WARNING: the $target re-verify was killed before it finished (rc=$lc_rc2)."
                     echo "         $lc_ok2 of $lc_total2 judged, none failing, rest unmeasured -- so the"
                     echo "         rebuild is NOT confirmed. UNVERIFIED; continuing."
+                    report_oom_evidence || true
                 elif [ "$lc_total2" -gt 0 ] && [ "$lc_bad2" -ge "$lc_total2" ]; then
                     verdict="loadcheck UNUSABLE on this host ($lc_bad2/$lc_total2 failed)"
                     echo "WARNING: every $target package failed after the rebuild -- harness/toolchain,"
