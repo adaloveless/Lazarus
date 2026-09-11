@@ -1290,8 +1290,45 @@ verify_bgra_release_package_outputs() {
 build_bgra_release_packages() {
     local target=$1
     local cfg=$2
+    # Same exec-target hardening as build_darwin_ide (:987), for the same measured
+    # reason: this wrapper's `exec "$compiler"` puts the exec'd binary's directory
+    # on the unit path, and $VP_DIR/compiler holds 207 .pas files. Resolved, never
+    # the wrapper's own path, so lazbuild still sees the same --compiler string.
+    #
+    # THIS IS DEFENSIVE, NOT CORRECTIVE -- it fixes nothing that is broken today,
+    # and no re-roll is owed for it. Measured by Bruno (BuildMaster_lazdev)
+    # 2026-09-11 through a wrapper emitted by THIS function, on every live target
+    # rather than the one Lars measured:
+    #
+    #   target          unit paths   compiler/ dir lands at
+    #   x86_64-linux       149            149 of 149
+    #   x86_64-win64       113            113 of 113   (needs -Twin64 to reach a .ppu)
+    #   aarch64-linux      145            145 of 145
+    #   arm-linux          144            144 of 144
+    #   x86_64-darwin      158            158 of 158   (reproduces Lars's number)
+    #
+    # So the exposure is identical on all five arms and it is always LAST, and a
+    # command-line -Fu lands FIRST (measured: entry 1 of 150) -- so every path
+    # lazbuild passes per package outranks it. The compiler's own sources are
+    # reachable only as a LAST RESORT, for a unit nothing else on the path holds.
+    #
+    # WHY IT CANNOT BITE THIS FUNCTION TODAY, AND WHY THAT IS NOT A REASON TO SKIP
+    # IT. The 207 compiler source names collide with exactly three of the 3,657
+    # unit names in this tree -- macho (components/fpdebug), compiler
+    # (ide/packages/ideconfig) and tokens (components/jcf2/Parse; needs a
+    # case-INSENSITIVE find). All three are in the IDE closure, which is why
+    # build_darwin_ide needed this. NONE of the three is in the BGRA closure: the
+    # three .lpk seeds resolve to 14 packages by RequiredPkgs, and none holds any
+    # of those units. The realized risk here is currently ZERO on every target.
+    #
+    # It goes in anyway for two reasons that outlive that measurement. (1) This
+    # function runs for EVERY target INCLUDING darwin (:2548), so without it one
+    # roll resolves the compiler two different ways for the same target, and the
+    # next reader of :987 will reasonably assume this site matches. (2) The closure
+    # is not frozen -- it already pulls in debuggerintf and ideintf, and the day it
+    # grows fpdebug the exposure becomes live with nothing to announce it.
     local compiler
-    compiler=$(get_compiler_for_target "$target")
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
     local os_target=$(echo "$target" | cut -d- -f2)
     local cpu_target=$(echo "$target" | cut -d- -f1)
     local widget
