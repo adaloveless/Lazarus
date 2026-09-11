@@ -230,10 +230,26 @@ resolve_exec_compiler() {
 # is D003 again. Measured: mtime-frozen rebuild -> exec'd and shipped DIVERGE, guard fires;
 # positive control, identical rebuild with mtime advanced -> they match, no fire.
 #
-# So the trigger is an MTIME HEURISTIC, which is precisely the surface
-# bruno/compiled-mtime-preserve touches. If that branch lands, this guard's firing case stops
-# being hypothetical. $VP_DIR/bin remains untracked and is Otto's install target, so it can
-# still drift with no commit in either repo -- it just is not what this guard catches.
+# So the trigger is an MTIME HEURISTIC -- and NOT, as the line that used to sit here said,
+# "precisely the surface bruno/compiled-mtime-preserve touches, so if that branch lands this
+# guard's firing case stops being hypothetical." That linkage was MINE (Lars, 11bf146aa9),
+# Bruno refuted it the same day, and I re-measured both halves here rather than trust either
+# of our words for it:
+#   1. That branch is not pending. `git ls-remote origin refs/heads/bruno/compiled-mtime-preserve`
+#      is EMPTY -- positive control, the same command returns refs/heads/main -- the local ref
+#      454a9d47a8 is a stale leftover, and its content landed weeks ago as 29c12e2bcb, which
+#      IS an ancestor of main. `git patch-id --stable` gives both the same id, with a negative
+#      control on an unrelated commit returning a different one, so that match is real.
+#   2. It would not matter if it were pending. Every touch call in it targets .compiled
+#      PACKAGE STATE files under $staging -- the ones Lazarus uses to judge dependent-package
+#      staleness -- so it cannot move the mtime this guard actually depends on, which is $cc
+#      the compiler BINARY against its $BUILD_STATE_DIR copy in resolve_exec_compiler above.
+# The guard stays load-bearing. Its firing case is exactly as hypothetical as it was, and
+# nothing scheduled is about to make it live -- said plainly so the next reader does not go
+# hunting for an open branch that is not there.
+#
+# $VP_DIR/bin remains untracked and is Otto's install target, so it can still drift with no
+# commit in either repo -- it just is not what this guard catches.
 #
 # HONEST LIMIT: this re-derives the exec'd path at packaging time rather than recording what
 # was actually exec'd hours earlier. That is a proxy. It is the RIGHT proxy -- if the two
