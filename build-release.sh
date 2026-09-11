@@ -401,6 +401,10 @@ copy_native_linux_compiler_to_staging() {
 build_darwin_fpcres() {
     local target=$1
     local dest=$2
+    # NOT routed through resolve_exec_compiler: this compiles VibePascal's OWN
+    # source ($VP_DIR/utils/fpcres/fpcres.pas), so $VP_DIR/compiler landing on
+    # the unit path is the compiler's own closure, not a foreign one shadowing
+    # this tree. The hardening is for building LAZARUS code; leave VP's alone.
     local compiler=$(get_compiler_for_target "$target")
     local cfg=$(get_cfg_for_target "$target")
     local os_target=$(echo "$target" | cut -d- -f2)
@@ -498,6 +502,10 @@ vp_loadcheck_known_benign() {
 ensure_vp_packages() {
     local target=$1
     local cfg=$2
+    # NOT routed through resolve_exec_compiler: this never execs the compiler.
+    # The only use of $compiler below is inside the ERROR TEXT telling a human
+    # which `make rtl PP=...` to run, and that advice must name the real in-tree
+    # compiler, not a resolved copy under $BUILD_STATE_DIR.
     local compiler=$(get_compiler_for_target "$target")
     local rtl_units="$VP_DIR/rtl/units/$target"
 
@@ -955,7 +963,16 @@ EOF
 build_lazbuild() {
     local target=$1
     local cfg=$2
-    local compiler=$(get_compiler_for_target "$target")
+    # Same exec-target hardening as build_darwin_ide (:987) and
+    # build_bgra_release_packages (:1331). `make ... PP=<compiler>` execs the
+    # compiler directly, so FPC puts the exec'd binary's directory on the unit,
+    # library and object paths -- and $VP_DIR/compiler holds 207 .pas files.
+    # Measured here 2026-09-11 that make derives NOTHING ELSE from PP's
+    # directory: `make -n` for a real component emits a byte-identical compile
+    # command under both PP values, every -Fu/-Fl/-FU/-FE and the cfg the same,
+    # the compiler path itself the only difference.
+    local compiler
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
 
     echo "=== Building lazbuild for $target ==="
     local os_target=$(echo "$target" | cut -d- -f2)
@@ -1389,7 +1406,13 @@ EOF
 build_darwin_starter() {
     local target=$1
     local cfg=$2
-    local compiler=$(get_compiler_for_target "$target")
+    # Hardened like build_lazbuild above; this is a make PP= site too. It is
+    # DARWIN, which is where the hazard is not merely theoretical: the two
+    # darwin cfgs are the ONLY ones of the six that carry -Fu lines outside
+    # $VP_DIR (38 each, into this tree; the four non-darwin cfgs carry zero),
+    # and all six are untracked, so that immunity can drift away unversioned.
+    local compiler
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
 
     echo "=== Building Darwin startlazarus for $target ==="
     local os_target=$(echo "$target" | cut -d- -f2)
@@ -1422,7 +1445,9 @@ build_darwin_starter() {
 build_darwin_lhelp() {
     local target=$1
     local cfg=$2
-    local compiler=$(get_compiler_for_target "$target")
+    # Hardened like build_darwin_starter above; same make PP= shape, same arm.
+    local compiler
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
 
     echo "=== Building Darwin lhelp for $target ==="
     local os_target=$(echo "$target" | cut -d- -f2)
@@ -1955,6 +1980,12 @@ package_release() {
 
     cp "$LAZARUS_DIR/lazbuild${ext}" "$staging/bin/"
 
+    # DELIBERATELY NOT routed through resolve_exec_compiler, unlike the five
+    # exec sites. This one does not EXEC the compiler, it SHIPS it: the path is
+    # a `cp` source for the release staging tree. Resolving it could stage a
+    # different binary than the one this roll built with -- exactly the "stale
+    # copy" case resolve_exec_compiler exists to reject, but here the in-tree
+    # compiler is the RIGHT answer. Do not "finish the sweep" here.
     local compiler=$(get_compiler_for_target "$target")
     if [ "$target" = "x86_64-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcx64"
