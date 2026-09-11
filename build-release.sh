@@ -997,11 +997,40 @@ EOF
     # user-side rebuild.
     local compiled_file
     local mtime_ref
+    # MATCH ON THE WRAPPER'S BASENAME, NOT ITS ABSOLUTE PATH, AND FIND THE FILES
+    # WITH find(1) RATHER THAN grep -r. Measured 2026-09-11 against the SHIPPED
+    # x86_64-darwin asset of release 372618806: this loop processed ZERO files and
+    # 36 of its 244 .compiled members went out carrying
+    # `Value="../../../../../.cache/lazarus-build/ppcx86_64-darwin-wrapper" Date="..."`
+    # plus an un-stripped `-Tdarwin` in Params -- i.e. BOTH Melissa C326 finding 3
+    # and Melissa C18 finding 2, live in a published release. The cause, and then
+    # why discovery moved from grep -r to find(1), which is NOT a second cause:
+    #   1. THE CAUSE, sufficient on its own. lazbuild stores the compiler path
+    #      RELATIVE to the .compiled file, so an absolute "$wrapper" pattern can
+    #      never match. Zero files in the tree carry the absolute form; all 36 carry
+    #      a ../../../.. form, and the number of .. segments varies with the file's
+    #      depth, so no single literal ever could. files-processed 0 -> 36 is the
+    #      proof, and it is the only thing the fix rests on.
+    #   2. WHY find(1). It has NO ignore semantics under ANY grep, so this loop is
+    #      immune to whichever grep a caller's environment supplies. That is worth
+    #      buying because the environment really does vary here: an INTERACTIVE
+    #      AGENT SHELL on lazdev has `grep` as a bash function dispatching to ugrep
+    #      7.8.4, which does skip gitignored paths (`grep -rl --include='*.compiled'
+    #      CONFIG .` -> 85 of 206). THAT IS A PROPERTY OF THAT SHELL, NOT OF THIS
+    #      BOX. The function is not exported, so a plain .sh like this one gets
+    #      /usr/bin/grep (GNU grep 3.11) and sees all 206. grep -r in a build script
+    #      here is NOT blind, and grep -r call sites elsewhere do NOT need rewriting.
+    # -print0 is portable and the per-file grep -q is a plain non-recursive match,
+    # identical under GNU grep and ugrep. The basename is [A-Za-z0-9_-] only, so it
+    # needs no regex quoting.
+    local wrapper_base
+    wrapper_base=$(basename "$wrapper")
     while IFS= read -r -d '' compiled_file; do
+        grep -q "$wrapper_base" "$compiled_file" 2>/dev/null || continue
         mtime_ref=$(mktemp)
         touch -r "$compiled_file" "$mtime_ref"
         if sed -i \
-            -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g" \
+            -e "s|Value=\"[^\"]*${wrapper_base}\"\( Date=\"[0-9]*\"\)\{0,1\}|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g" \
             -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/ \+"/"/g' \
@@ -1012,7 +1041,7 @@ EOF
             rm -f "$mtime_ref"
             return 1
         fi
-    done < <(grep -rlZ --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null || true)
+    done < <(find "$LAZARUS_DIR" -name '*.compiled' -type f -print0 2>/dev/null)
 
     rm -f "$wrapper"
     rm -rf "$pcp"
@@ -1087,12 +1116,17 @@ rewrite_bgra_compiled_state() {
     local compiled_file=""
     local mtime_ref=""
     local replacement="\$(LazarusDir)compiler/${compiler_name}"
+    # Same defect and same fix as build_darwin_ide -- see the long comment there.
+    # This site had the extra no-Date arm already, which is why it looked correct;
+    # it was not, because BOTH arms anchored on the absolute "$wrapper".
+    local wrapper_base
+    wrapper_base=$(basename "$wrapper")
     while IFS= read -r -d '' compiled_file; do
+        grep -q "$wrapper_base" "$compiled_file" 2>/dev/null || continue
         mtime_ref=$(mktemp)
         touch -r "$compiled_file" "$mtime_ref"
         if sed -i \
-            -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"${replacement}\"|g" \
-            -e "s|Value=\"${wrapper}\"|Value=\"${replacement}\"|g" \
+            -e "s|Value=\"[^\"]*${wrapper_base}\"\( Date=\"[0-9]*\"\)\{0,1\}|Value=\"${replacement}\"|g" \
             -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/ \+"/"/g' \
@@ -1108,10 +1142,10 @@ rewrite_bgra_compiled_state() {
     # as dependencies -- stamping THEIR .compiled files with the wrapper path
     # too (Melissa r18 aarch64-darwin F7, 2026-05-19: 11 core packages carried
     # the stale /tmp/lazrelease-*-compiler-wrapper path + -Tdarwin Params). A
-    # subdir-scoped grep missed them. grep -l only returns files that CONTAIN
-    # "$wrapper", so widening to $LAZARUS_DIR is a no-op for already-clean
-    # state files. Mirrors build_darwin_ide's rewrite scope.
-    done < <(grep -rlZ --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null || true)
+    # subdir-scoped scan missed them. Widening to $LAZARUS_DIR is a no-op for
+    # already-clean state files because the per-file grep -q above skips any file
+    # that does not contain the wrapper basename. Mirrors build_darwin_ide's scope.
+    done < <(find "$LAZARUS_DIR" -name '*.compiled' -type f -print0 2>/dev/null)
 }
 
 verify_bgra_release_package_outputs() {
