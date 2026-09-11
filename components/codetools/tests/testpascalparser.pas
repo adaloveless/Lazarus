@@ -1288,9 +1288,23 @@ procedure TTestPascalParser.TestUnleashedInlineVarInitTypeDisplay;
 // truth for all three read at runtime via PTypeInfo, not inferred.
 // NOT covered here, and deliberately: `var r := s` for a declared
 // s: single, and `var t := single(1.0)`. Both take the identifier path
-// into FindTermTypeAsString and both come back EMPTY under this harness,
-// which has no search paths to resolve against -- asserting that would
-// pin a harness artifact rather than the IDE's behaviour.
+// into FindTermTypeAsString and both come back EMPTY.
+// The earlier note here blamed "no search paths"; that was measured and is
+// WRONG. Given a real FPC UnitSetCache attached to the virtual directory
+// (the testctpas2js.pas recipe: CompilerDefinesCache.TestFilename, then
+// FindUnitSet + Init + CreateFPCTemplate under a da_Directory template for
+// VirtualDirectory), with GetUnitSetForDirectory('') PRESENT and the cache
+// demonstrably resolving system.pp and sysutils.pp, the answer does not
+// change. The fallback itself is not broken: a same-unit user type resolves
+// through it (`var q := m` for m: TMyRec gives TMyRec). What fails is
+// anything whose answer lives outside the unit being parsed -- an ordinary
+// `var u := IntToStr(1)` under `uses SysUtils` comes back empty too, so r
+// and t are not special cases. Still not asserted here because the real
+// IDE has a project context this harness cannot reproduce: confirm there
+// before calling it a defect. FindExprTypeAsString RAISES on xtNone and
+// ExtractInlineVarInitType swallows it in a bare `except Result:=''`, so a
+// raise and a genuine cannot-infer are indistinguishable from the empty
+// string alone.
 var
   Tool: TCodeTool;
   Node: TCodeTreeNode;
