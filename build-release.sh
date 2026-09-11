@@ -540,9 +540,26 @@ ensure_vp_packages() {
         local lc_rc=0
         TMPDIR="$lc_scratch" "$loadcheck" "$target" "$compiler" "$VP_DIR" > "$lc_out" 2>&1 || lc_rc=$?
         cat "$lc_out"
-        if [ "$lc_rc" = 0 ]; then
+        # AN INTERRUPTED SWEEP IS A THIRD OUTCOME AND IT IS NOT READABLE FROM THE rc ALONE.
+        # loadcheck grew an EXIT/HUP/INT/TERM trap (vibepascal f791257d51) that prints an
+        # ABORTED header plus a summary line and exits 128+signal -- 143 for TERM. Every rc
+        # outside {0,1} used to land in the UNAVAILABLE arm below, which says "the harness
+        # never ran" and walks on. That is WRONG for this shape and wrongly reassuring: the
+        # sweep DID run, it was killed part-way, and the log can already NAME packages that
+        # failed before the kill. Bucketing it with "no compiler at <path>" throws measured
+        # badness away. So the discriminator is the ABORTED header, not the number:
+        #   rc=2      -> harness unusable, says NOTHING about the tree   (cy1110, unchanged)
+        #   rc=1      -> tree measured and bad                            (cy1110, unchanged)
+        #   ABORTED   -> tree PARTIALLY measured, measurement unfinished  (new, count it)
+        # Do NOT collapse any two of those three. Matching on the token rather than on
+        # 128+n also means a kill by any signal Otto adds a handler for is caught here
+        # without me editing a list -- the same reason this gate counts all-caps headers
+        # structurally instead of enumerating the words it knows today.
+        local lc_aborted=0
+        grep -q '^ABORTED ' "$lc_out" 2>/dev/null && lc_aborted=1
+        if [ "$lc_rc" = 0 ] && [ "$lc_aborted" = 0 ]; then
             verdict="loadcheck PASS"
-        elif [ "$lc_rc" != 1 ]; then
+        elif [ "$lc_rc" != 1 ] && [ "$lc_aborted" = 0 ]; then
             # rc>=2 is the SCRIPT failing (no compiler, no RTL, cannot mktemp), not the
             # unit set failing. Do not rebuild 146 packages because a harness broke, and
             # do not silently claim the set is fine either.
@@ -551,7 +568,7 @@ ensure_vp_packages() {
             echo "         The $target unit set is UNVERIFIED. If this roll fails with"
             echo "         \"Can't find unit <X> used by <Y>\", it is the unit set, not the source."
         else
-            local lc_bad lc_total lc_prob lc_unknown lc_real=0 lc_mode p
+            local lc_bad lc_total lc_ok lc_prob lc_unknown lc_real=0 lc_mode p
             # WHAT COUNTS AS A PROBLEM LINE IS THE EMITTER'S DECISION, NOT MINE.
             # loadcheck prints ONE header line per problem package and the leading ALL-CAPS
             # token is the mode: FAILED (could not resolve), RECOMPILED (resolved, then
@@ -576,6 +593,11 @@ ensure_vp_packages() {
             lc_bad=$(grep -E '^[A-Z][A-Z0-9-]* ' "$lc_out" 2>/dev/null | grep -c -v '^SKIPPED ' || true)
             lc_total=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
             [ -n "$lc_total" ] || lc_total=0
+            # The NUMERATOR too, and only the INTERRUPTED arm reads it: on a killed sweep
+            # "how much got judged" is the only honest thing that can be said, and saying
+            # it is what stops "UNVERIFIED" being heard as "nothing happened".
+            lc_ok=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\1/p' "$lc_out" | tail -1)
+            [ -n "$lc_ok" ] || lc_ok=0
             # THE TOOL'S OWN PROBLEM COUNT, reconciled against my line count. It is the only
             # number in the log that is authoritative about how many packages the tool
             # considered broken, and comparing the two is what catches a shape I cannot
@@ -597,6 +619,14 @@ ensure_vp_packages() {
             # and lc_real silently stays 0 no matter what the log says. Do not "simplify".
             while read -r lc_mode p; do
                 [ -n "$p" ] || continue
+                # ABORTED IS NOT A PACKAGE. The word after it is the TARGET, and the line
+                # means the sweep was killed. It STAYS counted in lc_bad -- Otto counts it
+                # in his own problem total (bad+1) precisely so the reconciliation above
+                # still closes -- but counting it as a unit set that does not load would
+                # print "1 of 24 package unit set(s) do not load" and send the operator to
+                # VP_FORCE_STALE_REBUILD=1, rebuilding the whole package set because a
+                # process got a signal. lc_real must mean PACKAGES, and only packages.
+                [ "$lc_mode" = ABORTED ] && continue
                 vp_loadcheck_known_benign "$target" "$lc_mode" "$p" || lc_real=$((lc_real + 1))
             done <<EOF
 $(sed -n 's/^\([A-Z][A-Z0-9-]*\) \([^ :]*\).*/\1 \2/p' "$lc_out" | grep -v '^SKIPPED ')
@@ -617,6 +647,30 @@ EOF
                 echo "       lines that were never examined. Full log: $lc_out"
                 echo "       Fix: teach the extractor above the new shape, then re-run."
                 exit 1
+            elif [ "$lc_aborted" = 1 ]; then
+                # THE SWEEP WAS KILLED. Reconciliation has already closed (the ABORTED
+                # header is counted on both sides), so whatever WAS measured is readable
+                # and must not be thrown away -- that is the whole reason this arm exists
+                # ahead of the "every package failed" one. Two outcomes, and they are not
+                # the same finding:
+                if [ "$lc_real" -gt 0 ]; then
+                    echo "ERROR: the $target loadcheck was KILLED mid-sweep, but it had already"
+                    echo "       named $lc_real failing package(s) before it died (see above)."
+                    echo "       Refusing to build on a unit set that was measured bad -- an"
+                    echo "       interrupted measurement does not un-measure what it found, and"
+                    echo "       there may be MORE: the packages after the kill were never judged."
+                    echo "       Full log: $lc_out"
+                    echo "       Re-run the loadcheck to completion; if it still names packages,"
+                    echo "       re-run this with VP_FORCE_STALE_REBUILD=1 to rebuild the set."
+                    exit 1
+                fi
+                verdict="loadcheck INTERRUPTED (rc=$lc_rc, $lc_ok/$lc_total judged)"
+                echo "WARNING: the $target loadcheck was killed before it finished (rc=$lc_rc)."
+                echo "         $lc_ok of $lc_total package(s) were judged and none of them failed,"
+                echo "         but the rest were never measured, so this is NOT a pass. The"
+                echo "         $target unit set is UNVERIFIED; continuing."
+                echo "         If something is killing builds on this box, that is the thing to"
+                echo "         fix -- check dmesg for the OOM killer before re-rolling."
             elif [ "$lc_total" -gt 0 ] && [ "$lc_bad" -ge "$lc_total" ]; then
                 # EVERY package failed. A unit set does not rot all at once; a toolchain
                 # does fail all at once. Treat this as an unusable harness, not as 143
@@ -721,11 +775,19 @@ EOF
             local lc_rc2=0
             TMPDIR="$lc_scratch" "$loadcheck" "$target" "$compiler" "$VP_DIR" > "$lc_out" 2>&1 || lc_rc2=$?
             cat "$lc_out"
-            if [ "$lc_rc2" = 1 ]; then
-                local lc_bad2 lc_total2 lc_prob2 lc_unknown2 lc_real2=0 lc_mode2 p2
+            # Same three-way split as the first call site, same discriminator -- see the
+            # long comment there. This site is the easier one to get wrong: it runs AFTER a
+            # rebuild, where a kill is likelier (the box has just done real work) and where
+            # the number is read by someone already half-convinced the tree is broken.
+            local lc_aborted2=0
+            grep -q '^ABORTED ' "$lc_out" 2>/dev/null && lc_aborted2=1
+            if [ "$lc_rc2" = 1 ] || [ "$lc_aborted2" = 1 ]; then
+                local lc_bad2 lc_total2 lc_ok2 lc_prob2 lc_unknown2 lc_real2=0 lc_mode2 p2
                 lc_bad2=$(grep -E '^[A-Z][A-Z0-9-]* ' "$lc_out" 2>/dev/null | grep -c -v '^SKIPPED ' || true)
                 lc_total2=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
                 [ -n "$lc_total2" ] || lc_total2=0
+                lc_ok2=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\1/p' "$lc_out" | tail -1)
+                [ -n "$lc_ok2" ] || lc_ok2=0
                 lc_prob2=$(sed -n 's/.*packages load clean, \([0-9]*\) problem(s).*/\1/p' "$lc_out" | tail -1)
                 [ -n "$lc_prob2" ] || lc_prob2=-1
                 lc_unknown2=0
@@ -736,6 +798,8 @@ EOF
                 # or a rebuild, where the count feeds "STILL does not load after a rebuild".
                 while read -r lc_mode2 p2; do
                     [ -n "$p2" ] || continue
+                    # ABORTED names the TARGET, not a package -- see the first call site.
+                    [ "$lc_mode2" = ABORTED ] && continue
                     vp_loadcheck_known_benign "$target" "$lc_mode2" "$p2" || lc_real2=$((lc_real2 + 1))
                 done <<EOF
 $(sed -n 's/^\([A-Z][A-Z0-9-]*\) \([^ :]*\).*/\1 \2/p' "$lc_out" | grep -v '^SKIPPED ')
@@ -749,6 +813,19 @@ EOF
                     echo "       $lc_bad2 are in a shape this gate can classify. Refusing to"
                     echo "       continue on $lc_unknown2 unread problem(s). Log: $lc_out"
                     exit 1
+                elif [ "$lc_aborted2" = 1 ]; then
+                    if [ "$lc_real2" -gt 0 ]; then
+                        echo "ERROR: the $target re-verify was KILLED mid-sweep and had already"
+                        echo "       named $lc_real2 failing package(s) before it died. The rebuild"
+                        echo "       did NOT fix them and the rest were never judged. Refusing to"
+                        echo "       continue. Log: $lc_out"
+                        echo "       Previous units are in $VP_DIR/.stale-units if this needs unpicking."
+                        exit 1
+                    fi
+                    verdict="loadcheck INTERRUPTED after rebuild (rc=$lc_rc2, $lc_ok2/$lc_total2 judged)"
+                    echo "WARNING: the $target re-verify was killed before it finished (rc=$lc_rc2)."
+                    echo "         $lc_ok2 of $lc_total2 judged, none failing, rest unmeasured -- so the"
+                    echo "         rebuild is NOT confirmed. UNVERIFIED; continuing."
                 elif [ "$lc_total2" -gt 0 ] && [ "$lc_bad2" -ge "$lc_total2" ]; then
                     verdict="loadcheck UNUSABLE on this host ($lc_bad2/$lc_total2 failed)"
                     echo "WARNING: every $target package failed after the rebuild -- harness/toolchain,"
