@@ -104,6 +104,95 @@ get_compiler_for_target() {
     esac
 }
 
+# resolve_exec_compiler <compiler-path>
+# Echo the compiler path a build wrapper should EXEC, which is not always the one
+# get_compiler_for_target names.
+#
+# THE DEFECT. FPC derives its executable path from the REAL path of the binary it
+# was started as, and puts that directory on the unit, library and object search
+# paths. $VP_DIR/compiler holds 207 .pas files beside the binaries, so exec'ing
+# $VP_DIR/compiler/ppcx64 silently adds the compiler's own source tree to every
+# search path. Measured here 2026-09-11 with both controls, -vut on a trivial unit
+# through a wrapper of exactly the shape build_darwin_ide writes:
+#     exec $VP_DIR/compiler/ppcx64 -n @<darwin cfg>  -> "Using executable path:
+#         .../vibepascal/compiler/", 9 hits on .../vibepascal/compiler/ in the
+#         trace, including "Using unit path: .../vibepascal/compiler/"
+#     exec $VP_DIR/bin/ppcx64     -n @<darwin cfg>  -> "Using executable path:
+#         .../vibepascal/bin/", 0 hits
+# Both produced a .ppu, so the clean one is clean rather than broken. NOTE FPC
+# prints the /mnt-prefixed realpath, so a grep for the literal $VP_DIR/compiler
+# reads 0 and looks CLEAN when it is VOID -- match a substring.
+#
+# WHY IT HAS NOT BITTEN THE DARWIN ROLL YET, AND WHY THAT IS NOT PROTECTION.
+# In that trace the compiler's own directory is unit path entry 158 OF 158 -- dead
+# last, behind all 157 -Fu lines of vibepascal-darwin-x86_64.cfg, one of which
+# (line 123) is $LAZARUS_DIR/components/fpdebug. So the right macho.pas wins on
+# ORDER. But BOTH darwin cfgs are UNTRACKED in the VibePascal working copy
+# (git ls-files --error-unmatch fails on each; the same check fires correctly on a
+# file that IS tracked, so that is not a void result). There is no diff to notice
+# one of those lines changing and nothing to revert to. That is a coincidence, not
+# an immunity -- Bruno (BuildMaster_lazdev) found it, and it is why he authorised
+# this change rather than the do-nothing option.
+#
+# AND THERE ARE THREE COLLISIONS, NOT ONE. Comparing the 207 compiler source names
+# against the 3,657 unit names in this tree (excluding the vendored releases/ copy)
+# gives exactly three, and all three are inside the IDE build's closure:
+#     macho     components/fpdebug/macho.pas
+#     compiler  ide/packages/ideconfig/compiler.pp
+#     tokens    components/jcf2/Parse/Tokens.pas
+# `tokens` needs a case-INSENSITIVE search to find; a lowercase `find -name` says
+# it does not exist, which is how it stayed off the list.
+#
+# The rejections below mirror auto-update.sh resolve_vp_compiler, for the same
+# reasons documented there: a symlink is resolved by FPC before exepath is computed
+# and hashes as its target so no checksum can see it; bin/ is in upstream FPC's
+# .gitignore so in a checkout it can go stale and silently hand the build an OLD
+# compiler; sources in bin/ shadow exactly like compiler/ does. Anything rejected
+# falls through to a private copy, which has the property by construction.
+#
+# Failure is NEVER fatal here: every path echoes something runnable. The worst case
+# is the status quo, which is what the roll does today.
+resolve_exec_compiler() {
+    local cc=$1
+    local base src_dir installed copy_dir copy reject=""
+    [ -x "$cc" ] || { echo "$cc"; return 0; }
+    base=$(basename "$cc")
+    src_dir=$(dirname "$(readlink -f "$cc" 2>/dev/null || echo "$cc")")
+
+    # Nothing beside the binary to shadow => leave it alone. Checked against the
+    # RESOLVED directory: $VP_DIR/compiler/ppcrossaarch64 is itself a symlink to
+    # ppcrossa64 in that same directory, so the naive dirname would be right here
+    # by luck and wrong for any link that points elsewhere.
+    if [ -z "$(find "$src_dir" -maxdepth 1 -name '*.pas' -print -quit 2>/dev/null)" ]; then
+        echo "$cc"; return 0
+    fi
+
+    installed="$VP_DIR/bin/$base"
+    if [ -x "$installed" ]; then
+        if [ -L "$installed" ]; then
+            reject="it is a symlink and FPC follows it before computing exepath"
+        elif [ ! -f "$installed" ]; then
+            reject="it is not a regular file"
+        elif [ -n "$(find "$VP_DIR/bin" -maxdepth 1 -name '*.pas' -print -quit 2>/dev/null)" ]; then
+            reject="$VP_DIR/bin holds Pascal sources, which shadow exactly like compiler/ does"
+        elif ! cmp -s "$installed" "$cc"; then
+            reject="it differs from $cc, so it is a stale copy of some other build"
+        else
+            echo "$installed"; return 0
+        fi
+        echo "       ignoring $installed: $reject" >&2
+    fi
+
+    copy_dir="$BUILD_STATE_DIR/compiler"
+    copy="$copy_dir/$base"
+    mkdir -p "$copy_dir" 2>/dev/null || { echo "$cc"; return 0; }
+    if [ ! -f "$copy" ] || [ "$cc" -nt "$copy" ]; then
+        cp -f "$cc" "$copy" 2>/dev/null || { echo "$cc"; return 0; }
+        chmod +x "$copy" 2>/dev/null || true
+    fi
+    echo "$copy"
+}
+
 # get_darwin_ide_binary <target>
 # Where the darwin IDE binary is STAGED for packaging, once build_darwin_ide has
 # lifted it out of the per-build PrimaryConfigPath.
@@ -887,7 +976,15 @@ build_lazbuild() {
 build_darwin_ide() {
     local target=$1
     local cfg=$2
-    local compiler=$(get_compiler_for_target "$target")
+    # What the WRAPPER execs, not what get_compiler_for_target names -- see
+    # resolve_exec_compiler. This changes the exec TARGET, never the wrapper's own
+    # path, so lazbuild still sees the same --compiler string and no package is
+    # rebuilt for it (Bruno, 2026-09-11, who also established the roll rebuilds
+    # everything unconditionally anyway: the wrapper is regenerated with cat > on
+    # every roll and the stored state carries a fixed Date, so a Date mismatch
+    # already forces the rebuild this was once costed against).
+    local compiler
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
     local cpu_target=$(echo "$target" | cut -d- -f1)
     # NOT /tmp: on this builder /tmp is a 2G tmpfs shared by ~30 agents and has
     # been observed at 97% full and cleared under running builds. A cross-target
@@ -907,7 +1004,7 @@ build_darwin_ide() {
     # only as long as lazbuild's fpcdefines.xml cache covered the wrapper path.
     cat > "$wrapper" << EOF
 #!/bin/bash
-exec $compiler -n @$cfg "\$@"
+exec "$compiler" -n @"$cfg" "\$@"
 EOF
     chmod +x "$wrapper"
 
