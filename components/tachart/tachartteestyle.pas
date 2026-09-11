@@ -21,11 +21,35 @@
       drew at, not from the plot rectangle -- see TThreeRingPieFramer.AfterDraw
       for why sizing from ClipRect does not frame the pie.
 
-  Plus SetupStackedBandSeries, which builds the N same-axis stacked
-  THorizBarSeries that a VCLTee "MultiBar = mbStacked" chart uses for a
-  status-band breakdown, in one call.
+  Plus SetupStackedBandSeries, which builds the VCLTee "MultiBar = mbStacked"
+  status-band breakdown in one call.
 
-  Author: Lars (LazarusDeveloper), 2026-09-10.
+  READ THIS BEFORE CHANGING SetupStackedBandSeries. It does NOT create one
+  series per band, and the obvious translation that does is WRONG:
+
+    TAChart's Series.Stacked stacks the multiple Y VALUES INSIDE ONE SERIES'
+    SOURCE. It does not stack across series, and nothing in it looks at the
+    other series on the chart.
+
+  Measured in this tree, not inferred -- TBasicPointSeries.Extent is
+  "if FStacked then Source.ExtentCumulative", FindYRange passes FStacked
+  straight to Source.FindYRange, and taseries.pas guards the non-stacked
+  multi-bar layout with "(not FStacked) and (Source.YCount > 1)". Every one of
+  those reads the series' OWN source. So N separate THorizBarSeries each with
+  Stacked := True -- which is what the 2026-09-10 version of this function
+  built -- all draw from zero and overlap: only the last-drawn band in any
+  overlapping range is visible, and the small bands simply never appear. Kara
+  (PascalDev_KaraokeDataUtilities) caught that in a rendered chart before I
+  caught it in the source; Q&A a_1786485385140_3tz0eu carries her pixel run.
+
+  The correct translation of MultiBar = mbStacked is what is built below: ONE
+  series over a TListChartSource with YCount = band count, Stacked := True, a
+  TChartStyles carrying the per-band colour and title, and
+  Legend.Multiplicity := lmStyle -- without that last one the whole stack
+  collapses to a single legend swatch.
+
+  Author: Lars (LazarusDeveloper), 2026-09-10; stacked-band model corrected
+  2026-09-11.
 }
 unit TAChartTeeStyle;
 
@@ -35,7 +59,8 @@ interface
 
 uses
   Classes, SysUtils, Graphics, Math,
-  TAGraph, TASeries, TADrawUtils, TAChartTeeChart;
+  TAChartUtils, TADrawUtils, TAGraph, TALegend, TASeries, TASources, TAStyles,
+  TAChartTeeChart;
 
 type
   { One stacked band: its legend title and its fill colour. }
@@ -46,7 +71,18 @@ type
 
   TChartBandSpecArray = array of TChartBandSpec;
   TPieRadiusArray = array of Integer;
-  TChartBandSeriesArray = array of THorizBarSeries;
+
+  { The single stacked-band series and the two objects it needs to stay
+    correct. All three are owned by the chart; the record is just a handle so
+    a caller does not have to dig them back out of it. BandCount is kept
+    because Source.YCount is a Cardinal and mixing it into Integer arithmetic
+    at every call site is how off-by-ones get written. }
+  TStackedBandChart = record
+    Series: THorizBarSeries;
+    Source: TListChartSource;
+    Styles: TChartStyles;
+    BandCount: Integer;
+  end;
 
   { Draws three concentric hollow rings centred on a chart's plot area.
 
@@ -84,14 +120,22 @@ const
 procedure ApplyDarkChartTheme(AChart: TChart;
   AAxisColor: TColor = clAqua; ATitleHeight: Integer = DEF_DARK_TITLE_HEIGHT);
 
-{ Creates one stacked THorizBarSeries per band, in band order, and returns the
-  typed references: TChart.Series[N] is a TBasicChartSeries and has no AddXY,
-  so a caller that populates by index needs these (or a hard cast). }
+{ Builds the ONE stacked band series described in the unit header -- see there
+  for why it is one series and not one per band. Bands stack in array order,
+  ABands[0] against the axis. }
 function SetupStackedBandSeries(AChart: TChart;
-  const ABands: array of TChartBandSpec): TChartBandSeriesArray;
+  const ABands: array of TChartBandSpec): TStackedBandChart;
 
-{ Clears every band series -- the VCLTee "clear the chart data" idiom. }
-procedure ClearBandSeries(const ASeries: TChartBandSeriesArray);
+{ Adds one stacked bar at AX. AValues holds the SEGMENT LENGTHS in band order,
+  not running totals -- TAChart cumulates them itself. Raises if the count does
+  not match the bands, because a short list otherwise plots a truncated stack
+  that looks exactly like real data. }
+procedure AddStackedBandPoint(const ABandChart: TStackedBandChart;
+  AX: Double; const AValues: array of Double);
+
+{ Clears the band data -- the VCLTee "clear the chart data" idiom. The band
+  specs, colours and legend styling survive. }
+procedure ClearBandSeries(const ABandChart: TStackedBandChart);
 
 { Attaches a three-ring frame to AChart via OnAfterDraw and returns the framer
   (owned by the chart) so ring colours and width can be retuned. }
@@ -228,37 +272,55 @@ begin
 end;
 
 function SetupStackedBandSeries(AChart: TChart;
-  const ABands: array of TChartBandSpec): TChartBandSeriesArray;
+  const ABands: array of TChartBandSpec): TStackedBandChart;
 var
   i: Integer;
-  s: THorizBarSeries;
+  style: TChartStyle;
 begin
-  // Result := nil first: SetLength takes Result as a var parameter, and the
-  // compiler's flow analysis counts that as a READ of an as-yet unassigned
-  // managed-type result (warning 5093). The IDE build compiles this package
-  // with -vewnhibq, so an unfixed 5093 would print in every user's IDE
-  // rebuild once this unit joins the package.
-  Result := nil;
-  SetLength(Result, Length(ABands));
+  Result.BandCount := Length(ABands);
+
+  // One source, YCount = band count. This is what makes Stacked mean anything:
+  // see the unit header -- Stacked cumulates the Y values of THIS source.
+  Result.Source := TListChartSource.Create(AChart);
+  Result.Source.YCount := Result.BandCount;
+
+  // One style per band. The style carries the colour and the legend text; the
+  // series' own SeriesColor/BarBrush would colour the WHOLE stack one colour.
+  Result.Styles := TChartStyles.Create(AChart);
   for i := 0 to High(ABands) do begin
-    s := THorizBarSeries.Create(AChart);
-    s.Title := ABands[i].Title;
-    s.SeriesColor := ABands[i].Color;
-    s.BarBrush.Color := ABands[i].Color;
-    s.BarPen.Color := ABands[i].Color;
-    s.Stacked := true;
-    s.Marks.Visible := false;
-    AChart.AddSeries(s);
-    Result[i] := s;
+    style := Result.Styles.Add;
+    style.Brush.Color := ABands[i].Color;
+    style.Pen.Color := ABands[i].Color;
+    style.Text := ABands[i].Title;
   end;
+
+  Result.Series := THorizBarSeries.Create(AChart);
+  Result.Series.Source := Result.Source;
+  Result.Series.Styles := Result.Styles;
+  Result.Series.Stacked := true;
+  Result.Series.Marks.Visible := false;
+  // Without lmStyle the whole stack shows as ONE legend entry, which is the
+  // single most visible way this differs from the VCLTee original.
+  Result.Series.Legend.Multiplicity := lmStyle;
+  AChart.AddSeries(Result.Series);
 end;
 
-procedure ClearBandSeries(const ASeries: TChartBandSeriesArray);
-var
-  i: Integer;
+procedure AddStackedBandPoint(const ABandChart: TStackedBandChart;
+  AX: Double; const AValues: array of Double);
 begin
-  for i := 0 to High(ASeries) do
-    ASeries[i].Clear;
+  if Length(AValues) <> ABandChart.BandCount then
+    raise EChartError.CreateFmt(
+      'AddStackedBandPoint: %d value(s) for %d band(s)',
+      [Length(AValues), ABandChart.BandCount]);
+  ABandChart.Source.AddXYList(AX, AValues);
+end;
+
+procedure ClearBandSeries(const ABandChart: TStackedBandChart);
+begin
+  // Clear the SOURCE, not the series: the series does not own it, and
+  // TChartSeries.Clear on a series with an external source is a no-op on the
+  // data while leaving the caller believing the chart was emptied.
+  ABandChart.Source.Clear;
 end;
 
 end.
