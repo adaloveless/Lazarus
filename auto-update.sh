@@ -520,10 +520,49 @@ resolve_vp_compiler() {
 
     # 1. The installed layout, when there is one. Preferred over a copy because it
     #    is what the tarball's own fpc.cfg expects.
-    if [ -x "$VP_DIR/bin/$base" ]; then
-        VP_COMPILER="$VP_DIR/bin/$base"
-        log_info "Using $VP_COMPILER (bin/ layout -- keeps the compiler's own source tree off the unit search path)."
-        return 0
+    #
+    #    But only when that entry has the property we are preferring it FOR. The
+    #    first version of this test was a bare `[ -x ]`, which is true of a
+    #    symlink, of a stale copy and of a bin/ that someone dropped sources into
+    #    -- and in all three cases the log line below would have claimed a
+    #    guarantee the entry does not provide. Each rejection falls through to the
+    #    private copy in step 3, which always has the property by construction.
+    local installed="$VP_DIR/bin/$base" reject=""
+    if [ -x "$installed" ]; then
+        if [ -L "$installed" ]; then
+            # A SYMLINK IS NOT A FIX, AND NO CHECKSUM CAN SEE THAT -- a symlink
+            # hashes as its target, so an md5 comparison against compiler/ passes.
+            # FPC resolves the executable to its real path BEFORE it computes
+            # exepath, so a symlinked bin/ puts the compiler's own 207-file source
+            # tree back on the unit search path in full while looking exactly like
+            # the fix. Measured here on the real ppcx64, both controls: symlink in
+            # an empty dir -> "Using unit path: .../vibepascal/compiler/" (7 hits
+            # in a -vut trace); real copy in the same empty dir -> 0 hits.
+            # Populating bin/ with symlinks is the obvious way to do it, so this is
+            # a live trap, not a theoretical one. Found by Otto (FPCDeveloper),
+            # who measured it before shipping the real copies.
+            reject="it is a symlink to $(readlink -f "$installed" 2>/dev/null || echo 'another directory'), and FPC follows it -- that directory, not bin/, is what lands on the unit search path"
+        elif [ ! -f "$installed" ]; then
+            reject="it is not a regular file"
+        elif [ -n "$(find "$VP_DIR/bin" -maxdepth 1 -name '*.pas' -print -quit 2>/dev/null)" ]; then
+            reject="$VP_DIR/bin holds Pascal sources, so running the compiler from there shadows units exactly like the compiler's own source dir does"
+        elif ! cmp -s "$installed" "$VP_COMPILER"; then
+            # bin/ cannot be committed (it is in upstream FPC's .gitignore), so in
+            # a git checkout it is a copy that goes stale the moment VibePascal is
+            # bootstrapped. Silently handing the build an OLD compiler is a worse
+            # failure than the loud one this function exists to prevent: v56 and
+            # earlier hang forever on a half-written .ppu. Otto's
+            # dist/linux-bin-layout.sh refreshes bin/ and I considered calling it
+            # from here, but declined -- that writes into a tree this project does
+            # not own, from a script a user runs. Detecting the skew and using our
+            # own copy needs nobody's permission and cannot race his bootstrap.
+            reject="it differs from $VP_COMPILER, so it is a stale copy of some other build"
+        else
+            VP_COMPILER="$installed"
+            log_info "Using $VP_COMPILER (bin/ layout -- real file, current, no Pascal sources beside it, so the compiler's own source tree stays off the unit search path)."
+            return 0
+        fi
+        log_warn "Ignoring $installed: $reject. Falling back to a private copy of $VP_COMPILER."
     fi
 
     # 2. No Pascal sources beside the binary => nothing to shadow, leave it alone.
