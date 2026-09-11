@@ -1287,24 +1287,37 @@ procedure TTestPascalParser.TestUnleashedInlineVarInitTypeDisplay;
 // widens to Extended -- too large (p) or underflowing to zero (q). Ground
 // truth for all three read at runtime via PTypeInfo, not inferred.
 // NOT covered here, and deliberately: `var r := s` for a declared
-// s: single, and `var t := single(1.0)`. Both take the identifier path
-// into FindTermTypeAsString and both come back EMPTY.
-// The earlier note here blamed "no search paths"; that was measured and is
-// WRONG. Given a real FPC UnitSetCache attached to the virtual directory
-// (the testctpas2js.pas recipe: CompilerDefinesCache.TestFilename, then
-// FindUnitSet + Init + CreateFPCTemplate under a da_Directory template for
-// VirtualDirectory), with GetUnitSetForDirectory('') PRESENT and the cache
-// demonstrably resolving system.pp and sysutils.pp, the answer does not
-// change. The fallback itself is not broken: a same-unit user type resolves
-// through it (`var q := m` for m: TMyRec gives TMyRec). What fails is
-// anything whose answer lives outside the unit being parsed -- an ordinary
-// `var u := IntToStr(1)` under `uses SysUtils` comes back empty too, so r
-// and t are not special cases. Still not asserted here because the real
-// IDE has a project context this harness cannot reproduce: confirm there
-// before calling it a defect. FindExprTypeAsString RAISES on xtNone and
-// ExtractInlineVarInitType swallows it in a bare `except Result:=''`, so a
-// raise and a genuine cannot-infer are indistinguishable from the empty
-// string alone.
+// s: single, `var t := single(1.0)`, and `var u := IntToStr(1)` under
+// `uses SysUtils`. All three take the identifier path into
+// FindTermTypeAsString and all three come back EMPTY *in this harness*.
+// THAT IS A HARNESS ARTIFACT, NOT A CODETOOLS DEFECT. Measured in the real
+// IDE on 2026-09-11 and confirmed working: driving identifier completion
+// (the one production caller, ide/sourceeditprocs.pas ctnVarDefinition) on
+// a project unit holding exactly these cases, the list shows r : Single,
+// t : Single and u : String, alongside a : Int64 and q : TMyRec.
+// Both controls were in band, in the same list. An arm initialised from an
+// undefined identifier shows NO type column at all, so the display can
+// report empty -- it is sensitive, not promiscuous. And a normally declared
+// `s: single` shows the SOURCE spelling `single` while the inferred arms
+// show the resolved name `Single`, so those entries really did travel this
+// function rather than the declared-type path above it.
+// Two explanations for the harness EMPTY have now been measured and both
+// are WRONG: "no search paths" (a real FPC UnitSetCache attached to the
+// virtual directory -- the testctpas2js.pas recipe:
+// CompilerDefinesCache.TestFilename, then FindUnitSet + Init +
+// CreateFPCTemplate under a da_Directory template for VirtualDirectory,
+// with GetUnitSetForDirectory('') present and the cache demonstrably
+// resolving system.pp and sysutils.pp -- changes nothing), and "the answer
+// lives outside the unit being parsed" (the IDE resolves exactly those
+// cross-unit cases). Whatever context a real project supplies and a
+// virtual-file harness does not, it is not the unit path.
+// So these stay out: asserting them would pin a harness limitation into
+// the suite as though it were codetools' behaviour, and the next reader
+// would take a green run as proof of a defect that does not exist.
+// If one ever does fail here, note that FindExprTypeAsString RAISES on
+// xtNone and ExtractInlineVarInitType swallows it in a bare
+// `except Result:=''`, so a raise and a genuine cannot-infer are
+// indistinguishable from the empty string alone.
 var
   Tool: TCodeTool;
   Node: TCodeTreeNode;
