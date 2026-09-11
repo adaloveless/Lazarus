@@ -485,6 +485,139 @@ clean_stale_package_artifacts() {
     return 0
 }
 
+# THE COMPILER MUST NOT RUN FROM ITS OWN SOURCE DIRECTORY (c655).
+#
+# FPC appends the running compiler binary's OWN directory to the unit search path,
+# after every -Fu. VibePascal's ppcx64 lives in $VP_DIR/compiler, which is the
+# compiler SOURCE tree: 207 .pas files, three of whose unit names collide with
+# Lazarus units -- macho (components/fpdebug), compiler (ide/packages/ideconfig)
+# and tokens (components/jcf2/Parse). The names are not hardcoded below; they are
+# recomputed, because the collision set is a property of two trees that both move.
+#
+# MEASURED, not reasoned: `lazbuild --build-ide --compiler=$VP_DIR/compiler/ppcx64`
+# for x86_64-linux/gtk2 dies at
+#     Fatal: (10022) Can't find unit FpImgReaderMachoFile used by FpImgReaderMacho
+# because LazDebuggerFp gets fpdebug's macho.ppu on its path but NOT fpdebug's
+# source dir, so the only macho.pas FPC can see is the compiler's own -- a
+# different file (2106 lines vs 2101). It recompiles macho into LazDebuggerFp's
+# output dir with a different CRC, which invalidates fpimgreadermachofile.ppu,
+# whose source is not on that path either. Same binary copied to an empty
+# directory: exit 0, IDE linked. A SYMLINK DOES NOT WORK -- FPC resolves the real
+# path of the executable, so it must be a real copy.
+#
+# Windows already avoids this: auto-update.ps1 prefers bin\ppcx64.exe for a
+# related reason ($FPCBINDIR is derived from the binary's directory). This gives
+# the bash path the same property when no bin/ layout exists.
+VP_COMPILER_RESOLVED=0
+resolve_vp_compiler() {
+    [ "$VP_COMPILER_RESOLVED" -eq 1 ] && return 0
+    VP_COMPILER_RESOLVED=1
+    [ -x "$VP_COMPILER" ] || return 0
+
+    local base src_dir
+    base=$(basename "$VP_COMPILER")
+    src_dir=$(dirname "$VP_COMPILER")
+
+    # 1. The installed layout, when there is one. Preferred over a copy because it
+    #    is what the tarball's own fpc.cfg expects.
+    if [ -x "$VP_DIR/bin/$base" ]; then
+        VP_COMPILER="$VP_DIR/bin/$base"
+        log_info "Using $VP_COMPILER (bin/ layout -- keeps the compiler's own source tree off the unit search path)."
+        return 0
+    fi
+
+    # 2. No Pascal sources beside the binary => nothing to shadow, leave it alone.
+    if [ -z "$(find "$src_dir" -maxdepth 1 -name '*.pas' -print -quit 2>/dev/null)" ]; then
+        return 0
+    fi
+
+    # 3. Copy it out. Refreshed whenever the real compiler is newer, so a VibePascal
+    #    pull is picked up on the next run rather than pinning an old compiler.
+    local copy_dir="$LAZARUS_DIR/.vpcompiler"
+    local copy="$copy_dir/$base"
+    if ! mkdir -p "$copy_dir" 2>/dev/null; then
+        log_warn "Cannot create $copy_dir -- running the compiler from its own source dir ($src_dir). If the IDE build dies with \"Can't find unit FpImgReaderMachoFile\", that is why."
+        return 0
+    fi
+    if [ ! -f "$copy" ] || [ "$VP_COMPILER" -nt "$copy" ]; then
+        if ! cp -f "$VP_COMPILER" "$copy" 2>/dev/null; then
+            log_warn "Could not copy $VP_COMPILER to $copy -- continuing with the in-tree compiler."
+            return 0
+        fi
+        chmod +x "$copy" 2>/dev/null || true
+    fi
+    VP_COMPILER="$copy"
+    log_info "Using a copy of the compiler at $copy -- $src_dir holds the compiler's own sources and FPC puts that directory on every unit search path."
+    return 0
+}
+
+# REMOVE THE WRECKAGE A PREVIOUS RUN LEFT, or the fix above helps only new boxes.
+#
+# Once the shadow above has fired even once, the wrong macho.ppu is sitting in
+# LazDebuggerFp's output directory. That directory is ALSO a unit search path, so
+# the build keeps failing with the identical error after the compiler is moved --
+# verified here: isolated compiler + leftover ppu = still exit 2, remove the ppu
+# as well = exit 0 and a linked 34 MB lazarus. A fix that leaves an already-broken
+# box broken is not a fix (c634).
+#
+# What counts as wreckage is decided structurally: for each unit name that exists
+# BOTH beside the compiler binary and in the Lazarus tree, any .ppu/.o for that
+# name that is NOT under the directory of its Lazarus source is an orphan. Lazarus
+# itself agrees and says so -- `Duplicate unit "macho" ... orphaned ppu "<path>"`.
+clean_shadowed_unit_artifacts() {
+    local cc_dir removed=0 tmp f
+    cc_dir=$(dirname "$VP_COMPILER")
+    # After resolve_vp_compiler the binary may be a copy, so ask the real tree.
+    [ -n "$(find "$cc_dir" -maxdepth 1 -name '*.pas' -print -quit 2>/dev/null)" ] || cc_dir="$VP_DIR/compiler"
+    [ -d "$cc_dir" ] || return 0
+
+    # Three single passes, not one pass per unit name: the compiler tree has ~200
+    # sources and the Lazarus tree has thousands of artifacts, so a find per name
+    # would walk the tree 200 times for a list that is usually three entries long.
+    tmp=$(mktemp 2>/dev/null) || return 0
+    {
+        find "$cc_dir" -maxdepth 1 -name '*.pas' -printf 'C %f\n' 2>/dev/null
+        find "$LAZARUS_DIR" \( -name '*.pas' -o -name '*.pp' \) 2>/dev/null \
+            | grep -v '/lib/\|/units/' | sed 's/^/S /'
+        find "$LAZARUS_DIR" \( -name '*.ppu' -o -name '*.o' \) 2>/dev/null \
+            | grep '/lib/\|/units/' | sed 's/^/A /'
+    } | awk '
+        function base(p,   n,a) { n=split(p,a,"/"); return a[n] }
+        # LAST extension, not the first dot: the tree carries 143 dotted unit
+        # filenames (chatgpt.Dto.pas, generics.collections.ppu), and keying them
+        # on "chatgpt"/"generics" would collide names that are not the same unit.
+        function stem(b)        { sub(/\.[^.]*$/,"",b); return b }
+        function lc(x)          { return tolower(x) }
+        $1=="C" { cc[lc(stem($2))]=1; next }
+        $1=="S" { b=lc(stem(base($2)))
+                  d=$2; sub(/\/[^\/]*$/,"",d)
+                  owner[b]=owner[b] d "\n"; next }
+        $1=="A" { art[++na]=$2; next }
+        END {
+          for (i=1;i<=na;i++) {
+            b=lc(stem(base(art[i])))
+            if (!(b in cc) || !(b in owner)) continue
+            n=split(owner[b],dirs,"\n"); ok=0
+            for (j=1;j<=n;j++) if (dirs[j]!="" && index(art[i],dirs[j] "/")==1) ok=1
+            if (!ok) print art[i]
+          }
+        }' > "$tmp"
+
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        if rm -f "$f" 2>/dev/null; then
+            removed=$((removed + 1))
+            log_info "Removed shadowed unit artifact $f -- that unit name also exists beside the compiler binary and this is not its own package's output."
+        fi
+    done < "$tmp"
+    rm -f "$tmp" 2>/dev/null || true
+
+    if [ "$removed" -gt 0 ]; then
+        log_warn "Removed $removed unit artifact(s) left by an earlier build that compiled a COMPILER source file into a Lazarus package. Left in place they keep failing the IDE build with \"Can't find unit ...\" on every future run."
+    fi
+    return 0
+}
+
 rebuild_ide() {
     log_header "Rebuilding Lazarus IDE"
 
@@ -576,6 +709,11 @@ rebuild_ide() {
             log_warn "svn not found on PATH -- cannot refresh commonx automatically. If TBetterWebBrowser/TTouchButton are still missing after this run, run:  svn update $commonx_root  then re-run this updater."
         fi
     fi
+
+    # c655: strip any unit artifact a previous run compiled from the COMPILER's own
+    # source tree into a Lazarus package output dir. Must run BEFORE attempt 1 --
+    # such an artifact fails the build on its own, even with the compiler moved.
+    clean_shadowed_unit_artifacts
 
     if [ -n "$commonx_root" ]; then
         local commonx_lpk
@@ -891,6 +1029,8 @@ fix_lpi_files() {
         log_ok "Fixed $fix_count .lpi file(s)"
     fi
 }
+
+resolve_vp_compiler
 
 if [ "$DOCTOR" -eq 1 ]; then
     invoke_doctor
