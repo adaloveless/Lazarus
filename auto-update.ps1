@@ -1567,8 +1567,8 @@ function Rebuild-IDE {
         foreach ($n in $mds.Notes) { Log-Info "  $n" }
     } else {
         Log-Err "MetaDarkStyle dark mode NOT installed -- this is a regression GOD will notice."
-        foreach ($n in $mds.Notes) { Log-Err "  $n" }
-        Log-Err "Fix: re-pull origin/main, then run -ResetConfig -ForceRebuild."
+        foreach ($n in $mds.Notes) { Log-ErrDetail "  $n" }
+        Log-ErrDetail "Fix: re-pull origin/main, then run -ResetConfig -ForceRebuild."
     }
 
     # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
@@ -2054,9 +2054,19 @@ function Invoke-Doctor {
     if ($mds.Ok) {
         Log-Ok "MetaDarkStyle (dark mode IDE skin): installed"
         foreach ($n in $mds.Notes) { Log-Info "  $n" }
+    } elseif (-not (Test-Path $lazExe)) {
+        # The IDE has never been built in this tree, which the lazarus.exe check above
+        # already reported. A missing metadarkstyledsgn.ppu is the GUARANTEED consequence
+        # of that, not an independent fault -- reporting it as an ERROR whose note says
+        # "check uses clause in ide\lazarus.pp" sends the reader hunting a source bug that
+        # cannot exist yet. Steve's 2026-09-11 -Doctor run on a fresh C:\lazarus checkout is
+        # exactly this: [WARN] lazarus.exe not built yet, then [ERROR] MetaDarkStyle NOT
+        # installed. Downgrade it and name the real cause; do not count it as a problem (c668).
+        Log-Warn "MetaDarkStyle (dark mode IDE skin): cannot be present yet -- the IDE has never been built in this tree."
+        Log-Warn "  Expected at this stage. Run -ForceRebuild, then re-run -Doctor to get a real answer."
     } else {
         Log-Err "MetaDarkStyle (dark mode IDE skin): NOT installed"
-        foreach ($n in $mds.Notes) { Log-Err "  $n" }
+        foreach ($n in $mds.Notes) { Log-ErrDetail "  $n" }
         $problems++
     }
 
