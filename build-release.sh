@@ -212,9 +212,28 @@ resolve_exec_compiler() {
 # another BY DESIGN. MEASURED 2026-09-11 (Bruno), not inferred: bin/ppcx64, bin/ppcrossaarch64
 # and bin/ppcrossarm are byte-identical regular files to their compiler/ twins, and $VP_DIR/bin
 # holds 0 .pas against compiler/'s 207 -- so realized risk today is ZERO and no re-roll is owed.
-# NOTHING ASSERTS IT. $VP_DIR/bin is untracked and is Otto's install target; the day a rebuild
-# lands in compiler/ without being re-installed to bin/, the divergence is silent, and it is
-# D003 again with no symptom until a user runs the shipped binary.
+# NOTHING ASSERTS IT -- but the case that actually reaches this guard is NOT the obvious one.
+# CORRECTED 2026-09-11 (Bruno), after Lars refuted the original rationale at 11bf146aa9 and I
+# re-drove all three cases against origin/main rather than taking his word. This comment used
+# to claim the trigger was "the day a rebuild lands in compiler/ without being re-installed to
+# bin/". THAT CASE CANNOT FIRE THIS GUARD AND NEVER COULD: resolve_exec_compiler above REJECTS
+# a bin/ copy that differs from compiler/ ("a stale copy of some other build") and falls back
+# to a $BUILD_STATE_DIR copy taken FROM compiler/ -- so the roll execs compiler/ and ships
+# compiler/, and they match BY CONSTRUCTION. The resolver had already closed that hole before
+# this guard was written. Driven: rebuild compiler/, leave bin/ stale -> exec'd and shipped
+# MATCH, guard silent.
+#
+# THE CASE THAT DOES FIRE IT, driven and not argued: the $BUILD_STATE_DIR/compiler/<cc> cache
+# copy is refreshed only when [ "$cc" -nt "$copy" ]. A compiler rebuilt WITHOUT its mtime
+# advancing leaves the stale cache copy in use, so the roll EXECS the previous build's bytes
+# and SHIPS this build's -- silent, no symptom until a user runs the shipped binary, and that
+# is D003 again. Measured: mtime-frozen rebuild -> exec'd and shipped DIVERGE, guard fires;
+# positive control, identical rebuild with mtime advanced -> they match, no fire.
+#
+# So the trigger is an MTIME HEURISTIC, which is precisely the surface
+# bruno/compiled-mtime-preserve touches. If that branch lands, this guard's firing case stops
+# being hypothetical. $VP_DIR/bin remains untracked and is Otto's install target, so it can
+# still drift with no commit in either repo -- it just is not what this guard catches.
 #
 # HONEST LIMIT: this re-derives the exec'd path at packaging time rather than recording what
 # was actually exec'd hours earlier. That is a proxy. It is the RIGHT proxy -- if the two
