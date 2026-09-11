@@ -355,7 +355,26 @@ usage() {
 # dated on purpose: an allowlist is a liability, so every entry names what was measured
 # and when, and anything NOT listed still aborts the roll.
 vp_loadcheck_known_benign() {
-    case "$1:$2" in
+    # $1=target  $2=MODE (FAILED|RECOMPILED)  $3=package
+    #
+    # THE MODE IS PART OF THE KEY ON PURPOSE AND IT IS NOT A TIDY-UP. Every justification
+    # below is a story about ONE SYMPTOM, so the entry may only fire on that symptom.
+    # librsvg is waved through because rsvg.ppu cannot RESOLVE glib2 on win64 -- a FAILED.
+    # A `RECOMPILED librsvg` is very nearly the opposite finding: the units WERE found and
+    # loaded, and FPC rebuilt them anyway because the recorded dependency CRCs no longer
+    # matched. That is STALENESS -- the exact thing this gate exists to catch, and the
+    # reason loadcheck compiles with -FU into a scratch dir. I have never measured a
+    # RECOMPILED librsvg, and I am not waving through a symptom I have never seen on the
+    # strength of a sentence written about a different one.
+    #
+    # Until 2026-09-11 this was FAILED-only BY ACCIDENT RATHER THAN BY DESIGN, and the
+    # accident was a bug: the caller captured with `[^:]*`, which stops at a colon, and a
+    # RECOMPILED line carries no colon after the package name -- so the name never reached
+    # this function intact and no entry could match it. It failed CLOSED, which is the
+    # right direction, but an allowlist whose scope is set by a word-splitting bug is one
+    # refactor away from silently widening. Found by Lars 2026-09-10; the extractor is
+    # fixed below and the scope is now written down instead of inferred.
+    case "$1:$2:$3" in
         # 2026-09-10, re-measured against loadcheck f5d7308485: x86_64-win64 is 108/109
         # with exactly ONE failure, librsvg -- "Can't find unit glib2 used by rsvg".
         # rsvg.ppu is a genuine consumable unit we ship that genuinely cannot load on
@@ -378,7 +397,7 @@ vp_loadcheck_known_benign() {
         # so win64 IS a declared target and nothing is mis-declared. What happened is
         # that our win64 roll produced buildgtk2 and none of the units. That is not
         # chased here and does not need chasing (Policy #13).
-        x86_64-win64:librsvg) return 0 ;;
+        x86_64-win64:FAILED:librsvg) return 0 ;;
     esac
     return 1
 }
@@ -528,13 +547,26 @@ ensure_vp_packages() {
             echo "         The $target unit set is UNVERIFIED. If this roll fails with"
             echo "         \"Can't find unit <X> used by <Y>\", it is the unit set, not the source."
         else
-            local lc_bad lc_total lc_real=0 p
+            local lc_bad lc_total lc_real=0 lc_mode p
             lc_bad=$(grep -c -E '^(FAILED|RECOMPILED) ' "$lc_out" 2>/dev/null || true)
             lc_total=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
             [ -n "$lc_total" ] || lc_total=0
-            for p in $(sed -n 's/^\(FAILED\|RECOMPILED\) \([^:]*\):.*/\2/p' "$lc_out"); do
-                vp_loadcheck_known_benign "$target" "$p" || lc_real=$((lc_real + 1))
-            done
+            # ONE LOG LINE IN, ONE PACKAGE NAME OUT. `[^ :]*` stops at the first space OR
+            # colon, which is what makes BOTH emitted shapes yield a bare package name:
+            #     FAILED <pkg>:                                    <- stops at the colon
+            #     RECOMPILED <pkg> -- N unit(s) rebuilt on load:   <- stops at the space
+            # The old `[^:]*` ran to the colon at END OF LINE on the RECOMPILED shape, and
+            # the unquoted `for p in $( )` then split that phrase into SEVEN words: ONE
+            # recompiled package reported as seven, and no allowlist entry could ever match
+            # it. lc_bad counts LINES and was always right, so the two numbers disagreed.
+            # AND THE LOOP IS FED BY A HEREDOC, NOT A PIPE -- a pipe puts it in a subshell
+            # and lc_real silently stays 0 no matter what the log says. Do not "simplify".
+            while read -r lc_mode p; do
+                [ -n "$p" ] || continue
+                vp_loadcheck_known_benign "$target" "$lc_mode" "$p" || lc_real=$((lc_real + 1))
+            done <<EOF
+$(sed -n 's/^\(FAILED\|RECOMPILED\) \([^ :]*\).*/\1 \2/p' "$lc_out")
+EOF
             if [ "$lc_total" -gt 0 ] && [ "$lc_bad" -ge "$lc_total" ]; then
                 # EVERY package failed. A unit set does not rot all at once; a toolchain
                 # does fail all at once. Treat this as an unusable harness, not as 143
@@ -630,13 +662,20 @@ EOF
             TMPDIR="$lc_scratch" "$loadcheck" "$target" "$compiler" "$VP_DIR" > "$lc_out" 2>&1 || lc_rc2=$?
             cat "$lc_out"
             if [ "$lc_rc2" = 1 ]; then
-                local lc_bad2 lc_total2 lc_real2=0 p2
+                local lc_bad2 lc_total2 lc_real2=0 lc_mode2 p2
                 lc_bad2=$(grep -c -E '^(FAILED|RECOMPILED) ' "$lc_out" 2>/dev/null || true)
                 lc_total2=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
                 [ -n "$lc_total2" ] || lc_total2=0
-                for p2 in $(sed -n 's/^\(FAILED\|RECOMPILED\) \([^:]*\):.*/\2/p' "$lc_out"); do
-                    vp_loadcheck_known_benign "$target" "$p2" || lc_real2=$((lc_real2 + 1))
-                done
+                # Same extractor, same heredoc-not-a-pipe rule as the first call site --
+                # see the comment there. THIS SITE CARRIED THE IDENTICAL DEFECT and it is
+                # the easier one to miss, because it only runs after VP_FORCE_STALE_REBUILD
+                # or a rebuild, where the count feeds "STILL does not load after a rebuild".
+                while read -r lc_mode2 p2; do
+                    [ -n "$p2" ] || continue
+                    vp_loadcheck_known_benign "$target" "$lc_mode2" "$p2" || lc_real2=$((lc_real2 + 1))
+                done <<EOF
+$(sed -n 's/^\(FAILED\|RECOMPILED\) \([^ :]*\).*/\1 \2/p' "$lc_out")
+EOF
                 if [ "$lc_total2" -gt 0 ] && [ "$lc_bad2" -ge "$lc_total2" ]; then
                     verdict="loadcheck UNUSABLE on this host ($lc_bad2/$lc_total2 failed)"
                     echo "WARNING: every $target package failed after the rebuild -- harness/toolchain,"
