@@ -61,6 +61,7 @@ function Log-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor C
 
 $script:LazarusUpdated = $false
 $script:VPUpdated = $false
+$script:CheckFailed = $false   # a Check-* helper could not read or refresh a repository; "up to date" is then not a verdict (c675)
 $script:UpstreamUpdated = $false
 $script:BuildProductsWereMissing = $false
 $script:LocalBuildProductsRestored = $false
@@ -674,6 +675,22 @@ function Get-GitOutput {
     return $result.Output
 }
 
+# A count from an instrument that cannot see is not zero. Steve (SiteManager_DESKTOP-IO9QJQ4,
+# 2026-09-16) ran `-Check` in a directory holding no repository and read "[OK] VibePascal: up to
+# date", "[OK] Lazarus origin: up to date", "[OK] Everything is up to date" over two blank HEAD
+# lines: every rev-list had failed, Get-GitOutput had yielded "", and the
+# `if (-not $x) { $x = "0" }` idiom scored each failure as "0 commits behind". Reproduced here
+# under pwsh 7.6 with the same scratch layout (exit 0). Returns the [int] count or "UNKNOWN";
+# callers must treat UNKNOWN as a failed check and never as 0 (same rule as
+# Get-UnpushedCommitCount, which guards the destructive reset for the same reason).
+function Get-GitCount {
+    param([string]$WorkDir, [string]$Range)
+    $r = Invoke-Git -WorkDir $WorkDir -GitArgs @("rev-list", "--count", $Range)
+    if ($r.ExitCode -ne 0) { return "UNKNOWN" }
+    if ("$($r.Output)" -notmatch '^\d+$') { return "UNKNOWN" }
+    return [int]$r.Output
+}
+
 # --- Unpushed-work guard for `reset --hard origin/main` (Lars, c668 2026-09-11) -------------
 # Both Pull-*Origin functions fall back to `reset --hard origin/main` when an --ff-only pull
 # fails. The fallback exists for a real reason (GOD mrghu0l5: a stale local commit pinned VP
@@ -737,10 +754,19 @@ function Check-VPUpdates {
         return
     }
 
-    Invoke-Git -WorkDir $VPDir -GitArgs @("fetch", "origin") | Out-Null
+    $fetch = Invoke-Git -WorkDir $VPDir -GitArgs @("fetch", "origin")
+    if ($fetch.ExitCode -ne 0) {
+        Log-Warn "VibePascal: git fetch origin failed (exit $($fetch.ExitCode)): $($fetch.Error)"
+        Log-Warn "VibePascal: comparing against the LAST fetched origin/main -- an 'up to date' below is not a fresh reading"
+        $script:CheckFailed = $true
+    }
 
-    $behind = Get-GitOutput -WorkDir $VPDir -GitArgs @("rev-list", "--count", "HEAD..origin/main")
-    if (-not $behind) { $behind = "0" }
+    $behind = Get-GitCount -WorkDir $VPDir -Range "HEAD..origin/main"
+    if ("$behind" -eq "UNKNOWN") {
+        Log-Err "VibePascal: cannot count HEAD..origin/main in $VPDir (not a git repository, or origin/main missing) -- verdict UNKNOWN, not 'up to date'"
+        $script:CheckFailed = $true
+        return
+    }
 
     if ([int]$behind -gt 0) {
         Log-Warn "VibePascal: $behind new commit(s) available"
@@ -779,11 +805,15 @@ function Pull-VP {
 function Check-LazarusUpstream {
     Log-Header "Checking Lazarus upstream (fpc/Lazarus)"
 
-    $behind = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "HEAD..upstream/main")
-    if (-not $behind) { $behind = "0" }
+    $behind = Get-GitCount -WorkDir $LazarusDir -Range "HEAD..upstream/main"
+    if ("$behind" -eq "UNKNOWN") {
+        Log-Err "Lazarus: cannot count HEAD..upstream/main in $LazarusDir (not a git repository, or upstream/main missing) -- verdict UNKNOWN, not 'in sync'"
+        $script:CheckFailed = $true
+        return
+    }
 
-    $localCommits = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "upstream/main..HEAD")
-    if (-not $localCommits) { $localCommits = "0" }
+    $localCommits = Get-GitCount -WorkDir $LazarusDir -Range "upstream/main..HEAD"
+    if ("$localCommits" -eq "UNKNOWN") { $localCommits = 0 }   # informational line only; the update path re-measures
 
     if ([int]$behind -gt 0) {
         Log-Warn "Lazarus: $behind new upstream commit(s)"
@@ -802,10 +832,19 @@ function Check-LazarusUpstream {
 function Check-LazarusOrigin {
     Log-Header "Checking Lazarus origin (adaloveless/Lazarus)"
 
-    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "origin") | Out-Null
+    $fetch = Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "origin")
+    if ($fetch.ExitCode -ne 0) {
+        Log-Warn "Lazarus origin: git fetch origin failed (exit $($fetch.ExitCode)): $($fetch.Error)"
+        Log-Warn "Lazarus origin: comparing against the LAST fetched origin/main -- an 'up to date' below is not a fresh reading"
+        $script:CheckFailed = $true
+    }
 
-    $behind = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "HEAD..origin/main")
-    if (-not $behind) { $behind = "0" }
+    $behind = Get-GitCount -WorkDir $LazarusDir -Range "HEAD..origin/main"
+    if ("$behind" -eq "UNKNOWN") {
+        Log-Err "Lazarus origin: cannot count HEAD..origin/main in $LazarusDir (not a git repository, or origin/main missing) -- verdict UNKNOWN, not 'up to date'"
+        $script:CheckFailed = $true
+        return
+    }
 
     if ([int]$behind -gt 0) {
         Log-Warn "Lazarus origin: $behind new commit(s) from other developers"
@@ -1698,7 +1737,10 @@ function Print-Summary {
         Write-Host "  [!] Local build products missing" -ForegroundColor Yellow
     }
 
-    if (-not $script:VPUpdated -and -not $script:UpstreamUpdated -and -not $script:LazarusUpdated -and -not $script:BuildProductsWereMissing) {
+    if ($script:CheckFailed) {
+        Write-Host ""
+        Log-ErrDetail "Verdict UNKNOWN: a repository could not be read or refreshed (see the [ERROR]/[WARN] lines above). This is NOT 'up to date'."
+    } elseif (-not $script:VPUpdated -and -not $script:UpstreamUpdated -and -not $script:LazarusUpdated -and -not $script:BuildProductsWereMissing) {
         Write-Host ""
         Log-Ok "Everything is up to date. Nothing to do."
     }
@@ -1706,6 +1748,8 @@ function Print-Summary {
     Write-Host ""
     $lazHead = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("log", "--oneline", "-1")
     $vpHead = Get-GitOutput -WorkDir $VPDir -GitArgs @("log", "--oneline", "-1")
+    if (-not $lazHead) { $lazHead = "(unreadable -- git log failed in $LazarusDir)" }
+    if (-not $vpHead) { $vpHead = "(unreadable -- git log failed in $VPDir)" }
     Write-Host "Lazarus HEAD: $lazHead"
     Write-Host "VibePascal HEAD: $vpHead"
 }
@@ -2456,6 +2500,9 @@ Check-LazarusOrigin
 
 if ($Check) {
     Print-Summary
+    # c675: a -Check that could not read or refresh a repository must not exit 0 (Steve's
+    # 2026-09-16 observation: a non-repository directory scored as "Everything is up to date").
+    if ($script:CheckFailed) { exit 3 }
     exit 0
 }
 
