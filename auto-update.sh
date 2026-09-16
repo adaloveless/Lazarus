@@ -871,7 +871,14 @@ rebuild_ide() {
     cx_build_log=$(mktemp 2>/dev/null || echo "$LAZARUS_DIR/.lazbuild_attempt1.log")
     COMMONX_FIRST_ERROR=""
     COMMONX_PPU_HINT=""
-    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
+    # --build-ide=-Sci: lazbuild compiles ide/lazarus.pp with the compiler DIRECTLY and passes
+    # no syntax switches of its own, while the IDE sources use C-style operators (`s+=...`).
+    # The make route has always added -Sci (ide/Makefile.fpc [compiler] options); without it
+    # this step dies at ide/checkcompileropts.pas(199) "C styled assignment operators are
+    # turned off" whenever the compiler's fpc.cfg does not already carry -Sc (measured on
+    # lazdev 2026-09-16 with the r25 linux cfg: exit 2 without, exit 0 with). Idempotent when
+    # the cfg has it too.
+    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
         --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | grep -E "Linking|lines compiled|Fatal|Error"
     local build_exit=${PIPESTATUS[0]}
     if [ "$build_exit" -ne 0 ]; then
@@ -929,7 +936,7 @@ rebuild_ide() {
         kept_lpks="${kept_lpks# }"
         local fallback_args=""
         if [ -n "$kept_lpks" ]; then fallback_args="--add-package $kept_lpks"; fi
-        "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide= \
+        "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
             --compiler="$VP_COMPILER" --ws="$ws" $fallback_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
         build_exit=${PIPESTATUS[0]}
         if [ "$build_exit" -eq 0 ]; then
