@@ -1477,6 +1477,8 @@ end;
 
 procedure TPascalReaderTool.MoveCursorToProcName(ProcNode: TCodeTreeNode;
   SkipClassName: boolean);
+var
+  NamePos: TAtomPosition;
 begin
   if (ProcNode.Desc=ctnProcedure) and (ProcNode.FirstChild<>nil)
   and (ProcNode.FirstChild.Desc=ctnProcedureHead) then
@@ -1489,16 +1491,24 @@ begin
   end;
   if not SkipClassName then exit;
   repeat
+    // CurPos is on a name part (class name or proc name)
+    NamePos:=CurPos;
     ReadNextAtom;
     // skip <T> generic parameter list between class name and dot
     if AtomIsChar('<')
     and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE])
          or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) then begin
-      if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then
+      if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then begin
+        MoveCursorToAtomPos(NamePos);
         break;
+      end;
     end;
     if CurPos.Flag<>cafPoint then begin
-      UndoReadNextAtom;
+      // no dot follows: the name part just read IS the proc name. A skipped
+      // <T> list was the generic method's own parameter list (Delphi
+      // `procedure Foo<T>;`), so an UndoReadNextAtom here would land on '>'
+      // instead of the name -- restore the saved name position explicitly.
+      MoveCursorToAtomPos(NamePos);
       break;
     end;
     ReadNextAtom;
@@ -1540,6 +1550,8 @@ end;
 
 function TPascalReaderTool.PositionInProcName(ProcNode: TCodeTreeNode;
   SkipClassName: boolean; CleanPos: integer): boolean;
+var
+  NamePos: TAtomPosition;
 begin
   if (ProcNode.Desc=ctnProcedure) and (ProcNode.FirstChild<>nil)
   and (ProcNode.FirstChild.Desc=ctnProcedureHead) then
@@ -1553,16 +1565,20 @@ begin
   end;
   if CleanPos<CurPos.StartPos then exit(false);
   while CurPos.Flag=cafWord do begin
+    NamePos:=CurPos;
     ReadNextAtom;
     // skip <T> generic parameter list between class name and dot
     if AtomIsChar('<')
     and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE])
          or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) then begin
-      if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then
+      if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then begin
+        MoveCursorToAtomPos(NamePos);
         break;
+      end;
     end;
     if CurPos.Flag<>cafPoint then begin
-      UndoReadNextAtom;
+      // see MoveCursorToProcName: restore the name, not the atom before '>'
+      MoveCursorToAtomPos(NamePos);
       break;
     end;
     ReadNextAtom;
