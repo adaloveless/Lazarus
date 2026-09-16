@@ -2188,9 +2188,9 @@ implementation
 uses
   Registry;
 {$ENDIF}
-{$IFDEF DARWIN}
+{$IFDEF UNIX}
 uses
-  Process;
+  Process; // darwin: `defaults`; other unix: `gsettings` -- see IsSystemDarkModeActive
 {$ENDIF}
 
 {$R editoroptions.res}
@@ -3009,6 +3009,14 @@ begin
   end;
 end;
 
+{$IF not (defined(Windows) or defined(DARWIN))}
+var
+  // Unix arm of IsSystemDarkModeActive below: the desktop is probed once per
+  // process and the answer cached here.
+  UnixDarkModeProbed: Boolean = False;
+  UnixDarkModeIsDark: Boolean = True;
+{$ENDIF}
+
 function IsSystemDarkModeActive: Boolean;
 {$IFDEF Windows}
 var
@@ -3053,8 +3061,35 @@ begin
   end;
 end;
 {$ELSE}
+// Linux / BSD / any other unix (GOD mu24b48i, 2026-09-15): the editor's default
+// colour scheme is DARK here, exactly as it is on Windows and macOS, where the two
+// arms above follow the operating system's dark mode. Linux has no single dark-mode
+// switch, and a fresh GNOME or Xfce session reports "light" by omission rather than
+// by choice, so the rule is: dark unless the desktop says prefer-light in so many
+// words. The one signal read is org.gnome.desktop.interface color-scheme, which
+// GNOME, Cinnamon, MATE and Budgie all honour: 'prefer-light' turns the default
+// off; 'default', 'prefer-dark', an unreadable value, no gsettings binary and no
+// session bus all mean dark. Probed ONCE per process and cached: this function
+// runs on every highlighter read (ReadPascalColorScheme), and the macOS arm's
+// per-call process spawn is not a pattern to copy. Auto-detection itself is the
+// EditorOptions/Color/AutoDetectColorScheme setting in editoroptions.xml (no UI
+// for it yet); with it off, the scheme picked under Options > Editor > Display >
+// Colors applies as before.
+var
+  AOutput: string;
 begin
-  Result := False;
+  if not UnixDarkModeProbed then begin
+    UnixDarkModeProbed := True;
+    UnixDarkModeIsDark := True;
+    try
+      if RunCommand('gsettings', ['get', 'org.gnome.desktop.interface', 'color-scheme'], AOutput)
+      and (Pos('prefer-light', AOutput) > 0) then
+        UnixDarkModeIsDark := False;
+    except
+      UnixDarkModeIsDark := True;
+    end;
+  end;
+  Result := UnixDarkModeIsDark;
 end;
 {$ENDIF}
 {$ENDIF}
