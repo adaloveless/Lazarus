@@ -34,6 +34,13 @@ BUILD_STATE_DIR="$HOME/.cache/lazarus-build"
 #
 # Anything older than BUILD_EPOCH was not produced by this roll.
 BUILD_EPOCH="$(date +%s)"
+# Snapshot of the cumulative oom_kill counter at roll start. The counter is
+# cumulative since boot and never returns to 0, and kern.log lines survive
+# rotation for days -- so report_oom_evidence must decide on a DELTA against
+# this base, never on the absolute value, or it fires for any killed step for
+# as long as an old OOM line is readable (Otto/FPCDeveloper, 2026-09-11).
+OOM_BASE="$(awk '/^oom_kill /{print $2}' /proc/vmstat 2>/dev/null)"
+case "$OOM_BASE" in ''|*[!0-9]*) OOM_BASE="" ;; esac
 BUILD_LOG_DIR="${BUILD_LOG_DIR:-$HOME/lazarus-build-logs/$DATE_STAMP}"
 
 # report_oom_evidence -- call this when a step was KILLED rather than when it
@@ -48,12 +55,35 @@ BUILD_LOG_DIR="${BUILD_LOG_DIR:-$HOME/lazarus-build-logs/$DATE_STAMP}"
 # kern.log and `journalctl -k`, which carry the victim name and its RSS, and fall
 # back to /proc/vmstat's oom_kill counter, which needs no privileges at all and is
 # the one reading that is always available. Say plainly when nothing was readable.
+#
+# DECIDES BY DELTA, NOT BY ABSOLUTE STATE (Otto/FPCDeveloper, 2026-09-11): both
+# arms were sticky -- the counter is cumulative since boot and the kern.log
+# line survives rotation for up to ~14 days, so any killed step printed "OOM
+# EVIDENCE" pointing at an event from days earlier. Only oom_kill rising above
+# OOM_BASE (snapshot at BUILD_EPOCH) counts as a NEW kill; the logs are then
+# used to NAME the victim, never to decide.
 report_oom_evidence() {
-    local n hits
+    local hits oom_now oom_delta=""
 
-    n="$(awk '/^oom_kill /{print $2}' /proc/vmstat 2>/dev/null)"
-    case "$n" in ''|*[!0-9]*) n="" ;; esac
+    oom_now="$(awk '/^oom_kill /{print $2}' /proc/vmstat 2>/dev/null)"
+    case "$oom_now" in ''|*[!0-9]*) oom_now="" ;; esac
 
+    if [ -n "$oom_now" ] && [ -n "$OOM_BASE" ]; then
+        oom_delta=$((oom_now - OOM_BASE))
+        if [ "$oom_delta" -le 0 ]; then
+            # No NEW host OOM since this roll started, so whatever killed the step
+            # was not the OOM killer. kern.log may still hold OLD victim lines --
+            # they are not printed, because they would explain a kill they did
+            # not cause (the sticky-instrument defect Otto reported, 2026-09-11).
+            echo "         (no NEW OOM since this roll started: /proc/vmstat oom_kill is"
+            echo "         unchanged at $oom_now, so this kill had another cause -- look for"
+            echo "         a manual kill or a timeout in the log above.)"
+            return 1
+        fi
+    fi
+
+    # Either a NEW kill (oom_delta > 0) or the counter was unreadable at one end.
+    # The kernel log only NAMES the victim from here on; it never decides.
     hits="$(cat /var/log/kern.log /var/log/kern.log.1 2>/dev/null \
             | grep 'Out of memory: Killed process' | tail -3)"
     if [ -z "$hits" ]; then
@@ -61,30 +91,33 @@ report_oom_evidence() {
                 | grep 'Out of memory: Killed process' | tail -3)"
     fi
 
+    if [ -n "$oom_delta" ]; then
+        echo "         OOM EVIDENCE -- the kernel killed a process for memory DURING THIS ROLL:"
+        echo "         /proc/vmstat oom_kill rose from $OOM_BASE to $oom_now. A build that dies"
+        echo "         this way is NOT a source or compiler defect."
+        if [ -n "$hits" ]; then
+            echo "         Newest kernel OOM lines (the last one is this roll's victim):"
+            printf '%s\n' "$hits" | sed 's/^/           /'
+        else
+            echo "         No kernel log was readable from here to name the victim."
+            echo "         Run: sudo dmesg | grep -i 'oom-kill'"
+        fi
+        return 0
+    fi
+
     if [ -n "$hits" ]; then
-        echo "         OOM EVIDENCE -- the kernel killed a process for memory on this host."
-        echo "         A build that dies this way is NOT a source or compiler defect:"
+        echo "         OOM EVIDENCE, TIMING UNPROVEN: a kernel OOM line is readable below, but"
+        echo "         /proc/vmstat oom_kill could not be read (now='${oom_now:-?}', at roll"
+        echo "         start='${OOM_BASE:-?}'), so whether it fired DURING this roll is unknown."
+        echo "         Treat it as indicative only:"
         printf '%s\n' "$hits" | sed 's/^/           /'
         return 0
     fi
 
-    if [ -n "$n" ] && [ "$n" -gt 0 ]; then
-        echo "         OOM EVIDENCE: /proc/vmstat oom_kill = $n -- the kernel HAS killed at"
-        echo "         least one process for memory since this host booted, but no kernel log"
-        echo "         was readable from here to name the victim."
-        echo "         Run: sudo dmesg | grep -i 'oom-kill'"
-        return 0
-    fi
-
-    if [ -z "$n" ]; then
-        echo "         NOTE: neither /proc/vmstat nor any kernel log was readable, so whether"
-        echo "         the OOM killer fired is UNKNOWN here. That is not the same as 'it did"
-        echo "         not' -- do not read this silence as a clean result."
-        return 1
-    fi
-
-    echo "         (/proc/vmstat oom_kill = 0 since boot and no kernel-log OOM lines, so this"
-    echo "         kill was probably NOT the OOM killer -- look for a manual kill or a timeout.)"
+    echo "         NOTE: /proc/vmstat oom_kill was unreadable (now='${oom_now:-?}', at roll"
+    echo "         start='${OOM_BASE:-?}') and no kernel-log OOM line is readable, so whether"
+    echo "         the OOM killer fired is UNKNOWN here. That is not the same as 'it did"
+    echo "         not' -- do not read this silence as a clean result."
     return 1
 }
 
