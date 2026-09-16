@@ -64,6 +64,9 @@ idepackages:
 	$(MAKE) -C lazcontrols/design
 	$(MAKE) -C lclextensions
 	$(MAKE) -C virtualtreeview
+	$(MAKE) -C anchordocking
+	$(MAKE) -C anchordocking/design
+	$(MAKE) -C dockedformeditor
 
 #-----------------------------------------------------------------------------
 # build the extra packages needed by the bigide, requires idepackages
@@ -104,9 +107,6 @@ bigide:
 	$(MAKE) -C exampleswindow
 	$(MAKE) -C charactermap
 	$(MAKE) -C charactermap/design
-	$(MAKE) -C dockedformeditor
-	$(MAKE) -C anchordocking
-	$(MAKE) -C anchordocking/design
 	$(MAKE) -C metadarkstyle/dsgn
 
 all: lazbuildpackages idepackages bigide

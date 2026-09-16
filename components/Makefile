@@ -1668,6 +1668,9 @@ idepackages:
 	$(MAKE) -C lazcontrols/design
 	$(MAKE) -C lclextensions
 	$(MAKE) -C virtualtreeview
+	$(MAKE) -C anchordocking
+	$(MAKE) -C anchordocking/design
+	$(MAKE) -C dockedformeditor
 bigide:
 	$(MAKE) -C synedit/design
 	$(MAKE) -C rtticontrols
@@ -1705,9 +1708,6 @@ bigide:
 	$(MAKE) -C exampleswindow
 	$(MAKE) -C charactermap
 	$(MAKE) -C charactermap/design
-	$(MAKE) -C dockedformeditor
-	$(MAKE) -C anchordocking
-	$(MAKE) -C anchordocking/design
 	$(MAKE) -C metadarkstyle/dsgn
 all: lazbuildpackages idepackages bigide
 clean:

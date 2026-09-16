@@ -65,7 +65,10 @@ uses
   Splash,
   Main,
   LazDebuggerFpLldb, LazDebuggerFp, laz.virtualtreeview_package,
-  LazControlDsgn
+  LazControlDsgn,
+  // GOD mu3jfytu (2026-09-16): docked single-window IDE by default on every
+  // platform -- core packages, see LazarusIDEBasePkgNames in pkgsysbasepkgs.pas.
+  AnchorDockingDsgn, DockedFormEditor
   {$IFDEF MSWINDOWS}
   ,metadarkstyledsgn
   {$ENDIF},
@@ -86,7 +89,6 @@ uses
     EditorMacroScript, ExampleProjects,
     OnlinePackageManager,
     SimpleWebServerGUI, LazProjectGroups, Pas2jsDsgn, charactermap_ide_pkg,
-    AnchorDockingDsgn, DockedFormEditor,
   {$ENDIF}
   MainBase;
 
