@@ -9,7 +9,7 @@ REM   -Release        Also build release tarballs
 REM   -UpstreamOnly   Only sync upstream Lazarus (skip VibePascal)
 REM   -Setup          Configure Lazarus IDE to use VibePascal compiler
 REM   -FixLpi         Scan and fix .lpi files
-REM   -ForceRebuild   Force rebuild even if no updates are available
+REM   -ForceRebuild   Force rebuild even if no updates are available (always closes the IDE first)
 REM   -ResetConfig    Wipe %%LOCALAPPDATA%%\lazarus and re-run -Setup
 REM   -Doctor         Diagnose toolchain + IDE config (read-only)
 REM   -VPDir <path>   Path to VibePascal source
@@ -30,6 +30,7 @@ REM skip the kill on a stale lock). An exact per-token compare has neither
 REM failure mode. Provenance: GOD commit 098e5739c6 + boundary matrix measured
 REM on real Windows by Steve (SiteManager_DESKTOP-IO9QJQ4), letter of 2026-09-11.
 set "AU_READONLY_FLAG=0"
+set "AU_BUILD_FLAG=0"
 for %%a in (%*) do (
     if /i "%%~a"=="-Check"        set "AU_READONLY_FLAG=1"
     if /i "%%~a"=="--Check"       set "AU_READONLY_FLAG=1"
@@ -45,7 +46,20 @@ for %%a in (%*) do (
     if /i "%%~a"=="--FixLpi"      set "AU_READONLY_FLAG=1"
     if /i "%%~a"=="-ResetConfig"  set "AU_READONLY_FLAG=1"
     if /i "%%~a"=="--ResetConfig" set "AU_READONLY_FLAG=1"
+    if /i "%%~a"=="-ForceRebuild"  set "AU_BUILD_FLAG=1"
+    if /i "%%~a"=="--ForceRebuild" set "AU_BUILD_FLAG=1"
 )
+REM A build flag overrides the read-only classification. auto-update.ps1 honours
+REM -ForceRebuild on one otherwise read-only line: "-ResetConfig -ForceRebuild"
+REM calls Rebuild-Lazbuild + Rebuild-IDE directly (its documented post-reset
+REM rebuild), and a rebuild over a running lazarus.exe is exactly the locked /
+REM stale-binary failure this block exists to prevent. On every other mixed line
+REM (-Check, -Doctor, -NoBuild, -Setup, -FixLpi, -Help + -ForceRebuild) the ps1
+REM exits or skips the build before its -ForceRebuild gate, so there the only
+REM cost is an IDE closed on a command line that asked for a rebuild. Surfaced by
+REM Steve (SiteManager_DESKTOP-IO9QJQ4), matrix letter of 2026-09-16: under the
+REM previous block "-Check -ForceRebuild" reached the ps1 with the IDE running.
+if "%AU_BUILD_FLAG%"=="1" set "AU_READONLY_FLAG=0"
 if "%AU_READONLY_FLAG%"=="0" (
     echo Closing any running Lazarus IDE so its files can be updated...
     taskkill /F /IM lazarus.exe      >nul 2>&1
