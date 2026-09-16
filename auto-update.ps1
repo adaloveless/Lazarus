@@ -1571,6 +1571,20 @@ function Rebuild-IDE {
         Log-ErrDetail "Fix: re-pull origin/main, then run -ResetConfig -ForceRebuild."
     }
 
+    # GOD mu3jfytu (2026-09-16): the docked "modern Delphi style" layout is the default and
+    # rides two core packages. Same rule as MetaDarkStyle above: fail loud when the binary
+    # we just built does not carry them, because a floating-window IDE is exactly what GOD
+    # asked us to stop shipping.
+    $dock = Test-DockedLayoutInstalled -Dir $LazarusDir
+    if ($dock.Ok) {
+        Log-Ok "Docked IDE layout (AnchorDocking + docked form editor) installed"
+        foreach ($n in $dock.Notes) { Log-Info "  $n" }
+    } else {
+        Log-Err "Docked IDE layout NOT installed -- the IDE will open as floating windows (GOD mu3jfytu)."
+        foreach ($n in $dock.Notes) { Log-ErrDetail "  $n" }
+        Log-ErrDetail "Fix: re-pull origin/main, then run -ForceRebuild and read the FIRST 'Error:' line."
+    }
+
     # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
     # Until now the ONLY signal that PackageCommonX_LCL had been dropped was a Log-Warn
     # buried mid-build, while the run still ended "[OK] lazarus.exe rebuilt" -- so a build
@@ -1912,6 +1926,52 @@ function Get-CommonXStampPath {
     return (Join-Path (Join-Path $env:LOCALAPPDATA "lazarus") "commonx-install-attempt.txt")
 }
 
+function Test-DockedLayoutInstalled {
+    # GOD mu3jfytu (2026-09-16): the docked single-window IDE ("modern Delphi style") is
+    # the DEFAULT, carried by two packages that are now CORE (LazarusIDEBasePkgNames in
+    # ide\packages\idepackager\pkgsysbasepkgs.pas): AnchorDockingDsgn and DockedFormEditor.
+    # Wiring is not the end state (c634): verify the design-time ppus were compiled AND
+    # the classes are linked into lazarus.exe -- the same symbol scan that
+    # Test-MetaDarkStyleInstalled and Test-CommonXComponentsInstalled rely on.
+    param([string]$Dir = $LazarusDir, [string]$Cpu = "x86_64", [string]$Os = "win64", [string]$Ws = "win32")
+
+    $result = @{ Ok = $true; Notes = @() }
+
+    $ppus = @(
+        (Join-Path $Dir "components\anchordocking\design\units\$Cpu-$Os\$Ws\anchordockingdsgn.ppu"),
+        (Join-Path $Dir "components\dockedformeditor\lib\$Cpu-$Os\$Ws\dockedformeditor.ppu")
+    )
+    foreach ($p in $ppus) {
+        if (-not (Test-Path $p)) {
+            $result.Ok = $false
+            $result.Notes += "Build artifact missing: $p (Rebuild-IDE did not compile it -- it is a base package, so read the FIRST 'Error:' line of the build)"
+        }
+    }
+    if (-not $result.Ok) { return $result }
+
+    $lazExe = Join-Path $Dir "lazarus.exe"
+    if (Test-Path $lazExe) {
+        try {
+            $bytes = [System.IO.File]::ReadAllBytes($lazExe)
+            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+            $missing = @()
+            foreach ($sym in @("TIDEAnchorDockMaster", "TDockedMainIDE")) {
+                if (-not $text.Contains($sym)) { $missing += $sym }
+            }
+            if ($missing.Count -gt 0) {
+                $result.Ok = $false
+                $result.Notes += "lazarus.exe does NOT contain: $($missing -join ', ') -- the docking packages were not linked. Run -ForceRebuild."
+            } else {
+                $result.Notes += "lazarus.exe contains the docked-layout classes (TIDEAnchorDockMaster, TDockedMainIDE)"
+            }
+        } catch {
+            $result.Notes += "Could not scan lazarus.exe: $_"
+        }
+    }
+
+    return $result
+}
+
 function Test-MetaDarkStyleInstalled {
     # GOD directive moehki0x (2026-04-25): MetaDarkStyle is a flagship feature.
     # Post-cycle 322 #182: runtime units live in lcl/darkstyle/ (linked via
@@ -2067,6 +2127,20 @@ function Invoke-Doctor {
     } else {
         Log-Err "MetaDarkStyle (dark mode IDE skin): NOT installed"
         foreach ($n in $mds.Notes) { Log-ErrDetail "  $n" }
+        $problems++
+    }
+
+    # GOD mu3jfytu (2026-09-16): docked single-window layout is the default. Same
+    # not-built-yet downgrade as MetaDarkStyle above (c668).
+    $dock = Test-DockedLayoutInstalled -Dir $LazarusDir
+    if ($dock.Ok) {
+        Log-Ok "Docked IDE layout (AnchorDocking + docked form editor): installed"
+        foreach ($n in $dock.Notes) { Log-Info "  $n" }
+    } elseif (-not (Test-Path $lazExe)) {
+        Log-Warn "Docked IDE layout: cannot be present yet -- the IDE has never been built in this tree (see lazarus.exe above)."
+    } else {
+        Log-Err "Docked IDE layout (AnchorDocking + docked form editor): NOT installed"
+        foreach ($n in $dock.Notes) { Log-ErrDetail "  $n" }
         $problems++
     }
 

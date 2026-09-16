@@ -478,6 +478,29 @@ test_commonx_components_installed() {
     return 0
 }
 
+# GOD mu3jfytu (2026-09-16): the docked single-window IDE ("modern Delphi style") is the
+# DEFAULT, carried by two packages that are now CORE (LazarusIDEBasePkgNames in
+# ide/packages/idepackager/pkgsysbasepkgs.pas): AnchorDockingDsgn and DockedFormEditor.
+# Wiring is not the end state (c634): verify the classes are LINKED into the binary, the
+# same symbol scan test_commonx_components_installed uses. Prints the missing class names;
+# returns 0 = installed, 1 = missing, 2 = no binary to check yet.
+DOCKED_LAYOUT_CLASSES="TIDEAnchorDockMaster TDockedMainIDE"
+test_docked_layout_installed() {
+    local exe="$LAZARUS_DIR/lazarus"
+    [ -f "$exe" ] || return 2
+    local missing="" sym
+    for sym in $DOCKED_LAYOUT_CLASSES; do
+        if ! grep -a -q -- "$sym" "$exe" 2>/dev/null; then
+            missing="$missing $sym"
+        fi
+    done
+    if [ -n "$missing" ]; then
+        printf '%s' "${missing# }"
+        return 1
+    fi
+    return 0
+}
+
 # Identifies the material an install attempt was made against (Lazarus commit + commonx
 # revision), so the self-heal retry fires only when something has actually CHANGED.
 commonx_stamp_path() {
@@ -935,6 +958,18 @@ rebuild_ide() {
     local size=$(du -sh "$LAZARUS_DIR/lazarus" | cut -f1)
     log_ok "lazarus rebuilt ($size)"
 
+    # GOD mu3jfytu (2026-09-16): the docked "modern Delphi style" layout is the default and
+    # rides two core packages. Fail loud when the binary we just built does not carry them.
+    local dock_missing="" dock_rc=0
+    dock_missing=$(test_docked_layout_installed) || dock_rc=$?
+    if [ "$dock_rc" -eq 0 ]; then
+        log_ok "Docked IDE layout (AnchorDocking + docked form editor) installed"
+    elif [ "$dock_rc" -eq 1 ]; then
+        log_err "Docked IDE layout NOT installed -- lazarus does not contain: $dock_missing"
+        log_err "  The IDE will open as floating windows, which GOD asked us to stop shipping (mu3jfytu)."
+        log_err "  Fix: re-pull origin/main, run --force-rebuild, and read the FIRST 'Error:' line of the build."
+    fi
+
     # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
     # Until now the ONLY signal that PackageCommonX_LCL had been dropped was a log_warn
     # buried mid-build, while the run still ended "lazarus rebuilt" -- so a build that
@@ -1071,6 +1106,17 @@ invoke_doctor() {
         log_ok "lazarus binary: $lazarus_bin ($mtime)"
     else
         log_warn "lazarus binary not built yet (run --build-ide)"
+    fi
+
+    # GOD mu3jfytu (2026-09-16): docked single-window layout is the default. rc 2 (no
+    # binary) is already covered by the WARN just above, so it is not a second finding.
+    local dock_missing="" dock_rc=0
+    dock_missing=$(test_docked_layout_installed) || dock_rc=$?
+    if [ "$dock_rc" -eq 0 ]; then
+        log_ok "Docked IDE layout (AnchorDocking + docked form editor): installed"
+    elif [ "$dock_rc" -eq 1 ]; then
+        log_err "Docked IDE layout: NOT installed -- lazarus does not contain: $dock_missing (run --force-rebuild)"
+        problems=$((problems + 1))
     fi
 
     local lazbuild_bin="$LAZARUS_DIR/lazbuild"
