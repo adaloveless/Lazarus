@@ -5768,9 +5768,24 @@ begin
 
           ctnWithVariable:
             begin
-              if FindIdentifierInWithVarContext(ContextNode,Params)
-              and CheckResult(true,false) then
-                exit;
+              // A with variable ranges from the start of its expression to
+              // the end of the with statement and binds names only inside
+              // that range. The prior-brother step above already skips a
+              // with variable that does not cover the start context; a
+              // with variable reached by descending into a transparent
+              // begin..end block (inline var support: MoveContextNodeToChildren
+              // lands on the block's LastChild) bypassed that check, so a
+              // closed or later with statement captured identifiers outside
+              // its body, e.g. "Result" after "with c do ..." resolved to the
+              // record field c.Result instead of the function result.
+              if (StartContextNode.StartPos>=ContextNode.StartPos)
+              and (StartContextNode.StartPos<ContextNode.EndPos) then begin
+                if FindIdentifierInWithVarContext(ContextNode,Params)
+                and CheckResult(true,false) then
+                  exit;
+              end;
+              // else: this with statement does not cover the start context
+              // -> skip it and continue with the prior brother / parent
             end;
 
           ctnOnBlock:
