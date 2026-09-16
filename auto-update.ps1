@@ -71,6 +71,21 @@ $script:CommonXPpuHint = ""
 $script:CommonXArtifactsCleaned = 0
 $script:ErrorCount = 0
 
+# c671 -- REFUSE unbound arguments instead of silently running without them. A plain param()
+# block drops anything it cannot bind into $args and carries on, so ".\auto-update.ps1
+# -Check,-NoBuild" (ONE comma-joined token, the PowerShell array habit) bound NEITHER switch
+# and ran the FULL pipeline -- Wipe-LocalChanges (reset --hard + clean -fdx), pull, IDE
+# rebuild -- while auto-update.bat had classified that line read-only and left lazarus.exe
+# running, because cmd's `for` splits the token on the comma. Measured on lazdev under
+# pwsh 7.6.6 against this file; Steve's real-Windows matrix of 2026-09-16 surfaced the token.
+if ($args.Count -gt 0) {
+    Log-Err "Unrecognised argument(s): $($args -join ' ')"
+    Log-ErrDetail "  Flags are separate, space-separated switches:  auto-update.bat -Check -NoBuild   (not -Check,-NoBuild)."
+    Log-ErrDetail "  Refusing to run: an unbound flag would otherwise fall through to a FULL update (wipe + pull + rebuild)."
+    Log-ErrDetail "  Run  auto-update.bat -Help  for the option list."
+    exit 2
+}
+
 if (-not $VPDir -and $env:VPDIR -and (Test-Path (Join-Path $env:VPDIR ".git"))) {
     $VPDir = $env:VPDIR
     Log-Info "VibePascal: using `$env:VPDIR = $VPDir"
@@ -2161,7 +2176,7 @@ function Invoke-Doctor {
     } else {
         Log-Err "$problems problem(s) found."
         Log-Info "Suggested fixes:"
-        Log-Info "  1. Run: .\auto-update.ps1 -ResetConfig -ForceRebuild"
+        Log-Info "  1. Run: auto-update.bat -ResetConfig -ForceRebuild   (the .bat closes the running IDE first)"
         Log-Info "  2. If problems persist, check that VibePascal tarball is present in dist\\win64\\"
         Log-Info "  3. Verify Lazarus repo is clean: git status -- inside $LazarusDir"
     }
@@ -2543,7 +2558,7 @@ if (-not $anyUpdated -and -not $NoBuild) {
         } else {
             Log-Err "PackageCommonX_LCL still not installed, and nothing has changed since the last attempt -- not rebuilding again."
             Log-ErrDetail "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
-            Log-ErrDetail "  Fix: run  .\auto-update.ps1 -ForceRebuild  and read the FIRST 'Error:' line of the build output."
+            Log-ErrDetail "  Fix: run  auto-update.bat -ForceRebuild  and read the FIRST 'Error:' line of the build output."
             Log-ErrDetail "  That first error is the commonx unit that fails to compile under the IDE build mode."
         }
     }
@@ -2586,7 +2601,7 @@ if ($quality.Quality -ne "Compatible") {
     Write-Host ""
     Log-Err "Lazarus directory check FAILED: $($quality.Quality) [$($quality.Note)]"
     Log-ErrDetail "IDE will show 'Without a proper Lazarus directory you will get a lot of warnings' on startup."
-    Log-Info "Run: .\auto-update.ps1 -Doctor for a full diagnosis."
+    Log-Info "Run: auto-update.bat -Doctor for a full diagnosis."
 }
 
 if (-not $NoLaunch) {
