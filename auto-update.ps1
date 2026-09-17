@@ -1351,6 +1351,89 @@ function Clean-StalePackageArtifacts {
     }
 }
 
+# c692: strip any unit artifact a previous run compiled from the COMPILER's own source tree
+# into a Lazarus package output dir. The .sh half has had this since c655; the .ps1 half
+# never did, and Windows is GOD's own workstation.
+#
+# Why this is reachable on Windows and not only on lazdev: $VPDir is a GIT CLONE of
+# adaloveless/vibepascal -- Check-VPUpdates refuses to run without $VPDir\.git -- so the full
+# compiler source tree is on disk beside whatever ppcx64.exe the extraction put there. The
+# win64 bin tarball is bin-only (21 entries, 0 compiler\*.pas, measured c692 on
+# vibepascal-v59-5c89c538b8-win64-bin.tar.gz), but it extracts INTO that clone, so the
+# collision exists anyway. Measured c692 on the real trees: 207 compiler sources, 3 of whose
+# unit names also exist in Lazarus -- compiler, macho and tokens. macho is the one that
+# actually bit lazdev (c672: "Can't find unit FpImgReaderMachoFile", which reads exactly like
+# a merge defect and is not).
+#
+# Preferring bin\ppcx64.exe (see $VPCompiler above) stops NEW wreckage; it does not remove
+# wreckage already on disk. An orphaned .ppu/.o fails the build ON ITS OWN, so a box that
+# ever ran the legacy compiler\ppcx64.exe layout stays broken on every future run with no
+# signal a user could act on -- the same permanent-silent-degradation shape as c634.
+#
+# What counts as wreckage is decided structurally, never from a name list: for each unit name
+# that exists BOTH beside the compiler binary and in the Lazarus tree, any .ppu/.o for that
+# name that is NOT under the directory of its own Lazarus source is an orphan. Lazarus itself
+# agrees and says so -- `Duplicate unit "macho" ... orphaned ppu "<path>"`.
+function Clean-ShadowedUnitArtifacts {
+    $ccDir = Split-Path -Parent $VPCompiler
+    # After extraction the binary may sit in bin\, so ask the real source tree.
+    if (-not (Get-ChildItem -Path $ccDir -Filter *.pas -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        $ccDir = Join-Path $VPDir "compiler"
+    }
+    if (-not (Test-Path $ccDir)) { return }
+
+    # LAST extension, not the first dot: the tree carries dotted unit filenames
+    # (chatgpt.Dto.pas, generics.collections.ppu) and keying those on "chatgpt"/"generics"
+    # would collide names that are not the same unit at all.
+    $stem = { param($n) ($n -replace '\.[^.]*$', '').ToLowerInvariant() }
+
+    $ccNames = @{}
+    foreach ($f in (Get-ChildItem -Path $ccDir -Filter *.pas -File -ErrorAction SilentlyContinue)) {
+        $ccNames[(& $stem $f.Name)] = $true
+    }
+    if ($ccNames.Count -eq 0) { return }
+
+    # ONE pass over the Lazarus tree, not one per name: the compiler tree has ~200 sources and
+    # the Lazarus tree has thousands of artifacts, so a scan per name would walk the tree 200
+    # times for a list that is usually three entries long. Sources build the owner map,
+    # artifacts are the candidates, and only names in $ccNames are ever held in memory.
+    $owners = @{}
+    $artifacts = @()
+    foreach ($f in (Get-ChildItem -Path $LazarusDir -Recurse -File -ErrorAction SilentlyContinue)) {
+        $b = (& $stem $f.Name)
+        if (-not $ccNames.ContainsKey($b)) { continue }
+        $ext = $f.Extension.ToLowerInvariant()
+        $inOutput = ($f.FullName -match '[\\/](lib|units)[\\/]')
+        if (($ext -eq '.pas' -or $ext -eq '.pp') -and (-not $inOutput)) {
+            if (-not $owners.ContainsKey($b)) { $owners[$b] = @() }
+            $owners[$b] += $f.DirectoryName
+        } elseif (($ext -eq '.ppu' -or $ext -eq '.o') -and $inOutput) {
+            $artifacts += $f.FullName
+        }
+    }
+
+    $removed = 0
+    foreach ($a in $artifacts) {
+        $b = (& $stem (Split-Path -Leaf $a))
+        # No Lazarus source owns this name -- not ours to judge, leave it alone.
+        if (-not $owners.ContainsKey($b)) { continue }
+        $ok = $false
+        foreach ($d in $owners[$b]) {
+            if ($a.StartsWith(($d + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)) { $ok = $true; break }
+        }
+        if ($ok) { continue }
+        Remove-Item -Force -LiteralPath $a -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $a)) {
+            $removed++
+            Log-Info "Removed shadowed unit artifact $a -- that unit name also exists beside the compiler binary and this is not its own package's output."
+        }
+    }
+
+    if ($removed -gt 0) {
+        Log-Warn "Removed $removed unit artifact(s) left by an earlier build that compiled a COMPILER source file into a Lazarus package. Left in place they keep failing the IDE build with `"Can't find unit ...`" on every future run."
+    }
+}
+
 function Rebuild-IDE {
     Log-Header "Rebuilding Lazarus IDE (lazarus.exe)"
 
@@ -1524,6 +1607,12 @@ function Rebuild-IDE {
     # NEW -- read the first 'Error:' line printed above, do not assume the old 3069.
     # c636 (GOD mt93q21h): attempt 1 is the ONLY attempt that includes commonx, so the stale-
     # artifact cleanup has to happen HERE, before it -- not in the retry that drops the package.
+    # c692: strip any unit artifact an earlier run compiled from the COMPILER source tree
+    # into a Lazarus package output dir. Must run BEFORE attempt 1 -- such an artifact fails
+    # the build on its own, even with the compiler moved out of that tree. Mirrors the .sh
+    # half, which has called clean_shadowed_unit_artifacts at exactly this point since c655.
+    Clean-ShadowedUnitArtifacts
+
     if ($commonxLpkPath) {
         Clean-StalePackageArtifacts -ExtraPackageLpks @($commonxLpkPath)
     }
