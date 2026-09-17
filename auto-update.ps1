@@ -1799,6 +1799,52 @@ function Rebuild-IDE {
     }
 }
 
+# --- Is the IDE the user LAUNCHES actually built from the source we just synced? ----------
+# (Lars, c698 2026-09-17 -- GOD mu5nkho9 / mu24b48i / mu3jfytu; mirror of auto-update.sh)
+#
+# Print-Summary printed "Lazarus HEAD: <sha>" right after pulling, which READS like a
+# statement about lazarus.exe and is not one: on a steady-state box the IDE is never
+# rebuilt, so HEAD moves and the binary does not.
+#
+# Measured 2026-09-17, which is what turns this from tidiness into a defect: all four of
+# GOD's UX deliverables -- 7256de3e38 (Linux dark editor default), 9b044e4527 (docked
+# layout default), a5ffe414b8 and e08afd4a5a -- landed 2026-09-16 and are NOT ancestors of
+# the newest published release tag lazarus-4.99-vp-20260818-r25 (commit ce12737bc1,
+# 2026-08-12), which is 99 commits behind main. So someone running a downloaded r25 -- or
+# any IDE this updater has not rebuilt since -- can set the dark colour scheme, restart,
+# and CORRECTLY report "still broken" while the fix itself is perfectly good.
+#
+# Compared BY DATE on purpose: the binary carries no commit stamp, so "newer than" is the
+# strongest honest claim available. One-sided -- it can prove a binary is STALE, never that
+# it is current -- and the message says so. An unreadable git (Get-GitOutput yields "" on
+# failure) is UNKNOWN, never "up to date".
+function Get-IdeBinaryStaleness {
+    $exe = Join-Path $LazarusDir "lazarus.exe"
+    if (-not (Test-Path $exe)) { return @{ Status = 'NoBinary' } }
+    $binWhen = (Get-Item $exe).LastWriteTime
+    $headEpochText = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("log", "-1", "--format=%ct", "HEAD")
+    if (-not $headEpochText -or ($headEpochText.Trim() -notmatch '^\d+$')) { return @{ Status = 'Unknown' } }
+    $headEpoch = [int64]$headEpochText.Trim()
+    $binEpoch = [int64]($binWhen.ToUniversalTime() - [datetime]'1970-01-01').TotalSeconds
+    $behind = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "--since=@$binEpoch", "HEAD")
+    if (-not $behind) { $behind = '?' } else { $behind = $behind.Trim() }
+    $headWhen = ([datetime]'1970-01-01').AddSeconds($headEpoch).ToLocalTime()
+    if ($binEpoch -ge $headEpoch) {
+        return @{ Status = 'Fresh'; BinWhen = $binWhen; HeadWhen = $headWhen; Behind = $behind }
+    }
+    return @{ Status = 'Stale'; BinWhen = $binWhen; HeadWhen = $headWhen; Behind = $behind }
+}
+
+function Report-IdeBinaryStaleness {
+    $r = Get-IdeBinaryStaleness
+    switch ($r.Status) {
+        'Fresh'    { Log-Ok ("IDE binary is newer than every commit in this checkout (lazarus.exe built {0:yyyy-MM-dd HH:mm})" -f $r.BinWhen) }
+        'Stale'    { Log-Err ("IDE BINARY IS OLDER THAN YOUR SOURCE -- lazarus.exe was built {0:yyyy-MM-dd HH:mm} and {1} commit(s) have landed since (newest {2:yyyy-MM-dd HH:mm}). The IDE you launch does NOT contain them. Rebuild with: auto-update.bat -ForceRebuild" -f $r.BinWhen, $r.Behind, $r.HeadWhen) }
+        'NoBinary' { Log-Warn "No lazarus.exe in $LazarusDir yet -- nothing to compare against the source (run -ForceRebuild)" }
+        default    { Log-Warn "Cannot tell whether lazarus.exe matches this source (git could not be read in $LazarusDir) -- verdict UNKNOWN, not 'up to date'" }
+    }
+}
+
 function Print-Summary {
     Log-Header "Update Summary"
 
@@ -1841,6 +1887,9 @@ function Print-Summary {
     if (-not $vpHead) { $vpHead = "(unreadable -- git log failed in $VPDir)" }
     Write-Host "Lazarus HEAD: $lazHead"
     Write-Host "VibePascal HEAD: $vpHead"
+
+    # The two HEAD lines above describe the SOURCE. This one describes the BINARY.
+    Report-IdeBinaryStaleness
 }
 
 function Test-LazarusDirectoryQuality {

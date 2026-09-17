@@ -548,6 +548,66 @@ rebuild_lazbuild() {
     log_ok "lazbuild rebuilt ($size)"
 }
 
+# --- Is the IDE the user LAUNCHES actually built from the source we just synced? ----------
+# (Lars, c698 2026-09-17 -- GOD mu5nkho9 / mu24b48i / mu3jfytu)
+#
+# A fix that is on main is not a fix that is in the user's IDE, and nothing here ever said
+# which of the two the summary was describing. print_summary printed "Lazarus HEAD: <sha>"
+# immediately after pulling, which READS like a statement about the binary and is not one:
+# on a steady-state box the IDE is never rebuilt (rebuild_ide runs only when something
+# updated), so HEAD moves and the lazarus binary does not.
+#
+# Measured this cycle, which is what turns this from tidiness into a defect: all four of
+# GOD's UX deliverables -- 7256de3e38 (Linux dark editor default), 9b044e4527 (docked
+# layout default), a5ffe414b8 and e08afd4a5a -- landed 2026-09-16 and are NOT ancestors of
+# the newest published release tag lazarus-4.99-vp-20260818-r25 (commit ce12737bc1,
+# 2026-08-12), which is 99 commits behind main. Both directions controlled, every sha
+# git cat-file -t'd as a commit first. So someone running a downloaded r25 -- or any IDE
+# this updater has not rebuilt since -- can set the dark colour scheme, restart, and
+# CORRECTLY report "still broken" while the fix itself is perfectly good.
+#
+# Compared BY DATE on purpose: the binary carries no commit stamp, so "newer than" is the
+# strongest honest claim available. One-sided test -- it can prove a binary is STALE, never
+# that it is current -- and the message says so rather than implying more.
+fmt_epoch() {
+    date -d "@$1" '+%Y-%m-%d %H:%M' 2>/dev/null \
+        || date -r "$1" '+%Y-%m-%d %H:%M' 2>/dev/null \
+        || printf '%s' "$1"
+}
+
+ide_binary_staleness() {
+    # echoes "<bin_epoch>|<head_epoch>|<commits_newer_than_binary>"
+    # rc 0 = binary at least as new as HEAD, 1 = STALE, 2 = no binary, 3 = cannot tell
+    local exe="$LAZARUS_DIR/lazarus"
+    [ -f "$exe" ] || return 2
+    local bin_epoch head_epoch behind
+    bin_epoch=$(stat -c %Y "$exe" 2>/dev/null || stat -f %m "$exe" 2>/dev/null || true)
+    head_epoch=$(git -C "$LAZARUS_DIR" log -1 --format=%ct HEAD 2>/dev/null || true)
+    case "$bin_epoch" in ''|*[!0-9]*) return 3 ;; esac
+    case "$head_epoch" in ''|*[!0-9]*) return 3 ;; esac
+    behind=$(git -C "$LAZARUS_DIR" rev-list --count --since="@$bin_epoch" HEAD 2>/dev/null || true)
+    [ -n "$behind" ] || behind='?'
+    printf '%s|%s|%s' "$bin_epoch" "$head_epoch" "$behind"
+    [ "$bin_epoch" -ge "$head_epoch" ] && return 0
+    return 1
+}
+
+report_ide_binary_staleness() {
+    local info="" rc=0
+    info=$(ide_binary_staleness) || rc=$?
+    local bin_when head_when behind
+    bin_when=$(fmt_epoch "$(printf '%s' "$info" | cut -d'|' -f1)")
+    head_when=$(fmt_epoch "$(printf '%s' "$info" | cut -d'|' -f2)")
+    behind=$(printf '%s' "$info" | cut -d'|' -f3)
+    case "$rc" in
+        0) log_ok "IDE binary is newer than every commit in this checkout (lazarus built $bin_when)" ;;
+        1) log_err "IDE BINARY IS OLDER THAN YOUR SOURCE -- lazarus was built $bin_when and $behind commit(s) have landed since (newest $head_when). The IDE you launch does NOT contain them. Rebuild with: auto-update.sh --force-rebuild" ;;
+        2) log_warn "No lazarus binary in $LAZARUS_DIR yet -- nothing to compare against the source (run --force-rebuild)" ;;
+        *) log_warn "Cannot tell whether the lazarus binary matches this source (no binary timestamp, or $LAZARUS_DIR is not a git checkout) -- verdict UNKNOWN, not 'up to date'" ;;
+    esac
+    return 0
+}
+
 print_summary() {
     log_header "Update Summary"
 
@@ -589,6 +649,9 @@ print_summary() {
     echo ""
     echo "Lazarus HEAD: $(git -C "$LAZARUS_DIR" log --oneline -1)"
     echo "VibePascal HEAD: $(git -C "$VP_DIR" log --oneline -1)"
+
+    # The two HEAD lines above describe the SOURCE. This one describes the BINARY.
+    report_ide_binary_staleness
 }
 
 # Otto (FPCDeveloper), 2026-09-17 -- reported out of his cy1136 end-to-end verification of
