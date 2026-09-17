@@ -601,7 +601,13 @@ report_ide_binary_staleness() {
     behind=$(printf '%s' "$info" | cut -d'|' -f3)
     case "$rc" in
         0) log_ok "IDE binary is newer than every commit in this checkout (lazarus built $bin_when)" ;;
-        1) log_err "IDE BINARY IS OLDER THAN YOUR SOURCE -- lazarus was built $bin_when and $behind commit(s) have landed since (newest $head_when). The IDE you launch does NOT contain them. Rebuild with: auto-update.sh --force-rebuild" ;;
+        1) # --no-build/--check asked for exactly this outcome, so it is a FINDING, not a
+           # failure of the run: same sentence, WARN severity, no exit-1 contribution.
+           if [ "${NO_BUILD:-0}" = "1" ] || [ "${CHECK_ONLY:-0}" = "1" ]; then
+               log_warn "IDE BINARY IS OLDER THAN YOUR SOURCE -- lazarus was built $bin_when and $behind commit(s) have landed since (newest $head_when). The IDE you launch does NOT contain them. Rebuild with: auto-update.sh --force-rebuild (not done here: --no-build/--check)"
+           else
+               log_err "IDE BINARY IS OLDER THAN YOUR SOURCE -- lazarus was built $bin_when and $behind commit(s) have landed since (newest $head_when). The IDE you launch does NOT contain them. Rebuild with: auto-update.sh --force-rebuild"
+           fi ;;
         2) log_warn "No lazarus binary in $LAZARUS_DIR yet -- nothing to compare against the source (run --force-rebuild)" ;;
         *) log_warn "Cannot tell whether the lazarus binary matches this source (no binary timestamp, or $LAZARUS_DIR is not a git checkout) -- verdict UNKNOWN, not 'up to date'" ;;
     esac

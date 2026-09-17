@@ -1839,7 +1839,12 @@ function Report-IdeBinaryStaleness {
     $r = Get-IdeBinaryStaleness
     switch ($r.Status) {
         'Fresh'    { Log-Ok ("IDE binary is newer than every commit in this checkout (lazarus.exe built {0:yyyy-MM-dd HH:mm})" -f $r.BinWhen) }
-        'Stale'    { Log-Err ("IDE BINARY IS OLDER THAN YOUR SOURCE -- lazarus.exe was built {0:yyyy-MM-dd HH:mm} and {1} commit(s) have landed since (newest {2:yyyy-MM-dd HH:mm}). The IDE you launch does NOT contain them. Rebuild with: auto-update.bat -ForceRebuild" -f $r.BinWhen, $r.Behind, $r.HeadWhen) }
+        'Stale'    {
+            # -NoBuild/-Check asked for exactly this outcome, so it is a FINDING, not a
+            # failure of the run: same sentence, WARN severity, no ErrorCount/exit 1.
+            $msg = ("IDE BINARY IS OLDER THAN YOUR SOURCE -- lazarus.exe was built {0:yyyy-MM-dd HH:mm} and {1} commit(s) have landed since (newest {2:yyyy-MM-dd HH:mm}). The IDE you launch does NOT contain them. Rebuild with: auto-update.bat -ForceRebuild" -f $r.BinWhen, $r.Behind, $r.HeadWhen)
+            if ($NoBuild -or $Check) { Log-Warn ($msg + " (not done here: -NoBuild/-Check)") } else { Log-Err $msg }
+        }
         'NoBinary' { Log-Warn "No lazarus.exe in $LazarusDir yet -- nothing to compare against the source (run -ForceRebuild)" }
         default    { Log-Warn "Cannot tell whether lazarus.exe matches this source (git could not be read in $LazarusDir) -- verdict UNKNOWN, not 'up to date'" }
     }
