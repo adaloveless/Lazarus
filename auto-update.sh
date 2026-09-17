@@ -133,6 +133,43 @@ anchor_before_reset() {
 # GOD mp8g1me3 (2026-05-16): auto-update is for pristine test envs, not local dev.
 # Wipe ALL local changes (tracked + untracked) so test machines pull cleanly.
 # If you are a developer with local work, do NOT run auto-update.sh -- use git directly.
+# --- Never write git state into a checkout sitting on somebody else's branch -------------
+# (Lars, c698 2026-09-17 -- reported by Otto/FPCDeveloper, with the reflog to prove it)
+#
+# $VP_DIR is a SHARED checkout. On 2026-09-17 at 22:06:56/22:06:59Z this script ran
+#     git -C $VP_DIR reset --hard HEAD          (wipe_local_changes)
+#     git -C $VP_DIR pull --ff-only origin main (pull_vp)
+# while that tree was sitting on GOD's own branch `interface-temp-end-of-statement`, which
+# he created there on 09-16 and committed to fourteen seconds later. The ff-only pull
+# SUCCEEDED -- the branch was strictly BEHIND main -- so it silently fast-forwarded a branch
+# that is not main, and nothing in the log said a non-main branch had been moved.
+#
+# Nothing was lost that time (the commit had already been merged --no-ff into main for v59,
+# so it is still an ancestor and the content moved strictly forward), but that was luck, not
+# design. The reset --hard on the line above discards UNCOMMITTED edits with no rescue at
+# all, and GOD edits compiler sources in that tree.
+#
+# anchor_before_reset already covers the DIVERGED case -- but it only runs on the pull
+# FAILURE path, which is exactly the path a merely-behind branch never takes. So the guard
+# has to sit in FRONT of both operations rather than behind one of them.
+#
+# Same class as the c686 environmentoptions.xml defect (also Otto's report): a script
+# writing state it does not own, silently, with no way back. The rule is the same one.
+# Read-only use of that tree (check_vp_updates, the compiler-stale arm) is unaffected.
+vp_checkout_branch() {
+    # echoes the branch name, or "HEAD" when detached; nothing when not a checkout
+    [ -d "$VP_DIR/.git" ] || return 2
+    git -C "$VP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || return 2
+}
+
+vp_checkout_is_on_main() {
+    # rc 0 = on main and safe to write; 1 = somebody else's branch (or detached); 2 = no checkout
+    local br=""
+    br=$(vp_checkout_branch) || return 2
+    [ "$br" = "main" ] && return 0
+    return 1
+}
+
 wipe_local_changes() {
     log_header "Wiping local changes (pristine test-env mode)"
     log_warn "auto-update.sh discards ALL uncommitted changes and untracked files."
@@ -171,9 +208,13 @@ wipe_local_changes() {
     if [ "$UPSTREAM_ONLY" -eq 1 ]; then
         log_info "Skipping the VibePascal wipe (--upstream-only)."
     elif [ -d "$VP_DIR/.git" ]; then
+        if ! vp_checkout_is_on_main; then
+            log_warn "SKIPPING the VibePascal wipe: $VP_DIR is on branch '$(vp_checkout_branch || true)', not main. 'reset --hard HEAD' there would discard somebody else's uncommitted work with NO rescue tag and no way back. Put that checkout back on main yourself, or run with --upstream-only."
+        else
         git -C "$VP_DIR" reset --hard HEAD 2>&1 | tail -1
         git -C "$VP_DIR" clean -fdx -e /compiler/ppcx64 -e /bin -e /rtl/units -e '/vibepascal-*.cfg' 2>&1 | tail -1
         log_ok "VibePascal working tree reset + cleaned ($VP_DIR, kept compiler/ppcx64, bin/, rtl/units, vibepascal-*.cfg -- the bootstrap inputs)"
+        fi
     else
         log_warn "$VP_DIR is not a git checkout; skipping the VibePascal wipe."
     fi
@@ -230,6 +271,13 @@ pull_vp() {
     if [ "$VP_UPDATED" -eq 0 ]; then return; fi
 
     log_header "Pulling VibePascal updates"
+
+    # See vp_checkout_is_on_main: a --ff-only pull on somebody else's branch SUCCEEDS
+    # whenever that branch is merely behind, and moves it. Skip rather than move it.
+    if ! vp_checkout_is_on_main; then
+        log_warn "SKIPPING the VibePascal pull: $VP_DIR is on branch '$(vp_checkout_branch || true)', not main. A --ff-only pull there moves SOMEBODY ELSE'S branch onto origin/main, silently, whenever it is merely behind -- measured 2026-09-17, when GOD's 'interface-temp-end-of-statement' was fast-forwarded exactly that way. Put that checkout back on main to resume VibePascal updates."
+        return 0
+    fi
     # If ff-only pull fails (local branch diverged from origin/main), reset to origin/main.
     # This recovers from the pinning bug where a stale local commit left VP stuck on an old version
     # (GOD mrghu0l5; Finn/ZENBOOK r23 win64 smoke: --ff-only failure + no fallback = pinned forever).

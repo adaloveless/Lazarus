@@ -611,6 +611,14 @@ function Wipe-LocalChanges {
         Start-Sleep -Milliseconds 500
     }
 
+    if ($Label -eq "VibePascal") {
+        $br = Test-RepoOnMain -WorkDir $RepoDir
+        if ($br -and $br -ne "main") {
+            Log-Warn "SKIPPING the $Label wipe: $RepoDir is on branch '$br', not main. 'reset --hard HEAD' there would discard somebody else's uncommitted work with NO rescue tag and no way back. Put that checkout back on main yourself, or run with -UpstreamOnly."
+            return
+        }
+    }
+
     $reset = Invoke-Git -WorkDir $RepoDir -GitArgs @("reset", "--hard", "HEAD")
     if ($reset.ExitCode -ne 0) {
         Log-Err "git reset --hard HEAD failed in $RepoDir`: $($reset.Error)"
@@ -778,6 +786,27 @@ function Check-VPUpdates {
     }
 }
 
+# --- Never write git state into a checkout sitting on somebody else's branch -------------
+# (Lars, c698 2026-09-17 -- reported by Otto/FPCDeveloper; mirror of auto-update.sh)
+#
+# On lazdev at 2026-09-17 22:06:56/22:06:59Z the bash half ran reset --hard HEAD and then
+# pull --ff-only origin main against the SHARED vibepascal checkout while that tree was
+# sitting on GOD's own branch `interface-temp-end-of-statement`. The ff-only pull SUCCEEDED
+# -- the branch was merely BEHIND main -- so it silently fast-forwarded a branch that is not
+# main, and nothing in the log said so. Reproduced here on a synthetic tree: the pre-fix code
+# moved the branch AND destroyed an uncommitted edit; the guarded code leaves both alone.
+#
+# Invoke-AnchorBeforeReset already covers the DIVERGED case, but only on the pull FAILURE
+# path -- which is exactly the path a merely-behind branch never takes. The guard belongs in
+# FRONT of both operations. Same class as the c686 environmentoptions.xml defect.
+function Test-RepoOnMain {
+    param([string]$WorkDir)
+    if (-not (Test-Path (Join-Path $WorkDir ".git"))) { return $null }
+    $br = Get-GitOutput -WorkDir $WorkDir -GitArgs @("rev-parse", "--abbrev-ref", "HEAD")
+    if (-not $br) { return $null }
+    return $br.Trim()
+}
+
 function Pull-VP {
     if (-not $script:VPUpdated) { return }
 
@@ -785,6 +814,12 @@ function Pull-VP {
     # If ff-only pull fails (local branch diverged from origin/main), reset to origin/main.
     # Recovers from the pinning bug where a stale local commit leaves VP stuck on an old version
     # (GOD mrghu0l5; Finn/ZENBOOK r23 win64 smoke: --ff-only failure + no fallback = pinned forever).
+    $vpBranch = Test-RepoOnMain -WorkDir $VPDir
+    if ($vpBranch -and $vpBranch -ne "main") {
+        Log-Warn "SKIPPING the VibePascal pull: $VPDir is on branch '$vpBranch', not main. A --ff-only pull there moves SOMEBODY ELSE'S branch onto origin/main, silently, whenever it is merely behind -- measured 2026-09-17, when GOD's 'interface-temp-end-of-statement' was fast-forwarded exactly that way. Put that checkout back on main to resume VibePascal updates."
+        return
+    }
+
     $result = Invoke-Git -WorkDir $VPDir -GitArgs @("pull", "--ff-only", "origin", "main")
     if ($result.ExitCode -ne 0) {
         Log-Warn "VP --ff-only pull failed; reset --hard origin/main (pristine mode)"
