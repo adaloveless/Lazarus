@@ -481,6 +481,22 @@ rebuild_vp_packages() {
         # c682: every unit on disk was made by a different compiler than the one about to
         # consume it. Rebuild the RTL and the packages from clean instead of trusting
         # timestamps (GOD's own verification of 55e687f581 was exactly this: RTL + 147 packages).
+        #
+        # c695: do NOT "optimise" this into extracting VibePascal's published unit set
+        # (dist/linux64/vibepascal-<ver>-x86_64-linux-units.tar.gz, Otto 2026-09-17, 934a0fd818)
+        # in place of the rebuild. That tarball is a sound artifact -- 147/147 packages load
+        # clean on his side -- but FPC gates unit loading on the PPU VERSION, not on which
+        # compiler produced the units, so substituting it here would be silently wrong rather
+        # than loudly wrong. Measured on the shared tree, both controls: a compiler reporting
+        # -iD 2026/09/17 consumed rtl/units built 2026-09-16 with rc=0, ZERO recompiles (only
+        # probe.o landed in -FU) and a binary that ran; the negative arm with an empty -Fu died
+        # "Can't find unit system used by probe", rc=1, no binary. Mismatched units do not
+        # announce themselves -- they load. That IS the c682 defect, and rtl_clean is what
+        # prevents it. The published set is correct only where the consuming compiler is the
+        # published one; on this path we have just built a compiler from source, so it is not.
+        # It remains a fine MANUAL recovery for an operator with an unbuildable tree (extract
+        # the bin tarball + the unit tarball, then ppcx64 -n -Fuunits/x86_64-linux), which is
+        # the use Otto proposed it for -- an operator choice, not automatic script behaviour.
         log_info "Compiler was rebuilt -- rebuilding the VibePascal RTL and packages from clean..."
         make -C "$VP_DIR" rtl_clean packages_clean PP="$VP_COMPILER" OPT="-n @$LINUX_CFG" >/dev/null 2>&1 || true
     fi
