@@ -181,7 +181,7 @@ check_vp_updates() {
         return 1
     fi
 
-    local before=$(git -C "$VP_DIR" rev-parse HEAD)
+    VP_HEAD_BEFORE=$(git -C "$VP_DIR" rev-parse HEAD 2>/dev/null || true)
     git -C "$VP_DIR" fetch origin 2>/dev/null
 
     local behind=$(git -C "$VP_DIR" rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
@@ -214,6 +214,7 @@ pull_vp() {
         git -C "$VP_DIR" reset --hard origin/main || { log_err "VP reset failed"; return 1; }
     fi
     log_ok "VibePascal pulled successfully"
+    VP_HEAD_AFTER=$(git -C "$VP_DIR" rev-parse HEAD 2>/dev/null || true)
 
     # LATEST.txt sidecar (GOD mrghu0l5): report current version/source_commit for diagnostics.
     # Linux clients build from source after pull, so no extraction needed -- but the info confirms
@@ -223,6 +224,139 @@ pull_vp() {
     if [ -f "$local_latest" ]; then
         log_info "LATEST.txt present: $(grep -E '^version:|^source_commit:' "$local_latest" 2>/dev/null | head -2)"
     fi
+}
+
+# --- Rebuild the VibePascal COMPILER when its sources moved (c682, GOD mu460o3b) ------------
+# rebuild_vp_packages only ever rebuilt rtl/ and packages/, with whatever compiler/ppcx64 was
+# already on disk. A VibePascal release that changes ONLY the compiler (v57, v58 and GOD's
+# 55e687f581 "release COM interface temps at end of statement" all have that shape) therefore
+# pulled the new SOURCE onto a Linux box and left the OLD binary compiling everything, while
+# the log said "VibePascal pulled successfully". Windows never had this gap: auto-update.ps1
+# extracts the prebuilt ppcx64.exe that dist/win64/LATEST.txt names. Linux builds from source,
+# so "the new compiler comes down via auto-update" means: rebuild it when its sources changed.
+#
+# Two triggers, because a box may have pulled the change with an OLDER updater and then be
+# steady-state forever (the c634 shape: nothing changed since, so nothing ever heals):
+#   (1) compiler/ differs between the sha before and after THIS run's pull;
+#   (2) any compiler source is newer than the binary (git stamps pulled files with the pull
+#       time, so this is exactly make's own rule and it survives across runs).
+VP_HEAD_BEFORE=""
+VP_HEAD_AFTER=""
+VP_COMPILER_REBUILT=0
+VP_COMPILER_REBUILD_FAILED=0
+
+vp_compiler_is_stale() {
+    # rc 0 = the compiler binary must be rebuilt (reason on stdout); rc 1 = it is current.
+    local src="$VP_DIR/compiler/ppcx64" n newer
+    [ -d "$VP_DIR/compiler" ] || return 1
+    if [ ! -x "$src" ]; then
+        echo "no compiler binary at $src"
+        return 0
+    fi
+    if [ -n "$VP_HEAD_BEFORE" ] && [ -n "$VP_HEAD_AFTER" ] && [ "$VP_HEAD_BEFORE" != "$VP_HEAD_AFTER" ]; then
+        n=$(git -C "$VP_DIR" diff --name-only "$VP_HEAD_BEFORE" "$VP_HEAD_AFTER" -- compiler/ 2>/dev/null | grep -c . || true)
+        if [ "${n:-0}" -gt 0 ]; then
+            echo "$n file(s) under compiler/ changed in this pull (${VP_HEAD_BEFORE:0:10}..${VP_HEAD_AFTER:0:10})"
+            return 0
+        fi
+    fi
+    newer=$(find "$VP_DIR/compiler" \( -name '*.pas' -o -name '*.pp' -o -name '*.inc' \) -newer "$src" -print 2>/dev/null | grep -v '/units/' | head -1 || true)
+    if [ -n "$newer" ]; then
+        echo "compiler source newer than the binary: ${newer#"$VP_DIR"/}"
+        return 0
+    fi
+    return 1
+}
+
+rebuild_vp_compiler() {
+    # Returns 0 when the binary is current or was rebuilt; 1 when a rebuild was needed and
+    # FAILED (the previous binary stays in use -- loudly, and again in the summary).
+    local src="$VP_DIR/compiler/ppcx64" reason boot_src boot_dir boot opt logf
+    local old_md5="" old_mtime=0 new_md5 new_mtime
+    log_header "VibePascal compiler"
+    if ! reason=$(vp_compiler_is_stale); then
+        log_ok "Compiler binary is current: $src ($("$src" -iV 2>/dev/null) $("$src" -iD 2>/dev/null)) -- no compiler source changed"
+        return 0
+    fi
+    log_warn "Compiler rebuild needed: $reason"
+
+    # Bootstrap with a COPY of the newest binary we have, kept OUTSIDE compiler/: make links
+    # the new ppcx64 over the old one, so the bootstrap cannot be that file, and FPC puts the
+    # running binary's own directory on the unit path (see resolve_vp_compiler).
+    boot_src="$src"
+    [ -x "$boot_src" ] || boot_src="$VP_DIR/bin/ppcx64"
+    [ -x "$boot_src" ] || boot_src="$LAZARUS_DIR/.vpcompiler/ppcx64"
+    if [ ! -x "$boot_src" ]; then
+        VP_COMPILER_REBUILD_FAILED=1
+        log_err "No VibePascal compiler to bootstrap from (looked for compiler/ppcx64, bin/ppcx64 under $VP_DIR and $LAZARUS_DIR/.vpcompiler/ppcx64)."
+        log_err "  Install any VibePascal compiler binary at $src and re-run."
+        return 1
+    fi
+    boot_dir="$LAZARUS_DIR/.vpcompiler/bootstrap"
+    boot="$boot_dir/ppcx64"
+    if ! mkdir -p "$boot_dir" || ! cp -f "$boot_src" "$boot" || ! chmod +x "$boot"; then
+        VP_COMPILER_REBUILD_FAILED=1
+        log_err "Cannot stage a bootstrap copy of $boot_src at $boot."
+        return 1
+    fi
+    if [ -x "$src" ]; then
+        old_md5=$(md5sum "$src" | cut -d' ' -f1)
+        old_mtime=$(stat -c %Y "$src" 2>/dev/null || echo 0)
+    fi
+    opt="-n"
+    [ -f "$LINUX_CFG" ] && opt="-n @$LINUX_CFG"
+    logf="$LAZARUS_DIR/.vpcompiler/compiler-rebuild.log"
+    # Build from CLEAN. A unit of the compiler's OWN sources left on its search path by an
+    # earlier build crashes the bootstrap with "PPU DESTROY DURING LOAD ... in module CGUTILS /
+    # Error: Compilation raised exception internally" (measured c682 on the first positive run;
+    # same class as the commonx typex.ppu crash, c637). make clean also drops the old binary,
+    # which is why the bootstrap copy above is taken first and restored below on failure.
+    log_info "Cleaning the compiler's previous build outputs (make -C compiler clean)"
+    make -C "$VP_DIR/compiler" clean FPC="$boot" OPT="$opt" >/dev/null 2>&1 || true
+    rm -rf "$VP_DIR/compiler/x86_64/units" 2>/dev/null || true
+    log_info "Rebuilding the compiler from source: make -C $VP_DIR/compiler all FPC=$boot (bootstrap $("$boot" -iV 2>/dev/null) $("$boot" -iD 2>/dev/null)); log: $logf"
+    if ! make -C "$VP_DIR/compiler" all FPC="$boot" OPT="$opt" > "$logf" 2>&1; then
+        VP_COMPILER_REBUILD_FAILED=1
+        if [ ! -x "$src" ] && cp -f "$boot" "$src" 2>/dev/null && chmod +x "$src" 2>/dev/null; then
+            log_warn "Restored the previous compiler binary at $src from the bootstrap copy"
+        fi
+        log_err "VibePascal compiler rebuild FAILED -- the previous compiler stays in use and the pulled compiler change is NOT in effect."
+        log_err "  First error: $(grep -m1 -E 'Error:|Fatal:|\*\*\*' "$logf" 2>/dev/null || echo '(none captured)')"
+        log_err "  Full log: $logf"
+        return 1
+    fi
+    if [ ! -x "$src" ]; then
+        VP_COMPILER_REBUILD_FAILED=1
+        log_err "make reported success but produced no $src -- see $logf"
+        return 1
+    fi
+    new_md5=$(md5sum "$src" | cut -d' ' -f1)
+    new_mtime=$(stat -c %Y "$src" 2>/dev/null || echo 0)
+    if [ "$new_mtime" -le "$old_mtime" ]; then
+        VP_COMPILER_REBUILD_FAILED=1
+        log_err "make reported success but $src was not relinked (mtime unchanged) -- see $logf"
+        return 1
+    fi
+    VP_COMPILER_REBUILT=1
+    if [ "$new_md5" = "$old_md5" ]; then
+        log_ok "Compiler relinked byte-identical ($new_md5) -- the changed sources produced the same binary"
+    else
+        log_ok "Compiler rebuilt: $src (${old_md5:-none} -> $new_md5, $("$src" -iV 2>/dev/null) $("$src" -iD 2>/dev/null))"
+    fi
+    # bin/ppcx64 (Otto's dist/linux-bin-layout.sh layout) is now a stale copy; refresh it only
+    # where it already exists as a real file, so a symlinked or absent bin/ is left alone.
+    if [ -f "$VP_DIR/bin/ppcx64" ] && [ ! -L "$VP_DIR/bin/ppcx64" ]; then
+        if cp -f "$src" "$VP_DIR/bin/ppcx64" 2>/dev/null; then
+            log_info "Refreshed $VP_DIR/bin/ppcx64 from the rebuilt compiler"
+        else
+            log_warn "Could not refresh $VP_DIR/bin/ppcx64 -- it is stale and will be ignored in favour of a private copy"
+        fi
+    fi
+    # Re-resolve: whatever resolve_vp_compiler picked at startup was the OLD binary.
+    VP_COMPILER="$src"
+    VP_COMPILER_RESOLVED=0
+    resolve_vp_compiler
+    return 0
 }
 
 check_lazarus_upstream() {
@@ -314,7 +448,14 @@ rebuild_vp_packages() {
     fi
 
     local rtl_units="$VP_DIR/rtl/units/x86_64-linux"
-    if [ ! -d "$rtl_units" ]; then
+    if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
+        # c682: every unit on disk was made by a different compiler than the one about to
+        # consume it. Rebuild the RTL and the packages from clean instead of trusting
+        # timestamps (GOD's own verification of 55e687f581 was exactly this: RTL + 147 packages).
+        log_info "Compiler was rebuilt -- rebuilding the VibePascal RTL and packages from clean..."
+        make -C "$VP_DIR" rtl_clean packages_clean PP="$VP_COMPILER" OPT="-n @$LINUX_CFG" >/dev/null 2>&1 || true
+    fi
+    if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ ! -d "$rtl_units" ]; then
         log_info "Building VibePascal RTL..."
         make -C "$VP_DIR" rtl PP="$VP_COMPILER" OPT="-n @$LINUX_CFG" 2>&1 | tail -3
     fi
@@ -386,6 +527,13 @@ print_summary() {
         changes=1
     else
         echo -e "  ${CYAN}-${NC} Lazarus: no changes"
+    fi
+
+    if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
+        echo -e "  ${GREEN}✓${NC} VibePascal compiler rebuilt from source ($VP_DIR/compiler/ppcx64)"
+    fi
+    if [ "$VP_COMPILER_REBUILD_FAILED" -eq 1 ]; then
+        echo -e "  ${RED}✗${NC} VibePascal compiler rebuild FAILED -- the previous compiler is still in use (log: $LAZARUS_DIR/.vpcompiler/compiler-rebuild.log)"
     fi
 
     if [ "$changes" -eq 0 ]; then
@@ -1273,11 +1421,23 @@ if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$BUILD_IDE" -eq 1 ]; 
     fi
 fi
 
+# c682 -- a box that pulled a compiler change with an OLDER updater (which never rebuilt the
+# compiler) is steady-state now: nothing new to pull, so nothing above would ever fix it.
+if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ] && [ -d "$VP_DIR/.git" ]; then
+    stale_reason=""
+    if stale_reason=$(vp_compiler_is_stale); then
+        log_warn "VibePascal compiler binary is behind its sources ($stale_reason) -- rebuilding it"
+        VP_UPDATED=1
+        ANY_UPDATED=1
+    fi
+fi
+
 if [ "$ANY_UPDATED" -eq 1 ]; then
     if [ "$NO_BUILD" -eq 1 ]; then
         log_info "Skipping rebuild (--no-build)"
     else
         if [ "$VP_UPDATED" -eq 1 ]; then
+            rebuild_vp_compiler || true
             rebuild_vp_packages
         fi
         rebuild_lazbuild
