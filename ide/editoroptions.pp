@@ -6702,14 +6702,6 @@ end;
 function TEditorOptions.ReadColorScheme(const LanguageName: String): String;
 (* The name of the currently chosen color-scheme for that language *)
 begin
-  if fAutoDetectColorScheme then begin
-    if IsSystemDarkModeActive then
-      Result := 'Twilight'
-    else
-      Result := 'Default';
-    if ColorSchemeFactory.ColorSchemeGroup[Result] <> nil then
-      Exit;
-  end;
   if LanguageName = '' then
     Exit(ColorSchemeFactory.ColorSchemeGroupAtPos[0].Name);
   if LanguageName <> TPreviewPasSyn.GetLanguageName then
@@ -6719,8 +6711,12 @@ begin
     Result := '';
   if ColorSchemeFactory.ColorSchemeGroup[Result] = nil then
     Result := '';
-  if Result = '' then
-    Result := ReadPascalColorScheme;
+  // A scheme the user actually picked for this language WINS over auto-detection.
+  // Auto-detection is a DEFAULT for a config that has never been told otherwise, not
+  // an override -- see the header note on AutoDetectColorScheme (GOD mu5nkho9).
+  if Result <> '' then
+    Exit;
+  Result := ReadPascalColorScheme;
 end;
 
 function TEditorOptions.ReadPascalColorScheme: String;
@@ -6728,14 +6724,6 @@ function TEditorOptions.ReadPascalColorScheme: String;
 var
   FormatVersion: Integer;
 begin
-  if fAutoDetectColorScheme then begin
-    if IsSystemDarkModeActive then
-      Result := 'Twilight'
-    else
-      Result := 'Default';
-    if ColorSchemeFactory.ColorSchemeGroup[Result] <> nil then
-      Exit;
-  end;
   FormatVersion := XMLConfig.GetValue('EditorOptions/Color/Version', EditorOptsFormatVersion);
   if FormatVersion > 1 then
     Result := XMLConfig.GetValue('EditorOptions/Color/Lang' +
@@ -6744,6 +6732,25 @@ begin
     Result := XMLConfig.GetValue('EditorOptions/Color/ColorScheme', '');
   if ColorSchemeFactory.ColorSchemeGroup[Result] = nil then
     Result := '';
+  // A scheme the user actually picked WINS. Auto-detection used to run FIRST and Exit
+  // unconditionally, so the value WriteColorScheme had just persisted was never read
+  // back -- picking Twilight saved it and every later read still forced 'Default'.
+  // That is GOD mu5nkho9 ("change the editor theme on linux ... it doesn't stick ...
+  // still has a hard white background"): on a desktop that resolves to prefer-light
+  // the forced answer is 'Default', i.e. white, on top of an explicit dark choice.
+  // Auto-detection now only supplies the default for a config that has never stored
+  // one, which is what GOD mo4nhde8 (Windows dark mode) and mu24b48i (dark on Linux)
+  // actually asked for -- a DEFAULT, not an override.
+  if Result <> '' then
+    Exit;
+  if fAutoDetectColorScheme then begin
+    if IsSystemDarkModeActive then
+      Result := 'Twilight'
+    else
+      Result := 'Default';
+    if ColorSchemeFactory.ColorSchemeGroup[Result] <> nil then
+      Exit;
+  end;
   if (Result = '') then begin
     if DefaultColorSchemeName <> '' then
       Result := DefaultColorSchemeName
