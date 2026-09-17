@@ -138,31 +138,44 @@ wipe_local_changes() {
     log_warn "auto-update.sh discards ALL uncommitted changes and untracked files."
     log_warn "If you are a developer with local work, abort NOW (Ctrl-C)."
 
-    if [ ! -d "$LAZARUS_DIR/.git" ]; then
-        log_warn "$LAZARUS_DIR is not a git checkout; skipping local wipe."
-        return
+    # The two trees are wiped INDEPENDENTLY, and every skip says so out loud.
+    # Otto (FPCDeveloper) spotted the coupling, 2026-09-17: a single early `return` on
+    # "$LAZARUS_DIR has no .git" also skipped the VibePascal wipe, so on a tarball-installed
+    # Lazarus -- which is exactly what build-release.sh ships -- the run announced "pristine
+    # test-env mode" and then left $VP_DIR untouched. That shape does NOT stop the script:
+    # check_lazarus_upstream/_origin degrade to 0 through their `|| echo "0"`, and
+    # check_vp_updates, pull_vp and the compiler-stale arm read $VP_DIR only -- so the skip
+    # was silent and whatever it caused surfaced later, somewhere else. A Lazarus checkout's
+    # shape says nothing about VibePascal's; one gate for two trees was the defect.
+
+    if [ -d "$LAZARUS_DIR/.git" ]; then
+        # The wipe must not delete the inputs this script needs to bootstrap itself.
+        # Otto (FPCDeveloper) reproduced this TWICE on a pristine consumer pair, 2026-09-17:
+        # resolve_vp_compiler stages the private bootstrap copy at $LAZARUS_DIR/.vpcompiler/
+        # (untracked), then `clean -fdx` here deleted it, then deleted $VP_DIR/compiler/ppcx64
+        # as well -- so rebuild_vp_compiler found NONE of its three candidates seconds later
+        # and exited 1 with "No VibePascal compiler to bootstrap from". Second-order, same
+        # cause: the clean also removed the untracked vibepascal-*.cfg (LINUX_CFG) and
+        # rtl/units, so even with a surviving bootstrap the rebuild had no unit path and died
+        # at "Can't find unit system". None of those four are user work -- they are build
+        # inputs this script itself installs or generates -- so preserving them is inside the
+        # pristine-test-env intent (GOD mp8g1me3), while deleting them makes a rebuild
+        # impossible by construction. Everything else is still wiped.
+        git -C "$LAZARUS_DIR" reset --hard HEAD 2>&1 | tail -1
+        git -C "$LAZARUS_DIR" clean -fdx -e /.vpcompiler 2>&1 | tail -1
+        log_ok "Lazarus working tree reset + cleaned ($LAZARUS_DIR, kept .vpcompiler/ -- the bootstrap copy)"
+    else
+        log_warn "$LAZARUS_DIR is not a git checkout; skipping the Lazarus wipe (the VibePascal wipe below is independent and still runs)."
     fi
 
-    # The wipe must not delete the inputs this script needs to bootstrap itself.
-    # Otto (FPCDeveloper) reproduced this TWICE on a pristine consumer pair, 2026-09-17:
-    # resolve_vp_compiler stages the private bootstrap copy at $LAZARUS_DIR/.vpcompiler/
-    # (untracked), then `clean -fdx` here deleted it, then deleted $VP_DIR/compiler/ppcx64
-    # as well -- so rebuild_vp_compiler found NONE of its three candidates seconds later
-    # and exited 1 with "No VibePascal compiler to bootstrap from". Second-order, same
-    # cause: the clean also removed the untracked vibepascal-*.cfg (LINUX_CFG) and
-    # rtl/units, so even with a surviving bootstrap the rebuild had no unit path and died
-    # at "Can't find unit system". None of those four are user work -- they are build
-    # inputs this script itself installs or generates -- so preserving them is inside the
-    # pristine-test-env intent (GOD mp8g1me3), while deleting them makes a rebuild
-    # impossible by construction. Everything else is still wiped.
-    git -C "$LAZARUS_DIR" reset --hard HEAD 2>&1 | tail -1
-    git -C "$LAZARUS_DIR" clean -fdx -e /.vpcompiler 2>&1 | tail -1
-    log_ok "Lazarus working tree reset + cleaned ($LAZARUS_DIR, kept .vpcompiler/ -- the bootstrap copy)"
-
-    if [ "$UPSTREAM_ONLY" -eq 0 ] && [ -d "$VP_DIR/.git" ]; then
+    if [ "$UPSTREAM_ONLY" -eq 1 ]; then
+        log_info "Skipping the VibePascal wipe (--upstream-only)."
+    elif [ -d "$VP_DIR/.git" ]; then
         git -C "$VP_DIR" reset --hard HEAD 2>&1 | tail -1
         git -C "$VP_DIR" clean -fdx -e /compiler/ppcx64 -e /bin -e /rtl/units -e '/vibepascal-*.cfg' 2>&1 | tail -1
         log_ok "VibePascal working tree reset + cleaned ($VP_DIR, kept compiler/ppcx64, bin/, rtl/units, vibepascal-*.cfg -- the bootstrap inputs)"
+    else
+        log_warn "$VP_DIR is not a git checkout; skipping the VibePascal wipe."
     fi
 }
 
