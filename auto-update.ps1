@@ -2000,32 +2000,51 @@ function Test-DockedLayoutInstalled {
         (Join-Path $Dir "components\anchordocking\design\units\$Cpu-$Os\$Ws\anchordockingdsgn.ppu"),
         (Join-Path $Dir "components\dockedformeditor\lib\$Cpu-$Os\$Ws\dockedformeditor.ppu")
     )
-    foreach ($p in $ppus) {
-        if (-not (Test-Path $p)) {
-            $result.Ok = $false
-            $result.Notes += "Build artifact missing: $p (Rebuild-IDE did not compile it -- it is a base package, so read the FIRST 'Error:' line of the build)"
-        }
-    }
-    if (-not $result.Ok) { return $result }
+    # c690: the BINARY is the end state; a missing intermediate artifact must never veto it.
+    # The previous order gated on the two .ppu files and returned BEFORE scanning lazarus.exe,
+    # which made this report a false "NOT installed" on a perfectly good build. Measured, not
+    # theorised: Clean-StalePackageArtifacts (section 2, "Lazarus built-in packages") deletes
+    # every *.ppu under EVERY directory named "lib", and dockedformeditor's output lives at
+    # components\dockedformeditor\LIB\<cpu>-<os>\<ws>\ while anchordocking's lives under
+    # ...\design\UNITS\..., so that sweep removes exactly one of the two paths below. Two
+    # arms over the SAME byte-identical IDE binary (md5 806c055d7741, which provably contains
+    # both classes) differed only in that one .ppu and the shipped code answered Ok=True then
+    # Ok=False -- telling GOD his docked IDE was broken and to go read a build error that does
+    # not exist. Missing .ppus are now a DIAGNOSTIC on failure, never a verdict.
+    $missingPpus = @($ppus | Where-Object { -not (Test-Path $_) })
 
     $lazExe = Join-Path $Dir "lazarus.exe"
-    if (Test-Path $lazExe) {
-        try {
-            $bytes = [System.IO.File]::ReadAllBytes($lazExe)
-            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
-            $missing = @()
-            foreach ($sym in @("TIDEAnchorDockMaster", "TDockedMainIDE")) {
-                if (-not $text.Contains($sym)) { $missing += $sym }
-            }
-            if ($missing.Count -gt 0) {
-                $result.Ok = $false
-                $result.Notes += "lazarus.exe does NOT contain: $($missing -join ', ') -- the docking packages were not linked. Run -ForceRebuild."
-            } else {
-                $result.Notes += "lazarus.exe contains the docked-layout classes (TIDEAnchorDockMaster, TDockedMainIDE)"
-            }
-        } catch {
-            $result.Notes += "Could not scan lazarus.exe: $_"
+    if (-not (Test-Path $lazExe)) {
+        # Also c690: the old code left Ok=$true when lazarus.exe was absent, so a tree with
+        # ppus and no IDE reported "installed". A verdict with nothing to verify is not a pass.
+        $result.Ok = $false
+        $result.Notes += "lazarus.exe not found in $Dir -- the IDE has not been built in this tree, so the docked layout cannot be verified."
+        foreach ($p in $missingPpus) { $result.Notes += "  (design-time artifact also absent: $p)" }
+        return $result
+    }
+
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($lazExe)
+        $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+        $missing = @()
+        foreach ($sym in @("TIDEAnchorDockMaster", "TDockedMainIDE")) {
+            if (-not $text.Contains($sym)) { $missing += $sym }
         }
+        if ($missing.Count -gt 0) {
+            $result.Ok = $false
+            $result.Notes += "lazarus.exe does NOT contain: $($missing -join ', ') -- the docking packages were not linked. Run -ForceRebuild."
+            foreach ($p in $missingPpus) {
+                $result.Notes += "  ...and its design-time artifact is missing too: $p (Rebuild-IDE did not compile it -- it is a base package, so read the FIRST 'Error:' line of the build)"
+            }
+        } else {
+            $result.Notes += "lazarus.exe contains the docked-layout classes (TIDEAnchorDockMaster, TDockedMainIDE)"
+            foreach ($p in $missingPpus) {
+                $result.Notes += "  (build artifact $p is absent, but the classes ARE linked into lazarus.exe -- the stale-artifact cleanup sweeps 'lib' dirs, so this is expected and is NOT a fault)"
+            }
+        }
+    } catch {
+        $result.Ok = $false
+        $result.Notes += "Could not scan lazarus.exe: $_ -- treating as NOT verified rather than as a pass."
     }
 
     return $result
@@ -2048,27 +2067,40 @@ function Test-MetaDarkStyleInstalled {
         return $result
     }
 
+    # c690: SAME defect as Test-DockedLayoutInstalled, second instance of the class, so it is
+    # systemic rather than a one-off. metadarkstyledsgn.ppu sits under ...\dsgn\LIB\, which
+    # Clean-StalePackageArtifacts sweeps, and gating on it returned before lazarus.exe was ever
+    # scanned. The .lpk check above stays a hard gate (missing SOURCE really does block), but a
+    # missing compiled artifact is now a diagnostic, never the verdict.
     $dsPpu = Join-Path $Dir "components\metadarkstyle\dsgn\lib\$Cpu-$Os\metadarkstyledsgn.ppu"
-    if (-not (Test-Path $dsPpu)) {
+    $dsPpuMissing = -not (Test-Path $dsPpu)
+
+    $lazExe = Join-Path $Dir "lazarus.exe"
+    if (-not (Test-Path $lazExe)) {
         $result.Ok = $false
-        $result.Notes += "Build artifact missing: $dsPpu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
+        $result.Notes += "lazarus.exe not found in $Dir -- the IDE has not been built in this tree, so MetaDarkStyle cannot be verified."
+        if ($dsPpuMissing) { $result.Notes += "  (design-time artifact also absent: $dsPpu)" }
         return $result
     }
 
-    $lazExe = Join-Path $Dir "lazarus.exe"
-    if (Test-Path $lazExe) {
-        try {
-            $bytes = [System.IO.File]::ReadAllBytes($lazExe)
-            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
-            if ($text -notmatch "(?i)metadarkstyle") {
-                $result.Ok = $false
-                $result.Notes += "lazarus.exe does NOT contain MetaDarkStyle symbols -- design-time package was not linked. Run -ForceRebuild."
-            } else {
-                $result.Notes += "lazarus.exe contains MetaDarkStyle symbols"
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($lazExe)
+        $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+        if ($text -notmatch "(?i)metadarkstyle") {
+            $result.Ok = $false
+            $result.Notes += "lazarus.exe does NOT contain MetaDarkStyle symbols -- design-time package was not linked. Run -ForceRebuild."
+            if ($dsPpuMissing) {
+                $result.Notes += "  ...and its design-time artifact is missing too: $dsPpu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
             }
-        } catch {
-            $result.Notes += "Could not scan lazarus.exe: $_"
+        } else {
+            $result.Notes += "lazarus.exe contains MetaDarkStyle symbols"
+            if ($dsPpuMissing) {
+                $result.Notes += "  (build artifact $dsPpu is absent, but the symbols ARE linked into lazarus.exe -- the stale-artifact cleanup sweeps 'lib' dirs, so this is expected and is NOT a fault)"
+            }
         }
+    } catch {
+        $result.Ok = $false
+        $result.Notes += "Could not scan lazarus.exe: $_ -- treating as NOT verified rather than as a pass."
     }
 
     return $result
