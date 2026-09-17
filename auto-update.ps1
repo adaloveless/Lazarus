@@ -2250,6 +2250,12 @@ function Configure-Environment {
         Log-Info "Patching existing environmentoptions.xml"
         $xml = [xml](Get-Content $envOptsFile -Raw)
         $envOpts = $xml.CONFIG.EnvironmentOptions
+        # c686 (Otto, 2026-09-17): this rewrites a config the script does not own. On the
+        # bash side an updater run from a scratch checkout silently repointed the real
+        # shared IDE config at a throwaway rig with no backup and no way back; see
+        # configure_environment() in auto-update.sh. Same cure here: write only when
+        # something actually moved, and take a rolling backup first.
+        $envOptsChanged = $false
 
         # Always update LazarusDirectory: stale path here is the #1 cause of
         # "Without a proper Lazarus directory you will get a lot of warnings"
@@ -2263,6 +2269,7 @@ function Configure-Environment {
         if ($oldVal -ne $LazarusDir) {
             $lazDirNode.SetAttribute("Value", $LazarusDir)
             Log-Info "LazarusDirectory: $oldVal -> $LazarusDir"
+            $envOptsChanged = $true
         }
 
         $compilerNode = $envOpts.SelectSingleNode("CompilerFilename")
@@ -2274,6 +2281,7 @@ function Configure-Environment {
         if ($oldVal -ne $vpCompilerPath) {
             $compilerNode.SetAttribute("Value", $vpCompilerPath)
             Log-Info "CompilerFilename: $oldVal -> $vpCompilerPath"
+            $envOptsChanged = $true
         }
 
         $fpcSrcNode = $envOpts.SelectSingleNode("FPCSourceDirectory")
@@ -2285,6 +2293,7 @@ function Configure-Environment {
         if ($oldVal -ne $VPDir) {
             $fpcSrcNode.SetAttribute("Value", $VPDir)
             Log-Info "FPCSourceDirectory: $oldVal -> $VPDir"
+            $envOptsChanged = $true
         }
 
         $makeNode = $envOpts.SelectSingleNode("MakeFilename")
@@ -2298,11 +2307,24 @@ function Configure-Environment {
             if ($oldVal -ne $makePath) {
                 $makeNode.SetAttribute("Value", $makePath)
                 Log-Info "MakeFilename: $oldVal -> $makePath"
+                $envOptsChanged = $true
             }
         }
 
-        $xml.Save($envOptsFile)
-        Log-Ok "Updated $envOptsFile"
+        if (-not $envOptsChanged) {
+            Log-Ok "$envOptsFile already matches this VibePascal -- left unchanged"
+        } else {
+            $envOptsBackup = "$envOptsFile.autoupdate.bak"
+            try {
+                Copy-Item -LiteralPath $envOptsFile -Destination $envOptsBackup -Force -ErrorAction Stop
+                Log-Info "Backed up existing config to $envOptsBackup"
+                Log-Info "  undo: Copy-Item -LiteralPath '$envOptsBackup' -Destination '$envOptsFile' -Force"
+            } catch {
+                Log-Warn "Could not back up $envOptsFile -- patching anyway"
+            }
+            $xml.Save($envOptsFile)
+            Log-Ok "Updated $envOptsFile"
+        }
     } else {
         Log-Info "Creating new environmentoptions.xml from template"
         $templateFile = Join-Path $LazarusDir "tools\install\win\environmentoptions.xml"

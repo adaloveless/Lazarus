@@ -33,6 +33,7 @@ usage() {
     echo "  --build-ide      Also rebuild the full Lazarus IDE (requires GTK2 or Qt5)"
     echo "  --force-rebuild  Force rebuild even if no updates are available"
     echo "  --doctor         Run diagnostics (no state changes); exit 1 if problems found"
+    echo "  --no-configure   Do NOT touch ~/.lazarus/environmentoptions.xml (use for scratch/rig runs)"
     echo "  --help           Show this help"
     echo ""
     echo "Default: pull updates and rebuild lazbuild if anything changed."
@@ -49,6 +50,7 @@ BUILD_IDE=0
 FORCE_REBUILD=0
 SELF_UPDATED=0
 DOCTOR=0
+NO_CONFIGURE=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -62,6 +64,7 @@ while [[ $# -gt 0 ]]; do
         --force-rebuild) FORCE_REBUILD=1; shift ;;
         --self-updated) SELF_UPDATED=1; shift ;;
         --doctor)      DOCTOR=1; shift ;;
+        --no-configure) NO_CONFIGURE=1; shift ;;
         --help|-h)     usage ;;
         *)             echo "Unknown option: $1"; usage ;;
     esac
@@ -181,6 +184,7 @@ relaunch_if_updated() {
         [ "$BUILD_IDE" -eq 1 ] && args+=("--build-ide")
         [ "$FORCE_REBUILD" -eq 1 ] && args+=("--force-rebuild")
         [ "$DOCTOR" -eq 1 ] && args+=("--doctor")
+        [ "$NO_CONFIGURE" -eq 1 ] && args+=("--no-configure")
         exec "$script_path" "${args[@]}"
     fi
 }
@@ -558,15 +562,74 @@ print_summary() {
     echo "VibePascal HEAD: $(git -C "$VP_DIR" log --oneline -1)"
 }
 
+# Otto (FPCDeveloper), 2026-09-17 -- reported out of his cy1136 end-to-end verification of
+# 672c29b9f3. He ran the whole updater from a SCRATCH consumer checkout with VP_DIR pointed
+# at a throwaway rig, and this function silently repointed the REAL, SHARED
+# $HOME/.lazarus/environmentoptions.xml at a directory he was about to delete: for ~15
+# minutes my live IDE read CompilerFilename=<his rig>/vp/bin/ppcx64. He caught it in the
+# run's own log and restored it, so nothing was lost -- but nothing in this function made
+# that either visible or reversible. Three defects, all mine:
+#   (1) no backup, so there was no way back;
+#   (2) unconditional, so it rewrote values that were already correct;
+#   (3) silent, so it never printed WHAT it changed.
+# $HOME is shared by 30+ agents on this box, and a run from ANY checkout must not be able
+# to move that file without leaving a trace and a way back. Fixed here, not by guessing
+# which tree is "canonical" (the live file's LazarusDirectory reads ../.local/lazarus, so a
+# canonical-tree heuristic would refuse to configure the real box -- measured, c686):
+#   - --no-configure / AUTOUPDATE_NO_CONFIGURE=1 skips the patch entirely, for rig runs;
+#   - already-correct values are left ALONE (no write, no mtime churn on a shared file);
+#   - a real change takes a rolling backup FIRST and prints OLD -> NEW for each attribute.
+# auto-update.ps1's Configure-Environment already logs OLD -> NEW and already skips
+# no-op writes; it gets the backup in the same commit.
+env_opt_value() {
+    # Echo the Value="..." attribute of the first <Tag ...> in an environmentoptions.xml,
+    # or nothing when the file or the tag is absent. Never fails the caller under `set -e`.
+    local file="$1" tag="$2" line
+    [ -f "$file" ] || return 0
+    line="$(grep -o "$tag Value=\"[^\"]*\"" "$file" 2>/dev/null | head -1 || true)"
+    [ -n "$line" ] || return 0
+    printf '%s' "${line#*Value=\"}" | sed 's/"$//'
+}
+
 configure_environment() {
     log_header "Configuring Lazarus IDE for VibePascal"
 
     local env_dir="$HOME/.lazarus"
     local env_file="$env_dir/environmentoptions.xml"
+    local backup="$env_file.autoupdate.bak"
+
+    if [ "$NO_CONFIGURE" -eq 1 ] || [ "${AUTOUPDATE_NO_CONFIGURE:-0}" = "1" ]; then
+        log_warn "Skipping IDE configuration (--no-configure): $env_file left untouched"
+        return 0
+    fi
 
     mkdir -p "$env_dir"
 
     if [ -f "$env_file" ]; then
+        local cur_compiler cur_fpcsrc
+        cur_compiler="$(env_opt_value "$env_file" CompilerFilename)"
+        cur_fpcsrc="$(env_opt_value "$env_file" FPCSourceDirectory)"
+
+        if [ "$cur_compiler" = "$VP_COMPILER" ] && [ "$cur_fpcsrc" = "$VP_DIR" ]; then
+            log_ok "$env_file already points at this VibePascal -- left unchanged"
+            log_info "  CompilerFilename    = $cur_compiler"
+            log_info "  FPCSourceDirectory  = $cur_fpcsrc"
+            return 0
+        fi
+
+        # A real change to a file this script does not own: back it up BEFORE touching it,
+        # and say exactly what moved, so a wrong VP_DIR is both obvious and one cp from
+        # undone.
+        if cp "$env_file" "$backup" 2>/dev/null; then
+            log_info "Backed up existing config to $backup"
+        else
+            log_warn "Could not back up $env_file -- patching anyway"
+        fi
+        log_warn "Repointing the SHARED IDE config at $VP_DIR"
+        [ "$cur_compiler" != "$VP_COMPILER" ] && log_info "  CompilerFilename:   ${cur_compiler:-<unset>} -> $VP_COMPILER"
+        [ "$cur_fpcsrc" != "$VP_DIR" ]        && log_info "  FPCSourceDirectory: ${cur_fpcsrc:-<unset>} -> $VP_DIR"
+        log_info "  undo: cp \"$backup\" \"$env_file\""
+
         log_info "Patching existing environmentoptions.xml"
         if command -v xmlstarlet &>/dev/null; then
             xmlstarlet ed -L \
