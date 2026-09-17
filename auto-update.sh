@@ -140,14 +140,26 @@ wipe_local_changes() {
         return
     fi
 
+    # The wipe must not delete the inputs this script needs to bootstrap itself.
+    # Otto (FPCDeveloper) reproduced this TWICE on a pristine consumer pair, 2026-09-17:
+    # resolve_vp_compiler stages the private bootstrap copy at $LAZARUS_DIR/.vpcompiler/
+    # (untracked), then `clean -fdx` here deleted it, then deleted $VP_DIR/compiler/ppcx64
+    # as well -- so rebuild_vp_compiler found NONE of its three candidates seconds later
+    # and exited 1 with "No VibePascal compiler to bootstrap from". Second-order, same
+    # cause: the clean also removed the untracked vibepascal-*.cfg (LINUX_CFG) and
+    # rtl/units, so even with a surviving bootstrap the rebuild had no unit path and died
+    # at "Can't find unit system". None of those four are user work -- they are build
+    # inputs this script itself installs or generates -- so preserving them is inside the
+    # pristine-test-env intent (GOD mp8g1me3), while deleting them makes a rebuild
+    # impossible by construction. Everything else is still wiped.
     git -C "$LAZARUS_DIR" reset --hard HEAD 2>&1 | tail -1
-    git -C "$LAZARUS_DIR" clean -fdx 2>&1 | tail -1
-    log_ok "Lazarus working tree reset + cleaned ($LAZARUS_DIR)"
+    git -C "$LAZARUS_DIR" clean -fdx -e /.vpcompiler 2>&1 | tail -1
+    log_ok "Lazarus working tree reset + cleaned ($LAZARUS_DIR, kept .vpcompiler/ -- the bootstrap copy)"
 
     if [ "$UPSTREAM_ONLY" -eq 0 ] && [ -d "$VP_DIR/.git" ]; then
         git -C "$VP_DIR" reset --hard HEAD 2>&1 | tail -1
-        git -C "$VP_DIR" clean -fdx 2>&1 | tail -1
-        log_ok "VibePascal working tree reset + cleaned ($VP_DIR)"
+        git -C "$VP_DIR" clean -fdx -e /compiler/ppcx64 -e /bin -e /rtl/units -e '/vibepascal-*.cfg' 2>&1 | tail -1
+        log_ok "VibePascal working tree reset + cleaned ($VP_DIR, kept compiler/ppcx64, bin/, rtl/units, vibepascal-*.cfg -- the bootstrap inputs)"
     fi
 }
 
