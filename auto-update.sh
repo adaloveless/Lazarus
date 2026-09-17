@@ -737,6 +737,43 @@ test_docked_layout_installed() {
     return 0
 }
 
+# c691 (GOD moehki0x): auto-update.sh had NO MetaDarkStyle verifier at all -- the bash twin
+# carried the commonx and docked-layout end-state checks while auto-update.ps1 alone watched
+# the third flagship feature. Same rule as the two above (c634): the BINARY is the deliverable.
+#
+# What proves linkage, MEASURED rather than assumed: metadarkstyledsgn.pas ends with
+#   RegisterPackage('metadarkstyledsgn', @Register);
+# so that literal is in the binary if and only if the design-time unit was compiled in, and
+# ide/lazarus.pp:73 uses that unit directly. On the IDE built here the string occurs EXACTLY
+# ONCE (beside staticpackages.inc) and NO other spelling of "metadarkstyle" appears anywhere
+# in the 124 MB binary -- so the runtime units in lcl/darkstyle/ cannot fake the hit.
+#
+# What the user loses when this fails: Tools -> Options -> Environment -> "Theme" (the page
+# registered by registerMetaDarkStyleDSGN.Register) is simply absent, and on Windows the
+# libhEnvironmentOptionsLoaded boot handler never runs, so the dark style is never applied.
+#
+# Do NOT "harden" this by gating on a compiled artifact: metadarkstyledsgn.ppu exists NOWHERE
+# in a healthy tree, precisely because lazarus.pp uses the unit instead of installing the
+# package -- and the stale-artifact cleanup sweeps every lib/ dir besides. auto-update.ps1
+# gated on that ppu and returned BEFORE it ever scanned the binary, scoring a problem on every
+# healthy run until c690 removed the gate. An intermediate build product must never veto the
+# end state.
+#
+# Prints the missing symbol on stdout. 0 = linked, 1 = missing from the binary,
+# 2 = no binary to check yet, 3 = design-time SOURCE missing from the checkout.
+METADARKSTYLE_DSGN_SYMBOL="metadarkstyledsgn"
+test_metadarkstyle_installed() {
+    local exe="$LAZARUS_DIR/lazarus"
+    local lpk="$LAZARUS_DIR/components/metadarkstyle/dsgn/metadarkstyledsgn.lpk"
+    [ -f "$lpk" ] || return 3
+    [ -f "$exe" ] || return 2
+    if ! grep -a -q -- "$METADARKSTYLE_DSGN_SYMBOL" "$exe" 2>/dev/null; then
+        printf '%s' "$METADARKSTYLE_DSGN_SYMBOL"
+        return 1
+    fi
+    return 0
+}
+
 # Identifies the material an install attempt was made against (Lazarus commit + commonx
 # revision), so the self-heal retry fires only when something has actually CHANGED.
 commonx_stamp_path() {
@@ -1213,6 +1250,24 @@ rebuild_ide() {
         log_err "  Fix: re-pull origin/main, run --force-rebuild, and read the FIRST 'Error:' line of the build."
     fi
 
+    # c691 (GOD moehki0x): MetaDarkStyle is the third flagship feature whose design-time
+    # package is linked straight into the IDE (ide/lazarus.pp uses metadarkstyledsgn), and
+    # the bash path has never verified it. A build that quietly loses it looks identical to a
+    # good one -- the same failure shape as commonx below.
+    local mds_missing="" mds_rc=0
+    mds_missing=$(test_metadarkstyle_installed) || mds_rc=$?
+    if [ "$mds_rc" -eq 0 ]; then
+        log_ok "MetaDarkStyle design-time package linked into the IDE"
+    elif [ "$mds_rc" -eq 1 ]; then
+        log_err "MetaDarkStyle NOT linked -- lazarus does not contain: $mds_missing"
+        log_err "  Tools -> Options -> Environment -> \"Theme\" will be missing, and on Windows the"
+        log_err "  dark style is never applied at IDE start (the boot handler is in that package)."
+        log_err "  Fix: re-pull origin/main, run --force-rebuild, and read the FIRST 'Error:' line of the build."
+    elif [ "$mds_rc" -eq 3 ]; then
+        log_err "MetaDarkStyle design-time SOURCE is missing from the checkout:"
+        log_err "  components/metadarkstyle/dsgn/metadarkstyledsgn.lpk -- re-pull origin/main."
+    fi
+
     # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
     # Until now the ONLY signal that PackageCommonX_LCL had been dropped was a log_warn
     # buried mid-build, while the run still ended "lazarus rebuilt" -- so a build that
@@ -1359,6 +1414,21 @@ invoke_doctor() {
         log_ok "Docked IDE layout (AnchorDocking + docked form editor): installed"
     elif [ "$dock_rc" -eq 1 ]; then
         log_err "Docked IDE layout: NOT installed -- lazarus does not contain: $dock_missing (run --force-rebuild)"
+        problems=$((problems + 1))
+    fi
+
+    # c691 (GOD moehki0x): MetaDarkStyle, the third flagship feature -- the bash updater has
+    # never checked it while the .ps1 doctor always did. rc 2 (no binary) is the WARN above.
+    local mds_missing="" mds_rc=0
+    mds_missing=$(test_metadarkstyle_installed) || mds_rc=$?
+    if [ "$mds_rc" -eq 0 ]; then
+        log_ok "MetaDarkStyle design-time package: linked into the IDE"
+    elif [ "$mds_rc" -eq 1 ]; then
+        log_err "MetaDarkStyle: NOT linked -- lazarus does not contain: $mds_missing (run --force-rebuild)"
+        log_err "  Tools -> Options -> Environment -> \"Theme\" will be missing from the IDE."
+        problems=$((problems + 1))
+    elif [ "$mds_rc" -eq 3 ]; then
+        log_err "MetaDarkStyle: design-time SOURCE missing -- components/metadarkstyle/dsgn/metadarkstyledsgn.lpk is not in the checkout (re-pull origin/main)"
         problems=$((problems + 1))
     fi
 
