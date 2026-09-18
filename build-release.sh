@@ -2717,6 +2717,54 @@ MACINSTALL
     # files that actually ship (ad-hoc signatures included), not the staging intermediates.
     stamp_shipped_compiler_hashes "$staging"
 
+    # END-STATE GATE (c700, 2026-09-18). This script cut 25 releases without one
+    # feature-level check on what it was shipping: grep for TTouchButton /
+    # TBetterWebBrowser / AnchorDock / MetaDarkStyle over the whole file returned ZERO,
+    # while BOTH updaters have carried three such checks since c634/c691. r25 is the bill
+    # for that -- its win64 asset was cut from a wrecked gtk2 unit dir and sat on the
+    # release page for 32 days containing none of the 2026-09-16 UX fixes, and GOD asked
+    # twice why his Windows IDE was still undocked. Wiring is not the end state (#389).
+    #
+    # NO TARBALL IS CUT IF THIS FAILS, deliberately: line ~1230's rule ("it lying there at
+    # all is one fewer way to publish the wrong binary") applies with more force to a
+    # release than to an intermediate. The staging tree is LEFT IN PLACE on failure so the
+    # missing piece can be read off disk instead of reproduced.
+    #
+    # NON-FATAL to the roll, by the same reasoning restore_host_lazbuild records: `all`
+    # calls build_platform bare under `set -e`, so returning non-zero here would throw away
+    # every later target as well. The roll still exits 1 at the end with a DEGRADED banner,
+    # so a degraded roll cannot be mistaken for a clean one.
+    #
+    # rc 3 ("not verifiable") is treated as a NO-SHIP exactly like rc 1: an unreadable
+    # instrument is not a clean bill of health (c654).
+    local info="$staging/RELEASE-INFO.txt"
+    local endstate_rc=0
+    if [ -x "$LAZARUS_DIR/release-verify-staging.sh" ]; then
+        "$LAZARUS_DIR/release-verify-staging.sh" "$staging" "$target" "$LAZARUS_DIR" \
+            > "$info" 2>&1 || endstate_rc=$?
+        cat "$info"
+    else
+        echo "WARNING: $LAZARUS_DIR/release-verify-staging.sh is missing or not executable;" >&2
+        echo "         the END STATE of this staging tree was NOT verified." >&2
+        endstate_rc=4
+    fi
+    if [ "$endstate_rc" != 0 ]; then
+        echo "" >&2
+        echo "########################################################################" >&2
+        echo "#            END STATE NOT VERIFIED -- NO TARBALL FOR $target" >&2
+        echo "########################################################################" >&2
+        echo "release-verify-staging.sh exited $endstate_rc (1=missing, 3=not verifiable," >&2
+        echo "4=verifier absent). The staging tree is LEFT at:" >&2
+        echo "  $staging" >&2
+        echo "Read the RELEASE-INFO.txt in it, fix what is missing, and re-roll this" >&2
+        echo "target. Do NOT hand-tar that directory: whatever the check found is still" >&2
+        echo "wrong in it." >&2
+        RELEASE_ENDSTATE_FAILED=1
+        RELEASE_ENDSTATE_FAILED_TARGETS="$RELEASE_ENDSTATE_FAILED_TARGETS $target"
+        cd "$LAZARUS_DIR"
+        return 0
+    fi
+
     cd "$RELEASE_DIR"
     tar czf "${release_name}.tar.gz" "$release_name"
     echo "Release: $RELEASE_DIR/${release_name}.tar.gz"
@@ -2897,6 +2945,12 @@ mkdir -p "$RELEASE_DIR"
 # Set by build_platform when restore_host_lazbuild fails. Checked once at the end.
 HOST_LAZBUILD_BROKEN=0
 
+# Set by package_release when release-verify-staging.sh rejects a staging tree, i.e. the
+# feature the user is waiting for is not in what we were about to ship. Checked at the end
+# so one bad target cannot be mistaken for a clean roll, and so `all` still builds the rest.
+RELEASE_ENDSTATE_FAILED=0
+RELEASE_ENDSTATE_FAILED_TARGETS=""
+
 echo "Lazarus Release Builder (VibePascal)"
 echo "Compiler: $VP_COMPILER"
 echo "Version: $LAZARUS_VERSION"
@@ -2938,6 +2992,19 @@ echo ""
 echo "=== Release builds complete ==="
 ls -lh "$RELEASE_DIR"/*.tar.gz 2>/dev/null
 
+# Reported BEFORE the host-lazbuild block, which can exit 1 on its own and would otherwise
+# swallow this message. The exit itself happens at the very END of the file so both
+# conditions are always printed, whichever fired.
+if [ "$RELEASE_ENDSTATE_FAILED" = "1" ]; then
+    echo "" >&2
+    echo "########################################################################" >&2
+    echo "#                      RELEASE DEGRADED -- NOT SHIPPABLE                #" >&2
+    echo "########################################################################" >&2
+    echo "No tarball was cut for:$RELEASE_ENDSTATE_FAILED_TARGETS" >&2
+    echo "Their staging trees are still under $RELEASE_DIR with a RELEASE-INFO.txt" >&2
+    echo "naming exactly what was missing. Any tarballs listed above are fine." >&2
+fi
+
 # One last repair attempt, then fail the roll if the shared root is still not executable here.
 # ~30 agents share this tree and run ./lazbuild; leaving a cross binary at the root breaks all
 # of them, and the artifacts above are worthless to me if I cannot say the box is intact.
@@ -2963,4 +3030,10 @@ if [ "$HOST_LAZBUILD_BROKEN" = "1" ]; then
         echo "" >&2
         exit 1
     fi
+fi
+
+# Final verdict. An end-state rejection fails the roll even when every build step was green:
+# the artifacts we did produce are valid, but a target the caller asked for has no tarball.
+if [ "$RELEASE_ENDSTATE_FAILED" = "1" ]; then
+    exit 1
 fi
