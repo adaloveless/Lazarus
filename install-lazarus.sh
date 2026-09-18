@@ -147,28 +147,50 @@ sha_re = re.compile(r"^SHA256SUMS-\d{8}(?:-r\d+)?\.txt$")
 # aarch64-linux and both darwin targets from a working install into NO_TARBALL,
 # because r25 -- which carries all of them -- was one position down the list.
 chosen = None
-tarball_url = sha_url = tarball_name = sha_name = None
+tarball_url = sha_url = tarball_name = sha_name = expected_sha = None
+# Did ANY release carry a tarball for this arch? Drives the NO_TARBALL /
+# NO_SHA distinction below -- a release we skipped for want of a checksum is
+# NOT the same thing as no release having the platform at all.
+saw_tarball = False
 
 for data in releases:
     cand_tarball_url = cand_sha_url = cand_tarball_name = cand_sha_name = None
+    cand_digest = None
     for asset in data.get("assets", []):
         name = asset["name"]
         if tarball_re.match(name):
             cand_tarball_url = asset["browser_download_url"]
             cand_tarball_name = name
+            # GitHub reports a per-asset checksum of its own. install-lazarus.ps1
+            # has always accepted it; this script did not, so the two could walk
+            # to DIFFERENT releases for the same architecture -- a release with
+            # tarballs but no SHA256SUMS asset (r24 is exactly that shape) was
+            # taken by the .ps1 and skipped here. Keep the two predicates equal.
+            dig = asset.get("digest") or ""
+            if dig.startswith("sha256:"):
+                cand_digest = dig.split(":", 1)[1]
         elif sha_re.match(name):
             cand_sha_url = asset["browser_download_url"]
             cand_sha_name = name
-    if cand_tarball_url and cand_sha_url:
+    if cand_tarball_url:
+        saw_tarball = True
+    if cand_tarball_url and (cand_digest or cand_sha_url):
         chosen = data
         tarball_url, tarball_name = cand_tarball_url, cand_tarball_name
         sha_url, sha_name = cand_sha_url, cand_sha_name
+        expected_sha = cand_digest
         break
-    # A release that carries the tarball but no checksum file is NOT usable and
-    # must not stop the walk -- keep looking rather than failing on it.
+    # A release carrying the tarball but NO checksum of either kind is not
+    # usable and must not stop the walk -- keep looking rather than failing.
 
 if chosen is None:
-    print("NO_TARBALL", file=sys.stderr)
+    # Distinguish the two failures. Reporting NO_TARBALL for a release whose
+    # tarball is sitting right there sends whoever debugs this hunting a file
+    # that exists.
+    if saw_tarball:
+        print("NO_SHA", file=sys.stderr)
+    else:
+        print("NO_TARBALL", file=sys.stderr)
     sys.exit(1)
 
 tag = chosen["tag_name"]
@@ -176,8 +198,11 @@ tag = chosen["tag_name"]
 print(tag)
 print(tarball_name)
 print(tarball_url)
-print(sha_name)
-print(sha_url)
+# Lines 4 and 5 may now be EMPTY (release verified by API digest instead of a
+# SHA256SUMS asset). They must print as empty, never as the string "None".
+print(sha_name or "")
+print(sha_url or "")
+print(expected_sha or "")
 PY
 
 TAG="$(sed -n '1p' "$TMP_WORK/release-meta.txt")"
@@ -185,6 +210,7 @@ TARBALL_NAME="$(sed -n '2p' "$TMP_WORK/release-meta.txt")"
 TARBALL_URL="$(sed -n '3p' "$TMP_WORK/release-meta.txt")"
 SHA_NAME="$(sed -n '4p' "$TMP_WORK/release-meta.txt")"
 SHA_URL="$(sed -n '5p' "$TMP_WORK/release-meta.txt")"
+EXPECTED_SHA="$(sed -n '6p' "$TMP_WORK/release-meta.txt")"
 
 log_info "Latest release: $TAG"
 log_info "Tarball:      $TARBALL_NAME"
@@ -195,16 +221,31 @@ download() {
     curl -fsSL --max-time 1500 --retry 1 -o "$out" "$url"
 }
 
-log_info "Downloading SHA256SUMS..."
-download "$SHA_URL" "$TMP_WORK/$SHA_NAME"
+if [[ -n "$SHA_URL" ]]; then
+    log_info "Downloading SHA256SUMS..."
+    download "$SHA_URL" "$TMP_WORK/$SHA_NAME"
+fi
 
 log_info "Downloading $TARBALL_NAME..."
 download "$TARBALL_URL" "$TMP_WORK/$TARBALL_NAME"
 
 # --- verify digest ---
+# Two checksum sources, same verifier. The SHA256SUMS asset is preferred where
+# it exists because that is the long-tested path; the API digest is the
+# fallback that lets this script accept the same releases install-lazarus.ps1
+# accepts. Neither is independent provenance -- both come from GitHub -- so
+# this guards a truncated or corrupted download, not a malicious one.
 log_info "Verifying tarball digest..."
-if ! grep -F " $TARBALL_NAME" "$TMP_WORK/$SHA_NAME" > "$TMP_WORK/expected-sha.txt"; then
-    log_err "Tarball name not found in $SHA_NAME"
+if [[ -n "$SHA_URL" ]]; then
+    if ! grep -F " $TARBALL_NAME" "$TMP_WORK/$SHA_NAME" > "$TMP_WORK/expected-sha.txt"; then
+        log_err "Tarball name not found in $SHA_NAME"
+        exit 1
+    fi
+elif [[ -n "$EXPECTED_SHA" ]]; then
+    log_info "No SHA256SUMS asset on this release; using the GitHub API digest."
+    printf '%s  %s\n' "$EXPECTED_SHA" "$TARBALL_NAME" > "$TMP_WORK/expected-sha.txt"
+else
+    log_err "No SHA256 digest available for $TARBALL_NAME"
     exit 1
 fi
 (cd "$TMP_WORK" && sha256sum -c "$TMP_WORK/expected-sha.txt")

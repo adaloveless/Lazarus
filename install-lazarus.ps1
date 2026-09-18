@@ -88,6 +88,11 @@ sha_re = re.compile(r'^SHA256SUMS-\d{8}(?:-r\d+)?\.txt$')
 # linux and both darwin targets from a working install into NO_TARBALL, because
 # r25 -- which carries all of them -- sat one position down the list.
 tag = tarball_url = tarball_name = expected_sha = sha_url = None
+# Did ANY release carry a tarball for this arch? Without this, a release we
+# skipped for want of a checksum reports as NO_TARBALL, which sends whoever
+# debugs it hunting a tarball that is sitting right there on the release.
+# install-lazarus.sh makes the same distinction; keep the two in step.
+saw_tarball = False
 for data in releases:
     c_url = c_name = c_sha = c_shaurl = None
     for asset in data.get('assets', []):
@@ -99,12 +104,14 @@ for data in releases:
                 c_sha = dig.split(':', 1)[1]
         elif sha_re.match(name):
             c_shaurl = asset['browser_download_url']
+    if c_url:
+        saw_tarball = True
     if c_url and (c_sha or c_shaurl):
         tag = data['tag_name']
         tarball_url, tarball_name, expected_sha, sha_url = c_url, c_name, c_sha, c_shaurl
         break
 if not tarball_url:
-    print('NO_TARBALL', file=sys.stderr); sys.exit(1)
+    print('NO_SHA' if saw_tarball else 'NO_TARBALL', file=sys.stderr); sys.exit(1)
 print(tag)
 print(tarball_name)
 print(tarball_url)
