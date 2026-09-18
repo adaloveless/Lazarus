@@ -172,6 +172,18 @@ CSHIM="$W/copier-shim.sh"
 CFNS="get_latest_darwin_bin_tarball declared_md5_for_dist_member
       stage_darwin_compiler_from_dist_tarball get_latest_darwin_native_dir
       copy_native_darwin_compiler_to_staging"
+# Externals the copier is ENTITLED to reach for. MEASURED, never guessed (2026-09-18,
+# c040): each name was removed from a mirrored PATH one at a time and the four composition
+# arms re-driven against real fixtures. file, md5sum, cut, chmod, basename, tar, find, sort
+# and tail each turned 2-4 arms RED with "copier reached OUTSIDE the shim closure"; a run
+# with nothing removed read 4 passed / 0 failed. An absent one of these is a MISSING INPUT
+# -- this script's header says a missing input makes an arm prove nothing and must SKIP --
+# and NOT a defect in build-release.sh, which is what a FAIL here claims. The rest of the
+# list is the same family of coreutils, included so a thinner host degrades to SKIP too.
+# Deliberately NOT "anything not a build-release.sh function": an unknown name still FAILS
+# (see the handler), so a typo or an injected command cannot skip its way to green.
+CEXT="awk basename cat chmod cp cut date file find grep head ln md5sum mkdir mktemp
+      printf rm sed seq sort stat tail tar touch tr wc"
 cshim_ok=no
 if [ -r "$BR" ]; then
     { for fn in $CFNS; do
@@ -188,14 +200,25 @@ if [ -r "$BR" ]; then
     for fn in $CFNS; do
         ( . "$CSHIM" >/dev/null 2>&1; declare -F "$fn" >/dev/null ) || cshim_ok=no
     done
+    # WHICH NAMES ARE OURS. The recorder below has to tell a missing build-release.sh
+    # HELPER (the shim closure is incomplete -- a defect in this rig, and the reason the
+    # recorder exists) from a missing EXTERNAL TOOL (an absent input on a thin host).
+    # Anchor that first half on the ARTIFACT rather than on a guess: every top-level
+    # function name build-release.sh defines. RIG ASSERT, same spirit as the declare -F
+    # sweep above -- if this list cannot even find the five functions we just extracted it
+    # cannot classify anything, so SKIP rather than report with a label that may be wrong.
+    BRFNS=$(grep -oE '^[a-z_][a-z0-9_]*\(\)' "$BR" | sed 's/()//' | tr '\n' ' ')
+    for fn in $CFNS; do
+        case " $BRFNS " in *" $fn "*) ;; *) cshim_ok=no ;; esac
+    done
 fi
 if [ "$cshim_ok" = yes ]; then
     composearm() {  # composearm <label> <target> <exe> <arch-pat> <vp-dir> <expect-gate-rc> <expect-staged>
         local label=$1 tgt=$2 exe=$3 pat=$4 vp=$5 exg=$6 exs=$7
         local st="$W/compose-$tgt-$RANDOM" staged=no crc grc
-        local miss="$st.outside-closure"
+        local miss="$st.outside-closure" missext="$st.absent-external"
         mkstaging "$st"; mkidebin "$st/bin/lazarus"; rm -f "$st/compiler/$exe"
-        : > "$miss"
+        : > "$miss"; : > "$missext"
         # `set +e` AFTER sourcing, not before: the copier returns nonzero on the degraded
         # path BY DESIGN and package_release calls it under `|| true`. Source first, relax
         # errexit second, or this dies at the very return it is here to measure.
@@ -209,8 +232,28 @@ if [ "$cshim_ok" = yes ]; then
         # all three arms recorded the missing name while still reading copier rc=1 and
         # staged=no, byte-for-byte the shape this function scores as a PASS. So score the
         # RECORDER before the expectations, and name what was reached for.
-        crc=$( BRUNO_SHIM_MISS="$miss"; export BRUNO_SHIM_MISS
-               command_not_found_handle() { echo "$1" >> "$BRUNO_SHIM_MISS"; return 127; }
+        #
+        # AND THE RECORDER MUST SAY WHICH KIND OF MISSING IT FOUND (Lars, c705). A bare
+        # command_not_found_handle cannot tell a missing helper of OURS from a missing
+        # coreutil: on a host without GNU md5sum the copier reaches for it, the arm prints
+        # "copier reached OUTSIDE the shim closure: md5sum" and a MISSING INPUT gets
+        # reported as a defect in build-release.sh. Measured here 2026-09-18 before this
+        # change: 3 of the 4 arms red on an md5sum-less PATH, 3 on file, 4 on find/sort/
+        # tail/cut, 2 on chmod, 3 on basename/tar. So classify: ours -> FAIL, a known
+        # external -> SKIP (absent input), anything else -> FAIL, because an unknown name
+        # is how a typo or an injected command would otherwise skip its way to green.
+        crc=$( BRUNO_SHIM_MISS="$miss"; BRUNO_SHIM_MISS_EXT="$missext"
+               BRUNO_BRFNS=" $BRFNS "; BRUNO_CEXT=" $CEXT "
+               export BRUNO_SHIM_MISS BRUNO_SHIM_MISS_EXT BRUNO_BRFNS BRUNO_CEXT
+               command_not_found_handle() {
+                   case "$BRUNO_BRFNS" in
+                       *" $1 "*) echo "$1" >> "$BRUNO_SHIM_MISS"; return 127 ;;
+                   esac
+                   case "$BRUNO_CEXT" in
+                       *" $1 "*) echo "$1" >> "$BRUNO_SHIM_MISS_EXT"; return 127 ;;
+                   esac
+                   echo "$1" >> "$BRUNO_SHIM_MISS"; return 127
+               }
                . "$CSHIM"; set +e; VP_DIR="$vp"; export VP_DIR
                copy_native_darwin_compiler_to_staging "$st" "$tgt" "$exe" "$pat" >/dev/null 2>&1
                echo $? )
@@ -219,6 +262,11 @@ if [ "$cshim_ok" = yes ]; then
         if [ -s "$miss" ]; then
             printf '  FAIL  %-44s rc=%s  copier reached OUTSIDE the shim closure: %s\n' \
                 "$label" "$grc" "$(sort -u "$miss" | tr '\n' ' ')"; failn=$((failn + 1))
+        elif [ -s "$missext" ]; then
+            # Failures outrank skips, so this branch is second on purpose: a run that hit
+            # BOTH a missing helper and a thin host is still RED.
+            skiparm "$label" \
+                "external tool absent on this host: $(sort -u "$missext" | tr '\n' ' ')"
         elif [ "$grc" = "$exg" ] && [ "$staged" = "$exs" ]; then
             printf '  PASS  %-44s rc=%s\n' "$label" "$grc"; pass=$((pass + 1))
         else
