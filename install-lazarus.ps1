@@ -124,7 +124,22 @@ Set-Content -Path $pyFile -Value $py -Encoding ASCII
 $headersJson = $headers | ConvertTo-Json -Compress
 $env:INSTALL_LAZ_HEADERS = $headersJson
 python $pyFile $ApiBase $Arch | Set-Content $metaFile
+$resolverExit = $LASTEXITCODE
 Remove-Item Env:\INSTALL_LAZ_HEADERS -ErrorAction SilentlyContinue
+# The resolver's exit code MUST be checked here. Unchecked, a resolver that
+# exits 1 (NO_TARBALL / NO_SHA) leaves $metaFile absent or empty, $tag and
+# $tarballUrl come back $null, and this script walks on to download from a
+# null URL -- so the honest one-word reason the resolver printed is buried
+# under a wall of "Cannot index into a null array". install-lazarus.sh gets
+# this for free from `set -euo pipefail` (measured: it aborts before the next
+# statement); PowerShell does not, so it is spelled out. Deliberately NOT
+# redirecting the resolver's stderr -- 2> plus $ErrorActionPreference="Stop"
+# behaves differently on Windows PowerShell 5.1, which cannot be tested on
+# lazdev, and the token is already on the console line directly above.
+if ($resolverExit -ne 0) {
+    Write-ErrorX "Release resolver failed (exit $resolverExit) for $Arch. Its one-word reason is printed directly above: NO_TARBALL = no published release carries a tarball for this architecture; NO_SHA = a tarball exists but the release has neither a SHA256SUMS asset nor a GitHub API digest, so the download cannot be verified. Nothing was installed."
+    exit 1
+}
 
 $tag          = (Get-Content $metaFile)[0]
 $tarballName  = (Get-Content $metaFile)[1]
