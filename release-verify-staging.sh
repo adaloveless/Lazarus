@@ -184,7 +184,19 @@ else
             a=$(md5sum < "$STAGING/$u" | cut -d' ' -f1)
             b=$(md5sum < "$SRC_TREE/$u" | cut -d' ' -f1)
             if [ "$a" = "$b" ]; then ok "$u staged, md5 identical to the rolled tree ($a)"
-            else fail "$u in the tarball DIFFERS from the rolled tree ($a vs $b)"; fi
+            else
+                # NAME BOTH CAUSES, because they need opposite responses and the wording used
+                # to imply only the first. On a checkout 30+ agents share, the likelier one is
+                # that somebody edited the tree copy in the seconds between package_release
+                # staging it and this check reading it -- the base moved under the roll, which
+                # this gate is RIGHT to refuse, but "the updater differs" reads as "the updater
+                # is broken" and sends the reader to the wrong file. The mtimes settle it.
+                fail "$u in the tarball DIFFERS from the rolled tree ($a staged vs $b in tree)"
+                echo "         staged $(date -ur "$STAGING/$u" +%FT%TZ 2>/dev/null)  tree $(date -ur "$SRC_TREE/$u" +%FT%TZ 2>/dev/null)"
+                echo "         If the TREE copy is the newer one, the tree moved WHILE this roll"
+                echo "         was packaging (another agent edited it) -- re-roll, do not debug $u."
+                echo "         If the STAGED copy is newer, package_release staged the wrong file."
+            fi
         else
             fail "$SRC_TREE/$u missing -- cannot prove the staged copy is current"
         fi

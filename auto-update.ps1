@@ -296,7 +296,12 @@ function Get-VPArchiveSet {
         $unitsCandidates = @($all | Where-Object { $_.Name -match '^vibepascal-v\d+-win64-units\.tar\.gz$' })
         if ($unitsCandidates.Count -eq 0) {
             Log-Err "v$binVersion bin-only tarball requires a paired units tarball (vibepascal-v<N>-win64-units.tar.gz); none found in $DistDir"
-            Log-Warn "Otto ships v33 units as the stable baseline -- ensure dist/win64 contains vibepascal-v33-win64-units.tar.gz (or newer)"
+            # DO NOT RE-PIN A VERSION NUMBER IN THIS TEXT. It said v33 for long enough that
+            # Otto shipped nineteen releases past it, and the resolver below has never cared:
+            # it globs vibepascal-v<N>-win64-units.tar.gz and takes the HIGHEST N, deliberately
+            # not the bin tarball's N. A number here only tells the operator to fetch the wrong
+            # file. (c700, prompted by Otto: four UNITS.txt files had the same staleness.)
+            Log-Warn "Fetch the HIGHEST vibepascal-v<N>-win64-units.tar.gz Otto publishes into $DistDir -- this resolver picks the newest one present and does NOT require N to match the compiler bin tarball, which is how a bin-only refresh stays a ~3.4 MB pull"
             return @()
         }
         # HIGHEST-VERSION units, deliberately NOT "units matching the bin's version number".
