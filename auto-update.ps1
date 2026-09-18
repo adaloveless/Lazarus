@@ -1691,7 +1691,14 @@ function Rebuild-IDE {
         # was exactly the line that never reached us. Tee-Object does not change what is displayed
         # (Where-Object still gates that) and $LASTEXITCODE still reports lazbuild, not the pipeline.
         $attemptLog = Join-Path ([IO.Path]::GetTempPath()) ("lazbuild_attempt" + $attempt + ".log")
-        & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @attemptPkgArgs 2>&1 |
+        # --build-ide=-Sci: lazbuild compiles ide\lazarus.pp with the compiler DIRECTLY and passes
+        # no syntax switches of its own, while the IDE sources use C-style operators (`s+=...`).
+        # The make route has always added -Sci (ide/Makefile.fpc [compiler] options); without it
+        # this step dies at ide\checkcompileropts.pas(199) "C styled assignment operators are
+        # turned off" whenever the compiler's fpc.cfg does not already carry -Sc. Idempotent when
+        # it does. c699: e08afd4a5a fixed this on auto-update.sh and left the .ps1 -- i.e. fixed
+        # it everywhere EXCEPT the platform GOD actually runs (auto-update.bat -> this file).
+        & $lazbuildExe --lazarusdir=$LazarusDir --build-ide=-Sci --compiler=$VPCompiler --pcp=$envDir --ws=win32 @attemptPkgArgs 2>&1 |
             Tee-Object -FilePath $attemptLog |
             Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
         $buildExit = $LASTEXITCODE
@@ -1743,10 +1750,12 @@ function Rebuild-IDE {
     if ($mds.Ok) {
         Log-Ok "MetaDarkStyle dark mode installed"
         foreach ($n in $mds.Notes) { Log-Info "  $n" }
+        Clear-FeatureAttempt -Feature "metadarkstyle"
     } else {
         Log-Err "MetaDarkStyle dark mode NOT installed -- this is a regression GOD will notice."
         foreach ($n in $mds.Notes) { Log-ErrDetail "  $n" }
         Log-ErrDetail "Fix: re-pull origin/main, then run -ResetConfig -ForceRebuild."
+        Record-FeatureAttempt -Feature "metadarkstyle"   # c699: lets a steady-state run heal this once
     }
 
     # GOD mu3jfytu (2026-09-16): the docked "modern Delphi style" layout is the default and
@@ -1757,10 +1766,12 @@ function Rebuild-IDE {
     if ($dock.Ok) {
         Log-Ok "Docked IDE layout (AnchorDocking + docked form editor) installed"
         foreach ($n in $dock.Notes) { Log-Info "  $n" }
+        Clear-FeatureAttempt -Feature "docked"
     } else {
         Log-Err "Docked IDE layout NOT installed -- the IDE will open as floating windows (GOD mu3jfytu)."
         foreach ($n in $dock.Notes) { Log-ErrDetail "  $n" }
         Log-ErrDetail "Fix: re-pull origin/main, then run -ForceRebuild and read the FIRST 'Error:' line."
+        Record-FeatureAttempt -Feature "docked"   # c699: lets a steady-state run heal this once
     }
 
     # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
@@ -2161,6 +2172,54 @@ function Get-CommonXInstallStamp {
 
 function Get-CommonXStampPath {
     return (Join-Path (Join-Path $env:LOCALAPPDATA "lazarus") "commonx-install-attempt.txt")
+}
+
+# c699 (GOD mu66fghs, 2026-09-17): the pre-build self-heal was commonx-ONLY, so a steady-state
+# box whose IDE is missing a DIFFERENT flagship feature never rebuilt and reported success on
+# every run. Same stamp discipline, one file per feature. The material that decides whether a
+# CORE package links is the Lazarus source alone, so this stamp is HEAD -- no commonx revision.
+# An unreadable git yields "nogit" rather than "", so the first run still heals once instead of
+# comparing "" to "" and suppressing itself forever (unreadable git is UNKNOWN, not "current").
+function Get-FeatureStampPath {
+    param([Parameter(Mandatory=$true)][string]$Feature)
+    return (Join-Path (Join-Path $env:LOCALAPPDATA "lazarus") ($Feature + "-install-attempt.txt"))
+}
+
+function Get-LazarusSourceStamp {
+    $lazHead = ""
+    try { $lazHead = ((Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-parse", "HEAD")) -join "").Trim() } catch { }
+    if (-not $lazHead) { $lazHead = "nogit" }
+    return $lazHead
+}
+
+function Record-FeatureAttempt {
+    # Call AFTER a build that LEFT the feature missing, so the next run can tell whether a
+    # retry is worthwhile. Mirrors the commonx stamp written further up in Rebuild-IDE.
+    param([Parameter(Mandatory=$true)][string]$Feature)
+    try {
+        $sp = Get-FeatureStampPath -Feature $Feature
+        $sd = Split-Path -Parent $sp
+        if (-not (Test-Path $sd)) { New-Item -ItemType Directory -Path $sd -Force | Out-Null }
+        Set-Content -Path $sp -Value (Get-LazarusSourceStamp) -Encoding ASCII
+    } catch { }
+}
+
+function Clear-FeatureAttempt {
+    param([Parameter(Mandatory=$true)][string]$Feature)
+    try { Remove-Item (Get-FeatureStampPath -Feature $Feature) -Force -ErrorAction SilentlyContinue } catch { }
+}
+
+function Test-FeatureAttemptIsNew {
+    # $true = the source has CHANGED since the last attempt that failed to install it.
+    param([Parameter(Mandatory=$true)][string]$Feature)
+    $sp = Get-FeatureStampPath -Feature $Feature
+    $last = ""
+    if (Test-Path $sp) {
+        # [string] cast + try/catch: $ErrorActionPreference is "Stop" script-wide and an empty
+        # stamp file makes Get-Content -Raw return $null, so a bare .Trim() would abort the run.
+        try { $last = ([string](Get-Content $sp -Raw -ErrorAction SilentlyContinue)).Trim() } catch { $last = "" }
+    }
+    return ((Get-LazarusSourceStamp) -ne $last)
 }
 
 function Test-DockedLayoutInstalled {
@@ -2839,6 +2898,48 @@ if (-not $anyUpdated -and -not $NoBuild) {
             Log-ErrDetail "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
             Log-ErrDetail "  Fix: run  auto-update.bat -ForceRebuild  and read the FIRST 'Error:' line of the build output."
             Log-ErrDetail "  That first error is the commonx unit that fails to compile under the IDE build mode."
+        }
+    }
+}
+
+# c699 (GOD mu66fghs, 2026-09-17) -- SELF-HEAL THE OTHER TWO FLAGSHIP FEATURES.
+# The block above has asked exactly one question since c634: "are GOD's commonx components in
+# the binary?" An IDE built BEFORE the docking packages became core (9b044e4527, 2026-09-16)
+# answers YES, so $anyUpdated stays $false, Rebuild-IDE never runs, and the box keeps a
+# floating-window IDE forever while every run ends in success. GOD reported exactly that from
+# Windows: "your changes recently seemed to affect the linux builds... but my windows system is
+# still the fucking ancient looking delphi 7 style floating shit."
+#
+# Test-DockedLayoutInstalled and Test-MetaDarkStyleInstalled already existed -- they just ran
+# only AFTER a rebuild, i.e. never on the boxes that needed them. Both are pure reads of
+# lazarus.exe, so they are safe to run before the build too. Same stamp guard as commonx (one
+# stamp per feature) so a box that genuinely cannot build these gets ONE loud diagnosis rather
+# than a full IDE rebuild on every run. -ForceRebuild always overrides the guard.
+if (-not $anyUpdated -and -not $NoBuild -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
+    $healChecks = @(
+        @{ Feature = "docked"
+           Verifier = { Test-DockedLayoutInstalled -Dir $LazarusDir }
+           Label    = "the docked single-window layout (GOD mu3jfytu)"
+           Package  = "AnchorDockingDsgn + DockedFormEditor"
+           Loss     = "The IDE will keep opening as floating windows (the Delphi 7 shape GOD asked us to stop shipping)." },
+        @{ Feature = "metadarkstyle"
+           Verifier = { Test-MetaDarkStyleInstalled -Dir $LazarusDir }
+           Label    = "the MetaDarkStyle design-time package (GOD moehki0x)"
+           Package  = "metadarkstyledsgn"
+           Loss     = 'Tools -> Options -> Environment -> "Theme" stays missing and the dark style is never applied at IDE start.' }
+    )
+    foreach ($check in $healChecks) {
+        $verdict = & $check.Verifier
+        if ($verdict.Ok) { continue }
+        Log-Warn "IDE is missing $($check.Label)"
+        foreach ($n in $verdict.Notes) { Log-Info "  $n" }
+        if (Test-FeatureAttemptIsNew -Feature $check.Feature) {
+            Log-Info "Forcing IDE rebuild to link $($check.Package) (source changed since the last attempt)"
+            $anyUpdated = $true
+        } else {
+            Log-Err "$($check.Package) still not linked, and the source has not moved since the last attempt -- not rebuilding again."
+            Log-ErrDetail "  $($check.Loss)"
+            Log-ErrDetail "  Fix: run  auto-update.bat -ForceRebuild  and read the FIRST 'Error:' line of the build output."
         }
     }
 }

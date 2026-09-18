@@ -912,6 +912,45 @@ test_metadarkstyle_installed() {
 commonx_stamp_path() {
     printf '%s' "${XDG_CACHE_HOME:-$HOME/.cache}/lazarus-commonx-install-attempt.txt"
 }
+
+# c699 (GOD mu66fghs, 2026-09-17): "my windows system is still the fucking ancient looking
+# delphi 7 style floating shit." The self-heal below this file's rebuild step was commonx-ONLY.
+# On a steady-state box (binaries present, pull a no-op) ANY_UPDATED stays 0, so the ONLY
+# question ever asked was "are TBetterWebBrowser / TTouchButton in the binary?" -- and an IDE
+# that had them but was built BEFORE the docking packages became core (9b044e4527) answered
+# yes and was never rebuilt. Exactly the c634 shape, one feature over: a degraded IDE that
+# reports success every run, forever. Same stamp discipline, one stamp file per feature.
+#
+# The material that decides whether a CORE package links is the Lazarus source alone, so this
+# stamp is HEAD -- no commonx revision in it. An unreadable git yields the literal "nogit"
+# rather than an empty string, so the first run still heals once instead of comparing ""==""
+# and silently suppressing itself forever (an unreadable git is UNKNOWN, never "up to date").
+feature_stamp_path() {
+    printf '%s' "${XDG_CACHE_HOME:-$HOME/.cache}/lazarus-$1-install-attempt.txt"
+}
+get_lazarus_source_stamp() {
+    local head=""
+    head=$(git -C "$LAZARUS_DIR" rev-parse HEAD 2>/dev/null || printf '')
+    printf '%s' "${head:-nogit}"
+}
+record_feature_attempt() {
+    # Call AFTER a build that left the feature missing, so the next run can tell whether
+    # retrying is worthwhile. Mirrors the commonx stamp written in rebuild_ide.
+    local f
+    f=$(feature_stamp_path "$1")
+    mkdir -p "$(dirname "$f")" 2>/dev/null
+    get_lazarus_source_stamp > "$f" 2>/dev/null || true
+}
+clear_feature_attempt() {
+    rm -f "$(feature_stamp_path "$1")" 2>/dev/null || true
+}
+feature_attempt_is_new() {
+    # rc 0 = the source has CHANGED since the last attempt that failed to install it.
+    local f last=""
+    f=$(feature_stamp_path "$1")
+    [ -f "$f" ] && last=$(cat "$f" 2>/dev/null)
+    [ "$(get_lazarus_source_stamp)" != "$last" ]
+}
 get_commonx_install_stamp() {
     local laz_head="" cx_rev="" cx_root=""
     laz_head=$(git -C "$LAZARUS_DIR" rev-parse HEAD 2>/dev/null || printf '')
@@ -1377,10 +1416,14 @@ rebuild_ide() {
     dock_missing=$(test_docked_layout_installed) || dock_rc=$?
     if [ "$dock_rc" -eq 0 ]; then
         log_ok "Docked IDE layout (AnchorDocking + docked form editor) installed"
+        clear_feature_attempt docked
     elif [ "$dock_rc" -eq 1 ]; then
         log_err "Docked IDE layout NOT installed -- lazarus does not contain: $dock_missing"
         log_err "  The IDE will open as floating windows, which GOD asked us to stop shipping (mu3jfytu)."
         log_err "  Fix: re-pull origin/main, run --force-rebuild, and read the FIRST 'Error:' line of the build."
+        # c699: record the material this attempt was made against, so a steady-state run can
+        # self-heal once when the source moves -- and only once (see the self-heal block).
+        record_feature_attempt docked
     fi
 
     # c691 (GOD moehki0x): MetaDarkStyle is the third flagship feature whose design-time
@@ -1391,7 +1434,9 @@ rebuild_ide() {
     mds_missing=$(test_metadarkstyle_installed) || mds_rc=$?
     if [ "$mds_rc" -eq 0 ]; then
         log_ok "MetaDarkStyle design-time package linked into the IDE"
+        clear_feature_attempt metadarkstyle
     elif [ "$mds_rc" -eq 1 ]; then
+        record_feature_attempt metadarkstyle   # c699, same reason as the docked stamp above
         log_err "MetaDarkStyle NOT linked -- lazarus does not contain: $mds_missing"
         log_err "  Tools -> Options -> Environment -> \"Theme\" will be missing, and on Windows the"
         log_err "  dark style is never applied at IDE start (the boot handler is in that package)."
@@ -1707,6 +1752,47 @@ if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$BUILD_IDE" -eq 1 ]; 
         else
             log_err "PackageCommonX_LCL still not installed, and nothing has changed since the last attempt -- not rebuilding again."
             log_err "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
+            log_err "  Fix: run  ./auto-update.sh --force-rebuild  and read the FIRST 'Error:' line of the build output."
+        fi
+    fi
+fi
+
+# c699 (GOD mu66fghs, 2026-09-17) -- SELF-HEAL THE OTHER TWO FLAGSHIP FEATURES.
+# The block above has asked exactly one question since c634: "are GOD's commonx components in
+# the binary?" An IDE built BEFORE the docking packages became core (9b044e4527) answers YES,
+# so ANY_UPDATED stays 0, rebuild_ide never runs, and the user keeps a floating-window IDE
+# forever while every run prints success. GOD reported precisely that on Windows: "your changes
+# recently seemed to affect the linux builds... but my windows system is still the fucking
+# ancient looking delphi 7 style floating shit."
+#
+# The verifiers already existed -- they just ran only AFTER a rebuild, i.e. never on the boxes
+# that needed them. Same stamp guard as commonx, one stamp per feature, so a box that genuinely
+# cannot build these gets ONE loud diagnosis instead of a full IDE rebuild every run.
+if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$BUILD_IDE" -eq 1 ]; then
+    heal_missing=""; heal_rc=0
+    heal_missing=$(test_docked_layout_installed) || heal_rc=$?
+    if [ "$heal_rc" -eq 1 ]; then
+        log_warn "IDE is missing the docked single-window layout (GOD mu3jfytu): $heal_missing"
+        if feature_attempt_is_new docked; then
+            log_info "Forcing IDE rebuild to link AnchorDockingDsgn + DockedFormEditor (source changed since the last attempt)"
+            ANY_UPDATED=1
+        else
+            log_err "Docked layout still not linked, and the source has not moved since the last attempt -- not rebuilding again."
+            log_err "  The IDE will keep opening as floating windows (the Delphi 7 shape GOD asked us to stop shipping)."
+            log_err "  Fix: run  ./auto-update.sh --force-rebuild  and read the FIRST 'Error:' line of the build output."
+        fi
+    fi
+
+    heal_missing=""; heal_rc=0
+    heal_missing=$(test_metadarkstyle_installed) || heal_rc=$?
+    if [ "$heal_rc" -eq 1 ]; then
+        log_warn "IDE is missing the MetaDarkStyle design-time package (GOD moehki0x): $heal_missing"
+        if feature_attempt_is_new metadarkstyle; then
+            log_info "Forcing IDE rebuild to link metadarkstyledsgn (source changed since the last attempt)"
+            ANY_UPDATED=1
+        else
+            log_err "MetaDarkStyle still not linked, and the source has not moved since the last attempt -- not rebuilding again."
+            log_err "  Tools -> Options -> Environment -> \"Theme\" stays missing until this builds."
             log_err "  Fix: run  ./auto-update.sh --force-rebuild  and read the FIRST 'Error:' line of the build output."
         fi
     fi
