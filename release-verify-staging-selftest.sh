@@ -485,6 +485,8 @@ else
     fi
     # The defect's OWN fixture: no compiler staged at all. This is the exact tree that printed
     # `compiler_md5:        (ppcx64)` under 15d34d154a.
+    # Its rc=1 is OVER-DETERMINED: this fixture is missing the compiler AND auto-update.sh, so
+    # removing one reason still reads rc=1 (2 checks missing -> 1). The TEXT is the assertion.
     mkstaging "$W/ri-nocc"
     riarm "x86_64-linux no compiler staged (the c707 fixture)" "$W/ri-nocc" x86_64-linux "$W/srctree" 1
     # And the ARM shape, where the void line printed directly ABOVE a real one -- a sibling
