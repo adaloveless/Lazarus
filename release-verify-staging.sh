@@ -152,6 +152,23 @@ esac
 # Shared by BOTH compiler slots so the two cannot drift apart about what an architecture
 # check is. A missing `file` is NOT VERIFIABLE (exit 3), never a pass: a zero from an absent
 # tool is void, not clean (c654).
+# SAME RULE, SECOND INSTRUMENT. `file` has had a missing-tool guard since c654 and md5sum
+# never got one -- and md5sum is the tool the CONTENT checks run on, so its absence is the
+# more dangerous of the two. Without this, `a=$(md5sum < staged)` and `b=$(md5sum < tree)`
+# both come back EMPTY on a host with no md5sum, `[ "$a" = "$b" ]` is TRUE, and the updater
+# comparison prints "md5 identical to the rolled tree ()" -- a content check that cannot
+# fire, reporting a pass. MEASURED 2026-09-18 (c040) on a mirrored PATH with only md5sum
+# removed: the two updater arms of the selftest read rc=0 where they expect 1, i.e. the gate
+# stopped seeing a DELIBERATELY mismatched updater and called it clean. A zero from an
+# absent tool is void, not clean, and the caller already treats rc 3 as NO-SHIP.
+need_md5sum() {  # need_md5sum <what-cannot-be-checked>
+    command -v md5sum >/dev/null 2>&1 && return 0
+    echo "NOT VERIFIABLE: $1, but 'md5sum' is not installed here, so file CONTENT" >&2
+    echo "                cannot be compared at all. An empty hash equals an empty hash," >&2
+    echo "                which is why this exits instead of reporting a match." >&2
+    exit 3
+}
+
 check_compiler_arch() {  # check_compiler_arch <path> <ere> <slot-label>
     local path=$1 want=$2 label=$3 desc
     if ! command -v file >/dev/null 2>&1; then
@@ -271,6 +288,7 @@ else
             continue
         fi
         if [ -f "$SRC_TREE/$u" ]; then
+            need_md5sum "$u is staged and the rolled tree has one to compare it against"
             a=$(md5sum < "$STAGING/$u" | cut -d' ' -f1)
             b=$(md5sum < "$SRC_TREE/$u" | cut -d' ' -f1)
             if [ "$a" = "$b" ]; then ok "$u staged, md5 identical to the rolled tree ($a)"
@@ -331,6 +349,7 @@ else
     echo "lazarus_commit:    UNKNOWN (no readable git in $SRC_TREE)"
 fi
 [ -f "$STAGING/compiler/$want_compiler" ] &&
+    need_md5sum "the staged compiler hashes are what this summary exists to record"
     echo "compiler_md5:      $(md5sum < "$STAGING/compiler/$want_compiler" | cut -d' ' -f1)  ($want_compiler)"
 [ -n "$want_native" ] && [ -f "$STAGING/compiler/$want_native" ] &&
     echo "native_md5:        $(md5sum < "$STAGING/compiler/$want_native" | cut -d' ' -f1)  ($want_native)"
