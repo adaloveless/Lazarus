@@ -273,7 +273,7 @@ Write-Ok "lazbuild.cmd -> $lazbuildExe"
 # --- smoke test ---
 if (-not $SkipSmoke) {
     Write-Info "Running smoke test..."
-    $ver = & $lazbuildExe --version 2`>`&1
+    $ver = & $lazbuildExe --version
     if ($LASTEXITCODE -ne 0) {
         Write-ErrorX "lazbuild --version failed"
         exit 1
