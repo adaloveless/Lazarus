@@ -27,6 +27,9 @@
 #   x86_64-win64       ships SOURCES + TOOLS: units, the target ppcx64.exe, bin/lazbuild.exe
 #   x86_64-linux       and the auto-update scripts. There is NO lazarus binary in the tarball
 #   aarch64/arm-linux  at all -- the user's IDE is built on their own box by auto-update.
+#                      The two ARM targets carry a SECOND compiler expectation on top of
+#                      that (see want_native): they are cross-built, so the compiler that
+#                      did the building cannot run on the machine that receives it.
 #                      So the end state is "the sources carry the defaults AND the updater
 #                      that builds them is the fixed one". Scanning for a class in a binary
 #                      that was never staged would fail every honest roll.
@@ -98,11 +101,30 @@ else
 fi
 
 # ---------------------------------------------------------------- shipped compiler
+#
+# TWO EXPECTATIONS, NOT ONE, AND THE SECOND ONE IS THE r25 DEFECT (Bruno, 2026-09-18).
+# want_compiler is the compiler that DID THE BUILDING and must be in the tarball.
+# For the cross-built ARM targets that is an x86_64 ppcross* -- correct to ship, useless
+# on the target -- so a tree carrying ONLY it passes a one-expectation check while a Pi
+# user's first compile dies. Bruno drove exactly that: aarch64-linux staging with
+# compiler/ppcrossaarch64 and no ppca64 read rc 0 here, with the control (ppcrossaarch64
+# removed) reading rc 1, so the pass was real and the gap was mine. r25 is that tree.
+#
+# want_native is therefore ADDITIVE: the ppcross* member STAYS (documented by design in
+# COMPILER_NOTES.txt -- do not "fix" this by removing it; the bug is the missing native
+# one, not the present cross one). native_arch is checked too, because the FILENAME IS NOT
+# EVIDENCE OF THE ARCHITECTURE: cross and native builds for the same non-host CPU both
+# default to exename ppc<cpu>, and on 2026-09-10 compiler/ppcarm in the shared tree WAS an
+# x86_64 ELF. The patterns are kept byte-identical to the ones
+# copy_native_linux_compiler_to_staging guards with, so the producer and this gate cannot
+# disagree about what "native" means.
+want_native=""
+native_arch=""
 case "$TARGET" in
     x86_64-linux)    want_compiler=ppcx64 ;;
     x86_64-win64)    want_compiler=ppcx64.exe ;;
-    aarch64-linux)   want_compiler=ppcrossaarch64 ;;
-    arm-linux)       want_compiler=ppcrossarm ;;
+    aarch64-linux)   want_compiler=ppcrossaarch64; want_native=ppca64; native_arch="ARM aarch64" ;;
+    arm-linux)       want_compiler=ppcrossarm;     want_native=ppcarm;  native_arch="ARM, EABI5" ;;
     x86_64-darwin)   want_compiler=ppcx64 ;;
     aarch64-darwin)  want_compiler=ppca64 ;;
     *)               echo "NOT VERIFIABLE: unknown target $TARGET" >&2; exit 3 ;;
@@ -111,6 +133,44 @@ if [ -f "$STAGING/compiler/$want_compiler" ]; then
     ok "compiler staged: compiler/$want_compiler"
 else
     fail "compiler/$want_compiler (a release with no compiler cannot build anything)"
+fi
+
+# The native half. Nothing else in the pipeline covers it -- READ, not assumed:
+# build-release.sh calls copy_native_linux_compiler_to_staging "|| true" (:2214/:2217), so a
+# failed native copy is non-fatal and was silent here too; assert_shipped_cross_compiler_
+# matches_exec (:350) cmp's compiler/<staged_name>, i.e. the CROSS binary, and never looks
+# for ppca64/ppcarm; and the ppcx64/ppca64 loop at :2412 is environmentoptions.xml seeding,
+# not a gate. The helper DOES write its reason into COMPILER_NOTES.txt, so reprint that
+# line here rather than making the reader re-derive the cause (it is the only place the
+# "no native tarball" / "md5 mismatch" / "wrong architecture" distinction survives).
+if [ -n "$want_native" ]; then
+    native="$STAGING/compiler/$want_native"
+    if [ ! -f "$native" ]; then
+        fail "compiler/$want_native -- $TARGET ships NO natively-hosted compiler, so the"
+        echo "         extracted tarball cannot compile anything ON the target. compiler/$want_compiler"
+        echo "         is the x86_64 CROSS compiler and runs on the build host only."
+        if [ -f "$STAGING/COMPILER_NOTES.txt" ]; then
+            echo "         COMPILER_NOTES.txt says: $(grep -m1 '^NOTE:' "$STAGING/COMPILER_NOTES.txt" || echo '(no NOTE: line)')"
+        fi
+    elif ! command -v file >/dev/null 2>&1; then
+        # A zero from an absent tool is VOID, not clean (c654), so refuse to judge rather
+        # than passing a tree whose architecture nothing verified.
+        echo "NOT VERIFIABLE: compiler/$want_native is staged but 'file' is not installed here," >&2
+        echo "                so its architecture cannot be checked and the exename-clobber" >&2
+        echo "                class (native overwritten by an x86_64 cross build) is invisible." >&2
+        exit 3
+    else
+        native_desc=$(file -b "$native")
+        if printf '%s' "$native_desc" | grep -q -- "$native_arch"; then
+            ok "native compiler staged: compiler/$want_native ($native_desc)"
+        else
+            fail "compiler/$want_native is NOT a $TARGET binary -- exename clobber"
+            echo "         expected 'file' to say: $native_arch"
+            echo "         it says:                $native_desc"
+            echo "         A native build for a non-host CPU defaults to the same exename as the"
+            echo "         cross build, so this slot can be silently overwritten (seen 2026-09-10)."
+        fi
+    fi
 fi
 
 # ---------------------------------------------------------------- the two target shapes
@@ -242,6 +302,8 @@ else
 fi
 [ -f "$STAGING/compiler/$want_compiler" ] &&
     echo "compiler_md5:      $(md5sum < "$STAGING/compiler/$want_compiler" | cut -d' ' -f1)  ($want_compiler)"
+[ -n "$want_native" ] && [ -f "$STAGING/compiler/$want_native" ] &&
+    echo "native_md5:        $(md5sum < "$STAGING/compiler/$want_native" | cut -d' ' -f1)  ($want_native)"
 echo "rtl_ppu:           $rtl_ppu"
 echo "package_unit_sets: $pkg_dirs"
 echo "verified_at:       $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
