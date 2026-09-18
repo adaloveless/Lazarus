@@ -23,6 +23,9 @@ UPSTREAM_UPDATED=0
 LAZARUS_HEAD_BEFORE=""
 VP_HEAD_BEFORE=""
 LAZARUS_HEAD_AFTER_UPSTREAM=""   # taken between the upstream merge and the origin pull, which move the same HEAD
+# c720 -- the VibePascal version as the dist named it BEFORE this run pulled anything, so
+# print_summary can say "v53 -> v59" instead of leaving a pre-pull reading as the last word.
+VP_VERSION_BEFORE=""
 
 usage() {
     echo "Lazarus + VibePascal Auto-Updater"
@@ -733,6 +736,30 @@ head_sha() {
     printf '%s' "$sha"
 }
 
+vp_dist_version() {
+    # c720 -- answer "which VibePascal is in place?" by READING THE SIDECAR OFF DISK at the
+    # moment of the call, never from a variable set earlier in the run. Mirror of
+    # auto-update.ps1's Get-VPDistVersion, and the reason it exists is a Windows reading:
+    # the .ps1 logs the sidecar's version BEFORE it pulls, Miles read that line as the version
+    # his run had installed, and the run went on to fetch a newer one. Same cure as c719 --
+    # report the thing itself at the end rather than something remembered from earlier.
+    # Prints "<version> (source_commit <sha>)" and rc 0, or nothing and rc 1.
+    local root="${1:-$VP_DIR}" f version commit
+    for f in "$root/dist/win64/LATEST.txt" "$root/dist/LATEST.txt"; do
+        [ -f "$f" ] || continue
+        version=$(sed -n 's/^[[:space:]]*version:[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p' "$f" 2>/dev/null | head -1)
+        [ -n "$version" ] || return 1
+        commit=$(sed -n 's/^[[:space:]]*source_commit:[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p' "$f" 2>/dev/null | head -1)
+        if [ -n "$commit" ]; then
+            printf '%s (source_commit %s)' "$version" "$commit"
+        else
+            printf '%s' "$version"
+        fi
+        return 0
+    done
+    return 1
+}
+
 report_repo_outcome() {
     local label="$1" available="$2" before="$3" after="$4" dir="$5" detail="$6"
     local when
@@ -799,6 +826,22 @@ print_summary() {
     echo ""
     echo "Lazarus HEAD: $(git -C "$LAZARUS_DIR" log --oneline -1)"
     echo "VibePascal HEAD: $(git -C "$VP_DIR" log --oneline -1)"
+
+    # c720 -- the VibePascal VERSION as it stands NOW, re-read from dist/LATEST.txt at print
+    # time rather than remembered. Any sidecar line printed earlier in the run is a PRE-PULL
+    # reading; this is the end state, and when the two differ it says so outright. Unreadable
+    # is reported as UNKNOWN, never as silence (c675).
+    local vp_version_now
+    vp_version_now=$(vp_dist_version || true)
+    if [ -n "$vp_version_now" ]; then
+        if [ -n "$VP_VERSION_BEFORE" ] && [ "$VP_VERSION_BEFORE" != "$vp_version_now" ]; then
+            echo "VibePascal version: $vp_version_now  (was $VP_VERSION_BEFORE when this run started)"
+        else
+            echo "VibePascal version: $vp_version_now"
+        fi
+    else
+        echo "VibePascal version: UNKNOWN -- $VP_DIR/dist/.../LATEST.txt is missing or unreadable. This is NOT 'unchanged'."
+    fi
 
     # The two HEAD lines above describe the SOURCE. This one describes the BINARY.
     report_ide_binary_staleness
@@ -1798,6 +1841,7 @@ git -C "$LAZARUS_DIR" fetch upstream 2>/dev/null
 # does not move HEAD either.
 LAZARUS_HEAD_BEFORE=$(head_sha "$LAZARUS_DIR" || true)
 VP_HEAD_BEFORE=$(head_sha "$VP_DIR" || true)
+VP_VERSION_BEFORE=$(vp_dist_version || true)   # c720 -- same instant as the HEADs above, before anything pulls
 
 if [ "$UPSTREAM_ONLY" -eq 0 ]; then
     check_vp_updates

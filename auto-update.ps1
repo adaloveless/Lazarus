@@ -70,6 +70,9 @@ $script:LocalBuildProductsRestored = $false
 # UNKNOWN and never "no changes" (c675).
 $script:LazarusHeadBefore = $null
 $script:VPHeadBefore = $null
+# c720 -- the VibePascal version as the dist named it BEFORE this run pulled anything, so
+# Print-Summary can say "v53 -> v59" instead of leaving a pre-pull reading as the last word.
+$script:VPVersionBefore = $null
 $script:LazarusHeadAfterUpstream = $null   # set between the upstream merge and the origin pull, so the two lines are attributable to the right one
 # c635: first compiler Error:/Fatal: line from the build attempt that INCLUDED commonx.
 # Replayed in the final failure block so the causal line survives a top-truncated paste.
@@ -261,6 +264,42 @@ function Read-LATESTTxt {
     }
 }
 
+function Get-VPDistVersion {
+    # c720 -- answer "which VibePascal is in place?" by READING THE SIDECAR OFF DISK at the
+    # moment of the call, never from a variable set earlier in the run.
+    #
+    # Why this exists: Extract-VPBinaries logs `LATEST.txt version: ...` from the dist as it
+    # stands when IT runs, and on the main path it runs BEFORE Pull-VP. Miles read that line
+    # as the version his run had installed and reported v53; the run then pulled and extracted
+    # a newer one. A pre-pull reading printed with no end-of-run counterpart reads like a
+    # verdict -- the same defect class as c719's `[+] Lazarus updated`, and the same cure:
+    # report the thing itself, at the end, rather than something remembered from earlier.
+    #
+    # Deliberately does NOT reuse Read-LATESTTxt: that function is the extraction SELECTOR and
+    # returns $null (plus a WARN) when `versioned_tarball` is absent, which would throw away a
+    # perfectly readable `version` and duplicate its warning inside the summary.
+    param([string]$VPRoot = $VPDir)
+
+    foreach ($sub in @("dist\win64", "dist")) {
+        $latestFile = Join-Path (Join-Path $VPRoot $sub) "LATEST.txt"
+        if (-not (Test-Path $latestFile)) { continue }
+        try {
+            $version = $null
+            $commit = $null
+            foreach ($line in ((Get-Content -Path $latestFile -Raw -ErrorAction Stop) -split "`n")) {
+                if ($line -match '^\s*version:\s*(.+?)\s*$') { $version = $Matches[1] }
+                elseif ($line -match '^\s*source_commit:\s*(.+?)\s*$') { $commit = $Matches[1] }
+            }
+            if (-not $version) { return $null }
+            if ($commit) { return "$version (source_commit $commit)" }
+            return $version
+        } catch {
+            return $null
+        }
+    }
+    return $null
+}
+
 function Get-VPArchiveSet {
     # Resolve the ordered list of FileInfo archives that Extract-VPBinaries must unpack.
     # v32+ tarballs are split: bin-only (compiler + bin/) needs pairing with a units tarball
@@ -362,7 +401,9 @@ function Extract-VPBinaries {
     # the split-archive pairing regex; vibepascal-latest-win64-bin.tar.gz does NOT match -> legacy monolithic extract -> bin-without-units CRC error class.
     $latestData = Read-LATESTTxt -DistDir $distDir
     $versionedTarball = if ($latestData) { $latestData['versioned_tarball'] } else { $null }
-    if ($versionedTarball) { Log-Info "LATEST.txt version: $($latestData['version']) commit: $($latestData['source_commit'])" }
+    # c720 -- wording is load-bearing: this fires BEFORE Pull-VP on the main path, so it is a
+    # reading of the dist as it stands right now and NOT what this run ends up with.
+    if ($versionedTarball) { Log-Info "dist LATEST.txt currently names version $($latestData['version']) commit: $($latestData['source_commit']) -- the version in place at the END of this run is reported in the Update Summary" }
 
     $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.tar.gz" -VersionedTarball $versionedTarball)
     if ($archiveSet.Count -eq 0) {
@@ -2122,6 +2163,21 @@ function Print-Summary {
     Write-Host "Lazarus HEAD: $lazHead"
     Write-Host "VibePascal HEAD: $vpHead"
 
+    # c720 -- the VibePascal VERSION as it stands NOW, re-read from dist\LATEST.txt at print
+    # time rather than remembered. The mid-run "dist LATEST.txt currently names ..." line is a
+    # PRE-PULL reading; this is the end state, and when the two differ it says so outright.
+    # Unreadable is reported as UNKNOWN, never as silence (c675).
+    $vpVersionNow = Get-VPDistVersion
+    if ($vpVersionNow) {
+        if ($script:VPVersionBefore -and $script:VPVersionBefore -ne $vpVersionNow) {
+            Write-Host "VibePascal version: $vpVersionNow  (was $($script:VPVersionBefore) when this run started)"
+        } else {
+            Write-Host "VibePascal version: $vpVersionNow"
+        }
+    } else {
+        Write-Host "VibePascal version: UNKNOWN -- $VPDir\dist\...\LATEST.txt is missing or unreadable. This is NOT 'unchanged'."
+    }
+
     # The two HEAD lines above describe the SOURCE. This one describes the BINARY.
     Report-IdeBinaryStaleness
 }
@@ -2981,6 +3037,7 @@ if ($upstreamRemote) {
 # refs only, and Wipe-LocalChanges (reset --hard HEAD) does not move HEAD either.
 $script:LazarusHeadBefore = Get-HeadStamp -WorkDir $LazarusDir
 $script:VPHeadBefore = Get-HeadStamp -WorkDir $VPDir
+$script:VPVersionBefore = Get-VPDistVersion   # c720 -- same instant as the HEADs above, before anything pulls
 
 if (-not $UpstreamOnly) {
     Check-VPUpdates
