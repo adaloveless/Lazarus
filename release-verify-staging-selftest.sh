@@ -125,7 +125,10 @@ echo "--- shape: darwin (ships a BUILT IDE -- the end state is a class in a bina
 # The darwin compiler slots hold Mach-O, so the fixtures must too: `ls` renamed ppca64 is
 # the exename-clobber shape the gate is now supposed to REJECT, and it gets its own arm.
 # Real Mach-O compilers exist under $VP_DIST/{x86_64,aarch64}-darwin (measured v59,
-# 2026-09-18) -- the roll's own copier does not look there, but a fixture may.
+# 2026-09-18). That sentence used to end "-- the roll's own copier does not look there, but
+# a fixture may", and 9e38689c9f made it FALSE: the copier now falls back to exactly those
+# tarballs when dist/darwin-native is empty. So these fixtures are the bytes a roll stages,
+# and the COMPOSITION section below drives that join rather than asserting it.
 if machA64=$(compiler_from_dist aarch64-darwin aarch64-darwin ppca64); then
     mkstaging "$W/d-ok"; cp "$machA64" "$W/d-ok/compiler/ppca64"; mkidebin "$W/d-ok/bin/lazarus"
     arm "aarch64-darwin everything present" "$W/d-ok" aarch64-darwin "$W" 0
@@ -152,6 +155,96 @@ if machX64=$(compiler_from_dist x86_64-darwin x86_64-darwin ppcx64); then
           arm "x86_64-darwin slot holds the arm64 Mach-O" "$W/d-x86wrong" x86_64-darwin "$W" 1; }
 else
     skiparm "x86_64-darwin arms" "no vibepascal-v*-x86_64-darwin-bin.tar.gz under $VP_DIST"
+fi
+
+# ------------------------------------------------ shape: darwin COMPOSITION (c704, Bruno)
+# Every darwin arm above hands the gate a compiler slot THE TEST filled in, and every proof
+# of the copier read the copier's own notes. Nobody had driven the JOIN: the file a ROLL
+# actually stages, fed to the gate that actually ships it. A copier and a gate that are each
+# green against their own fixtures can still disagree about the NAME, the MODE or the
+# ARCHITECTURE of the file that lands in the tarball, and that disagreement is invisible
+# until a roll. These arms call build-release.sh's own copy_native_darwin_compiler_to_staging
+# and then run the gate on what it produced.
+echo
+echo "--- shape: darwin COMPOSITION (the roll's own copier feeds the gate) ---"
+BR="$HERE/build-release.sh"
+CSHIM="$W/copier-shim.sh"
+CFNS="get_latest_darwin_bin_tarball declared_md5_for_dist_member
+      stage_darwin_compiler_from_dist_tarball get_latest_darwin_native_dir
+      copy_native_darwin_compiler_to_staging"
+cshim_ok=no
+if [ -r "$BR" ]; then
+    { for fn in $CFNS; do
+          awk -v f="$fn" 'index($0, f "() {")==1 {p=1} p{print} p && /^}$/{exit}' "$BR"
+          echo
+      done; } > "$CSHIM"
+    # RIG FIRST. A shim that defines nothing scores every arm as "nothing staged", which is
+    # exactly what the degraded arm below expects -- so a broken rig would read as a pass on
+    # one arm and a fail on the others for the wrong reason. Assert the functions exist
+    # before believing any result, and SKIP (never FAIL) when they do not: a build-release.sh
+    # that predates the dist fallback is an absent input, not a defect.
+    cshim_ok=yes
+    bash -n "$CSHIM" 2>/dev/null || cshim_ok=no
+    for fn in $CFNS; do
+        ( . "$CSHIM" >/dev/null 2>&1; declare -F "$fn" >/dev/null ) || cshim_ok=no
+    done
+fi
+if [ "$cshim_ok" = yes ]; then
+    composearm() {  # composearm <label> <target> <exe> <arch-pat> <vp-dir> <expect-gate-rc> <expect-staged>
+        local label=$1 tgt=$2 exe=$3 pat=$4 vp=$5 exg=$6 exs=$7
+        local st="$W/compose-$tgt-$RANDOM" staged=no crc grc
+        mkstaging "$st"; mkidebin "$st/bin/lazarus"; rm -f "$st/compiler/$exe"
+        # `set +e` AFTER sourcing, not before: the copier returns nonzero on the degraded
+        # path BY DESIGN and package_release calls it under `|| true`. Source first, relax
+        # errexit second, or this dies at the very return it is here to measure.
+        crc=$( . "$CSHIM"; set +e; VP_DIR="$vp"; export VP_DIR
+               copy_native_darwin_compiler_to_staging "$st" "$tgt" "$exe" "$pat" >/dev/null 2>&1
+               echo $? )
+        [ -f "$st/compiler/$exe" ] && staged=yes
+        grc=$("$GATE" "$st" "$tgt" "$W" >/dev/null 2>&1; echo $?)
+        if [ "$grc" = "$exg" ] && [ "$staged" = "$exs" ]; then
+            printf '  PASS  %-44s rc=%s\n' "$label" "$grc"; pass=$((pass + 1))
+        else
+            printf '  FAIL  %-44s rc=%s  EXPECTED %s (staged=%s want %s, copier rc=%s)\n' \
+                "$label" "$grc" "$exg" "$staged" "$exs" "$crc"; failn=$((failn + 1))
+        fi
+        if [ "$staged" = yes ]; then
+            printf '          staged compiler/%s: %s\n' "$exe" "$(file -b "$st/compiler/$exe")"
+        fi
+        return 0
+    }
+    VP_ROOT=$(cd "$VP_DIST/.." 2>/dev/null && pwd)
+    for spec in "x86_64-darwin ppcx64 Mach-O 64-bit x86_64" \
+                "aarch64-darwin ppca64 Mach-O 64-bit arm64"; do
+        set -- $spec; ctgt=$1 cexe=$2; shift 2; cpat="$*"
+        if [ -n "${VP_ROOT:-}" ] &&
+           find "$VP_DIST/$ctgt" -maxdepth 1 -type f -name "vibepascal-v*-$ctgt-bin.tar.gz" \
+                2>/dev/null | grep -q .; then
+            composearm "$ctgt copier -> gate (from dist)" "$ctgt" "$cexe" "$cpat" "$VP_ROOT" 0 yes
+        else
+            skiparm "$ctgt composition" "no vibepascal-v*-$ctgt-bin.tar.gz under $VP_DIST/$ctgt"
+        fi
+    done
+    # Degraded: a VP tree with neither dist/darwin-native nor a dist tarball. Needs no real
+    # compiler, so it ALWAYS runs -- and it is the shape r25's darwin pair shipped.
+    mkdir -p "$W/vp-nothing/dist"
+    composearm "darwin nothing to bundle -> gate REFUSES" x86_64-darwin ppcx64 \
+        "Mach-O 64-bit x86_64" "$W/vp-nothing" 1 no
+    # Wrong ARCHITECTURE inside the dist tarball, declared md5 MATCHING it, so the D003 hash
+    # guard is satisfied and only the arch guard can catch it. $X86 is a real ELF.
+    mkdir -p "$W/vp-elf/dist/aarch64-darwin" "$W/elfsrc/bin"
+    cp "$X86" "$W/elfsrc/bin/ppca64"
+    ( cd "$W/elfsrc" && tar -czf \
+        "$W/vp-elf/dist/aarch64-darwin/vibepascal-v99-zzzcontrol-aarch64-darwin-bin.tar.gz" \
+        bin/ppca64 )
+    { echo "VibePascal v99 (aarch64-darwin)"
+      echo "  Binary: bin/ppca64  $(stat -c %s "$W/elfsrc/bin/ppca64") bytes"
+      echo "      md5  $(md5sum < "$W/elfsrc/bin/ppca64" | cut -d' ' -f1)"
+    } > "$W/vp-elf/dist/aarch64-darwin/VERSION.txt"
+    composearm "darwin dist member is a Linux ELF -> REFUSED" aarch64-darwin ppca64 \
+        "Mach-O 64-bit arm64" "$W/vp-elf" 1 no
+else
+    skiparm "darwin composition arms" "no build-release.sh beside the gate, or it predates the dist fallback"
 fi
 
 # ---------------------------------------------------------------- shape: sources + tools
