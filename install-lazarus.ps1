@@ -131,8 +131,10 @@ Remove-Item Env:\INSTALL_LAZ_HEADERS -ErrorAction SilentlyContinue
 # $tarballUrl come back $null, and this script walks on to download from a
 # null URL -- so the honest one-word reason the resolver printed is buried
 # under a wall of "Cannot index into a null array". install-lazarus.sh gets
-# this for free from `set -euo pipefail` (measured: it aborts before the next
-# statement); PowerShell does not, so it is spelled out. Deliberately NOT
+# the WALK-ON half of this for free from `set -euo pipefail` (measured: it
+# aborts before the next statement) but NOT the diagnosis half -- it died
+# printing the bare token and nothing else, so it now carries the same named
+# block; PowerShell gets neither for free. Deliberately NOT
 # redirecting the resolver's stderr -- 2> plus $ErrorActionPreference="Stop"
 # behaves differently on Windows PowerShell 5.1, which cannot be tested on
 # lazdev, and the token is already on the console line directly above.

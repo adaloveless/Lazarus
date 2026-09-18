@@ -113,7 +113,18 @@ if [[ -n "${GITHUB_TOKEN:-}" ]]; then
 fi
 
 log_info "Querying GitHub for latest release..."
-python3 - "$REPO_OWNER" "$REPO_NAME" "$LAZ_ARCH" "$GITHUB_API" "${API_HEADERS[@]}" <<'PY' > "$TMP_WORK/release-meta.txt"
+# `set -e` stops us before the download when the resolver exits 1 -- but it
+# stops us SILENTLY, so everything the user is left with is the resolver's bare
+# one-word token on stderr (measured 2026-09-18 against the live API with
+# --arch zzqq-notreal: `NO_TARBALL`, and nothing else, rc 1). That token is
+# honest and useless on its own. Capture the exit code and the stderr, reprint
+# the reason INSIDE the final failure block -- a human pastes the TAIL of a
+# log, so a line that only appears mid-run is not delivered -- and name what
+# each token means. install-lazarus.ps1 carries the same block for the same
+# reason, so the two scripts now fail the same way.
+resolver_rc=0
+python3 - "$REPO_OWNER" "$REPO_NAME" "$LAZ_ARCH" "$GITHUB_API" "${API_HEADERS[@]}" \
+    > "$TMP_WORK/release-meta.txt" 2> "$TMP_WORK/resolve-err.txt" <<'PY' || resolver_rc=$?
 import json, os, re, sys, urllib.request
 
 owner, repo, target_arch, api_base = sys.argv[1:5]
@@ -204,6 +215,27 @@ print(sha_name or "")
 print(sha_url or "")
 print(expected_sha or "")
 PY
+
+if [[ $resolver_rc -ne 0 ]]; then
+    log_err "Release resolver failed (exit $resolver_rc) for $LAZ_ARCH. Nothing was installed."
+    while IFS= read -r resolver_line; do
+        # `if`, never `[[ ... ]] && ...` -- a false && under `set -e` would exit
+        # the script here and eat the glossary lines below.
+        if [[ -n "$resolver_line" ]]; then
+            log_err "  resolver: $resolver_line"
+        fi
+    done < "$TMP_WORK/resolve-err.txt"
+    log_err "  NO_TARBALL  = no published release carries a tarball for this architecture."
+    log_err "  NO_SHA      = a tarball exists, but that release has neither a SHA256SUMS asset nor a GitHub API digest, so the download cannot be verified."
+    log_err "  NO_RELEASES = the repository has no published releases at all."
+    exit 1
+fi
+
+# Stderr is redirected above, so anything the resolver said on a SUCCESSFUL run
+# would otherwise be swallowed by this change. It normally says nothing.
+if [[ -s "$TMP_WORK/resolve-err.txt" ]]; then
+    log_warn "Release resolver stderr: $(tr '\n' ' ' < "$TMP_WORK/resolve-err.txt")"
+fi
 
 TAG="$(sed -n '1p' "$TMP_WORK/release-meta.txt")"
 TARBALL_NAME="$(sed -n '2p' "$TMP_WORK/release-meta.txt")"
