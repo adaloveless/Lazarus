@@ -390,6 +390,113 @@ else
     skiparm "x86_64-win64 arms" "no auto-update.ps1/.bat beside the gate"
 fi
 
+# ---------------------------------------------------------------- content: no VOID field in RELEASE-INFO
+# Added c041 (Bruno) because of a defect of MINE that THIS FILE scored green. 15d34d154a put
+# need_md5sum inside an `[ -f ... ] && echo ...` continuation; an && chain ends at the guard,
+# so the echo went UNCONDITIONAL and RELEASE-INFO printed `compiler_md5:        (ppcx64)` --
+# an EMPTY hash -- for a compiler that was never staged. The suite read 34/0/0 over it and
+# Lars caught it in review within the hour (f54e45f921). Re-measured here c041 against the
+# three sets of gate bytes: pre 0 void lines, 15d34d154a 1 void line + a redirect error on
+# stderr, merged 0 -- and on a host with no md5sum the PRE-guard gate printed BOTH slots void
+# at rc 0, i.e. it blessed the tree while recording nothing.
+#
+# WHY THE SUITE COULD NOT SEE IT: arm() captures the gate's output into $out, scores rc ALONE
+# and prints $out only on a FAIL. Every arm above asks "did the gate reach the right verdict";
+# none asks "is what it PRINTED true". A summary is the artifact other agents quote, an absent
+# line is honest, and an empty value looks like a fact -- so the text needs its own arms.
+#
+# The checker is rig-asserted against synthetic samples BEFORE any arm is scored, and a failed
+# rig is a LOUD FAILURE, never a skip: a content check that cannot fire is the exact class this
+# whole file exists to catch, and skipping would re-open the blind spot this block closes.
+echo
+echo "--- content: RELEASE-INFO carries no VOID field ---"
+
+# `[a-z0-9_]`, and the DIGIT is the entire point: `[a-z_]+` skips `compiler_md5` and
+# `native_md5` -- the only two fields that have ever gone void -- so the first draft of this
+# checker could not see the defect it was written for. The rig assert below caught it in one
+# run; without the rig these arms would have printed PASS over a void hash.
+release_info_fields() {  # release_info_fields <text> -> field lines of the block, one per line
+    printf '%s\n' "$1" | awk '
+        /^--- RELEASE-INFO ---$/ { inblock = 1; next }
+        inblock && /^[[:space:]]*$/ { inblock = 0; next }
+        inblock && /^[a-z_][a-z0-9_]*:/     { print }'
+}
+release_info_voids() {  # release_info_voids <text> -> prints void field lines; rc 1 if any
+    # Void has two shapes and both have shipped: a value that is empty outright, and a value
+    # that is only the parenthesised label the hash was supposed to sit in front of.
+    printf '%s\n' "$1" | awk '
+        /^--- RELEASE-INFO ---$/ { inblock = 1; next }
+        inblock && /^[[:space:]]*$/ { inblock = 0; next }
+        inblock && /^[a-z_][a-z0-9_]*:/ {
+            v = $0; sub(/^[a-z_][a-z0-9_]*:[[:space:]]*/, "", v)
+            if (v == "" || substr(v, 1, 1) == "(") { print; bad++ }
+        }
+        END { exit(bad ? 1 : 0) }'
+}
+
+ri_ok=yes
+ri_good='--- RELEASE-INFO ---
+target:            x86_64-linux
+lazarus_commit:    UNKNOWN (no readable git in /nowhere)
+compiler_md5:      4b49876e854ddf224deeb12358401d9e  (ppcx64)
+rtl_ppu:           60
+verified_at:       2026-09-18T00:00:00Z
+'
+ri_void_paren=${ri_good/4b49876e854ddf224deeb12358401d9e  /}
+ri_void_empty=${ri_good/60/}
+release_info_voids "$ri_good" >/dev/null || ri_ok=no
+[ "$(release_info_fields "$ri_good" | wc -l)" = 5 ] || ri_ok=no
+release_info_voids "$ri_void_paren" >/dev/null && ri_ok=no
+release_info_voids "$ri_void_empty" >/dev/null && ri_ok=no
+# lazarus_commit's UNKNOWN value also opens with a word and closes with a paren clause -- it
+# must NOT read as void, or the check would red every honest run made outside a git tree.
+if [ "$ri_ok" != yes ]; then
+    printf '  FAIL  %-44s the void-field checker does not discriminate\n' "rig assert"
+    echo "          A checker that cannot fire is worse than no checker, so the three arms"
+    echo "          below are NOT run and NOT counted -- they would prove nothing."
+    failn=$((failn + 1))
+else
+    riarm() {  # riarm <label> <staging> <target> <srctree> <expect-rc>
+        local label=$1 st=$2 tgt=$3 src=$4 exp=$5 rc out voids vrc n
+        out=$("$GATE" "$st" "$tgt" "$src" 2>&1); rc=$?
+        n=$(release_info_fields "$out" | wc -l)
+        voids=$(release_info_voids "$out"); vrc=$?
+        # n<5 matters on its own: zero void lines in an ABSENT block is a false green, which
+        # is the same shape as every other trap in this file.
+        if [ "$rc" = "$exp" ] && [ "$n" -ge 5 ] && [ "$vrc" = 0 ]; then
+            printf '  PASS  %-44s rc=%s  %s fields, none void\n' "$label" "$rc" "$n"
+            pass=$((pass + 1))
+        else
+            printf '  FAIL  %-44s rc=%s  EXPECTED %s  fields=%s\n' "$label" "$rc" "$exp" "$n"
+            [ "$vrc" != 0 ] && printf '%s\n' "$voids" | sed 's/^/          VOID FIELD: /'
+            [ "$n" -lt 5 ] && echo "          NO RELEASE-INFO BLOCK -- nothing was checked"
+            failn=$((failn + 1))
+        fi
+    }
+
+    # PASS direction and FAIL direction of the SAME assertion. A void field is wrong whatever
+    # verdict the gate reached, and the rc=1 fixtures are where it actually shipped.
+    if [ -f "$W/srctree/auto-update.sh" ]; then
+        mkstaging "$W/ri-ok"; cp "$X86" "$W/ri-ok/compiler/ppcx64"
+        cp "$W/srctree/auto-update.sh" "$W/ri-ok/auto-update.sh"
+        riarm "x86_64-linux green roll, fields all real" "$W/ri-ok" x86_64-linux "$W/srctree" 0
+    else
+        skiparm "RELEASE-INFO green-roll arm" "no auto-update.sh beside the gate"
+    fi
+    # The defect's OWN fixture: no compiler staged at all. This is the exact tree that printed
+    # `compiler_md5:        (ppcx64)` under 15d34d154a.
+    mkstaging "$W/ri-nocc"
+    riarm "x86_64-linux no compiler staged (the c707 fixture)" "$W/ri-nocc" x86_64-linux "$W/srctree" 1
+    # And the ARM shape, where the void line printed directly ABOVE a real one -- a sibling
+    # field being right is exactly what makes an empty one read as a fact.
+    if ri_nat=$(compiler_from_dist aarch64-linux aarch64-linux ppca64); then
+        mkstaging "$W/ri-arm"; cp "$ri_nat" "$W/ri-arm/compiler/ppca64"
+        riarm "aarch64-linux native staged, CROSS absent" "$W/ri-arm" aarch64-linux "$W/srctree" 1
+    else
+        skiparm "RELEASE-INFO aarch64 arm" "no vibepascal-v*-aarch64-linux-bin.tar.gz under $VP_DIST"
+    fi
+fi
+
 echo
 echo "=== $pass passed, $failn failed, $skip skipped ==="
 
