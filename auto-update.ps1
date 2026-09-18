@@ -63,6 +63,13 @@ $script:LazarusUpdated = $false
 $script:VPUpdated = $false
 $script:CheckFailed = $false   # a Check-* helper could not read or refresh a repository; "up to date" is then not a verdict (c675)
 $script:UpstreamUpdated = $false
+# c722 -- is an 'upstream' remote configured at all, and could it be read? Reported by Miles
+# (MonitoringSystemsDeveloper) from MVMJ26, which has no such remote: the run correctly warns
+# and skips the check, and then the summary prints "[-] Lazarus upstream : no changes (HEAD
+# <sha>)" anyway -- where that sha is the ORIGIN head, because nothing ever looked upstream.
+# Nothing in the line is false; it is reliably misread. NOT CHECKED is not "no changes" (c675).
+$script:UpstreamConfigured = $false
+$script:UpstreamUnknown = $false
 $script:BuildProductsWereMissing = $false
 $script:LocalBuildProductsRestored = $false
 # c719 -- HEAD as it stood BEFORE this run pulled anything, so Print-Summary can report
@@ -913,6 +920,7 @@ function Check-LazarusUpstream {
     if ("$behind" -eq "UNKNOWN") {
         Log-Err "Lazarus: cannot count HEAD..upstream/main in $LazarusDir (not a git repository, or upstream/main missing) -- verdict UNKNOWN, not 'in sync'"
         $script:CheckFailed = $true
+        $script:UpstreamUnknown = $true   # c722 -- so the summary says UNKNOWN too, instead of "no changes"
         return
     }
 
@@ -2102,8 +2110,21 @@ function Report-RepoOutcome {
         [bool]$Available,    # the Check-* flag: new commits were AVAILABLE, which is not the same as applied
         $Before,             # head stamp taken before this run pulled anything ($null = unreadable)
         $After,              # head stamp at print time ($null = unreadable)
-        [string]$Detail      # why an available update may not have landed
+        [string]$Detail,     # why an available update may not have landed
+        [string]$State = "checked"   # c722: "not-configured" / "unknown" / "checked"
     )
+    # c722 -- LABEL, never suppress. A line that vanishes is indistinguishable from a check
+    # that silently did not run, so an unchecked comparison says so in the same slot the real
+    # verdict would have occupied -- and prints NO sha, because the only sha available here is
+    # the origin head and that is exactly what gets misread as an upstream verdict.
+    if ($State -eq "not-configured") {
+        Write-Host "  [?] $Label : NOT CHECKED -- no 'upstream' remote in $LazarusDir, so this run never compared against fpc/Lazarus. That is not 'no changes'. Add it with: git remote add upstream https://github.com/fpc/Lazarus.git" -ForegroundColor Yellow
+        return
+    }
+    if ($State -eq "unknown") {
+        Write-Host "  [?] $Label : UNKNOWN -- the 'upstream' remote is configured but upstream/main could not be read in $LazarusDir, so nothing was compared. That is not 'no changes' -- see the [ERROR] line above." -ForegroundColor Yellow
+        return
+    }
     if (-not $Before -or -not $After) {
         Write-Host "  [?] $Label : HEAD could not be read, so this run's outcome is UNKNOWN -- not 'no changes'" -ForegroundColor Yellow
         return
@@ -2137,8 +2158,16 @@ function Print-Summary {
     if ($script:LazarusHeadAfterUpstream) { $lazMid = $script:LazarusHeadAfterUpstream } else { $lazMid = $lazNow }
     if ($script:LazarusHeadAfterUpstream) { $originBefore = $script:LazarusHeadAfterUpstream } else { $originBefore = $script:LazarusHeadBefore }
 
+    if (-not $script:UpstreamConfigured) {
+        $upstreamState = "not-configured"
+    } elseif ($script:UpstreamUnknown) {
+        $upstreamState = "unknown"
+    } else {
+        $upstreamState = "checked"
+    }
+
     Report-RepoOutcome -Label "VibePascal" -Available $script:VPUpdated -Before $script:VPHeadBefore -After $vpNow -Detail $applyHint
-    Report-RepoOutcome -Label "Lazarus upstream" -Available $script:UpstreamUpdated -Before $script:LazarusHeadBefore -After $lazMid -Detail $applyHint
+    Report-RepoOutcome -Label "Lazarus upstream" -Available $script:UpstreamUpdated -Before $script:LazarusHeadBefore -After $lazMid -Detail $applyHint -State $upstreamState
     Report-RepoOutcome -Label "Lazarus" -Available $script:LazarusUpdated -Before $originBefore -After $lazNow -Detail $applyHint
 
     if ($script:LocalBuildProductsRestored) {
@@ -2152,7 +2181,12 @@ function Print-Summary {
         Log-ErrDetail "Verdict UNKNOWN: a repository could not be read or refreshed (see the [ERROR]/[WARN] lines above). This is NOT 'up to date'."
     } elseif (-not $script:VPUpdated -and -not $script:UpstreamUpdated -and -not $script:LazarusUpdated -and -not $script:BuildProductsWereMissing) {
         Write-Host ""
-        Log-Ok "Everything is up to date. Nothing to do."
+        if ($script:UpstreamConfigured) {
+            Log-Ok "Everything is up to date. Nothing to do."
+        } else {
+            # c722 -- bound the claim by what was actually checked. Upstream was skipped.
+            Log-Ok "Everything that was checked is up to date. Nothing to do. (Upstream fpc/Lazarus was NOT among them -- see the line above.)"
+        }
     }
 
     Write-Host ""
@@ -3025,6 +3059,7 @@ if ($FixLpi) {
 
 
 $upstreamRemote = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("remote", "get-url", "upstream")
+$script:UpstreamConfigured = [bool]$upstreamRemote   # c722 -- so the summary can say NOT CHECKED instead of "no changes"
 if ($upstreamRemote) {
     Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
 } else {

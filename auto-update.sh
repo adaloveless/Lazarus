@@ -17,6 +17,12 @@ NC='\033[0m'
 LAZARUS_UPDATED=0
 VP_UPDATED=0
 UPSTREAM_UPDATED=0
+# c722 -- is an 'upstream' remote configured at all, and could it be read? Reported by Miles
+# (MonitoringSystemsDeveloper) from MVMJ26, which has no such remote. NOT CHECKED and UNKNOWN
+# are both distinct from "no changes": a line that quietly reports the ORIGIN head as though
+# it were the upstream verdict is factually true and reliably misread (c675).
+UPSTREAM_CONFIGURED=0
+UPSTREAM_UNKNOWN=0
 # c719 -- HEAD as it stood BEFORE this run pulled anything, so print_summary can report what
 # HAPPENED instead of what was AVAILABLE. Empty means git could not be read, which is UNKNOWN
 # and never "no changes". Mirror of auto-update.ps1.
@@ -491,9 +497,24 @@ rebuild_vp_compiler() {
 check_lazarus_upstream() {
     log_header "Checking Lazarus upstream (fpc/Lazarus)"
 
-    local behind=$(git -C "$LAZARUS_DIR" rev-list --count HEAD..upstream/main 2>/dev/null || echo "0")
+    # c722 -- three outcomes, not two. The `|| echo "0"` this function used to lean on turned
+    # BOTH failure shapes into the number zero, and zero then printed as "upstream in sync":
+    # a box with no 'upstream' remote, and a box that has one but whose upstream/main cannot
+    # be resolved, were both told they were up to date with a tree nothing had looked at.
+    # A count that could not be taken is UNKNOWN, never "in sync" (c675).
+    if [ "$UPSTREAM_CONFIGURED" -eq 0 ]; then
+        log_warn "Lazarus: no 'upstream' remote in $LAZARUS_DIR -- upstream (fpc/Lazarus) NOT CHECKED this run, which is not the same as 'in sync'"
+        return 0
+    fi
 
-    local local_commits=$(git -C "$LAZARUS_DIR" rev-list --count upstream/main..HEAD 2>/dev/null || echo "0")
+    local behind local_commits
+    if ! behind=$(git -C "$LAZARUS_DIR" rev-list --count HEAD..upstream/main 2>/dev/null); then
+        UPSTREAM_UNKNOWN=1
+        log_err "Lazarus: cannot count HEAD..upstream/main in $LAZARUS_DIR (upstream/main missing -- fetch failed, or the remote has no main branch) -- verdict UNKNOWN, not 'in sync'"
+        return 0
+    fi
+
+    local_commits=$(git -C "$LAZARUS_DIR" rev-list --count upstream/main..HEAD 2>/dev/null || echo "0")
 
     if [ "$behind" -gt 0 ]; then
         log_warn "Lazarus: $behind new upstream commit(s)"
@@ -761,8 +782,20 @@ vp_dist_version() {
 }
 
 report_repo_outcome() {
-    local label="$1" available="$2" before="$3" after="$4" dir="$5" detail="$6"
+    local label="$1" available="$2" before="$3" after="$4" dir="$5" detail="$6" state="${7:-checked}"
     local when
+    # c722 -- LABEL, never suppress. A line that vanishes is indistinguishable from a check
+    # that silently did not run, so an unchecked comparison says so in the same slot the real
+    # verdict would have occupied -- and prints NO sha, because the only sha available here is
+    # the origin head and that is exactly what gets misread as an upstream verdict.
+    if [ "$state" = "not-configured" ]; then
+        echo -e "  ${YELLOW}?${NC} $label: NOT CHECKED -- no 'upstream' remote in $dir, so this run never compared against fpc/Lazarus. That is not 'no changes'. Add it with: git remote add upstream https://github.com/fpc/Lazarus.git"
+        return 0
+    fi
+    if [ "$state" = "unknown" ]; then
+        echo -e "  ${YELLOW}?${NC} $label: UNKNOWN -- the 'upstream' remote is configured but upstream/main could not be read in $dir, so nothing was compared. That is not 'no changes' -- see the [ERROR] line above."
+        return 0
+    fi
     if [ -z "$before" ] || [ -z "$after" ]; then
         echo -e "  ${YELLOW}?${NC} $label: HEAD could not be read, so this run's outcome is UNKNOWN -- not 'no changes'"
         return 0
@@ -807,8 +840,15 @@ print_summary() {
     [ -n "$laz_mid" ] || laz_mid="$laz_now"
     [ -n "$origin_before" ] || origin_before="$LAZARUS_HEAD_BEFORE"
 
+    local upstream_state="checked"
+    if [ "$UPSTREAM_CONFIGURED" -eq 0 ]; then
+        upstream_state="not-configured"
+    elif [ "$UPSTREAM_UNKNOWN" -eq 1 ]; then
+        upstream_state="unknown"
+    fi
+
     report_repo_outcome "VibePascal" "$VP_UPDATED" "$VP_HEAD_BEFORE" "$vp_now" "$VP_DIR" "$apply_hint"
-    report_repo_outcome "Lazarus upstream" "$UPSTREAM_UPDATED" "$LAZARUS_HEAD_BEFORE" "$laz_mid" "$LAZARUS_DIR" "$apply_hint"
+    report_repo_outcome "Lazarus upstream" "$UPSTREAM_UPDATED" "$LAZARUS_HEAD_BEFORE" "$laz_mid" "$LAZARUS_DIR" "$apply_hint" "$upstream_state"
     report_repo_outcome "Lazarus" "$LAZARUS_UPDATED" "$origin_before" "$laz_now" "$LAZARUS_DIR" "$apply_hint"
 
     if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
@@ -818,7 +858,16 @@ print_summary() {
         echo -e "  ${RED}✗${NC} VibePascal compiler rebuild FAILED -- the previous compiler is still in use (log: $LAZARUS_DIR/.vpcompiler/compiler-rebuild.log)"
     fi
 
-    if [ "$changes" -eq 0 ]; then
+    # c722 -- the closing verdict must agree with the three lines above it. An upstream that
+    # could not be read is not "up to date", and on a box with no upstream remote the honest
+    # claim is bounded by what was actually checked.
+    if [ "$UPSTREAM_UNKNOWN" -eq 1 ]; then
+        echo ""
+        log_err "Verdict UNKNOWN: upstream Lazarus could not be read this run (see the [ERROR] line above). This is NOT 'up to date'."
+    elif [ "$changes" -eq 0 ] && [ "$UPSTREAM_CONFIGURED" -eq 0 ]; then
+        echo ""
+        log_ok "Everything that was checked is up to date. Nothing to do. (Upstream fpc/Lazarus was NOT among them -- see the line above.)"
+    elif [ "$changes" -eq 0 ]; then
         echo ""
         log_ok "Everything is up to date. Nothing to do."
     fi
@@ -1834,7 +1883,21 @@ echo ""
 
 SCRIPT_PRE_HASH=$(sha256sum "$LAZARUS_DIR/auto-update.sh" 2>/dev/null | cut -d' ' -f1)
 
-git -C "$LAZARUS_DIR" fetch upstream 2>/dev/null
+# c722 -- MEASURED ON A SCRATCH CLONE WITH NO 'upstream' REMOTE, which is MVMJ26's shape:
+# this fetch used to run unguarded, and `set -e` plus `2>/dev/null` turned a missing remote
+# into the END of the run -- rc 128 immediately after the banner above, with no summary, no
+# error text and nothing checked. Miles reported the .ps1's misleading summary line; the bash
+# half never reached its summary at all. Probe the remote, say so out loud, keep going.
+UPSTREAM_CONFIGURED=0
+if git -C "$LAZARUS_DIR" remote get-url upstream >/dev/null 2>&1; then
+    UPSTREAM_CONFIGURED=1
+    if ! git -C "$LAZARUS_DIR" fetch upstream 2>/dev/null; then
+        log_warn "Lazarus: 'git fetch upstream' failed -- the upstream comparison below uses whatever upstream/main this clone already had, if any"
+    fi
+else
+    log_warn "No 'upstream' remote configured in $LAZARUS_DIR -- upstream Lazarus (fpc/Lazarus) will NOT be checked this run"
+    log_info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
+fi
 
 # c719 -- take HEAD BEFORE anything can move it. Nothing above this point pulls: the fetch
 # moves remote-tracking refs only, and wipe_local_changes (reset --hard HEAD) runs later and
