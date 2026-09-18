@@ -1360,7 +1360,7 @@ begin
   OldVer:=EnvironmentOptions.OldLazarusVersion;
   NowVer:=LazarusVersionStr;
   //debugln(['TMainIDE.LoadGlobalOptions ',FEnvOptsCfgExisted,' diff=',OldVer<>NowVer,' Now=',NowVer,' Old=',OldVer,' Comp=',CompareLazarusVersion(NowVer,OldVer)]);
-  if FEnvOptsCfgExisted and (OldVer<>NowVer) then
+  if FEnvOptsCfgExisted and not SameLazarusVersion(OldVer,NowVer) then
   begin
     IsUpgrade:=CompareLazarusVersion(NowVer,OldVer)>0;
     if OldVer='' then
