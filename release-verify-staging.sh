@@ -348,11 +348,24 @@ else
     # Unreadable git is UNKNOWN, never "up to date" -- the same rule the updaters follow.
     echo "lazarus_commit:    UNKNOWN (no readable git in $SRC_TREE)"
 fi
-[ -f "$STAGING/compiler/$want_compiler" ] &&
+# `if`, not `A && B` -- and both slots guarded, not one. 15d34d154a inserted need_md5sum
+# into the middle of an `[ -f ... ] && echo ...` continuation, which ends the chain at the
+# guard and leaves the echo UNCONDITIONAL. Measured c707 on a staging tree with no staged
+# compiler: main printed nothing, the merged version printed `compiler_md5:   (ppcx64)` --
+# an EMPTY hash, plus a redirect error on stderr -- and on aarch64-linux it printed a void
+# `compiler_md5` directly above a REAL `native_md5`, with md5sum fully present, so this was
+# the broken chain and not a thin host. native_md5 had no guard of its own either, so on a
+# host without md5sum an ARM tree with a staged native compiler printed that one void too.
+# A void hash in RELEASE-INFO is the exact class 15d34d154a exists to kill (c654): the
+# absence of a line is honest, an empty value looks like a fact.
+if [ -f "$STAGING/compiler/$want_compiler" ]; then
     need_md5sum "the staged compiler hashes are what this summary exists to record"
     echo "compiler_md5:      $(md5sum < "$STAGING/compiler/$want_compiler" | cut -d' ' -f1)  ($want_compiler)"
-[ -n "$want_native" ] && [ -f "$STAGING/compiler/$want_native" ] &&
+fi
+if [ -n "$want_native" ] && [ -f "$STAGING/compiler/$want_native" ]; then
+    need_md5sum "the staged native compiler hash is what this summary exists to record"
     echo "native_md5:        $(md5sum < "$STAGING/compiler/$want_native" | cut -d' ' -f1)  ($want_native)"
+fi
 echo "rtl_ppu:           $rtl_ppu"
 echo "package_unit_sets: $pkg_dirs"
 echo "verified_at:       $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
