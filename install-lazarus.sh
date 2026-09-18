@@ -132,31 +132,46 @@ if not releases:
     print("NO_RELEASES", file=sys.stderr)
     sys.exit(1)
 
-data = releases[0]
-tag = data["tag_name"]
+# The -rNN segment is OPTIONAL. install-lazarus.ps1 has always allowed it to be
+# absent; this script required it, so a correctly published asset whose name
+# omitted it read as "no tarball for your platform". Keep the two in step.
 tarball_re = re.compile(
-    rf"^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}-r\d+\.tar\.gz$"
+    rf"^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}(?:-r\d+)?\.tar\.gz$"
 )
-sha_re = re.compile(rf"^SHA256SUMS-\d{{8}}-r\d+\.txt$")
+sha_re = re.compile(r"^SHA256SUMS-\d{8}(?:-r\d+)?\.txt$")
 
-tarball_url = None
-sha_url = None
+# Walk the releases newest-first and take the first one that actually carries an
+# asset for THIS architecture, instead of taking releases[0] unconditionally.
+# A single-platform release otherwise hides every older release from everyone
+# else: measured 2026-09-18, publishing the win64-only r26 turned x86_64-linux,
+# aarch64-linux and both darwin targets from a working install into NO_TARBALL,
+# because r25 -- which carries all of them -- was one position down the list.
+chosen = None
+tarball_url = sha_url = tarball_name = sha_name = None
 
-for asset in data.get("assets", []):
-    name = asset["name"]
-    if tarball_re.match(name):
-        tarball_url = asset["browser_download_url"]
-        tarball_name = name
-    elif sha_re.match(name):
-        sha_url = asset["browser_download_url"]
-        sha_name = name
+for data in releases:
+    cand_tarball_url = cand_sha_url = cand_tarball_name = cand_sha_name = None
+    for asset in data.get("assets", []):
+        name = asset["name"]
+        if tarball_re.match(name):
+            cand_tarball_url = asset["browser_download_url"]
+            cand_tarball_name = name
+        elif sha_re.match(name):
+            cand_sha_url = asset["browser_download_url"]
+            cand_sha_name = name
+    if cand_tarball_url and cand_sha_url:
+        chosen = data
+        tarball_url, tarball_name = cand_tarball_url, cand_tarball_name
+        sha_url, sha_name = cand_sha_url, cand_sha_name
+        break
+    # A release that carries the tarball but no checksum file is NOT usable and
+    # must not stop the walk -- keep looking rather than failing on it.
 
-if not tarball_url:
+if chosen is None:
     print("NO_TARBALL", file=sys.stderr)
     sys.exit(1)
-if not sha_url:
-    print("NO_SHA", file=sys.stderr)
-    sys.exit(1)
+
+tag = chosen["tag_name"]
 
 print(tag)
 print(tarball_name)

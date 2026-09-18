@@ -81,20 +81,28 @@ with urllib.request.urlopen(req, timeout=60) as resp:
     releases = json.load(resp)
 if not releases:
     print("NO_RELEASES", file=sys.stderr); sys.exit(1)
-data = releases[0]
-tag = data["tag_name"]
 tarball_re = re.compile(rf'^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}(?:-r\d+)?\.tar\.gz$')
 sha_re = re.compile(r'^SHA256SUMS-\d{8}(?:-r\d+)?\.txt$')
-tarball_url = tarball_name = expected_sha = sha_url = None
-for asset in data.get('assets', []):
-    name = asset['name']
-    if tarball_re.match(name):
-        tarball_url = asset['browser_download_url']; tarball_name = name
-        dig = asset.get('digest') or ''
-        if dig.startswith('sha256:'):
-            expected_sha = dig.split(':', 1)[1]
-    elif sha_re.match(name):
-        sha_url = asset['browser_download_url']
+# Walk newest-first for the first release carrying an asset for THIS arch, rather
+# than taking releases[0]. Measured 2026-09-18: the win64-only r26 turned the two
+# linux and both darwin targets from a working install into NO_TARBALL, because
+# r25 -- which carries all of them -- sat one position down the list.
+tag = tarball_url = tarball_name = expected_sha = sha_url = None
+for data in releases:
+    c_url = c_name = c_sha = c_shaurl = None
+    for asset in data.get('assets', []):
+        name = asset['name']
+        if tarball_re.match(name):
+            c_url = asset['browser_download_url']; c_name = name
+            dig = asset.get('digest') or ''
+            if dig.startswith('sha256:'):
+                c_sha = dig.split(':', 1)[1]
+        elif sha_re.match(name):
+            c_shaurl = asset['browser_download_url']
+    if c_url and (c_sha or c_shaurl):
+        tag = data['tag_name']
+        tarball_url, tarball_name, expected_sha, sha_url = c_url, c_name, c_sha, c_shaurl
+        break
 if not tarball_url:
     print('NO_TARBALL', file=sys.stderr); sys.exit(1)
 print(tag)
