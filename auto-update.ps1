@@ -71,6 +71,7 @@ $script:CommonXFirstError = ""
 $script:CommonXPpuHint = ""
 $script:CommonXArtifactsCleaned = 0
 $script:ErrorCount = 0
+$script:MakeRejected = @()
 
 # c671 -- REFUSE unbound arguments instead of silently running without them. A plain param()
 # block drops anything it cannot bind into $args and carries on, so ".\auto-update.ps1
@@ -992,7 +993,95 @@ function Pull-LazarusOrigin {
     }
 }
 
+# c718 -- ASK WHAT THE make WE FOUND ACTUALLY IS. Miles (MonitoringSystemsDeveloper, MVMJ26,
+# 2026-09-18) measured the failure this exists to stop. On an ex-Delphi box the only make on
+# PATH is C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\make.exe -- "MAKE Version 5.43
+# Copyright (c) 1987, 2019 Embarcadero Technologies", i.e. BORLAND make, which rejects GNU
+# arguments outright (it refuses even -v). Find-Make returned it because Test-Path said the
+# file was there and nothing asked what it was; Rebuild-Lazbuild then handed GNU arguments to
+# a program that cannot read them, Borland printed its own USAGE TEXT into the log, no
+# lazbuild.exe appeared, and auto-update blamed something else entirely:
+#   [ERROR] lazbuild.exe build failed -- binary not found!
+# The build never had a chance and the tool never noticed it was talking to the wrong make;
+# lazarus.exe had in fact NEVER been built on that box. Policy #22 makes this general rather
+# than exotic: Delphi is dead org-wide but the installs are still on our machines and still
+# own "make" on PATH, so every ex-Delphi site hits this the moment auto-update rebuilds.
+#
+# Two call sites beyond the build were being poisoned by the same return value: Rebuild-IDE
+# PREPENDS the discovered make's directory to PATH, and Configure-Environment WRITES it into
+# environmentoptions.xml as MakeFilename -- so an unverified answer here does not just fail a
+# build, it persists into the user's IDE config.
+#
+# Returns @{ IsGnu; Name; Detail }. A probe that cannot run, or will not answer, is NOT GNU:
+# an error must never read as a pass (c661 -- in any rc-shaped test an error is
+# indistinguishable from a clean NO, so the default has to be the refusing one).
+function Get-MakeFlavour {
+    param([string]$Path)
+
+    $flavour = @{ IsGnu = $false; Name = "unknown"; Detail = "" }
+    $out = ""
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $Path
+        $psi.Arguments = "--version"
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+        # Bounded wait: a make that prompts instead of printing must not hang the whole
+        # update. Borland MAKE answers an unknown switch and exits, but "it exits on my box"
+        # is not a property of every make we might meet.
+        if (-not $proc.WaitForExit(10000)) {
+            try { $proc.Kill() } catch { }
+            $flavour.Name = "unresponsive (no --version answer within 10s)"
+            return $flavour
+        }
+        $out = $stdoutTask.GetAwaiter().GetResult() + "`n" + $stderrTask.GetAwaiter().GetResult()
+    } catch {
+        $flavour.Name = "not runnable ($($_.Exception.Message))"
+        return $flavour
+    }
+
+    $firstLine = ""
+    foreach ($line in ($out -split "`r?`n")) {
+        if ($line.Trim()) { $firstLine = $line.Trim(); break }
+    }
+    $flavour.Detail = $firstLine
+
+    if ($out -match "GNU Make") {
+        $flavour.IsGnu = $true
+        $flavour.Name = "GNU make"
+    } elseif ($out -match "Embarcadero|Borland") {
+        $flavour.Name = "Borland/Embarcadero MAKE (Delphi's make, not GNU make)"
+    } elseif (-not $firstLine) {
+        $flavour.Name = "silent -- printed nothing for --version"
+    } else {
+        $flavour.Name = "not GNU make"
+    }
+    return $flavour
+}
+
+# Print what Find-Make looked at and why it refused it. The old message named only the cure
+# ("Install MinGW/MSYS2") and never the disease, so a box holding a perfectly present make.exe
+# read as a box with no make at all.
+function Report-NoGnuMake {
+    Log-Err "No GNU make found. Lazarus cannot be built without it."
+    if ($script:MakeRejected.Count -gt 0) {
+        Log-ErrDetail "  Candidates were present but REJECTED because they are not GNU make:"
+        foreach ($r in $script:MakeRejected) { Log-ErrDetail "    $r" }
+        Log-ErrDetail "  A non-GNU make is not a usable substitute: it cannot read the arguments"
+        Log-ErrDetail "  this script passes (-C, PP=, FPCDIR=, OPT=) and will print its own usage instead."
+    } else {
+        Log-ErrDetail "  No make.exe was found on PATH or in any known FPC/MSYS location."
+    }
+    Log-ErrDetail "  Install MSYS2/MinGW GNU make, or put FPC's own make on PATH, then re-run."
+}
+
 function Find-Make {
+    $script:MakeRejected = @()
     $makePaths = @(
         (Get-Command "make" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
         (Get-Command "mingw32-make" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
@@ -1005,6 +1094,13 @@ function Find-Make {
     )
     foreach ($p in $makePaths) {
         if ($p -and (Test-Path $p)) {
+            $flavour = Get-MakeFlavour -Path $p
+            if (-not $flavour.IsGnu) {
+                $why = "$p  --  $($flavour.Name)"
+                if ($flavour.Detail) { $why = "$why  [$($flavour.Detail)]" }
+                $script:MakeRejected += $why
+                continue
+            }
             # MSYS2 make depends on sibling tools (sh.exe, sed.exe) in the same usr\bin dir;
             # prepend that directory to PATH so child processes can find them.
             $makeDir = Split-Path -Parent $p
@@ -1021,7 +1117,16 @@ function Find-Make {
                 Sort-Object Name -Descending
             foreach ($d in $versionedDirs) {
                 $candidate = Join-Path $d.FullName "bin\x86_64-win64\make.exe"
-                if (Test-Path $candidate) { return $candidate }
+                if (Test-Path $candidate) {
+                    $flavour = Get-MakeFlavour -Path $candidate
+                    if (-not $flavour.IsGnu) {
+                        $why = "$candidate  --  $($flavour.Name)"
+                        if ($flavour.Detail) { $why = "$why  [$($flavour.Detail)]" }
+                        $script:MakeRejected += $why
+                        continue
+                    }
+                    return $candidate
+                }
             }
         }
     }
@@ -1040,7 +1145,7 @@ function Rebuild-Lazbuild {
 
     $make = Find-Make
     if (-not $make) {
-        Log-Err "make not found. Install MinGW/MSYS2 or add FPC's make to PATH."
+        Report-NoGnuMake
         return
     }
 
@@ -1512,6 +1617,11 @@ function Rebuild-IDE {
             $env:PATH = "$makeDir;$env:PATH"
             Log-Info "PATH prepended with make dir: $makeDir"
         }
+    } elseif ($script:MakeRejected.Count -gt 0) {
+        # c718 -- say so rather than skipping in silence. Before the GNU check this branch
+        # could not be reached on an ex-Delphi box: Find-Make handed back Borland's make and
+        # we prepended C:\Program Files (x86)\Embarcadero\...\bin to PATH for lazbuild.
+        Log-Warn "Not prepending a make dir to PATH -- no GNU make found (rejected: $($script:MakeRejected -join '; '))"
     }
 
     # GOD mp3nzr3r: ensure customdrawn LCL controls are installed by default on
@@ -2572,6 +2682,18 @@ function Configure-Environment {
 
         $makeNode = $envOpts.SelectSingleNode("MakeFilename")
         $makePath = Find-Make
+        # c718 -- a make we refused must not be left sitting in the IDE's own config. We warn
+        # rather than delete: environmentoptions.xml is the user's file and -Doctor reports it
+        # as the healthy part of a broken box, so silently rewriting it is the wrong trade.
+        if (-not $makePath -and $makeNode -and $script:MakeRejected.Count -gt 0) {
+            $persisted = $makeNode.GetAttribute("Value")
+            foreach ($r in $script:MakeRejected) {
+                if ($persisted -and $r.StartsWith($persisted)) {
+                    Log-Warn "environmentoptions.xml MakeFilename points at a make that is NOT GNU make: $r"
+                    Log-Warn "  The IDE will fail to build from source while this is set. Clear it or point it at a GNU make."
+                }
+            }
+        }
         if ($makePath) {
             if (-not $makeNode) {
                 $makeNode = $xml.CreateElement("MakeFilename")
