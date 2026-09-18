@@ -155,6 +155,21 @@ Write-Info "Tarball:        $tarballName"
 # --- download ---
 function Download-File($url, $out) {
     curl.exe -fsSL --max-time 1500 --retry 1 -o $out $url
+    # curl.exe is a NATIVE command, so a non-zero exit does NOT throw -- not even under
+    # the $ErrorActionPreference = "Stop" set at the top of this script.
+    # $PSNativeCommandUseErrorActionPreference is False on the pwsh this was measured on
+    # (7.6.6) and this script never sets it; Windows PowerShell 5.1 has no such setting at
+    # all, so the walk-on happens on BOTH hosts. Measured 2026-09-18 by driving this file
+    # with a curl.exe that exits 22: the run printed "Downloading ..." and then walked
+    # straight on to "Verifying tarball digest...", dying inside Get-FileHash on a tarball
+    # that was never written. That is the same walk-on shape the resolver exit check above
+    # exists to prevent, one function down -- and the symptom a user reports is a path error
+    # or a bogus "SHA256 mismatch" rather than "the download failed". install-lazarus.sh
+    # gets the abort for free from `set -euo pipefail`; PowerShell gets nothing for free.
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorX "Download failed (curl exit $LASTEXITCODE) for $url. Nothing was installed."
+        exit 1
+    }
 }
 
 $tarballPath = Join-Path $tmp $tarballName
