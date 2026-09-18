@@ -35,7 +35,7 @@ trap 'rm -rf "$W"' EXIT
 
 [ -x "$GATE" ] || { echo "ABORT: $GATE is not executable" >&2; exit 3; }
 
-pass=0; failn=0; skip=0
+pass=0; failn=0; skip=0; skipped_arms=()
 
 # ---------------------------------------------------------------- fixtures
 mkstaging() {  # mkstaging <dir>
@@ -81,7 +81,11 @@ arm() {  # arm <label> <staging> <target> <srctree> <expect-rc>
         printf '%s\n' "$out" | sed 's/^/          /'; failn=$((failn + 1))
     fi
 }
-skiparm() { printf '  SKIP  %-44s %s\n' "$1" "$2"; skip=$((skip + 1)); }
+skiparm() {
+    printf '  SKIP  %-44s %s\n' "$1" "$2"
+    skipped_arms+=("$1 -- $2")
+    skip=$((skip + 1))
+}
 
 # ---------------------------------------------------------------- liveness first (c686)
 echo "=== self-test: $GATE"
@@ -230,4 +234,27 @@ fi
 
 echo
 echo "=== $pass passed, $failn failed, $skip skipped ==="
-[ "$failn" = 0 ]
+
+# A NONZERO SKIP IS NOT GREEN, AND THE EXIT CODE HAS TO SAY SO (Lars, c703).
+# The header above already says a missing input makes an arm prove nothing -- but this
+# script still ended on `[ "$failn" = 0 ]`, so a run that silently dropped whole blocks
+# exited 0 and read as a pass. Measured at c702: run from a scratch dir, $HERE holds no
+# auto-update.* and EVERY win64 arm skips; the tally printed "15 passed, 0 failed, 1
+# skipped" with exit 0, and the only thing that caught it was the baseline reading 15
+# where the record said 19. A tally line is easy to skim past; an exit code is not.
+#   0 = every arm ran and passed
+#   1 = an arm FAILED -- failures outrank skips, so a red run still reports 1
+#   2 = no failures, but at least one arm block never ran
+if [ "$failn" != 0 ]; then
+    exit 1
+fi
+if [ "$skip" != 0 ]; then
+    echo
+    echo "INCOMPLETE: $skip arm block(s) never ran, so this is NOT a clean bill of health:"
+    for s in "${skipped_arms[@]}"; do
+        echo "  - $s"
+    done
+    echo "Re-run where those inputs exist -- the updater scripts resolve from \$HERE,"
+    echo "beside the gate -- before treating this run as a pass."
+    exit 2
+fi
