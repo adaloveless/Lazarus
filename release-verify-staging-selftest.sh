@@ -193,16 +193,33 @@ if [ "$cshim_ok" = yes ]; then
     composearm() {  # composearm <label> <target> <exe> <arch-pat> <vp-dir> <expect-gate-rc> <expect-staged>
         local label=$1 tgt=$2 exe=$3 pat=$4 vp=$5 exg=$6 exs=$7
         local st="$W/compose-$tgt-$RANDOM" staged=no crc grc
+        local miss="$st.outside-closure"
         mkstaging "$st"; mkidebin "$st/bin/lazarus"; rm -f "$st/compiler/$exe"
+        : > "$miss"
         # `set +e` AFTER sourcing, not before: the copier returns nonzero on the degraded
         # path BY DESIGN and package_release calls it under `|| true`. Source first, relax
         # errexit second, or this dies at the very return it is here to measure.
-        crc=$( . "$CSHIM"; set +e; VP_DIR="$vp"; export VP_DIR
+        #
+        # THE RECORDER IS NOT DECORATION. cshim_ok above asserts the five functions are
+        # DEFINED; it does NOT assert their transitive closure is complete. A helper one of
+        # them calls that is not in CFNS makes the copier fail for a MISSING-DEPENDENCY
+        # reason instead of the reason under test -- and the degraded arms below expect
+        # exactly "nothing staged, gate refuses", so they would go on passing after the
+        # copier stopped working. Measured 2026-09-18 with one closure function deleted:
+        # all three arms recorded the missing name while still reading copier rc=1 and
+        # staged=no, byte-for-byte the shape this function scores as a PASS. So score the
+        # RECORDER before the expectations, and name what was reached for.
+        crc=$( BRUNO_SHIM_MISS="$miss"; export BRUNO_SHIM_MISS
+               command_not_found_handle() { echo "$1" >> "$BRUNO_SHIM_MISS"; return 127; }
+               . "$CSHIM"; set +e; VP_DIR="$vp"; export VP_DIR
                copy_native_darwin_compiler_to_staging "$st" "$tgt" "$exe" "$pat" >/dev/null 2>&1
                echo $? )
         [ -f "$st/compiler/$exe" ] && staged=yes
         grc=$("$GATE" "$st" "$tgt" "$W" >/dev/null 2>&1; echo $?)
-        if [ "$grc" = "$exg" ] && [ "$staged" = "$exs" ]; then
+        if [ -s "$miss" ]; then
+            printf '  FAIL  %-44s rc=%s  copier reached OUTSIDE the shim closure: %s\n' \
+                "$label" "$grc" "$(sort -u "$miss" | tr '\n' ' ')"; failn=$((failn + 1))
+        elif [ "$grc" = "$exg" ] && [ "$staged" = "$exs" ]; then
             printf '  PASS  %-44s rc=%s\n' "$label" "$grc"; pass=$((pass + 1))
         else
             printf '  FAIL  %-44s rc=%s  EXPECTED %s (staged=%s want %s, copier rc=%s)\n' \
