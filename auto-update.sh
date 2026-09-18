@@ -156,9 +156,37 @@ anchor_before_reset() {
 # Same class as the c686 environmentoptions.xml defect (also Otto's report): a script
 # writing state it does not own, silently, with no way back. The rule is the same one.
 # Read-only use of that tree (check_vp_updates, the compiler-stale arm) is unaffected.
+# is_git_checkout <dir> -- TRUE when <dir> is the ROOT of a git working tree.
+#
+# NOT `[ -d "$dir/.git" ]`. Otto (FPCDeveloper) measured that failing on a git WORKTREE,
+# 2026-09-18: there .git is a FILE holding "gitdir: <path>", so the -d test is false and
+# vp_checkout_branch returned 2 without ever running git -- reported as "not a checkout".
+# Today that only ever fails SAFE (it skips instead of writing), but the SAME test is the
+# "is this a checkout at all" gate in check_vp_updates, in the wipe and in the stale-compiler
+# arm, so a VP_DIR pointed at a worktree or a submodule would silently skip ALL VibePascal
+# updates -- the same coupled-skip shape he found in the wipe the day before.
+#
+# NOT a bare `rev-parse --git-dir` either, which was the suggested one-liner: git WALKS UP,
+# so any path INSIDE a repo answers yes for its ANCESTOR. Measured here: $LAZARUS_DIR/ide
+# is not a checkout root and `rev-parse --git-dir` says T for it (same family as c665, where
+# a control dir silently resolved its ancestor's config). Require the toplevel to BE <dir>.
+#
+# Both sides go through `pwd -P` because on this box /home/jason and /mnt/data/home/jason are
+# two mount views of one tree: --show-toplevel prints the /mnt/data form, so a literal string
+# compare would read every real checkout as "not a checkout".
+is_git_checkout() {
+    [ -n "${1:-}" ] && [ -d "$1" ] || return 1
+    local top real
+    top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 1
+    [ -n "$top" ] || return 1
+    real=$(cd "$1" 2>/dev/null && pwd -P) || return 1
+    top=$(cd "$top" 2>/dev/null && pwd -P) || return 1
+    [ "$real" = "$top" ]
+}
+
 vp_checkout_branch() {
     # echoes the branch name, or "HEAD" when detached; nothing when not a checkout
-    [ -d "$VP_DIR/.git" ] || return 2
+    is_git_checkout "$VP_DIR" || return 2
     git -C "$VP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || return 2
 }
 
@@ -185,7 +213,7 @@ wipe_local_changes() {
     # was silent and whatever it caused surfaced later, somewhere else. A Lazarus checkout's
     # shape says nothing about VibePascal's; one gate for two trees was the defect.
 
-    if [ -d "$LAZARUS_DIR/.git" ]; then
+    if is_git_checkout "$LAZARUS_DIR"; then
         # The wipe must not delete the inputs this script needs to bootstrap itself.
         # Otto (FPCDeveloper) reproduced this TWICE on a pristine consumer pair, 2026-09-17:
         # resolve_vp_compiler stages the private bootstrap copy at $LAZARUS_DIR/.vpcompiler/
@@ -207,8 +235,16 @@ wipe_local_changes() {
 
     if [ "$UPSTREAM_ONLY" -eq 1 ]; then
         log_info "Skipping the VibePascal wipe (--upstream-only)."
-    elif [ -d "$VP_DIR/.git" ]; then
-        if ! vp_checkout_is_on_main; then
+    elif is_git_checkout "$VP_DIR"; then
+        # rc 2 (no checkout) and rc 1 (somebody else's branch) need DIFFERENT words: they
+        # collapsed under `if ! ...` and printed "is on branch ''" with an empty name, which
+        # names no cause and no cure (Otto, 2026-09-18). `if ! cmd` resets $? to 0 inside the
+        # then-branch, so capture the rc on the failure path instead of reading it after.
+        vp_guard_rc=0
+        vp_checkout_is_on_main || vp_guard_rc=$?
+        if [ "$vp_guard_rc" = "2" ]; then
+            log_warn "SKIPPING the VibePascal wipe: $VP_DIR is not a git working tree at all, so there is nothing here to reset. If VibePascal lives somewhere else on this box, point VP_DIR at it; a worktree or a submodule root counts."
+        elif [ "$vp_guard_rc" != "0" ]; then
             log_warn "SKIPPING the VibePascal wipe: $VP_DIR is on branch '$(vp_checkout_branch || true)', not main. 'reset --hard HEAD' there would discard somebody else's uncommitted work with NO rescue tag and no way back. Put that checkout back on main yourself, or run with --upstream-only."
         else
         git -C "$VP_DIR" reset --hard HEAD 2>&1 | tail -1
@@ -246,7 +282,7 @@ relaunch_if_updated() {
 check_vp_updates() {
     log_header "Checking VibePascal (adaloveless/vibepascal)"
 
-    if [ ! -d "$VP_DIR/.git" ]; then
+    if ! is_git_checkout "$VP_DIR"; then
         log_err "VibePascal repo not found at $VP_DIR"
         return 1
     fi
@@ -274,7 +310,14 @@ pull_vp() {
 
     # See vp_checkout_is_on_main: a --ff-only pull on somebody else's branch SUCCEEDS
     # whenever that branch is merely behind, and moves it. Skip rather than move it.
-    if ! vp_checkout_is_on_main; then
+    # Same rc split as the wipe -- see the comment there.
+    vp_guard_rc=0
+    vp_checkout_is_on_main || vp_guard_rc=$?
+    if [ "$vp_guard_rc" = "2" ]; then
+        log_warn "SKIPPING the VibePascal pull: $VP_DIR is not a git working tree at all, so there is nothing here to pull. If VibePascal lives somewhere else on this box, point VP_DIR at it; a worktree or a submodule root counts."
+        return 0
+    fi
+    if [ "$vp_guard_rc" != "0" ]; then
         log_warn "SKIPPING the VibePascal pull: $VP_DIR is on branch '$(vp_checkout_branch || true)', not main. A --ff-only pull there moves SOMEBODY ELSE'S branch onto origin/main, silently, whenever it is merely behind -- measured 2026-09-17, when GOD's 'interface-temp-end-of-statement' was fast-forwarded exactly that way. Put that checkout back on main to resume VibePascal updates."
         return 0
     fi
@@ -1800,7 +1843,7 @@ fi
 
 # c682 -- a box that pulled a compiler change with an OLDER updater (which never rebuilt the
 # compiler) is steady-state now: nothing new to pull, so nothing above would ever fix it.
-if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ] && [ -d "$VP_DIR/.git" ]; then
+if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ] && is_git_checkout "$VP_DIR"; then
     stale_reason=""
     if stale_reason=$(vp_compiler_is_stale); then
         log_warn "VibePascal compiler binary is behind its sources ($stale_reason) -- rebuilding it"
