@@ -295,7 +295,7 @@ end.
         Get-Content $smokeLog | ForEach-Object { Write-Host "    $_" }
         exit 1
     }
-    $smokeRun = & $smokeOut
+    $smokeRun = (& $smokeOut) | Out-String
     if ($smokeRun -notlike "*lazarus-installer-smoke-ok*") {
         Write-ErrorX "Compiler smoke test binary did not run as expected"
         exit 1
