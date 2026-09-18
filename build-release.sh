@@ -2006,6 +2006,166 @@ create_darwin_app_bundle() {
     file "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus" 2>/dev/null || true
 }
 
+get_latest_darwin_bin_tarball() {
+    # Newest VERSIONED darwin compiler tarball for $1, or nothing at all.
+    #
+    # Deliberately written in get_latest_win64_bin_tarball's shape -- parse v<N>, sort
+    # NUMERICALLY -- and not in a cleverer one. get_latest_darwin_native_dir's header
+    # spends a paragraph on why: a git sha carries no ordering, so a lexicographic sort
+    # ranks two same-day builds by the hex of their commit, and it looks completely
+    # healthy whichever way it lands. Two halves of one script disagreeing about what
+    # "latest" means is the drift that produced the darwin IDE pickup bug.
+    #
+    # Two tarballs sharing one v<N> would still tie here, exactly as they can on the
+    # win64 path. That is NOT covered by this selector and I am not claiming it is --
+    # it is covered downstream: a coin flip that picks the wrong v59 loses the md5
+    # comparison against dist/$target/VERSION.txt and is REJECTED loudly.
+    local target=$1
+    find "$VP_DIR/dist/$target" -maxdepth 1 -type f \
+         -name "vibepascal-v*-${target}-bin.tar.gz" 2>/dev/null |
+        while IFS= read -r tarball; do
+            local base version
+            base=$(basename "$tarball")
+            version=${base#vibepascal-v}
+            version=${version%%-*}
+            case "$version" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            printf '%08d %s\n' "$version" "$tarball"
+        done |
+        sort -n |
+        tail -1 |
+        cut -d' ' -f2-
+}
+
+declared_md5_for_dist_member() {
+    # Print the md5 that VERSION.txt $1 declares for member bin/$2. Empty = no declaration.
+    #
+    # THIS IS NOT THE ONE-LINE awk THE darwin-native PATH USES BELOW, AND IT MUST NOT BE.
+    # The two files carry the same fact in different SHAPES. A darwin-native staging
+    # VERSION.txt puts the hash on the Binary line itself:
+    #     Binary: bin/ppcx64  md5 <hash>
+    # Otto's dist VERSION.txt puts SIZE there and the hash on a CONTINUATION line:
+    #     Binary: bin/ppcx64  size   9269400
+    #                         md5    a1a5e4639ca5118b58245285f05eca2e
+    #                         sha256 2ce1bfae552a40cb...
+    # Measured on dist/{x86_64,aarch64}-darwin/VERSION.txt at v59 on 2026-09-18. Run the
+    # one-line awk against those and it returns EMPTY -- and empty means "no declaration"
+    # to the caller, which SKIPS the D003 check while still looking like it ran. A guard
+    # that cannot fire is worse than no guard, and that is the whole reason this exists.
+    #
+    # A LOOSE FILE-WIDE `grep md5` WOULD BE WORSE THAN NOTHING HERE. dist/x86_64-darwin's
+    # VERSION.txt names FOUR md5s and the FIRST one is not the member: line 9 is the
+    # linux-hosted ppcx64 that DROVE the cross-build (12220bfd5b3a...). A loose grep
+    # compares the member against the driver and rejects a perfectly good compiler.
+    #
+    # So: anchor on the Binary line naming exactly this member, read md5 out of that
+    # line if it is there, else out of its indented continuation block, and stop at the
+    # first line that is not indented continuation (which includes the blank line).
+    local version_txt=$1 exename=$2
+    [ -f "$version_txt" ] || return 0
+    awk -v n="$exename" '
+        $1 == "Binary:" {
+            inblock = ($2 == "bin/" n)
+            if (inblock) { for (i = 3; i <= NF; i++) if ($i == "md5") { print $(i+1); exit } }
+            next
+        }
+        inblock && $0 !~ /^[[:space:]]/ { exit }
+        inblock && $1 == "md5" { print $2; exit }
+    ' "$version_txt"
+}
+
+stage_darwin_compiler_from_dist_tarball() {
+    # Bundle the native macOS-hosted compiler out of Otto's VERSIONED dist tarball.
+    # $1 staging  $2 target  $3 native exename  $4 expected `file` arch substring
+    # rc: 0 = staged and both guards passed
+    #     1 = nothing to try (no tarball, or no such member) -- caller reports DEGRADED
+    #     2 = a candidate was found and REJECTED; COMPILER_NOTES.txt already says why
+    #
+    # WHY THIS EXISTS. copy_native_darwin_compiler_to_staging reads exactly ONE place,
+    # $VP_DIR/dist/darwin-native, and that directory does not exist on this build host
+    # (re-stat'ed 2026-09-18). Meanwhile dist/x86_64-darwin and dist/aarch64-darwin each
+    # carry a real macOS-hosted compiler -- classified by file(1), never inferred from the
+    # name: bin/ppcx64 is "Mach-O 64-bit x86_64 executable" at 9,269,400 B and bin/ppca64
+    # is "Mach-O 64-bit arm64" at 7,333,274 B, both v59. So "there is no Mac compiler to
+    # bundle" was TRUE OF THE PATH THE ROLL LOOKS AT and FALSE ABOUT THE BOX.
+    #
+    # This is the same source-of-truth copy_win64_compiler_to_staging has used since D003:
+    # a tracked, versioned tarball instead of a mutable staging directory.
+    #
+    # IT IS A FALLBACK, NOT A REPLACEMENT. dist/darwin-native still wins whenever it has
+    # a build for the target, so a natively-built compiler appearing there later is not
+    # preempted by this -- and neither is anyone's decision about whether to produce one.
+    #
+    # BOTH GUARDS OF THE PRIMARY PATH SURVIVE HERE AND NEITHER IS WEAKENED:
+    #   D003: the member's md5 must equal what that dist dir's own VERSION.txt declares
+    #         for it. r16 shipped a v39 compiler announced as v42 because packaging
+    #         checked shape and never content.
+    #   arch: file -b must match $4. A FILENAME IS NOT EVIDENCE -- compiler/ppcarm was an
+    #         x86_64 ELF in the shared tree for exactly this reason, and the release-gate
+    #         half of that story is e4eafa2a42.
+    # Either guard failing REMOVES the compiler and writes the reason to
+    # COMPILER_NOTES.txt: a tarball with no compiler and a note explaining why beats one
+    # carrying a compiler that cannot run.
+    local staging=$1 target=$2 exename=$3 arch_pattern=$4
+    local notes="$staging/COMPILER_NOTES.txt"
+    local out="$staging/compiler/$exename"
+    local tarball member declared actual
+
+    tarball=$(get_latest_darwin_bin_tarball "$target")
+    if [ -z "$tarball" ]; then
+        echo "WARNING: no vibepascal-v*-${target}-bin.tar.gz under $VP_DIR/dist/$target either." >&2
+        return 1
+    fi
+
+    member=$(tar -tzf "$tarball" | awk -v n="$exename" '$0 ~ "(^|/)bin/" n "$" { print; exit }')
+    if [ -z "$member" ]; then
+        echo "WARNING: $(basename "$tarball") does not contain bin/$exename." >&2
+        return 1
+    fi
+
+    tar -xOzf "$tarball" "$member" > "$out" || { rm -f "$out"; return 1; }
+
+    declared=$(declared_md5_for_dist_member "$(dirname "$tarball")/VERSION.txt" "$exename")
+    actual=$(md5sum "$out" | cut -d' ' -f1)
+    if [ -n "$declared" ] && [ "$declared" != "$actual" ]; then
+        echo "ERROR: $exename md5 $actual does not match $declared declared for bin/$exename" >&2
+        echo "       in dist/$target/VERSION.txt. Not bundling it." >&2
+        rm -f "$out"
+        {
+            echo "NOTE: native $target compiler REJECTED (md5 mismatch against the md5"
+            echo "dist/$target/VERSION.txt declares for bin/$exename). Not bundled."
+            echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately."
+        } > "$notes"
+        return 2
+    fi
+
+    if ! file -b "$out" | grep -q "$arch_pattern"; then
+        echo "ERROR: $exename from $(basename "$tarball") is not a $target binary: $(file -b "$out")" >&2
+        rm -f "$out"
+        {
+            echo "NOTE: native $target compiler REJECTED (wrong architecture). Not bundled."
+            echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately."
+        } > "$notes"
+        return 2
+    fi
+
+    chmod +x "$out"
+    {
+        echo "Bundled native $target VibePascal compiler from $(basename "$tarball")."
+        echo "  md5:  $actual${declared:+ (matches the md5 dist/$target/VERSION.txt declares)}"
+        echo "  arch: $(file -b "$out")"
+        echo "  Source: the versioned dist tarball, because $VP_DIR/dist/darwin-native holds"
+        echo "  no vibepascal-native-${target}-* build. That tarball is the same versioned"
+        echo "  source-of-truth the Win64 compiler has used since D003."
+        echo "  The md5 above is the UNSIGNED staging binary, which is what this guard checked."
+        echo "  For the digests of the file actually in this tarball, read the AS-SHIPPED block"
+        echo "  that stamp_shipped_compiler_hashes appends below."
+    } > "$notes"
+    echo "Bundled native $target compiler $exename from $(basename "$tarball")."
+    return 0
+}
+
 get_latest_darwin_native_dir() {
     # Pick the newest macOS-hosted VibePascal compiler staging dir for $1 (a darwin target).
     # Prints the path. rc: 0 = found, 1 = none staged, 2 = AMBIGUOUS (two tie for newest).
@@ -2106,6 +2266,7 @@ copy_native_darwin_compiler_to_staging() {
     local notes="$staging/COMPILER_NOTES.txt"
     local native_dir declared actual out="$staging/compiler/$exename"
     local sel_rc=0
+    local fb_rc=0
 
     # `|| sel_rc=$?` is load-bearing, not defensive noise. A bare
     #     native_dir=$(get_latest_darwin_native_dir "$target")
@@ -2139,8 +2300,26 @@ copy_native_darwin_compiler_to_staging() {
     fi
 
     if [ -z "$native_dir" ] || [ ! -x "$native_dir/bin/$exename" ]; then
+        # dist/darwin-native has no build for this target. Before shipping a Mac with no
+        # compiler at all, try the VERSIONED dist tarball, which on this build host is
+        # where the real macOS-hosted compiler actually lives. Same two guards, neither
+        # weakened -- see stage_darwin_compiler_from_dist_tarball.
+        stage_darwin_compiler_from_dist_tarball "$staging" "$target" "$exename" "$arch_pattern" || fb_rc=$?
+        if [ "$fb_rc" -eq 0 ]; then
+            return 0
+        fi
+        if [ "$fb_rc" -eq 2 ]; then
+            # The fallback found a candidate and REJECTED it, and has already written the
+            # specific reason to COMPILER_NOTES.txt. Do NOT overwrite that with the generic
+            # "none staged" note below: the reason is the entire value of the note, and
+            # r25's darwin pair shipped a note whose guessed cause was read downstream as
+            # current fact for months.
+            return 1
+        fi
+
         echo "WARNING: $target roll is DEGRADED -- no native compiler found under" >&2
-        echo "         $VP_DIR/dist/darwin-native (wanted vibepascal-native-${target}-*/bin/$exename)." >&2
+        echo "         $VP_DIR/dist/darwin-native (wanted vibepascal-native-${target}-*/bin/$exename)," >&2
+        echo "         and none could be bundled from $VP_DIR/dist/$target either." >&2
         echo "         The tarball will ship WITHOUT compiler/$exename." >&2
         echo "NOTE: this build does not bundle a native $target compiler." > "$notes"
         echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately." >> "$notes"
