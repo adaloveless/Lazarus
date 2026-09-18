@@ -54,9 +54,12 @@ mkidebin() { printf 'TMainIDE\nTIDEAnchorDockMaster\nTDockedMainIDE\nmetadarksty
 X86=$W/x86_elf
 cp "$(command -v ls)" "$X86"
 
-# Real native compilers out of Otto's dist tarballs. No hand-built stand-ins: the gate
-# reads `file -b` output, so the fixture has to be something `file` classifies for real.
-native_from_dist() {  # native_from_dist <subdir> <target-token> <exename> -> path on stdout
+# Real compilers out of Otto's dist tarballs. No hand-built stand-ins: the gate reads
+# `file -b` output, so the fixture has to be something `file` classifies for real. Used for
+# every slot now, not just the native ARM ones -- c702 made the gate check the ARCHITECTURE
+# of want_compiler too, so an `ls` stand-in is only valid where the slot really is a host
+# x86_64 ELF (the two ARM cross slots and x86_64-linux).
+compiler_from_dist() {  # compiler_from_dist <subdir> <tarball-token> <exename> -> path on stdout
     local sub=$1 tok=$2 exe=$3 tarball member out="$W/native_$3"
     tarball=$(find "$VP_DIST/$sub" -maxdepth 1 -type f -name "vibepascal-v*-$tok-bin.tar.gz" 2>/dev/null |
               sort -V | tail -1)
@@ -92,7 +95,7 @@ echo "--- shape: cross-built ARM (needs BOTH a cross and a native compiler) ---"
 for spec in "aarch64-linux aarch64-linux ppca64 ppcrossaarch64" \
             "arm-linux arm-linux ppcarm ppcrossarm"; do
     set -- $spec; tgt=$1 sub=$2 nat=$3 cross=$4
-    if nativebin=$(native_from_dist "$sub" "$tgt" "$nat"); then
+    if nativebin=$(compiler_from_dist "$sub" "$tgt" "$nat"); then
         mkstaging "$W/$tgt-both"
         cp "$X86" "$W/$tgt-both/compiler/$cross"; cp "$nativebin" "$W/$tgt-both/compiler/$nat"
         arm "$tgt cross + native $nat" "$W/$tgt-both" "$tgt" "$W" 0
@@ -115,20 +118,37 @@ done
 # ---------------------------------------------------------------- shape: darwin
 echo
 echo "--- shape: darwin (ships a BUILT IDE -- the end state is a class in a binary) ---"
-mkstaging "$W/d-ok"; cp "$X86" "$W/d-ok/compiler/ppca64"; mkidebin "$W/d-ok/bin/lazarus"
-arm "aarch64-darwin everything present" "$W/d-ok" aarch64-darwin "$W" 0
+# The darwin compiler slots hold Mach-O, so the fixtures must too: `ls` renamed ppca64 is
+# the exename-clobber shape the gate is now supposed to REJECT, and it gets its own arm.
+# Real Mach-O compilers exist under $VP_DIST/{x86_64,aarch64}-darwin (measured v59,
+# 2026-09-18) -- the roll's own copier does not look there, but a fixture may.
+if machA64=$(compiler_from_dist aarch64-darwin aarch64-darwin ppca64); then
+    mkstaging "$W/d-ok"; cp "$machA64" "$W/d-ok/compiler/ppca64"; mkidebin "$W/d-ok/bin/lazarus"
+    arm "aarch64-darwin everything present" "$W/d-ok" aarch64-darwin "$W" 0
+    mkstaging "$W/d-nobin"; cp "$machA64" "$W/d-nobin/compiler/ppca64"
+    arm "aarch64-darwin no bin/lazarus (NOT VERIFIABLE)" "$W/d-nobin" aarch64-darwin "$W" 3
+    mkstaging "$W/d-dead"; cp "$machA64" "$W/d-dead/compiler/ppca64"
+    printf 'TIDEAnchorDockMaster\nTDockedMainIDE\nmetadarkstyledsgn\n' > "$W/d-dead/bin/lazarus"
+    arm "aarch64-darwin liveness marker absent (rc 3, not 1)" "$W/d-dead" aarch64-darwin "$W" 3
+    mkstaging "$W/d-nodock"; cp "$machA64" "$W/d-nodock/compiler/ppca64"
+    printf 'TMainIDE\nmetadarkstyledsgn\n' > "$W/d-nodock/bin/lazarus"
+    arm "aarch64-darwin docked classes absent" "$W/d-nodock" aarch64-darwin "$W" 1
+else
+    skiparm "aarch64-darwin arms" "no vibepascal-v*-aarch64-darwin-bin.tar.gz under $VP_DIST"
+fi
 mkstaging "$W/d-nocc"; mkidebin "$W/d-nocc/bin/lazarus"
 arm "aarch64-darwin no compiler staged" "$W/d-nocc" aarch64-darwin "$W" 1
-mkstaging "$W/d-nobin"; cp "$X86" "$W/d-nobin/compiler/ppca64"
-arm "aarch64-darwin no bin/lazarus (NOT VERIFIABLE)" "$W/d-nobin" aarch64-darwin "$W" 3
-mkstaging "$W/d-dead"; cp "$X86" "$W/d-dead/compiler/ppca64"
-printf 'TIDEAnchorDockMaster\nTDockedMainIDE\nmetadarkstyledsgn\n' > "$W/d-dead/bin/lazarus"
-arm "aarch64-darwin liveness marker absent (rc 3, not 1)" "$W/d-dead" aarch64-darwin "$W" 3
-mkstaging "$W/d-nodock"; cp "$X86" "$W/d-nodock/compiler/ppca64"
-printf 'TMainIDE\nmetadarkstyledsgn\n' > "$W/d-nodock/bin/lazarus"
-arm "aarch64-darwin docked classes absent" "$W/d-nodock" aarch64-darwin "$W" 1
-mkstaging "$W/d-x86"; cp "$X86" "$W/d-x86/compiler/ppcx64"; mkidebin "$W/d-x86/bin/lazarus"
-arm "x86_64-darwin everything present" "$W/d-x86" x86_64-darwin "$W" 0
+mkstaging "$W/d-elf"; cp "$X86" "$W/d-elf/compiler/ppca64"; mkidebin "$W/d-elf/bin/lazarus"
+arm "aarch64-darwin ppca64 is a Linux ELF (c702)" "$W/d-elf" aarch64-darwin "$W" 1
+if machX64=$(compiler_from_dist x86_64-darwin x86_64-darwin ppcx64); then
+    mkstaging "$W/d-x86"; cp "$machX64" "$W/d-x86/compiler/ppcx64"; mkidebin "$W/d-x86/bin/lazarus"
+    arm "x86_64-darwin everything present" "$W/d-x86" x86_64-darwin "$W" 0
+    mkstaging "$W/d-x86wrong"; cp "$machA64" "$W/d-x86wrong/compiler/ppcx64" 2>/dev/null &&
+        { mkidebin "$W/d-x86wrong/bin/lazarus"
+          arm "x86_64-darwin slot holds the arm64 Mach-O" "$W/d-x86wrong" x86_64-darwin "$W" 1; }
+else
+    skiparm "x86_64-darwin arms" "no vibepascal-v*-x86_64-darwin-bin.tar.gz under $VP_DIST"
+fi
 
 # ---------------------------------------------------------------- shape: sources + tools
 echo
@@ -155,6 +175,58 @@ fi
 mkstaging "$W/u-bad"; cp "$X86" "$W/u-bad/compiler/ppcx64"
 rm -f "$W/u-bad/ide/lazarus.pp"
 arm "x86_64-linux staged ide/lazarus.pp missing" "$W/u-bad" x86_64-linux "$W/srctree" 1
+mkstaging "$W/l-nopkg"; cp "$X86" "$W/l-nopkg/compiler/ppcx64"
+printf 'libpSynEdit,\n' > "$W/l-nopkg/ide/packages/idepackager/pkgsysbasepkgs.pas"
+arm "x86_64-linux docking not core in pkgsysbasepkgs" "$W/l-nopkg" x86_64-linux "$W/srctree" 1
+
+# ---------------------------------------------------------------- shape: sources + tools, WIN64
+# Added c702 (Bruno). x86_64-win64 had ZERO arms here, and it is the target GOD runs, the
+# target whose r25 asset was cut from a wrecked unit dir, and the only one with a SECOND
+# updater file (auto-update.bat) that nothing else exercises. Its compiler slot is a PE, so
+# it is also where the name-only compiler check was most dangerous: copy_win64_compiler_to_
+# staging still falls back to the mutable dist/win64/staging path that caused D003, and it
+# contains no architecture check of its own (0 `file` calls, against 3 in the linux twin).
+echo
+echo "--- shape: sources + tools, x86_64-win64 (PE compiler + two updater files) ---"
+if [ -f "$HERE/auto-update.ps1" ] && [ -f "$HERE/auto-update.bat" ]; then
+    cp "$HERE/auto-update.ps1" "$HERE/auto-update.bat" "$W/srctree/"
+    stage_win64() {  # stage_win64 <dir> <srctree> [compiler-binary]
+        mkstaging "$1"; rm -f "$1/compiler/ppcx64"
+        [ -n "${3:-}" ] && cp "$3" "$1/compiler/ppcx64.exe"
+        cp "$2/auto-update.ps1" "$2/auto-update.bat" "$1/"
+    }
+    if pewin=$(compiler_from_dist win64 win64 ppcx64.exe); then
+        stage_win64 "$W/w-ok" "$W/srctree" "$pewin"
+        arm "win64 everything present (PE compiler)" "$W/w-ok" x86_64-win64 "$W/srctree" 0
+        stage_win64 "$W/w-nobat" "$W/srctree" "$pewin"; rm -f "$W/w-nobat/auto-update.bat"
+        arm "win64 auto-update.bat absent" "$W/w-nobat" x86_64-win64 "$W/srctree" 1
+        stage_win64 "$W/w-diff" "$W/srctree" "$pewin"
+        { cat "$W/srctree/auto-update.ps1"; echo "# the tree moved under the roll"; } > "$W/w-diff/auto-update.ps1"
+        arm "win64 ps1 md5 DIFFERS from tree" "$W/w-diff" x86_64-win64 "$W/srctree" 1
+        mkdir -p "$W/srctree-w-nosci"; cp "$W/srctree/auto-update.bat" "$W/srctree-w-nosci/"
+        sed 's/--build-ide=-Sci/--build-ide=/g' "$W/srctree/auto-update.ps1" > "$W/srctree-w-nosci/auto-update.ps1"
+        stage_win64 "$W/w-nosci" "$W/srctree-w-nosci" "$pewin"
+        arm "win64 --build-ide=-Sci stripped" "$W/w-nosci" x86_64-win64 "$W/srctree-w-nosci" 1
+        mkdir -p "$W/srctree-w-nodock"; cp "$W/srctree/auto-update.bat" "$W/srctree-w-nodock/"
+        sed 's/Test-DockedLayoutInstalled/Test-ZzzNotRealVerifier/g' "$W/srctree/auto-update.ps1" \
+            > "$W/srctree-w-nodock/auto-update.ps1"
+        stage_win64 "$W/w-nodock" "$W/srctree-w-nodock" "$pewin"
+        arm "win64 docked-layout verifier stripped" "$W/w-nodock" x86_64-win64 "$W/srctree-w-nodock" 1
+        stage_win64 "$W/w-nopkg" "$W/srctree" "$pewin"
+        printf 'libpSynEdit,\n' > "$W/w-nopkg/ide/packages/idepackager/pkgsysbasepkgs.pas"
+        arm "win64 docking not core in pkgsysbasepkgs" "$W/w-nopkg" x86_64-win64 "$W/srctree" 1
+    else
+        skiparm "win64 arms needing a real PE compiler" "no vibepascal-v*-win64-bin.tar.gz under $VP_DIST/win64"
+    fi
+    # These two need no real PE: one has no compiler at all, the other has the WRONG one.
+    # Both directions of the same slot, which is what makes either of them mean anything.
+    stage_win64 "$W/w-nocc" "$W/srctree"
+    arm "win64 no compiler staged" "$W/w-nocc" x86_64-win64 "$W/srctree" 1
+    stage_win64 "$W/w-elf" "$W/srctree" "$X86"
+    arm "win64 ppcx64.exe is a Linux ELF (c702, D003)" "$W/w-elf" x86_64-win64 "$W/srctree" 1
+else
+    skiparm "x86_64-win64 arms" "no auto-update.ps1/.bat beside the gate"
+fi
 
 echo
 echo "=== $pass passed, $failn failed, $skip skipped ==="

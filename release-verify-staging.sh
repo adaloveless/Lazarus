@@ -118,19 +118,63 @@ fi
 # x86_64 ELF. The patterns are kept byte-identical to the ones
 # copy_native_linux_compiler_to_staging guards with, so the producer and this gate cannot
 # disagree about what "native" means.
+#
+# AND THE FILENAME IS NOT EVIDENCE FOR *ANY* SLOT, NOT JUST THE NATIVE ONE (Bruno,
+# 2026-09-18). c701 closed the name-only hole on want_native and left it open on
+# want_compiler, where it is the OLDER bug: D003 is my own demerit for shipping r16 with a
+# win64 compiler cut from the mutable dist/win64/staging path, and
+# copy_win64_compiler_to_staging STILL falls back to that path (with a warning) when the
+# versioned tarball is absent. Driven on this script before the fix: an x86_64 Linux ELF
+# renamed compiler/ppcx64.exe read END-STATE VERIFY PASSED for x86_64-win64, with the
+# control (same fixture, compiler removed) reading rc 1 -- so the pass was real and the gap
+# was real. assert_shipped_cross_compiler_matches_exec does NOT cover it: its own case
+# statement returns 0 for every target except the three linux ones, and
+# copy_win64_compiler_to_staging contains no architecture check at all (0 `file` calls,
+# against 3 in copy_native_linux_compiler_to_staging as a positive control).
+#
+# compiler_arch is what `file -b` must say about want_compiler. For the two cross-built ARM
+# targets that is deliberately an x86_64 ELF -- want_compiler is the HOST compiler that did
+# the building and is correct to ship; the target-runnable one is want_native, checked below.
 want_native=""
 native_arch=""
 case "$TARGET" in
-    x86_64-linux)    want_compiler=ppcx64 ;;
-    x86_64-win64)    want_compiler=ppcx64.exe ;;
-    aarch64-linux)   want_compiler=ppcrossaarch64; want_native=ppca64; native_arch="ARM aarch64" ;;
-    arm-linux)       want_compiler=ppcrossarm;     want_native=ppcarm;  native_arch="ARM, EABI5" ;;
-    x86_64-darwin)   want_compiler=ppcx64 ;;
-    aarch64-darwin)  want_compiler=ppca64 ;;
+    x86_64-linux)    want_compiler=ppcx64;         compiler_arch="ELF 64-bit.*x86-64" ;;
+    x86_64-win64)    want_compiler=ppcx64.exe;     compiler_arch="PE32\+.*x86-64" ;;
+    aarch64-linux)   want_compiler=ppcrossaarch64; compiler_arch="ELF 64-bit.*x86-64"
+                     want_native=ppca64; native_arch="ARM aarch64" ;;
+    arm-linux)       want_compiler=ppcrossarm;     compiler_arch="ELF 64-bit.*x86-64"
+                     want_native=ppcarm;  native_arch="ARM, EABI5" ;;
+    x86_64-darwin)   want_compiler=ppcx64;         compiler_arch="Mach-O 64-bit.*x86_64" ;;
+    aarch64-darwin)  want_compiler=ppca64;         compiler_arch="Mach-O 64-bit.*arm64" ;;
     *)               echo "NOT VERIFIABLE: unknown target $TARGET" >&2; exit 3 ;;
 esac
+
+# Shared by BOTH compiler slots so the two cannot drift apart about what an architecture
+# check is. A missing `file` is NOT VERIFIABLE (exit 3), never a pass: a zero from an absent
+# tool is void, not clean (c654).
+check_compiler_arch() {  # check_compiler_arch <path> <ere> <slot-label>
+    local path=$1 want=$2 label=$3 desc
+    if ! command -v file >/dev/null 2>&1; then
+        echo "NOT VERIFIABLE: $label is staged but 'file' is not installed here," >&2
+        echo "                so its architecture cannot be checked and the exename-clobber" >&2
+        echo "                class (the slot silently holding a binary for the wrong CPU or" >&2
+        echo "                the wrong OS) is invisible." >&2
+        exit 3
+    fi
+    desc=$(file -b "$path")
+    if printf '%s' "$desc" | grep -qE -- "$want"; then
+        ok "$label ($desc)"
+        return 0
+    fi
+    fail "$label is NOT a $TARGET-appropriate binary"
+    echo "         expected 'file' to match: $want"
+    echo "         it says:                  $desc"
+    return 1
+}
+
 if [ -f "$STAGING/compiler/$want_compiler" ]; then
-    ok "compiler staged: compiler/$want_compiler"
+    check_compiler_arch "$STAGING/compiler/$want_compiler" "$compiler_arch" \
+        "compiler staged: compiler/$want_compiler"
 else
     fail "compiler/$want_compiler (a release with no compiler cannot build anything)"
 fi
@@ -152,24 +196,10 @@ if [ -n "$want_native" ]; then
         if [ -f "$STAGING/COMPILER_NOTES.txt" ]; then
             echo "         COMPILER_NOTES.txt says: $(grep -m1 '^NOTE:' "$STAGING/COMPILER_NOTES.txt" || echo '(no NOTE: line)')"
         fi
-    elif ! command -v file >/dev/null 2>&1; then
-        # A zero from an absent tool is VOID, not clean (c654), so refuse to judge rather
-        # than passing a tree whose architecture nothing verified.
-        echo "NOT VERIFIABLE: compiler/$want_native is staged but 'file' is not installed here," >&2
-        echo "                so its architecture cannot be checked and the exename-clobber" >&2
-        echo "                class (native overwritten by an x86_64 cross build) is invisible." >&2
-        exit 3
-    else
-        native_desc=$(file -b "$native")
-        if printf '%s' "$native_desc" | grep -q -- "$native_arch"; then
-            ok "native compiler staged: compiler/$want_native ($native_desc)"
-        else
-            fail "compiler/$want_native is NOT a $TARGET binary -- exename clobber"
-            echo "         expected 'file' to say: $native_arch"
-            echo "         it says:                $native_desc"
-            echo "         A native build for a non-host CPU defaults to the same exename as the"
-            echo "         cross build, so this slot can be silently overwritten (seen 2026-09-10)."
-        fi
+    elif ! check_compiler_arch "$native" "$native_arch" \
+            "native compiler staged: compiler/$want_native"; then
+        echo "         A native build for a non-host CPU defaults to the same exename as the"
+        echo "         cross build, so this slot can be silently overwritten (seen 2026-09-10)."
     fi
 fi
 
