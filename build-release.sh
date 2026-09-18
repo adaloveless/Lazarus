@@ -826,7 +826,26 @@ ensure_vp_packages() {
         echo "Verifying the $target VibePascal package unit set actually LOADS (~45s)..."
         mkdir -p "$lc_scratch"
         local lc_rc=0
-        TMPDIR="$lc_scratch" "$loadcheck" "$target" "$compiler" "$VP_DIR" > "$lc_out" 2>&1 || lc_rc=$?
+        # RUN IT FROM ITS OWN SCRATCH DIR, NOT FROM $LAZARUS_DIR.
+        # loadcheck's preflight probe compiles with -s (vibepascal dist/unit-set-loadcheck.sh:202)
+        # and -s makes FPC write ppas.sh + link<pid>.res into the CALLER'S CWD. Every other path
+        # that script touches is absolute, so the caller is the only thing that decides where
+        # those two land -- and called from the tree root, every roll left two untracked files in
+        # a checkout 30+ agents read. That moves the dirt ruler HABITS uses to spot a REAL change
+        # (c700: `?? ppas.sh` was the whole of `git status` after the win64 roll, and a ruler that
+        # moves every roll is a ruler that cannot flag anything).
+        # MEASURED, both arms, against Otto's real script with the win64 set present:
+        #   CWD = tree-root stand-in -> ppas.sh AND link<pid>.res appear there
+        #   CWD = "$lc_scratch"      -> stand-in stays empty (canary-proved the count can read 1)
+        #   verdict identical either way: 111/111 packages load clean, 0 problem(s), rc 0
+        # SECOND REASON, and not cosmetic: FPC searches the CWD ahead of -Fu (c637), so a probe
+        # run from the tree root can be shadowed by any stray .pas sitting in it -- the same trap
+        # that cost uwin32widgetsetdark.pas 2.5 months. An empty scratch CWD removes it.
+        # Safe because every argument is absolute: $loadcheck and $compiler are $VP_DIR-rooted
+        # (get_compiler_for_target), $VP_DIR and $lc_out likewise. If the cd itself ever failed,
+        # the subshell's non-zero rc lands in the UNAVAILABLE arm below, which says so out loud.
+        ( cd "$lc_scratch" && TMPDIR="$lc_scratch" \
+            "$loadcheck" "$target" "$compiler" "$VP_DIR" ) > "$lc_out" 2>&1 || lc_rc=$?
         cat "$lc_out"
         # AN INTERRUPTED SWEEP IS A THIRD OUTCOME AND IT IS NOT READABLE FROM THE rc ALONE.
         # loadcheck grew an EXIT/HUP/INT/TERM trap (vibepascal f791257d51) that prints an
@@ -1063,7 +1082,11 @@ EOF
             echo "Re-verifying the rebuilt $target unit set..."
             mkdir -p "$lc_scratch"
             local lc_rc2=0
-            TMPDIR="$lc_scratch" "$loadcheck" "$target" "$compiler" "$VP_DIR" > "$lc_out" 2>&1 || lc_rc2=$?
+            # Same CWD containment as the first call site, same reason -- see it. This site
+            # runs after a package rebuild, so skipping it here would leave the droppings
+            # in the tree on exactly the rolls that do the most work.
+            ( cd "$lc_scratch" && TMPDIR="$lc_scratch" \
+                "$loadcheck" "$target" "$compiler" "$VP_DIR" ) > "$lc_out" 2>&1 || lc_rc2=$?
             cat "$lc_out"
             # Same three-way split as the first call site, same discriminator -- see the
             # long comment there. This site is the easier one to get wrong: it runs AFTER a
