@@ -17,6 +17,12 @@ NC='\033[0m'
 LAZARUS_UPDATED=0
 VP_UPDATED=0
 UPSTREAM_UPDATED=0
+# c719 -- HEAD as it stood BEFORE this run pulled anything, so print_summary can report what
+# HAPPENED instead of what was AVAILABLE. Empty means git could not be read, which is UNKNOWN
+# and never "no changes". Mirror of auto-update.ps1.
+LAZARUS_HEAD_BEFORE=""
+VP_HEAD_BEFORE=""
+LAZARUS_HEAD_AFTER_UPSTREAM=""   # taken between the upstream merge and the origin pull, which move the same HEAD
 
 usage() {
     echo "Lazarus + VibePascal Auto-Updater"
@@ -705,31 +711,78 @@ report_ide_binary_staleness() {
     return 0
 }
 
+# --- The summary must report what HAPPENED, not what was AVAILABLE ----------------------
+# (Lars, c719 2026-09-18 -- reported by Miles/MonitoringSystemsDeveloper from MVMJ26; mirror
+# of auto-update.ps1, where he measured it.)
+#
+# LAZARUS_UPDATED does not mean "updated". check_lazarus_origin sets it when
+# `HEAD..origin/main` counts MORE THAN ZERO -- i.e. when commits are AVAILABLE -- and --check
+# then prints this summary and exits before pull_lazarus_origin is ever called. So on the one
+# path advertised as a read-only dry run, "Lazarus updated" was printed precisely when nothing
+# had been updated, and the more commits the user was missing, the more confidently it said so.
+# VP_UPDATED and UPSTREAM_UPDATED carry the same defect on the two lines above it.
+#
+# Reporting the repository instead of the flag is true on every path at once: it also catches
+# a pull that was attempted and FAILED, which a flag set before the pull never could.
+# An unreadable git is UNKNOWN, never "no changes" (c675).
+head_sha() {
+    local dir="$1" sha
+    [ -n "$dir" ] || return 1
+    sha=$(git -C "$dir" rev-parse HEAD 2>/dev/null) || return 1
+    [ ${#sha} -eq 40 ] || return 1
+    printf '%s' "$sha"
+}
+
+report_repo_outcome() {
+    local label="$1" available="$2" before="$3" after="$4" dir="$5" detail="$6"
+    local when
+    if [ -z "$before" ] || [ -z "$after" ]; then
+        echo -e "  ${YELLOW}?${NC} $label: HEAD could not be read, so this run's outcome is UNKNOWN -- not 'no changes'"
+        return 0
+    fi
+    when=$(git -C "$dir" log -1 --format=%ci "$after" 2>/dev/null) || when=""
+    [ -n "$when" ] || when="unknown date"
+    if [ "$before" != "$after" ]; then
+        echo -e "  ${GREEN}✓${NC} $label updated: ${before:0:10} -> ${after:0:10} (HEAD now dated $when)"
+        return 0
+    fi
+    if [ "$available" -eq 1 ]; then
+        echo -e "  ${YELLOW}!${NC} $label NOT updated -- new commit(s) are available but HEAD is still ${after:0:10} dated $when. $detail"
+        return 0
+    fi
+    echo -e "  ${CYAN}-${NC} $label: no changes (HEAD ${after:0:10} dated $when)"
+}
+
 print_summary() {
     log_header "Update Summary"
 
     local changes=0
 
-    if [ "$VP_UPDATED" -eq 1 ]; then
-        echo -e "  ${GREEN}✓${NC} VibePascal updated"
+    # "changes" keeps its original meaning -- was there anything TO do -- so the
+    # "Everything is up to date" line below behaves exactly as it did. Only the three
+    # outcome lines change: they now report the repository rather than the flag (c719).
+    if [ "$VP_UPDATED" -eq 1 ] || [ "$UPSTREAM_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ]; then
         changes=1
-    else
-        echo -e "  ${CYAN}-${NC} VibePascal: no changes"
     fi
 
-    if [ "$UPSTREAM_UPDATED" -eq 1 ]; then
-        echo -e "  ${GREEN}✓${NC} Lazarus upstream synced"
-        changes=1
+    local apply_hint laz_now vp_now laz_mid origin_before
+    if [ "$CHECK_ONLY" -eq 1 ]; then
+        apply_hint="--check reports only; it never pulls. Run ./auto-update.sh to apply them."
     else
-        echo -e "  ${CYAN}-${NC} Lazarus upstream: no changes"
+        apply_hint="the pull did NOT land -- see the [ERROR]/[WARN] lines above."
     fi
+    laz_now=$(head_sha "$LAZARUS_DIR" || true)
+    vp_now=$(head_sha "$VP_DIR" || true)
+    # On the --check path the mid stamp is empty (neither pull ran) and both Lazarus lines
+    # correctly compare against the run's starting HEAD.
+    laz_mid="$LAZARUS_HEAD_AFTER_UPSTREAM"
+    origin_before="$LAZARUS_HEAD_AFTER_UPSTREAM"
+    [ -n "$laz_mid" ] || laz_mid="$laz_now"
+    [ -n "$origin_before" ] || origin_before="$LAZARUS_HEAD_BEFORE"
 
-    if [ "$LAZARUS_UPDATED" -eq 1 ]; then
-        echo -e "  ${GREEN}✓${NC} Lazarus updated"
-        changes=1
-    else
-        echo -e "  ${CYAN}-${NC} Lazarus: no changes"
-    fi
+    report_repo_outcome "VibePascal" "$VP_UPDATED" "$VP_HEAD_BEFORE" "$vp_now" "$VP_DIR" "$apply_hint"
+    report_repo_outcome "Lazarus upstream" "$UPSTREAM_UPDATED" "$LAZARUS_HEAD_BEFORE" "$laz_mid" "$LAZARUS_DIR" "$apply_hint"
+    report_repo_outcome "Lazarus" "$LAZARUS_UPDATED" "$origin_before" "$laz_now" "$LAZARUS_DIR" "$apply_hint"
 
     if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
         echo -e "  ${GREEN}✓${NC} VibePascal compiler rebuilt from source ($VP_DIR/compiler/ppcx64)"
@@ -1740,6 +1793,12 @@ SCRIPT_PRE_HASH=$(sha256sum "$LAZARUS_DIR/auto-update.sh" 2>/dev/null | cut -d' 
 
 git -C "$LAZARUS_DIR" fetch upstream 2>/dev/null
 
+# c719 -- take HEAD BEFORE anything can move it. Nothing above this point pulls: the fetch
+# moves remote-tracking refs only, and wipe_local_changes (reset --hard HEAD) runs later and
+# does not move HEAD either.
+LAZARUS_HEAD_BEFORE=$(head_sha "$LAZARUS_DIR" || true)
+VP_HEAD_BEFORE=$(head_sha "$VP_DIR" || true)
+
 if [ "$UPSTREAM_ONLY" -eq 0 ]; then
     check_vp_updates
 fi
@@ -1757,6 +1816,7 @@ if [ "$UPSTREAM_ONLY" -eq 0 ]; then
     pull_vp
 fi
 pull_lazarus_upstream
+LAZARUS_HEAD_AFTER_UPSTREAM=$(head_sha "$LAZARUS_DIR" || true)   # c719: splits the upstream merge from the origin pull, which move the same HEAD
 pull_lazarus_origin
 
 relaunch_if_updated "$SCRIPT_PRE_HASH"

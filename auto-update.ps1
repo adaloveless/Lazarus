@@ -65,6 +65,12 @@ $script:CheckFailed = $false   # a Check-* helper could not read or refresh a re
 $script:UpstreamUpdated = $false
 $script:BuildProductsWereMissing = $false
 $script:LocalBuildProductsRestored = $false
+# c719 -- HEAD as it stood BEFORE this run pulled anything, so Print-Summary can report
+# what HAPPENED instead of what was AVAILABLE. $null means git could not be read, which is
+# UNKNOWN and never "no changes" (c675).
+$script:LazarusHeadBefore = $null
+$script:VPHeadBefore = $null
+$script:LazarusHeadAfterUpstream = $null   # set between the upstream merge and the origin pull, so the two lines are attributable to the right one
 # c635: first compiler Error:/Fatal: line from the build attempt that INCLUDED commonx.
 # Replayed in the final failure block so the causal line survives a top-truncated paste.
 $script:CommonXFirstError = ""
@@ -687,6 +693,22 @@ function Get-GitOutput {
     param([string]$WorkDir, [string[]]$GitArgs)
     $result = Invoke-Git -WorkDir $WorkDir -GitArgs $GitArgs
     return $result.Output
+}
+
+# Returns @{ Sha; Short; When } for <WorkDir>'s HEAD, or $null when git cannot be read there.
+# Used to answer "did HEAD actually move?" -- the only honest basis for the summary's
+# "[+] <repo> updated" line (c719). Same doctrine as Get-GitCount: an unreadable repository
+# yields $null, and the caller must report UNKNOWN rather than treat it as "nothing changed".
+function Get-HeadStamp {
+    param([string]$WorkDir)
+    if (-not $WorkDir) { return $null }
+    $sha = Get-GitOutput -WorkDir $WorkDir -GitArgs @("rev-parse", "HEAD")
+    if (-not $sha) { return $null }
+    $sha = $sha.Trim()
+    if ($sha -notmatch '^[0-9a-f]{40}$') { return $null }
+    $when = Get-GitOutput -WorkDir $WorkDir -GitArgs @("log", "-1", "--format=%ci", "HEAD")
+    if ($when) { $when = $when.Trim() } else { $when = "unknown date" }
+    return @{ Sha = $sha; Short = $sha.Substring(0, 10); When = $when }
 }
 
 # A count from an instrument that cannot see is not zero. Steve (SiteManager_DESKTOP-IO9QJQ4,
@@ -2011,26 +2033,72 @@ function Report-IdeBinaryStaleness {
     }
 }
 
+# --- The summary must report what HAPPENED, not what was AVAILABLE ----------------------
+# (Lars, c719 2026-09-18 -- reported by Miles/MonitoringSystemsDeveloper from MVMJ26.)
+#
+# Miles ran `auto-update.bat -Check` on 2026-09-18 and read "[+] Lazarus updated" over
+# "Lazarus HEAD: 7f9f209f0b" -- while his box stayed 16 days and 115 commits stale. Nothing
+# was wrong with his clone: it is a real clone of adaloveless/Lazarus on main, tracking
+# origin/main, working tree clean (his four `git -C C:\lazarus` lines, 2026-09-18).
+#
+# The cause is that $script:LazarusUpdated does not mean "updated". Check-LazarusOrigin sets
+# it when `HEAD..origin/main` counts MORE THAN ZERO -- i.e. when commits are AVAILABLE -- and
+# `-Check` then prints the summary and exits at the early-exit block below, BEFORE
+# Pull-LazarusOrigin is ever called. So on the one path advertised as a read-only dry run,
+# "[+] Lazarus updated" was printed precisely when nothing had been updated, and the more
+# commits the user was missing, the more confidently it said so. $script:VPUpdated and
+# $script:UpstreamUpdated carry exactly the same defect on the two lines above it.
+#
+# The fix is to stop reporting a flag and start reporting the repository: capture HEAD before
+# anything pulls and compare it at print time. That is true on every path at once -- it also
+# catches a pull that was attempted and FAILED, which the flag never could, and which is the
+# other half of Miles's ambiguity (an already-up-to-date `pull --ff-only` leaves no reflog
+# entry, so his transcript alone cannot separate "never pulled" from "pulled nothing").
+# An unreadable git is UNKNOWN, never "no changes" (c675, Steve's non-repository -Check).
+function Report-RepoOutcome {
+    param(
+        [string]$Label,      # "Lazarus", "VibePascal", "Lazarus upstream"
+        [bool]$Available,    # the Check-* flag: new commits were AVAILABLE, which is not the same as applied
+        $Before,             # head stamp taken before this run pulled anything ($null = unreadable)
+        $After,              # head stamp at print time ($null = unreadable)
+        [string]$Detail      # why an available update may not have landed
+    )
+    if (-not $Before -or -not $After) {
+        Write-Host "  [?] $Label : HEAD could not be read, so this run's outcome is UNKNOWN -- not 'no changes'" -ForegroundColor Yellow
+        return
+    }
+    if ($Before.Sha -ne $After.Sha) {
+        Write-Host "  [+] $Label updated: $($Before.Short) -> $($After.Short) (HEAD now dated $($After.When))" -ForegroundColor Green
+        return
+    }
+    if ($Available) {
+        Write-Host "  [!] $Label NOT updated -- new commit(s) are available but HEAD is still $($After.Short) dated $($After.When). $Detail" -ForegroundColor Yellow
+        return
+    }
+    Write-Host "  [-] $Label : no changes (HEAD $($After.Short) dated $($After.When))" -ForegroundColor Cyan
+}
+
 function Print-Summary {
     Log-Header "Update Summary"
 
-    if ($script:VPUpdated) {
-        Write-Host "  [+] VibePascal updated" -ForegroundColor Green
+    # Read the repositories, not the flags (c719). The HEAD date prints on every branch on
+    # purpose: a stale box is then visible on sight, without anyone having to know a sha.
+    $lazNow = Get-HeadStamp -WorkDir $LazarusDir
+    $vpNow  = Get-HeadStamp -WorkDir $VPDir
+    if ($Check) {
+        $applyHint = "-Check reports only; it never pulls. Run auto-update.bat to apply them."
     } else {
-        Write-Host "  [-] VibePascal: no changes" -ForegroundColor Cyan
+        $applyHint = "the pull did NOT land -- see the [ERROR]/[WARN] lines above."
     }
+    # The upstream merge and the origin pull move the SAME HEAD, so the mid-point stamp is
+    # what keeps the two lines attributable. On the -Check path it is $null (neither ran) and
+    # both lines correctly compare against the run's starting HEAD.
+    if ($script:LazarusHeadAfterUpstream) { $lazMid = $script:LazarusHeadAfterUpstream } else { $lazMid = $lazNow }
+    if ($script:LazarusHeadAfterUpstream) { $originBefore = $script:LazarusHeadAfterUpstream } else { $originBefore = $script:LazarusHeadBefore }
 
-    if ($script:UpstreamUpdated) {
-        Write-Host "  [+] Lazarus upstream synced" -ForegroundColor Green
-    } else {
-        Write-Host "  [-] Lazarus upstream: no changes" -ForegroundColor Cyan
-    }
-
-    if ($script:LazarusUpdated) {
-        Write-Host "  [+] Lazarus updated" -ForegroundColor Green
-    } else {
-        Write-Host "  [-] Lazarus: no changes" -ForegroundColor Cyan
-    }
+    Report-RepoOutcome -Label "VibePascal" -Available $script:VPUpdated -Before $script:VPHeadBefore -After $vpNow -Detail $applyHint
+    Report-RepoOutcome -Label "Lazarus upstream" -Available $script:UpstreamUpdated -Before $script:LazarusHeadBefore -After $lazMid -Detail $applyHint
+    Report-RepoOutcome -Label "Lazarus" -Available $script:LazarusUpdated -Before $originBefore -After $lazNow -Detail $applyHint
 
     if ($script:LocalBuildProductsRestored) {
         Write-Host "  [+] Local build products rebuilt" -ForegroundColor Green
@@ -2908,6 +2976,12 @@ if ($upstreamRemote) {
     Log-Info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
 }
 
+# c719 -- take HEAD BEFORE anything can move it, so Print-Summary can tell "updated" from
+# "an update is available". Nothing above this point pulls: the fetches move remote-tracking
+# refs only, and Wipe-LocalChanges (reset --hard HEAD) does not move HEAD either.
+$script:LazarusHeadBefore = Get-HeadStamp -WorkDir $LazarusDir
+$script:VPHeadBefore = Get-HeadStamp -WorkDir $VPDir
+
 if (-not $UpstreamOnly) {
     Check-VPUpdates
 }
@@ -2964,6 +3038,7 @@ if (-not $UpstreamOnly) {
     }
 }
 Pull-LazarusUpstream
+$script:LazarusHeadAfterUpstream = Get-HeadStamp -WorkDir $LazarusDir   # c719: splits the upstream merge from the origin pull, which move the same HEAD
 Pull-LazarusOrigin
 
 Relaunch-IfUpdated -PreHash $scriptPreHash
