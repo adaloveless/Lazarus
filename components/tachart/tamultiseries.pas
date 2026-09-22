@@ -2380,7 +2380,10 @@ end;
 procedure TFieldSeries.AfterAdd;
 begin
   inherited;
-  FArrow.SetOwner(ParentChart);
+  // FArrow is created after "inherited Create" but AfterAdd can be reached from inside
+  // that inherited constructor (InsertComponent -> opInsert -> TChart.AddSeries).
+  if FArrow <> nil then
+    FArrow.SetOwner(ParentChart);
 end;
 
 procedure TFieldSeries.Assign(ASource: TPersistent);

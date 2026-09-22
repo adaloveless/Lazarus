@@ -19,7 +19,8 @@ uses
   TACustomFuncSeries, TAFitUtils, TAGUIConnector, TADiagram, TADiagramDrawing, 
   TADiagramLayout, TAChartStrConsts, TAChartCombos, TAHtml, TAFonts, 
   TAExpressionSeries, TAFitLib, TASourcePropEditors, TADataPointsEditor, 
-  TAPolygonSeries, TAColorMap, TALinePatterns, LazarusPackageIntf;
+  TAPolygonSeries, TAColorMap, TALinePatterns, TAChartTeeStyle, 
+  LazarusPackageIntf;
 
 implementation
 

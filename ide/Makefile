@@ -386,7 +386,10 @@ DEFAULT_IDE_OPTIONS=  \
   -Fupackages/idepackager/lib/$(CPU_TARGET)-$(OS_TARGET) \
   -Fupackages/ideproject/lib/$(CPU_TARGET)-$(OS_TARGET) \
   -Fupackages/ideutils/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
-  -Fupackages/idedebugger/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM)
+  -Fupackages/idedebugger/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
+  -Fu../components/dockedformeditor/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
+  -Fu../components/anchordocking/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
+  -Fu../components/anchordocking/design/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM)
 BIG_IDE_OPTIONS=-dBigIDE $(DEFAULT_IDE_OPTIONS) \
   -Fu../components/lazedit/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
   -Fu../components/synedit/design/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
@@ -424,9 +427,6 @@ BIG_IDE_OPTIONS=-dBigIDE $(DEFAULT_IDE_OPTIONS) \
   -Fu../components/exampleswindow/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
   -Fu../components/charactermap/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
   -Fu../components/charactermap/design/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
-  -Fu../components/dockedformeditor/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
-  -Fu../components/anchordocking/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
-  -Fu../components/anchordocking/design/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
   -Fu../components/metadarkstyle/lib/$(CPU_TARGET)-$(OS_TARGET) \
   -Fu../components/metadarkstyle/dsgn/lib/$(CPU_TARGET)-$(OS_TARGET)
 LAZBUILD_OPT=$(LAZARUS_LIBPATHS) \

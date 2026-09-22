@@ -64,7 +64,10 @@ type
     procedure SaveToFile(AFilename: String);
     procedure LoadFromFile(AFilename: String);
   public
-    property EnableAnchorDock: boolean read FEnableAnchorDock write FEnableAnchorDock default False;
+    // GOD mu3jfytu (2026-09-16): docked single-window layout is the DEFAULT. An
+    // explicit opt-out is persisted (SetDeleteValue against the same default), so
+    // a user who switches to the multi-window layout keeps it.
+    property EnableAnchorDock: boolean read FEnableAnchorDock write FEnableAnchorDock default True;
     property DoneAskUserEnableAnchorDock: boolean read FDoneAskUserEnableAnchorDock write FDoneAskUserEnableAnchorDock default False;
   end;
 
@@ -324,7 +327,7 @@ end;
 
 constructor TAnchorDockGlobalOptions.Create;
 begin
-//
+  FEnableAnchorDock := True; // docked by default even before LoadSafe has run
 end;
 
 procedure TAnchorDockGlobalOptions.SaveSafe;
@@ -353,7 +356,7 @@ var
 begin
   Cfg := GetIDEConfigStorage(AFilename, False);
   try
-    Cfg.SetDeleteValue('EnableAnchorDock/Value',             EnableAnchorDock,            False);
+    Cfg.SetDeleteValue('EnableAnchorDock/Value',             EnableAnchorDock,            True);
     Cfg.SetDeleteValue('DoneAskUserEnableAnchorDock/Value',  DoneAskUserEnableAnchorDock, False);
   finally
     Cfg.Free;
@@ -366,7 +369,7 @@ var
 begin
   Cfg := GetIDEConfigStorage(AFilename, True);
   try
-    EnableAnchorDock            := Cfg.GetValue('EnableAnchorDock/Value',             False);
+    EnableAnchorDock            := Cfg.GetValue('EnableAnchorDock/Value',             True);
     DoneAskUserEnableAnchorDock := Cfg.GetValue('DoneAskUserEnableAnchorDock/Value',  False);
   finally
     Cfg.Free;

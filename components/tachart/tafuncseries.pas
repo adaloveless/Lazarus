@@ -1749,7 +1749,10 @@ end;
 procedure TFitSeries.AfterAdd;
 begin
   inherited AfterAdd;
-  FFitRange.SetOwner(ParentChart);
+  // FFitRange is created after "inherited Create" but AfterAdd can be reached from inside
+  // that inherited constructor (InsertComponent -> opInsert -> TChart.AddSeries).
+  if FFitRange <> nil then
+    FFitRange.SetOwner(ParentChart);
 end;
 
 procedure TFitSeries.BeginUpdate;

@@ -6095,9 +6095,24 @@ begin
 
           ctnWithVariable:
             begin
-              if FindIdentifierInWithVarContext(ContextNode,Params)
-              and CheckResult(true,false) then
-                exit;
+              // A with variable ranges from the start of its expression to
+              // the end of the with statement and binds names only inside
+              // that range. The prior-brother step above already skips a
+              // with variable that does not cover the start context; a
+              // with variable reached by descending into a transparent
+              // begin..end block (inline var support: MoveContextNodeToChildren
+              // lands on the block's LastChild) bypassed that check, so a
+              // closed or later with statement captured identifiers outside
+              // its body, e.g. "Result" after "with c do ..." resolved to the
+              // record field c.Result instead of the function result.
+              if (StartContextNode.StartPos>=ContextNode.StartPos)
+              and (StartContextNode.StartPos<ContextNode.EndPos) then begin
+                if FindIdentifierInWithVarContext(ContextNode,Params)
+                and CheckResult(true,false) then
+                  exit;
+              end;
+              // else: this with statement does not cover the start context
+              // -> skip it and continue with the prior brother / parent
             end;
 
           ctnOnBlock:
@@ -16836,19 +16851,119 @@ end;
 function TFindDeclarationTool.ExtractInlineVarInitType(
   VarDefNode: TCodeTreeNode): string;
 // Infer a display type string for `var x := expr` declarations without an
-// explicit type annotation. Handles simple literals (Integer, Double, String,
+// explicit type annotation. Handles simple literals (Int64, Double, String,
 // Char, Boolean, Pointer), tuple literals with scalar or nested elements,
 // and identifier/function-call expressions resolved via FindTermTypeAsString.
 // Returns '' when inference is not possible.
 
-  function ScanLiteralType: string;
+  function RealLiteralIsDouble(const ALiteral: string): boolean;
+  // Does the compiler's default real type actually hold this literal?
+  // See the AtomIsRealNumber comment below for the measurement this encodes.
+  // Val parses into an Extended and never raises, so an out-of-range literal
+  // is answered rather than crashing the IDE's identifier completion.
+  const
+    // largest finite double, and the smallest positive DENORMAL double --
+    // denormals count as representable (1.0e-320 measured Double, 1.0e-330
+    // measured Extended).
+    MaxDbl = 1.7976931348623157e308;
+    MinDbl = 4.9406564584124654e-324;
+  var
+    Clean: string;
+    i, Code: integer;
+    Value: extended;
+    InExponent, MantissaIsZero: boolean;
+  begin
+    Result:=true;
+    Clean:='';
+    InExponent:=false;
+    MantissaIsZero:=true;
+    for i:=1 to length(ALiteral) do begin
+      // digit separators are lexical only; AtomIsRealNumber accepts them but
+      // Val does not
+      if ALiteral[i]='_' then continue;
+      if (ALiteral[i]='e') or (ALiteral[i]='E') then
+        InExponent:=true
+      else if (not InExponent) and (ALiteral[i]>='1') and (ALiteral[i]<='9') then
+        MantissaIsZero:=false;
+      Clean:=Clean+ALiteral[i];
+    end;
+    Val(Clean,Value,Code);
+    // not evaluable here (a form Val rejects) -- keep the default rather than
+    // guess
+    if Code<>0 then exit;
+    if Value=0 then
+      // either a true zero, or a magnitude so small it underflowed to zero
+      // even in an Extended -- and what a Extended cannot hold, a Double
+      // certainly cannot
+      exit(MantissaIsZero);
+    Result:=(Abs(Value)<=MaxDbl) and (Abs(Value)>=MinDbl);
+  end;
+
+  function ScanLiteralType(out WholeTerm: boolean): string;
+  // WholeTerm reports whether the literal is the ENTIRE initialiser. A literal
+  // that only starts the term (`1` in `1/2`) does not give the term's type.
+  var
+    SignStartPos, LiteralStartPos: integer;
   begin
     Result:='';
+    WholeTerm:=false;
     if CurPos.StartPos>SrcLen then exit;
-    if AtomIsRealNumber then
-      Result:='Double'
+    // A leading sign is its own atom, so `var x := -1` would otherwise miss the
+    // literal path entirely and fall through to the generic term resolver,
+    // which reports a different type than `var x := 1` does (measured
+    // 2026-09-10: -1.0 came out Extended while 1.0 came out Double). Consume
+    // the sign, and rewind if what follows is not a literal after all.
+    SignStartPos:=-1;
+    if (CurPos.EndPos-CurPos.StartPos=1) and (Src[CurPos.StartPos] in ['-','+'])
+    then begin
+      SignStartPos:=CurPos.StartPos;
+      ReadNextAtom;
+      if CurPos.StartPos>SrcLen then begin
+        MoveCursorToCleanPos(SignStartPos);
+        ReadNextAtom;
+        exit;
+      end;
+    end;
+    if AtomIsRealNumber then begin
+      // No longer a display default: this is what the compiler infers, as of
+      // VibePascal 3.3.1 2026/09/10 (FPCDeveloper's v56, compiler rebuilt
+      // 18:46). An un-annotated real inline var now takes the DEFAULT REAL
+      // TYPE instead of inheriting the literal's own narrowed precision, so
+      // the answer no longer depends on {$MINFPCONSTPREC} or on whether the
+      // constant round-trips exactly through single.
+      //
+      // THE EARLIER COMMENT HERE IS REFUTED, do not restore it: it recorded
+      // "Single when the constant round-trips exactly, Extended otherwise, so
+      // Double is unreachable at the default", measured hours before v56
+      // landed the same day. Re-measured after v56 against VibePascal 3.3.1
+      // x86_64, {$mode unleashed}, type read at runtime via PTypeInfo:
+      // 1.0, 0.5, 0.1, 3.4e38 and 1.5e300 all -> Double. All five of those
+      // were previously Single or Extended.
+      //
+      // The one thing magnitude still decides is whether a Double can hold
+      // the literal at all; when it cannot, the compiler widens to Extended.
+      // Measured the same way, and this is the whole boundary:
+      //   1.7976931348623157e308 -> Double     1.8e308   -> Extended
+      //   2.2250738585072014e-308 -> Double    1.0e400   -> Extended
+      //   1.0e-310, 1.0e-320 (denormals) -> Double
+      //   1.0e-330, 1.0e-4000 -> Extended      0.0       -> Double
+      // RealLiteralIsDouble reproduces every one of those.
+      //
+      // HONEST LIMIT: at the denormal floor the true predicate is "rounds to
+      // zero in a double", which splits at half the min denormal rather than
+      // at it, so literals in that ~2x window are called Extended when the
+      // compiler says Double. No such literal has been observed in real code.
+      if RealLiteralIsDouble(GetAtom) then
+        Result:='Double'
+      else
+        Result:='Extended';
+    end
     else if AtomIsNumber then
-      Result:='Integer'
+      // Not Integer: an inline var initialised from an integer literal is
+      // Int64 in every mode that accepts inline vars. Measured against
+      // VibePascal 3.3.1 x86_64 -- 1, -1 and 2147483648 all report SizeOf 8
+      // and RTTI name Int64, under {$mode unleashed} and {$mode delphi} alike.
+      Result:='Int64'
     else if AtomIsStringConstant then
       // Char literals are promoted to String in inline vars.
       Result:='String'
@@ -16858,12 +16973,28 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
       else if UpAtomIs('NIL') then
         Result:='Pointer';
     end;
+    if (Result='') and (SignStartPos>=0) then begin
+      // signed, but not a literal -- put the cursor back on the sign so the
+      // caller's fallback sees the whole term
+      MoveCursorToCleanPos(SignStartPos);
+      ReadNextAtom;
+    end;
+    if Result<>'' then begin
+      // peek one atom to see whether the literal ends the initialiser, then
+      // put the cursor back on the literal: callers rely on that position
+      LiteralStartPos:=CurPos.StartPos;
+      ReadNextAtom;
+      WholeTerm:=(CurPos.StartPos>SrcLen) or (CurPos.Flag=cafSemicolon);
+      MoveCursorToCleanPos(LiteralStartPos);
+      ReadNextAtom;
+    end;
   end;
 
   function ScanTupleType: string;
   var
     ElemType, FieldName: string;
     SavedPos: integer;
+    ElemWholeTerm: boolean;
   begin
     Result:='';
     if CurPos.Flag<>cafRoundBracketOpen then exit;
@@ -16888,7 +17019,9 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
       if CurPos.Flag=cafRoundBracketOpen then
         ElemType:=ScanTupleType()
       else
-        ElemType:=ScanLiteralType();
+        // inside a tuple the element, not the term, is being scanned, so the
+        // whole-term flag does not apply
+        ElemType:=ScanLiteralType(ElemWholeTerm);
       if ElemType='' then exit('');
       if FieldName<>'' then
         Result:=Result+FieldName+': '+ElemType
@@ -16905,13 +17038,14 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
   end;
 
 var
-  ExprStart, ExprEnd, BracketDepth: integer;
+  ExprStart, ExprEnd, BracketDepth, TermStartPos: integer;
   TermPos: TAtomPosition;
   Params: TFindDeclarationParams;
   ExprType: TExpressionType;
   FieldContext: TFindContext;
   FieldTypeNode: TCodeTreeNode;
-  IsForIn: boolean;
+  IsForIn, LiteralIsWholeTerm: boolean;
+  LiteralFallback: string;
 begin
   Result:='';
   if (VarDefNode=nil) or (VarDefNode.Desc<>ctnVarDefinition) then exit;
@@ -16984,10 +17118,24 @@ begin
     exit;
   end;
   // literal paths first
+  LiteralFallback:='';
+  TermStartPos:=CurPos.StartPos;
   if CurPos.Flag=cafRoundBracketOpen then
     Result:=ScanTupleType()
-  else
-    Result:=ScanLiteralType();
+  else begin
+    Result:=ScanLiteralType(LiteralIsWholeTerm);
+    if (Result<>'') and (not LiteralIsWholeTerm) then begin
+      // The literal only STARTS the initialiser, so its own type is not the
+      // term's type: `var x := 1/2` is Double and `var x := 1+0.5` is a real,
+      // both measured, where the literal alone says Int64. Let the expression
+      // resolver answer, keeping the literal's type only as a backstop for
+      // when it cannot (it never answered better than this before).
+      LiteralFallback:=Result;
+      Result:='';
+      MoveCursorToCleanPos(TermStartPos);
+      ReadNextAtom;
+    end;
+  end;
   if Result<>'' then exit;
   // fallback: resolve the expression (identifier, function call, ...)
   // scan from first atom to end of term (';', or matched brackets)
@@ -17016,12 +17164,27 @@ begin
   try
     try
       Result:=FindTermTypeAsString(TermPos, Params, ExprType);
+      if Result<>'' then
+        case ExprType.Desc of
+        // FindExprTypeAsString serves every context codetools renders a type
+        // in, so it answers a constant expression with the historic defaults
+        // 'Integer'/'Extended'. For an inline var the constant's own type IS
+        // the variable's type: measured 2026-09-10 on VibePascal 3.3.1,
+        // `var n := -(1)`, `var n := 2*3` and `var n := 1 div 2` are all
+        // SizeOf 8 / Int64. Reals keep the Double display default the literal
+        // path uses (see ScanLiteralType). Inline-var-only on purpose --
+        // xtConstOrdInteger itself is shared far too widely to redefine.
+        xtConstOrdInteger: Result:='Int64';
+        xtConstReal: Result:='Double';
+        end;
     except
       Result:='';
     end;
   finally
     Params.Free;
   end;
+  if Result='' then
+    Result:=LiteralFallback;
 end;
 
 function TFindDeclarationTool.FindInlineVarTupleFieldDef(

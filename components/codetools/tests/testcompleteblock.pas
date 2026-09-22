@@ -413,12 +413,15 @@ end;
 
 procedure TTestCodetoolsCompleteBlock.TestCompleteBlockTry;
 begin
+  // fork default (042563423f): a bare "try" completes to except/end --
+  // except is the far more common branch; users who want finally type it.
+  // upstream expects finally/end here.
   CompleteBlock('begin'+LineEnding
                +'  try|'+LineEnding
                +'end.',
                 'begin'+LineEnding
                +'  try|'+LineEnding
-               +'  finally'+LineEnding
+               +'  except'+LineEnding
                +'  end;'+LineEnding
                +'end.');
   CompleteBlock('begin'+LineEnding

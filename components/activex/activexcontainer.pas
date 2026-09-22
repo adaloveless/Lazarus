@@ -227,6 +227,18 @@ begin
 end;
 {$endif wince}
 
+function SafeScreenPPI: Integer;
+begin
+  // Defense-in-depth: Screen.PixelsPerInch can be 0 before the screen DPI is
+  // resolved (e.g. ActiveX Attach firing before the host form's monitor DPI is
+  // known), which makes the `div Screen.PixelsPerInch` HiMetric conversions
+  // below raise EDivByZero. Clamp to the 96-DPI default, mirroring the
+  // ScreenInfo zero-DPI guard already applied across the LCL widgetsets.
+  Result := Screen.PixelsPerInch;
+  if Result <= 0 then
+    Result := 96;
+end;
+
 function WndCallback(Ahwnd: HWND; uMsg: UINT; wParam: WParam;
   lParam: LParam): LRESULT; stdcall;
   var
@@ -240,8 +252,8 @@ begin
     WM_DESTROY:AXC.Detach;
     WM_SIZE:
       begin
-      size.x:=(LOWORD(lparam)*2540) div Screen.PixelsPerInch;
-      size.y:=(HIWORD(lparam)*2540) div Screen.PixelsPerInch;
+      size.x:=(LOWORD(lparam)*2540) div SafeScreenPPI;
+      size.y:=(HIWORD(lparam)*2540) div SafeScreenPPI;
       AXC.Width:=LOWORD(lparam);
       AXC.Height:=HIWORD(lparam);
       olecheck((AXC.ComServer as IOleObject).SetExtent(DVASPECT_CONTENT,size));
@@ -357,8 +369,8 @@ begin
     end
   else if assigned(@ptlHimetric) and (flags and 8 <> 0) then  //XFORMCOORDS_CONTAINERTOHIMETRIC = 8
     begin
-    ptlHimetric.X := Integer(Round(ptfContainer.X * 2540 / Screen.PixelsPerInch));
-    ptlHimetric.Y := Integer(Round(ptfContainer.Y * 2540 / Screen.PixelsPerInch));
+    ptlHimetric.X := Integer(Round(ptfContainer.X * 2540 / SafeScreenPPI));
+    ptlHimetric.Y := Integer(Round(ptfContainer.Y * 2540 / SafeScreenPPI));
     end;
   Result := S_OK;
 end;
@@ -599,8 +611,8 @@ begin
   FAttached:=true;
   olecheck((FOleObject as IOleObject).SetClientSite(Self as IOleClientSite));
   olecheck((FOleObject as IOleObject).SetHostNames(PWideChar(name),PWideChar(name)));
-  size.x:=(Width*2540) div Screen.PixelsPerInch;
-  size.y:=(Height*2540) div Screen.PixelsPerInch;
+  size.x:=(Width*2540) div SafeScreenPPI;
+  size.y:=(Height*2540) div SafeScreenPPI;
   olecheck((FOleObject as IOleObject).SetExtent(DVASPECT_CONTENT,size));
   olecheck((FOleObject as IOleObject).DoVerb(OLEIVERB_INPLACEACTIVATE,nil,Self as IOleClientSite,0,Handle,ClientRect));
 end;

@@ -45,6 +45,7 @@ uses
 type
   TSDFilenameQuality = (
     sddqInvalid,
+    sddqMakeNotGnu,     // Make exists but is not GNU make (Embarcadero/Borland)
     sddqWrongMinorVersion,
     sddqWrongVersion,
     sddqIncomplete,
@@ -139,12 +140,26 @@ function GetValueFromIDEConfig(OptionFilename, Path: string): string;
 
 implementation
 
+uses
+  // RTL
+  Math,
+  // FCL
+  process,
+  // LazUtils
+  UTF8Process;
+
 {$IFDEF MSWindows}
 var
   DefaultFPCVersion: string;
   DefaultFPCTarget: string;
   DefaultDrive: string;
 {$ENDIF}
+
+const
+  // A real make answers --version in well under a second (Embarcadero
+  // MAKE 5.43 measured at 115 ms). The bound is there so a hung
+  // make.exe can never hang the wizard.
+  MakeFlavorProbeTimeoutMs = 3000;
 
 function CheckLazarusDirectoryQuality(ADirectory: string;
   out Note: string): TSDFilenameQuality;
@@ -1049,8 +1064,61 @@ begin
   end;
 end;
 
+function MakeExeIsNonGnu(AMakeExe: string; out AIdentity: string): boolean;
+var
+  P: TProcessUTF8;
+  S: string;
+  i: Integer;
+begin
+  // Ask the candidate what it is by running it with --version and
+  // reading the first line of the banner. A positive identification as
+  // GNU make (or an unreadable, hung or missing binary) leaves Result
+  // false so the caller keeps the old checks; only a positive
+  // identification as Embarcadero/Borland make flips it.
+  Result:=false;
+  AIdentity:='';
+  P:=TProcessUTF8.Create(nil);
+  try
+    P.Options:=P.Options+[poNoConsole, poUsePipes];
+    P.ShowWindow:=swoNone;
+    P.Executable:=AMakeExe;
+    P.Parameters.Add('--version');
+    try
+      P.Execute;
+    except
+      on E: Exception do
+        exit; // not startable: unidentified
+    end;
+    if not P.WaitOnExit(MakeFlavorProbeTimeoutMs) then
+    begin
+      P.Terminate(1);
+      exit; // hung: unidentified, never block the wizard
+    end;
+    SetLength(S, Min(P.Output.NumBytesAvailable, 8192));
+    if Length(S)>0 then
+      P.Output.Read(S[1], Length(S));
+    S:=Trim(S);
+    i:=Pos(#10, S);
+    if i>0 then
+      S:=Copy(S, 1, i-1);
+    AIdentity:=Trim(S);
+    if AIdentity='' then exit;
+    if (UpperCase(ExtractWord(1, AIdentity, [' ']))='GNU')
+      and (Pos('MAKE', UpperCase(AIdentity))>0) then
+      exit; // GNU make: identified, keep the old checks
+    if (Pos('EMBARCADERO', UpperCase(AIdentity))>0)
+    or ((Pos('MAKE', UpperCase(AIdentity))>0)
+        and (Pos('BORLAND', UpperCase(AIdentity))>0)) then
+      Result:=true;
+  finally
+    P.Free;
+  end;
+end;
+
 function CheckMakeExeQuality(AFilename: string; out Note: string
   ): TSDFilenameQuality;
+var
+  AIdentity: string;
 begin
   Result:=sddqInvalid;
   AFilename:=TrimFilename(AFilename);
@@ -1072,6 +1140,17 @@ begin
 
   // Windows-only locations:
   if (GetDefaultSrcOSForTargetOS(GetCompiledTargetOS)='win') then begin
+    // ask what the program is: a make.exe that reports itself as
+    // Embarcadero/Borland make cannot build Lazarus, no matter where it
+    // sits (a missing fpc.exe beside it is only a warning, and that is
+    // what let such a make be accepted and stick)
+    if MakeExeIsNonGnu(TrimFilename(AFilename), AIdentity) then
+    begin
+      Note:=Format(lisMakeExeIsNotGnuMake,
+        [ExtractFilename(AFilename), AIdentity]);
+      Result:=sddqMakeNotGnu;
+      exit;
+    end;
     // under Windows, make.exe is in the same directory as fpc.exe
     // other make.exe are often incompatible
     if not FileExistsCached(ExtractFilePath(AFilename)+'fpc.exe') then begin

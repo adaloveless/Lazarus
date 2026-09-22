@@ -101,7 +101,10 @@ DEFAULT_IDE_OPTIONS=  \
   -Fupackages/ideproject/lib/$(CPU_TARGET)-$(OS_TARGET) \
   -Fupackages/ideutils/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
   -Fupackages/idedebugger/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
-  -Fu../components/metadarkstyle/dsgn/lib/$(CPU_TARGET)-$(OS_TARGET)
+  -Fu../components/metadarkstyle/dsgn/lib/$(CPU_TARGET)-$(OS_TARGET) \
+  -Fu../components/dockedformeditor/lib/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
+  -Fu../components/anchordocking/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM) \
+  -Fu../components/anchordocking/design/units/$(CPU_TARGET)-$(OS_TARGET)/$(LCL_PLATFORM)
 
 #
 # Options for compiling lazbuild

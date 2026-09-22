@@ -208,6 +208,9 @@ type
     published
       class function CreateHandle(const AWinControl: TWinControl;
             const AParams: TCreateParams): HWND; override;
+      class procedure GetPreferredSize(const AWinControl: TWinControl;
+            var PreferredWidth, PreferredHeight: integer;
+            WithThemeSpace: Boolean); override;
       class function GetDefaultColor(const AControl: TControl;
             const ADefaultColorType: TDefaultColorType): TColor; override;
     end;
@@ -592,7 +595,13 @@ end;
 procedure TryEnforceDarkStyleForCtrl(AWinControl:TWinControl);
 begin
   if (AWinControl <> nil) then begin
-     if DrawControl.BorderStyleOverride then
+     // csDesigning guard to match TWin32WSCustomMemoDark.CreateHandle: a
+     // borderless memo measures short, and a short height reaching design time
+     // can be streamed permanently into a consumer's .lfm.  Harmless today only
+     // because TCustomMemo.Create sets AutoSize := False -- a condition, not a
+     // safety.  Colors below stay unguarded; only the border is the hazard.
+     if DrawControl.BorderStyleOverride and
+        not (csDesigning in AWinControl.ComponentState) then
        if (AWinControl Is TCustomMemo) then
           (AWinControl As TCustomMemo).BorderStyle := bsNone;
      AWinControl.Color := clWindow;
@@ -2180,10 +2189,20 @@ begin
   PrepareDarkGroupedChildSizing(AWinControl);
   SetDarkControlColors(AWinControl);
   Result := inherited CreateHandle(AWinControl, AParams);
-  InstallDarkGroupBoxWndProc(Result);
-  EnableDarkStyle(Result);
-  if (AWinControl is TCustomRadioGroup) or (AWinControl is TCustomCheckGroup) then
-    PostMessage(Result, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
+  // DarkGroupBoxWndProc fills the whole client (Exit(0) on WM_PAINT) and only
+  // excludes *windowed* children, so at design time it masks non-windowed
+  // children (labels/bevels/images) and races the designer when a child is
+  // moved -- the IDE form designer then "loses" controls placed on group boxes
+  // (GOD mqwtobmj/mqwtqzcm). Every other dark WS class guards its subclass with
+  // csDesigning; do the same here so the designer paints natively and all
+  // children stay visible. Runtime dark rendering is unchanged.
+  if not (csDesigning in AWinControl.ComponentState) then
+  begin
+    InstallDarkGroupBoxWndProc(Result);
+    EnableDarkStyle(Result);
+    if (AWinControl is TCustomRadioGroup) or (AWinControl is TCustomCheckGroup) then
+      PostMessage(Result, DARK_GROUPBOX_SYNC_CHILDREN_MSG, 0, 0);
+  end;
 end;
 
 class function TWin32WSCustomGroupBoxDark.GetDefaultColor(
@@ -3025,6 +3044,32 @@ begin
 
   Result := inherited CreateHandle(AWinControl, P);
   EnableDarkStyle(Result);
+end;
+
+class procedure TWin32WSCustomEditDark.GetPreferredSize(
+  const AWinControl: TWinControl; var PreferredWidth,
+  PreferredHeight: integer; WithThemeSpace: Boolean);
+begin
+  inherited GetPreferredSize(AWinControl, PreferredWidth, PreferredHeight,
+    WithThemeSpace);
+  // CreateHandle above forces BorderStyle := bsNone at RUNTIME so the edit can
+  // carry the flat dark frame.  That makes the inherited measurement skip its
+  // border allowance (win32wsstdctrls.pp: `if BorderStyle <> bsNone then
+  // Inc(PreferredHeight, 8)`), so a dark edit measures 'Fj' alone -- 15 px
+  // against 23 px for the SAME control in light mode.  Add the same 8 back so
+  // a dark edit gets identical breathing room; keep the constant equal to the
+  // widgetset's, never a dark-only value.
+  // Guarded exactly like the force it compensates for: csDesigning keeps this
+  // off the designer's own instances, which never lose the border and so must
+  // never be able to persist a dark-mode height into a .lfm.
+  // PreferredHeight > 0 matters: MeasureTextForControl leaves the value
+  // untouched when it fails, and padding an unmeasured 0 would manufacture the
+  // bogus `Height = 8` this allowance exists to prevent.
+  if (PreferredHeight > 0) and
+     DrawControl.BorderStyleOverride and
+     not (csDesigning in AWinControl.ComponentState) and
+     (TCustomEdit(AWinControl).BorderStyle = bsNone) then
+    Inc(PreferredHeight, 8);
 end;
 
 class function TWin32WSCustomEditDark.GetDefaultColor(

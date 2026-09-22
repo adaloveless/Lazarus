@@ -58,6 +58,8 @@ var
   LazarusBuildTimeStr: string;
 
 function CompareLazarusVersion(V1, V2: string): integer;
+function NormalizeLazarusVersion(const V: string): string;
+function SameLazarusVersion(const V1, V2: string): boolean;
 
 { Config Path Functions }
 
@@ -249,6 +251,39 @@ begin
     if Number1<Number2 then exit(-1);
   end;
   Result:=0;
+end;
+
+function NormalizeLazarusVersion(const V: string): string;
+// Drop trailing all-zero version components, so that two strings naming the
+// SAME release but written with a different number of components compare as
+// equal: '4.99.0' and '4.99.0.0' both normalise to '4.99'.
+// Only a trailing dot-zero group is removed. 'RC' suffixes and '-' build
+// suffixes are left alone, because CompareLazarusVersion's documented ordering
+// rules ('RC' < EndOfString < '-' < '.') give them a meaning of their own.
+var
+  i, j: Integer;
+begin
+  Result:=V;
+  i:=Length(Result);
+  while i>1 do begin
+    j:=i;
+    while (j>=1) and (Result[j]='0') do dec(j);
+    if (j=i) or (j<1) or (Result[j]<>'.') then break;
+    Delete(Result,j,i-j+1);
+    i:=Length(Result);
+  end;
+end;
+
+function SameLazarusVersion(const V1, V2: string): boolean;
+// True when V1 and V2 name the same Lazarus version, even when one of them
+// spells it with trailing zero components. CompareLazarusVersion ranks
+// EndOfString BELOW '.', so it reports '4.99' as OLDER than '4.99.0' and a
+// plain <> reports them as different; both readings turn a purely cosmetic
+// version-string change into a "downgrade" for every existing config.
+begin
+  Result:=(V1=V2)
+       or (CompareLazarusVersion(NormalizeLazarusVersion(V1),
+                                 NormalizeLazarusVersion(V2))=0);
 end;
 
 {---------------------------------------------------------------------------

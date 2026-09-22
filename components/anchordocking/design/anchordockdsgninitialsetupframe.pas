@@ -103,7 +103,11 @@ function TAnchorDockDsgnSetup.RequireSetup: boolean;
 begin
   if AnchorDockGlobalOptions = nil then exit(False);
   AnchorDockGlobalOptions.LoadSafe;
-  Result := not AnchorDockGlobalOptions.DoneAskUserEnableAnchorDock;
+  // Docking is on by default (GOD mu3jfytu), so a fresh configuration needs no
+  // setup dialog just to confirm it. Only force the dialog when docking is OFF
+  // and nobody ever chose that -- a state older configs cannot even express.
+  Result := (not AnchorDockGlobalOptions.DoneAskUserEnableAnchorDock)
+        and (not AnchorDockGlobalOptions.EnableAnchorDock);
 end;
 
 procedure TAnchorDockDsgnSetup.AddToDialog(AnOwner, AParent: TComponent; ADialog: ISetupDlgProvider

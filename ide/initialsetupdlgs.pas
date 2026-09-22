@@ -1289,6 +1289,7 @@ begin
 
   case Quality of
   sddqInvalid: s:=lisError;
+  sddqMakeNotGnu: s:=lisError;
   sddqCompatible: s:='';
   else s:=lisWarning;
   end;
@@ -1377,6 +1378,8 @@ begin
     Result:=ImgIDWarning
   else if Quality=sddqMakeNotWithFpc then
     Result:=ImgIDWarning
+  else if Quality=sddqMakeNotGnu then
+    Result:=ImgIDError
   else if Quality=sddqHint then
     Result:=ImgIDHint
   else

@@ -60,16 +60,51 @@ function Log-ErrDetail { param($msg) Write-Host "[ERROR] $msg" -ForegroundColor 
 function Log-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
 $script:LazarusUpdated = $false
+$script:LazarusMergeFailed = $false   # c730: the origin merge was attempted and FAILED -- the tree is stale
+$script:LazarusOffMain = $false       # c730: the checkout is not on main and could not be switched
 $script:VPUpdated = $false
+$script:CheckFailed = $false   # a Check-* helper could not read or refresh a repository; "up to date" is then not a verdict (c675)
 $script:UpstreamUpdated = $false
+# c722 -- is an 'upstream' remote configured at all, and could it be read? Reported by Miles
+# (MonitoringSystemsDeveloper) from MVMJ26, which has no such remote: the run correctly warns
+# and skips the check, and then the summary prints "[-] Lazarus upstream : no changes (HEAD
+# <sha>)" anyway -- where that sha is the ORIGIN head, because nothing ever looked upstream.
+# Nothing in the line is false; it is reliably misread. NOT CHECKED is not "no changes" (c675).
+$script:UpstreamConfigured = $false
+$script:UpstreamUnknown = $false
 $script:BuildProductsWereMissing = $false
 $script:LocalBuildProductsRestored = $false
+# c719 -- HEAD as it stood BEFORE this run pulled anything, so Print-Summary can report
+# what HAPPENED instead of what was AVAILABLE. $null means git could not be read, which is
+# UNKNOWN and never "no changes" (c675).
+$script:LazarusHeadBefore = $null
+$script:VPHeadBefore = $null
+# c720 -- the VibePascal version as the dist named it BEFORE this run pulled anything, so
+# Print-Summary can say "v53 -> v59" instead of leaving a pre-pull reading as the last word.
+$script:VPVersionBefore = $null
+$script:LazarusHeadAfterUpstream = $null   # set between the upstream merge and the origin pull, so the two lines are attributable to the right one
 # c635: first compiler Error:/Fatal: line from the build attempt that INCLUDED commonx.
 # Replayed in the final failure block so the causal line survives a top-truncated paste.
 $script:CommonXFirstError = ""
 $script:CommonXPpuHint = ""
 $script:CommonXArtifactsCleaned = 0
 $script:ErrorCount = 0
+$script:MakeRejected = @()
+
+# c671 -- REFUSE unbound arguments instead of silently running without them. A plain param()
+# block drops anything it cannot bind into $args and carries on, so ".\auto-update.ps1
+# -Check,-NoBuild" (ONE comma-joined token, the PowerShell array habit) bound NEITHER switch
+# and ran the FULL pipeline -- Wipe-LocalChanges (reset --hard + clean -fdx), pull, IDE
+# rebuild -- while auto-update.bat had classified that line read-only and left lazarus.exe
+# running, because cmd's `for` splits the token on the comma. Measured on lazdev under
+# pwsh 7.6.6 against this file; Steve's real-Windows matrix of 2026-09-16 surfaced the token.
+if ($args.Count -gt 0) {
+    Log-Err "Unrecognised argument(s): $($args -join ' ')"
+    Log-ErrDetail "  Flags are separate, space-separated switches:  auto-update.bat -Check -NoBuild   (not -Check,-NoBuild)."
+    Log-ErrDetail "  Refusing to run: an unbound flag would otherwise fall through to a FULL update (wipe + pull + rebuild)."
+    Log-ErrDetail "  Run  auto-update.bat -Help  for the option list."
+    exit 2
+}
 
 if (-not $VPDir -and $env:VPDIR -and (Test-Path (Join-Path $env:VPDIR ".git"))) {
     $VPDir = $env:VPDIR
@@ -238,6 +273,42 @@ function Read-LATESTTxt {
     }
 }
 
+function Get-VPDistVersion {
+    # c720 -- answer "which VibePascal is in place?" by READING THE SIDECAR OFF DISK at the
+    # moment of the call, never from a variable set earlier in the run.
+    #
+    # Why this exists: Extract-VPBinaries logs `LATEST.txt version: ...` from the dist as it
+    # stands when IT runs, and on the main path it runs BEFORE Pull-VP. Miles read that line
+    # as the version his run had installed and reported v53; the run then pulled and extracted
+    # a newer one. A pre-pull reading printed with no end-of-run counterpart reads like a
+    # verdict -- the same defect class as c719's `[+] Lazarus updated`, and the same cure:
+    # report the thing itself, at the end, rather than something remembered from earlier.
+    #
+    # Deliberately does NOT reuse Read-LATESTTxt: that function is the extraction SELECTOR and
+    # returns $null (plus a WARN) when `versioned_tarball` is absent, which would throw away a
+    # perfectly readable `version` and duplicate its warning inside the summary.
+    param([string]$VPRoot = $VPDir)
+
+    foreach ($sub in @("dist\win64", "dist")) {
+        $latestFile = Join-Path (Join-Path $VPRoot $sub) "LATEST.txt"
+        if (-not (Test-Path $latestFile)) { continue }
+        try {
+            $version = $null
+            $commit = $null
+            foreach ($line in ((Get-Content -Path $latestFile -Raw -ErrorAction Stop) -split "`n")) {
+                if ($line -match '^\s*version:\s*(.+?)\s*$') { $version = $Matches[1] }
+                elseif ($line -match '^\s*source_commit:\s*(.+?)\s*$') { $commit = $Matches[1] }
+            }
+            if (-not $version) { return $null }
+            if ($commit) { return "$version (source_commit $commit)" }
+            return $version
+        } catch {
+            return $null
+        }
+    }
+    return $null
+}
+
 function Get-VPArchiveSet {
     # Resolve the ordered list of FileInfo archives that Extract-VPBinaries must unpack.
     # v32+ tarballs are split: bin-only (compiler + bin/) needs pairing with a units tarball
@@ -280,9 +351,19 @@ function Get-VPArchiveSet {
         $unitsCandidates = @($all | Where-Object { $_.Name -match '^vibepascal-v\d+-win64-units\.tar\.gz$' })
         if ($unitsCandidates.Count -eq 0) {
             Log-Err "v$binVersion bin-only tarball requires a paired units tarball (vibepascal-v<N>-win64-units.tar.gz); none found in $DistDir"
-            Log-Warn "Otto ships v33 units as the stable baseline -- ensure dist/win64 contains vibepascal-v33-win64-units.tar.gz (or newer)"
+            # DO NOT RE-PIN A VERSION NUMBER IN THIS TEXT. It said v33 for long enough that
+            # Otto shipped nineteen releases past it, and the resolver below has never cared:
+            # it globs vibepascal-v<N>-win64-units.tar.gz and takes the HIGHEST N, deliberately
+            # not the bin tarball's N. A number here only tells the operator to fetch the wrong
+            # file. (c700, prompted by Otto: four UNITS.txt files had the same staleness.)
+            Log-Warn "Fetch the HIGHEST vibepascal-v<N>-win64-units.tar.gz Otto publishes into $DistDir -- this resolver picks the newest one present and does NOT require N to match the compiler bin tarball, which is how a bin-only refresh stays a ~3.4 MB pull"
             return @()
         }
+        # HIGHEST-VERSION units, deliberately NOT "units matching the bin's version number".
+        # A bin-only refresh over an older units baseline is Otto's intended steady state for
+        # compiler-internal fixes -- it keeps consumers on a ~3.4 MB pull instead of ~104 MB.
+        # v53 (2026-09-02) is the first ship to use it: bin v53 paired with units v52. A strict
+        # version-match here would break that pairing and every one after it. (Otto, 2026-09-02.)
         $units = (Sort-VPArchives $unitsCandidates)[0]
 
         # RTL overlay: prefer commit-hash prefix match against the bin's sha (e.g. v42-bin c7617b0
@@ -329,7 +410,9 @@ function Extract-VPBinaries {
     # the split-archive pairing regex; vibepascal-latest-win64-bin.tar.gz does NOT match -> legacy monolithic extract -> bin-without-units CRC error class.
     $latestData = Read-LATESTTxt -DistDir $distDir
     $versionedTarball = if ($latestData) { $latestData['versioned_tarball'] } else { $null }
-    if ($versionedTarball) { Log-Info "LATEST.txt version: $($latestData['version']) commit: $($latestData['source_commit'])" }
+    # c720 -- wording is load-bearing: this fires BEFORE Pull-VP on the main path, so it is a
+    # reading of the dist as it stands right now and NOT what this run ends up with.
+    if ($versionedTarball) { Log-Info "dist LATEST.txt currently names version $($latestData['version']) commit: $($latestData['source_commit']) -- the version in place at the END of this run is reported in the Update Summary" }
 
     $archiveSet = @(Get-VPArchiveSet -DistDir $distDir -Filter "*.tar.gz" -VersionedTarball $versionedTarball)
     if ($archiveSet.Count -eq 0) {
@@ -343,6 +426,34 @@ function Extract-VPBinaries {
 
     # Marker fingerprints every archive in the set so any change invalidates the cache.
     $archiveKey = ($archiveSet | ForEach-Object { "$($_.Name)|$($_.LastWriteTime.Ticks)" }) -join ';'
+
+    # LATEST.txt sidecar (GOD mrghu0l5). The .sh half of this landed long ago; the .ps1 half did
+    # not, and Windows is GOD's own workstation. Without it the key above is names + mtimes only,
+    # so a ship where Otto bumps version/source_commit but the tarball comes out byte-identical
+    # leaves the name AND the mtime untouched (git does not restat an unchanged file) -- the key
+    # matches, the early return fires, and the box never re-extracts.
+    # Hash the FILE rather than reuse $latestData: Read-LATESTTxt returns $null when the sidecar
+    # is present but has no versioned_tarball field, and that case still has to invalidate.
+    # One-time effect on upgrade: every existing install re-extracts once, because the key format
+    # changed. That is the cheap direction to be wrong in.
+    # c641 -- EXECUTED on lazdev (native pwsh 7.6.6), this block verbatim, four cases, fixed
+    # archive names AND fixed mtimes throughout so only LATEST.txt varies:
+    #   v42 vs v43 sidecar -> the OLD names+mtimes key is IDENTICAL in both (the defect: the
+    #     early return fires and the box never re-extracts); the new key DIFFERS. Fix works.
+    #   sidecar present but NO versioned_tarball -> Read-LATESTTxt returns $null, the WARN
+    #     fires, and the key STILL busts off the file hash. This is exactly why the FILE is
+    #     hashed rather than $latestData being reused, and it is now measured, not argued.
+    #   no sidecar at all -> key degrades to byte-identical to the old names+mtimes form.
+    $latestFile = Join-Path $distDir "LATEST.txt"
+    if (Test-Path $latestFile) {
+        $latestHash = (Get-FileHash -Path $latestFile -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
+        $archiveKey = "$latestHash;$archiveKey"
+        if ($latestData) {
+            Log-Info "LATEST.txt present: version $($latestData['version']) source_commit $($latestData['source_commit']) -- included in extraction key"
+        } else {
+            Log-Info "LATEST.txt present (unparsed, sha256 $latestHash) -- included in extraction key"
+        }
+    }
 
     if ((Test-Path $compilerExe) -and (Test-Path $markerFile)) {
         $lastExtracted = (Get-Content $markerFile -Raw -ErrorAction SilentlyContinue).Trim()
@@ -562,6 +673,14 @@ function Wipe-LocalChanges {
         Start-Sleep -Milliseconds 500
     }
 
+    if ($Label -eq "VibePascal") {
+        $br = Test-RepoOnMain -WorkDir $RepoDir
+        if ($br -and $br -ne "main") {
+            Log-Warn "SKIPPING the $Label wipe: $RepoDir is on branch '$br', not main. 'reset --hard HEAD' there would discard somebody else's uncommitted work with NO rescue tag and no way back. Put that checkout back on main yourself, or run with -UpstreamOnly."
+            return
+        }
+    }
+
     $reset = Invoke-Git -WorkDir $RepoDir -GitArgs @("reset", "--hard", "HEAD")
     if ($reset.ExitCode -ne 0) {
         Log-Err "git reset --hard HEAD failed in $RepoDir`: $($reset.Error)"
@@ -626,6 +745,93 @@ function Get-GitOutput {
     return $result.Output
 }
 
+# Returns @{ Sha; Short; When } for <WorkDir>'s HEAD, or $null when git cannot be read there.
+# Used to answer "did HEAD actually move?" -- the only honest basis for the summary's
+# "[+] <repo> updated" line (c719). Same doctrine as Get-GitCount: an unreadable repository
+# yields $null, and the caller must report UNKNOWN rather than treat it as "nothing changed".
+function Get-HeadStamp {
+    param([string]$WorkDir)
+    if (-not $WorkDir) { return $null }
+    $sha = Get-GitOutput -WorkDir $WorkDir -GitArgs @("rev-parse", "HEAD")
+    if (-not $sha) { return $null }
+    $sha = $sha.Trim()
+    if ($sha -notmatch '^[0-9a-f]{40}$') { return $null }
+    $when = Get-GitOutput -WorkDir $WorkDir -GitArgs @("log", "-1", "--format=%ci", "HEAD")
+    if ($when) { $when = $when.Trim() } else { $when = "unknown date" }
+    return @{ Sha = $sha; Short = $sha.Substring(0, 10); When = $when }
+}
+
+# A count from an instrument that cannot see is not zero. Steve (SiteManager_DESKTOP-IO9QJQ4,
+# 2026-09-16) ran `-Check` in a directory holding no repository and read "[OK] VibePascal: up to
+# date", "[OK] Lazarus origin: up to date", "[OK] Everything is up to date" over two blank HEAD
+# lines: every rev-list had failed, Get-GitOutput had yielded "", and the
+# `if (-not $x) { $x = "0" }` idiom scored each failure as "0 commits behind". Reproduced here
+# under pwsh 7.6 with the same scratch layout (exit 0). Returns the [int] count or "UNKNOWN";
+# callers must treat UNKNOWN as a failed check and never as 0 (same rule as
+# Get-UnpushedCommitCount, which guards the destructive reset for the same reason).
+function Get-GitCount {
+    param([string]$WorkDir, [string]$Range)
+    $r = Invoke-Git -WorkDir $WorkDir -GitArgs @("rev-list", "--count", $Range)
+    if ($r.ExitCode -ne 0) { return "UNKNOWN" }
+    if ("$($r.Output)" -notmatch '^\d+$') { return "UNKNOWN" }
+    return [int]$r.Output
+}
+
+# --- Unpushed-work guard for `reset --hard origin/main` (Lars, c668 2026-09-11) -------------
+# Both Pull-*Origin functions fall back to `reset --hard origin/main` when an --ff-only pull
+# fails. The fallback exists for a real reason (GOD mrghu0l5: a stale local commit pinned VP
+# on an old version forever), but it could silently DESTROY commits the remote does not have.
+# Measured on the bash twin with the real shipped function: a clean-tree checkout carrying 2
+# unpushed commits came out with both commits unreachable from every ref while the log read
+# "[OK] Lazarus origin pulled". Steve reported the live instance on 2026-09-11 -- E:\lazarus,
+# clean working tree, HEAD 205d77ed3f plus 098e5739c6 and 1b9f60f35c on no remote at all.
+function Get-UnpushedCommitCount {
+    # Returns an [int] count of commits on HEAD that origin/main does not contain, or the
+    # string "UNKNOWN" when git could not answer. It must NEVER return 0 for a failed
+    # measurement: Get-GitOutput discards git's exit code and yields "" on failure, and the
+    # `if (-not $x) { $x = "0" }` idiom turned that empty string into "no local work" --
+    # which then authorised the destructive reset. A zero from an instrument that cannot see
+    # is not a clean answer, it is no answer.
+    param([string]$WorkDir)
+    $r = Invoke-Git -WorkDir $WorkDir -GitArgs @("rev-list", "--count", "origin/main..HEAD")
+    if ($r.ExitCode -ne 0) { return "UNKNOWN" }
+    if ("$($r.Output)" -notmatch '^\d+$') { return "UNKNOWN" }
+    return [int]$r.Output
+}
+
+function Invoke-AnchorBeforeReset {
+    # Call immediately before `reset --hard origin/main`. $true = the reset may proceed,
+    # $false = the caller must NOT reset.
+    param([string]$WorkDir, [string]$Label)
+    $n = Get-UnpushedCommitCount -WorkDir $WorkDir
+    if ($n -is [string]) {
+        Log-Err       "${Label}: cannot determine whether $WorkDir carries unpushed commits (git rev-list failed)."
+        Log-ErrDetail "${Label}: REFUSING to reset --hard -- that would silently discard local work if any exists."
+        Log-ErrDetail "${Label}: check the repo (git -C `"$WorkDir`" fsck), then reset by hand if you are sure:"
+        Log-ErrDetail "    git -C `"$WorkDir`" reset --hard origin/main"
+        return $false
+    }
+    if ($n -eq 0) { return $true }
+
+    $sha    = (Invoke-Git -WorkDir $WorkDir -GitArgs @("rev-parse", "HEAD")).Output
+    $branch = (Invoke-Git -WorkDir $WorkDir -GitArgs @("rev-parse", "--abbrev-ref", "HEAD")).Output -replace '/', '-'
+    if (-not $branch) { $branch = "detached" }
+    $stamp  = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmss")
+    $tag    = "autoupdate-rescue/$branch-$stamp"
+    Log-Warn "${Label}: $WorkDir has $n commit(s) that origin/main does not contain."
+    Log-Warn "${Label}: HEAD $sha"
+    $t = Invoke-Git -WorkDir $WorkDir -GitArgs @("tag", $tag, "HEAD")
+    if ($t.ExitCode -eq 0) {
+        Log-Warn "${Label}: anchored in local tag '$tag' before resetting. Recover with:"
+        Log-Warn "    git -C `"$WorkDir`" log $tag"
+        Log-Warn "    git -C `"$WorkDir`" push origin $tag     # the tag is LOCAL ONLY until you do this"
+        return $true
+    }
+    Log-Err       "${Label}: could not create rescue tag '$tag'. REFUSING to reset --hard and lose $n commit(s)."
+    Log-ErrDetail "    git -C `"$WorkDir`" branch rescue-$stamp HEAD     # save them, then re-run"
+    return $false
+}
+
 function Check-VPUpdates {
     Log-Header "Checking VibePascal (adaloveless/vibepascal)"
 
@@ -634,10 +840,19 @@ function Check-VPUpdates {
         return
     }
 
-    Invoke-Git -WorkDir $VPDir -GitArgs @("fetch", "origin") | Out-Null
+    $fetch = Invoke-Git -WorkDir $VPDir -GitArgs @("fetch", "origin")
+    if ($fetch.ExitCode -ne 0) {
+        Log-Warn "VibePascal: git fetch origin failed (exit $($fetch.ExitCode)): $($fetch.Error)"
+        Log-Warn "VibePascal: comparing against the LAST fetched origin/main -- an 'up to date' below is not a fresh reading"
+        $script:CheckFailed = $true
+    }
 
-    $behind = Get-GitOutput -WorkDir $VPDir -GitArgs @("rev-list", "--count", "HEAD..origin/main")
-    if (-not $behind) { $behind = "0" }
+    $behind = Get-GitCount -WorkDir $VPDir -Range "HEAD..origin/main"
+    if ("$behind" -eq "UNKNOWN") {
+        Log-Err "VibePascal: cannot count HEAD..origin/main in $VPDir (not a git repository, or origin/main missing) -- verdict UNKNOWN, not 'up to date'"
+        $script:CheckFailed = $true
+        return
+    }
 
     if ([int]$behind -gt 0) {
         Log-Warn "VibePascal: $behind new commit(s) available"
@@ -649,6 +864,96 @@ function Check-VPUpdates {
     }
 }
 
+# --- Never write git state into a checkout sitting on somebody else's branch -------------
+# (Lars, c698 2026-09-17 -- reported by Otto/FPCDeveloper; mirror of auto-update.sh)
+#
+# On lazdev at 2026-09-17 22:06:56/22:06:59Z the bash half ran reset --hard HEAD and then
+# pull --ff-only origin main against the SHARED vibepascal checkout while that tree was
+# sitting on GOD's own branch `interface-temp-end-of-statement`. The ff-only pull SUCCEEDED
+# -- the branch was merely BEHIND main -- so it silently fast-forwarded a branch that is not
+# main, and nothing in the log said so. Reproduced here on a synthetic tree: the pre-fix code
+# moved the branch AND destroyed an uncommitted edit; the guarded code leaves both alone.
+#
+# Invoke-AnchorBeforeReset already covers the DIVERGED case, but only on the pull FAILURE
+# path -- which is exactly the path a merely-behind branch never takes. The guard belongs in
+# FRONT of both operations. Same class as the c686 environmentoptions.xml defect.
+function Test-RepoOnMain {
+    param([string]$WorkDir)
+    if (-not (Test-Path (Join-Path $WorkDir ".git"))) { return $null }
+    $br = Get-GitOutput -WorkDir $WorkDir -GitArgs @("rev-parse", "--abbrev-ref", "HEAD")
+    if (-not $br) { return $null }
+    return $br.Trim()
+}
+
+# --- main only, ENFORCED (Lars, c730 2026-09-22; GOD's AGENTS.md section 1) ------------------
+# GOD's Windows box sat on bruno/latest-txt-vp-wiring, 117 (later 222) commits behind
+# origin/main, for days: every run of this script "merged" origin/main into that branch, hit
+# conflicts (this script is the usual one), aborted the merge -- and then rebuilt the IDE from
+# the stale tree anyway, printing [OK] lazarus.exe rebuilt under an [ERROR] nobody read. Agents
+# "fixed" the docked layout on the wrong branch again and again; GOD lost days. Two rules fall
+# out of that and both live here:
+#   1. The Lazarus checkout is put on main BEFORE anything pulls. The stray branch is left in
+#      place with all its commits (nothing is deleted); the human merges or drops it by hand.
+#   2. A failed origin merge is a FAILED UPDATE. Nothing is rebuilt from a tree that did not
+#      take origin/main -- not even under -ForceRebuild -- and the run exits 1 saying so.
+function Ensure-LazarusOnMain {
+    $br = Test-RepoOnMain -WorkDir $LazarusDir
+    if ($null -eq $br) {
+        Log-Warn "Lazarus: cannot read the current branch of $LazarusDir (not a repository, or git failed) -- leaving it alone."
+        return
+    }
+    if ($br -eq "main") { return }
+
+    Log-Err "Lazarus checkout $LazarusDir is on '$br', not main. AGENTS.md section 1: everything lives on main, no feature branches."
+    $stray = Get-UnpushedCommitCount -WorkDir $LazarusDir
+    if ("$stray" -eq "UNKNOWN") {
+        Log-Warn "  '$br' may carry commits origin/main does not have (git could not count them). The branch is LEFT IN PLACE -- nothing on it is deleted."
+    } elseif ([int]$stray -gt 0) {
+        Log-Warn "  '$br' carries $stray commit(s) that origin/main does not. The branch is LEFT IN PLACE -- nothing on it is deleted. Merge or drop it by hand: git -C `"$LazarusDir`" log --oneline origin/main..$br"
+    } else {
+        Log-Info "  '$br' carries nothing origin/main does not have; it is left in place."
+    }
+
+    $hasMain = Invoke-Git -WorkDir $LazarusDir -GitArgs @("rev-parse", "--verify", "--quiet", "refs/heads/main")
+    if ($hasMain.ExitCode -eq 0) {
+        $co = Invoke-Git -WorkDir $LazarusDir -GitArgs @("checkout", "main")
+    } else {
+        $co = Invoke-Git -WorkDir $LazarusDir -GitArgs @("checkout", "-b", "main", "origin/main")
+    }
+    if ($co.ExitCode -ne 0) {
+        $script:LazarusOffMain = $true
+        Log-Err "Could not switch $LazarusDir to main: $($co.Error)"
+        Log-ErrDetail "  Nothing will be pulled or rebuilt on '$br'. Fix by hand: commit or stash local changes (or run without -KeepLocal), then: git -C `"$LazarusDir`" checkout main"
+        return
+    }
+    $now = Test-RepoOnMain -WorkDir $LazarusDir
+    if ($now -ne "main") {
+        $script:LazarusOffMain = $true
+        Log-Err "Switched, but $LazarusDir now reads '$now' instead of main -- refusing to continue on it."
+        return
+    }
+    Log-Ok "Lazarus checkout switched to main (was '$br'); the stray branch is untouched."
+
+    # Check-LazarusOrigin counted HEAD..origin/main on the OLD branch. Re-measure on main so the
+    # origin pull below actually runs when main is behind.
+    $behind = Get-GitCount -WorkDir $LazarusDir -Range "HEAD..origin/main"
+    if ("$behind" -ne "UNKNOWN" -and [int]$behind -gt 0) {
+        Log-Warn "Lazarus main is $behind commit(s) behind origin/main -- pulling."
+        $script:LazarusUpdated = $true
+    }
+}
+
+function Test-UpdateBlocked {
+    # The reason the IDE must NOT be rebuilt this run, or $null when it may be.
+    if ($script:LazarusMergeFailed) {
+        return "origin/main could not be merged into $LazarusDir (see '[ERROR] Merge from origin failed' above). The source is STALE: an IDE built from it would silently lack every commit on origin/main."
+    }
+    if ($script:LazarusOffMain) {
+        return "$LazarusDir is not on main and could not be switched (see above). Nothing was pulled; an IDE built from it would be built from the wrong branch."
+    }
+    return $null
+}
+
 function Pull-VP {
     if (-not $script:VPUpdated) { return }
 
@@ -656,9 +961,20 @@ function Pull-VP {
     # If ff-only pull fails (local branch diverged from origin/main), reset to origin/main.
     # Recovers from the pinning bug where a stale local commit leaves VP stuck on an old version
     # (GOD mrghu0l5; Finn/ZENBOOK r23 win64 smoke: --ff-only failure + no fallback = pinned forever).
+    $vpBranch = Test-RepoOnMain -WorkDir $VPDir
+    if ($vpBranch -and $vpBranch -ne "main") {
+        Log-Warn "SKIPPING the VibePascal pull: $VPDir is on branch '$vpBranch', not main. A --ff-only pull there moves SOMEBODY ELSE'S branch onto origin/main, silently, whenever it is merely behind -- measured 2026-09-17, when GOD's 'interface-temp-end-of-statement' was fast-forwarded exactly that way. Put that checkout back on main to resume VibePascal updates."
+        return
+    }
+
     $result = Invoke-Git -WorkDir $VPDir -GitArgs @("pull", "--ff-only", "origin", "main")
     if ($result.ExitCode -ne 0) {
         Log-Warn "VP --ff-only pull failed; reset --hard origin/main (pristine mode)"
+        # The failed pull above already fetched, so origin/main is fresh for this check (c668).
+        if (-not (Invoke-AnchorBeforeReset -WorkDir $VPDir -Label "VP")) {
+            Log-ErrDetail "VibePascal origin pull ABORTED to protect local commits; tree left as-is."
+            return
+        }
         $reset = Invoke-Git -WorkDir $VPDir -GitArgs @("reset", "--hard", "origin/main")
         if ($reset.ExitCode -ne 0) {
             Log-Err "VP reset --hard origin/main failed: $($reset.Error)"
@@ -671,11 +987,16 @@ function Pull-VP {
 function Check-LazarusUpstream {
     Log-Header "Checking Lazarus upstream (fpc/Lazarus)"
 
-    $behind = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "HEAD..upstream/main")
-    if (-not $behind) { $behind = "0" }
+    $behind = Get-GitCount -WorkDir $LazarusDir -Range "HEAD..upstream/main"
+    if ("$behind" -eq "UNKNOWN") {
+        Log-Err "Lazarus: cannot count HEAD..upstream/main in $LazarusDir (not a git repository, or upstream/main missing) -- verdict UNKNOWN, not 'in sync'"
+        $script:CheckFailed = $true
+        $script:UpstreamUnknown = $true   # c722 -- so the summary says UNKNOWN too, instead of "no changes"
+        return
+    }
 
-    $localCommits = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "upstream/main..HEAD")
-    if (-not $localCommits) { $localCommits = "0" }
+    $localCommits = Get-GitCount -WorkDir $LazarusDir -Range "upstream/main..HEAD"
+    if ("$localCommits" -eq "UNKNOWN") { $localCommits = 0 }   # informational line only; the update path re-measures
 
     if ([int]$behind -gt 0) {
         Log-Warn "Lazarus: $behind new upstream commit(s)"
@@ -694,10 +1015,25 @@ function Check-LazarusUpstream {
 function Check-LazarusOrigin {
     Log-Header "Checking Lazarus origin (adaloveless/Lazarus)"
 
-    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "origin") | Out-Null
+    $fetch = Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "origin")
+    if ($fetch.ExitCode -ne 0) {
+        Log-Warn "Lazarus origin: git fetch origin failed (exit $($fetch.ExitCode)): $($fetch.Error)"
+        Log-Warn "Lazarus origin: comparing against the LAST fetched origin/main -- an 'up to date' below is not a fresh reading"
+        $script:CheckFailed = $true
+    }
 
-    $behind = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "HEAD..origin/main")
-    if (-not $behind) { $behind = "0" }
+    # c730 -- say it in -Check too: a real run switches the checkout to main before pulling.
+    $onBranch = Test-RepoOnMain -WorkDir $LazarusDir
+    if ($onBranch -and $onBranch -ne "main") {
+        Log-Warn "Lazarus checkout $LazarusDir is on branch '$onBranch', not main (AGENTS.md section 1). A real run switches it to main before pulling; the branch itself is left in place."
+    }
+
+    $behind = Get-GitCount -WorkDir $LazarusDir -Range "HEAD..origin/main"
+    if ("$behind" -eq "UNKNOWN") {
+        Log-Err "Lazarus origin: cannot count HEAD..origin/main in $LazarusDir (not a git repository, or origin/main missing) -- verdict UNKNOWN, not 'up to date'"
+        $script:CheckFailed = $true
+        return
+    }
 
     if ([int]$behind -gt 0) {
         Log-Warn "Lazarus origin: $behind new commit(s) from other developers"
@@ -775,6 +1111,13 @@ function Pull-LazarusOrigin {
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("pull", "--ff-only", "origin", "main")
         if ($result.ExitCode -ne 0) {
             Log-Warn "Lazarus --ff-only pull failed; reset --hard origin/main (pristine mode)"
+            # The failed pull above already fetched, so origin/main is fresh for this check --
+            # the $localCommits reading further up was taken against the PRE-fetch ref and is
+            # stale here, which is how a force-pushed origin could still drop local work (c668).
+            if (-not (Invoke-AnchorBeforeReset -WorkDir $LazarusDir -Label "Lazarus")) {
+                Log-ErrDetail "Lazarus origin pull ABORTED to protect local commits; tree left as-is."
+                return
+            }
             $reset = Invoke-Git -WorkDir $LazarusDir -GitArgs @("reset", "--hard", "origin/main")
             if ($reset.ExitCode -ne 0) {
                 Log-Err "Lazarus reset --hard origin/main failed: $($reset.Error)"
@@ -788,17 +1131,108 @@ function Pull-LazarusOrigin {
         Log-Info "Merging origin/main ($localCommits local commit(s) ahead)..."
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge origin/main", "origin/main")
         if ($result.ExitCode -ne 0) {
-            Log-Err "Merge from origin failed: $($result.Error)"
+            # git reports a conflict on STDOUT ("CONFLICT (content): ... Automatic merge failed"), so quote both streams.
+            Log-Err "Merge from origin failed: $($result.Error) $($result.Output)"
             Log-Warn "Aborting the conflicted merge so the working tree stays clean (never rebuild a tree with conflict markers)."
             Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "--abort") | Out-Null
+            $script:LazarusMergeFailed = $true
             Log-Err "Resolve conflicts manually, then re-run."
+            Log-ErrDetail "The IDE will NOT be rebuilt from this tree: it did not take origin/main, so it is stale (c730)."
         } else {
             Log-Ok "Merge from origin complete"
         }
     }
 }
 
+# c718 -- ASK WHAT THE make WE FOUND ACTUALLY IS. Miles (MonitoringSystemsDeveloper, MVMJ26,
+# 2026-09-18) measured the failure this exists to stop. On an ex-Delphi box the only make on
+# PATH is C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\make.exe -- "MAKE Version 5.43
+# Copyright (c) 1987, 2019 Embarcadero Technologies", i.e. BORLAND make, which rejects GNU
+# arguments outright (it refuses even -v). Find-Make returned it because Test-Path said the
+# file was there and nothing asked what it was; Rebuild-Lazbuild then handed GNU arguments to
+# a program that cannot read them, Borland printed its own USAGE TEXT into the log, no
+# lazbuild.exe appeared, and auto-update blamed something else entirely:
+#   [ERROR] lazbuild.exe build failed -- binary not found!
+# The build never had a chance and the tool never noticed it was talking to the wrong make;
+# lazarus.exe had in fact NEVER been built on that box. Policy #22 makes this general rather
+# than exotic: Delphi is dead org-wide but the installs are still on our machines and still
+# own "make" on PATH, so every ex-Delphi site hits this the moment auto-update rebuilds.
+#
+# Two call sites beyond the build were being poisoned by the same return value: Rebuild-IDE
+# PREPENDS the discovered make's directory to PATH, and Configure-Environment WRITES it into
+# environmentoptions.xml as MakeFilename -- so an unverified answer here does not just fail a
+# build, it persists into the user's IDE config.
+#
+# Returns @{ IsGnu; Name; Detail }. A probe that cannot run, or will not answer, is NOT GNU:
+# an error must never read as a pass (c661 -- in any rc-shaped test an error is
+# indistinguishable from a clean NO, so the default has to be the refusing one).
+function Get-MakeFlavour {
+    param([string]$Path)
+
+    $flavour = @{ IsGnu = $false; Name = "unknown"; Detail = "" }
+    $out = ""
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $Path
+        $psi.Arguments = "--version"
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+        # Bounded wait: a make that prompts instead of printing must not hang the whole
+        # update. Borland MAKE answers an unknown switch and exits, but "it exits on my box"
+        # is not a property of every make we might meet.
+        if (-not $proc.WaitForExit(10000)) {
+            try { $proc.Kill() } catch { }
+            $flavour.Name = "unresponsive (no --version answer within 10s)"
+            return $flavour
+        }
+        $out = $stdoutTask.GetAwaiter().GetResult() + "`n" + $stderrTask.GetAwaiter().GetResult()
+    } catch {
+        $flavour.Name = "not runnable ($($_.Exception.Message))"
+        return $flavour
+    }
+
+    $firstLine = ""
+    foreach ($line in ($out -split "`r?`n")) {
+        if ($line.Trim()) { $firstLine = $line.Trim(); break }
+    }
+    $flavour.Detail = $firstLine
+
+    if ($out -match "GNU Make") {
+        $flavour.IsGnu = $true
+        $flavour.Name = "GNU make"
+    } elseif ($out -match "Embarcadero|Borland") {
+        $flavour.Name = "Borland/Embarcadero MAKE (Delphi's make, not GNU make)"
+    } elseif (-not $firstLine) {
+        $flavour.Name = "silent -- printed nothing for --version"
+    } else {
+        $flavour.Name = "not GNU make"
+    }
+    return $flavour
+}
+
+# Print what Find-Make looked at and why it refused it. The old message named only the cure
+# ("Install MinGW/MSYS2") and never the disease, so a box holding a perfectly present make.exe
+# read as a box with no make at all.
+function Report-NoGnuMake {
+    Log-Err "No GNU make found. Lazarus cannot be built without it."
+    if ($script:MakeRejected.Count -gt 0) {
+        Log-ErrDetail "  Candidates were present but REJECTED because they are not GNU make:"
+        foreach ($r in $script:MakeRejected) { Log-ErrDetail "    $r" }
+        Log-ErrDetail "  A non-GNU make is not a usable substitute: it cannot read the arguments"
+        Log-ErrDetail "  this script passes (-C, PP=, FPCDIR=, OPT=) and will print its own usage instead."
+    } else {
+        Log-ErrDetail "  No make.exe was found on PATH or in any known FPC/MSYS location."
+    }
+    Log-ErrDetail "  Install MSYS2/MinGW GNU make, or put FPC's own make on PATH, then re-run."
+}
+
 function Find-Make {
+    $script:MakeRejected = @()
     $makePaths = @(
         (Get-Command "make" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
         (Get-Command "mingw32-make" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source),
@@ -811,6 +1245,13 @@ function Find-Make {
     )
     foreach ($p in $makePaths) {
         if ($p -and (Test-Path $p)) {
+            $flavour = Get-MakeFlavour -Path $p
+            if (-not $flavour.IsGnu) {
+                $why = "$p  --  $($flavour.Name)"
+                if ($flavour.Detail) { $why = "$why  [$($flavour.Detail)]" }
+                $script:MakeRejected += $why
+                continue
+            }
             # MSYS2 make depends on sibling tools (sh.exe, sed.exe) in the same usr\bin dir;
             # prepend that directory to PATH so child processes can find them.
             $makeDir = Split-Path -Parent $p
@@ -827,7 +1268,16 @@ function Find-Make {
                 Sort-Object Name -Descending
             foreach ($d in $versionedDirs) {
                 $candidate = Join-Path $d.FullName "bin\x86_64-win64\make.exe"
-                if (Test-Path $candidate) { return $candidate }
+                if (Test-Path $candidate) {
+                    $flavour = Get-MakeFlavour -Path $candidate
+                    if (-not $flavour.IsGnu) {
+                        $why = "$candidate  --  $($flavour.Name)"
+                        if ($flavour.Detail) { $why = "$why  [$($flavour.Detail)]" }
+                        $script:MakeRejected += $why
+                        continue
+                    }
+                    return $candidate
+                }
             }
         }
     }
@@ -846,7 +1296,7 @@ function Rebuild-Lazbuild {
 
     $make = Find-Make
     if (-not $make) {
-        Log-Err "make not found. Install MinGW/MSYS2 or add FPC's make to PATH."
+        Report-NoGnuMake
         return
     }
 
@@ -885,6 +1335,124 @@ function Rebuild-Lazbuild {
 
     $size = (Get-Item $lazbuildExe).Length / 1MB
     Log-Ok ("lazbuild.exe rebuilt ({0:N1} MB)" -f $size)
+}
+
+function Remove-PackageFromAutoInstall {
+    # Purge a package from the IDE's PERSISTED auto-install list so a subsequent
+    # --build-ide does not recompile it FROM CONFIG.
+    #
+    # Why Sanitize-PackageRegistrations is not enough: it deletes staticpackages.inc
+    # so "lazbuild will regenerate" it -- and lazbuild regenerates it FROM
+    # miscellaneousoptions.xml <StaticAutoInstallPackages>, which is the authoritative
+    # list and which nothing in this script touched. lazbuild --add-package ADDS to
+    # that list and it is cumulative, so a package that broke the build stays wired in
+    # and is recompiled on every retry. Dropping the --add-package argument on attempt
+    # 2+ therefore does NOT drop the package: all three attempts fail identically and
+    # the box is left with no IDE (GOD mrxp2wpx follow-up, confirmed on GOD's Windows
+    # box with commonx PRESENT). Both files have to be cleaned for the fallback to work.
+    #
+    # c640 -- what is PROVEN and what is not. The MECHANISM was reproduced end to end on
+    # lazdev with a real lazbuild and a deliberately-broken throwaway design-time package:
+    #   * `lazbuild --add-package <lpk>` persisted the package NAME into
+    #     miscellaneousoptions.xml as <StaticAutoInstallPackages Count="2"><ItemN Value=..>,
+    #     exactly the shape rewritten below (ide/lazbuild.lpr:1202 stores Package.Name).
+    #   * NEGATIVE control: re-running `--build-ide` with NO --add-package argument at all
+    #     still compiled that package and died -- "Building IDE: Compile AutoInstall
+    #     Packages failed", exit 2. Dropping the argument really does not drop the package
+    #     (ide/lazbuild.lpr:679 loads the persisted list, not the command line).
+    #   * POSITIVE control: with the entry removed from the list -- the end state this
+    #     function produces -- the IDENTICAL command stopped compiling it entirely (0
+    #     mentions) and ran on through LCL/codetools/SynEdit, 4691 log lines vs 119.
+    #     It did NOT finish a whole IDE: that throwaway pcp later tripped an unrelated
+    #     "Can't find unit FpImgReaderMachoFile" in LazDebuggerFp. Unrelated to this fix
+    #     (both units are fpdebug.lpk members) and it is downstream of what is under test.
+    # c641 -- the "this PowerShell has never executed" caveat that stood here is GONE, and
+    # the boundary behind it was never real. lazdev had no pwsh only because nobody had
+    # downloaded one; PowerShell 7 ships a self-contained linux-x64 tarball needing no
+    # installer and no root. This function has now been EXECUTED on lazdev with both
+    # controls, driving the block extracted verbatim from this file:
+    #   POSITIVE: a 3-entry StaticAutoInstallPackages containing PackageCommonX_LCL ->
+    #     entry removed, Count 3->2, survivors RENUMBERED contiguously Item1/Item2 with
+    #     their original order preserved, staticpackages.inc line dropped, both Log-Info
+    #     lines fired.
+    #   NEGATIVE: the same two files with the package absent -> BOTH left byte-identical
+    #     (MD5 unchanged) and ZERO log lines. It does not rewrite what it should not touch.
+    # One measured cosmetic effect: [xml]::Save normalises <ItemN Value="X"/> to
+    # <ItemN Value="X" />. Standard XML, and laz2_XMLRead reads it back fine.
+    # STILL NOT PROVEN, and do not let the above be quoted as if it were: no run on real
+    # Windows. Parsing and Linux-side execution of the XML rewrite say nothing about the
+    # registry, lazbuild.exe, or path semantics on GOD's box.
+    param(
+        [Parameter(Mandatory)] [string] $PcpDir,
+        [Parameter(Mandatory)] [string] $PackageName
+    )
+
+    # 1) miscellaneousoptions.xml -- the authoritative list the IDE reads.
+    $miscXml = Join-Path $PcpDir "miscellaneousoptions.xml"
+    if (Test-Path $miscXml) {
+        try {
+            [xml]$mx = Get-Content $miscXml -Raw
+            $listNode = $mx.SelectSingleNode("//StaticAutoInstallPackages")
+            if ($listNode) {
+                $items = @($listNode.ChildNodes | Where-Object { $_.LocalName -match '^Item\d+$' })
+                $kept  = @($items | Where-Object { $_.GetAttribute("Value") -ne $PackageName } |
+                          ForEach-Object { $_.GetAttribute("Value") })
+                if ($kept.Count -ne $items.Count) {
+                    foreach ($i in $items) { [void]$listNode.RemoveChild($i) }
+                    for ($n = 0; $n -lt $kept.Count; $n++) {
+                        $e = $mx.CreateElement("Item$($n+1)")
+                        $e.SetAttribute("Value", $kept[$n])
+                        [void]$listNode.AppendChild($e)
+                    }
+                    $listNode.SetAttribute("Count", "$($kept.Count)")
+                    $mx.Save($miscXml)
+                    Log-Info "Purged $PackageName from StaticAutoInstallPackages (miscellaneousoptions.xml)"
+                }
+            }
+        } catch {
+            Log-Warn "Could not rewrite miscellaneousoptions.xml to drop $PackageName -- $($_.Exception.Message)"
+        }
+    }
+
+    # 2) staticpackages.inc -- generated include; drop the line so a stale copy is not reused.
+    #    Sanitize-PackageRegistrations may already have deleted this file; that is fine (it
+    #    returns early when packagefiles.xml is absent, so this is not dead code).
+    #    c640 NAME CAVEAT, measured on a real generated file: the entries here are NOT package
+    #    names. TLazPackageGraph.SaveAutoInstallConfig writes
+    #    ExtractFileNameOnly(APackage.GetCompileSourceFilename) -- e.g. package "syneditdsgn"
+    #    appears as "allsyneditdsgn". The match below is safe for PackageCommonX_LCL only
+    #    because commonx ships lcl/PackageCommonX_LCL.pas, so its compile source happens to
+    #    share the package name. Part 1 (the authoritative miscellaneousoptions.xml list) keys
+    #    on the real package name and is unaffected.
+    #    c642 -- that caveat named the WRONG failure mode, and I only found out by EXECUTING it.
+    #    It said a mismatched name would silently no-op here. It would not: the old test was
+    #    `-notmatch [regex]::Escape($PackageName)`, i.e. a case-INSENSITIVE SUBSTRING regex, so
+    #    it OVER-matched. Two controls, run on lazdev against this exact block:
+    #      * purge "SynEditDsgn" -> it DID strip "allsyneditdsgn", by accident, because that
+    #        string contains "syneditdsgn". Right outcome, uncontrolled mechanism.
+    #      * purge "CommonX" from a list also holding "PackageCommonX_LCL" -> it stripped BOTH
+    #        inc lines. The xml half kept PackageCommonX_LCL (that half uses an exact -ne), so
+    #        the two files ended up DISAGREEING and an unrelated package was silently
+    #        deregistered from the generated include.
+    #    Latent, not live: the only call site passes the literal "PackageCommonX_LCL", and that
+    #    path is byte-for-byte unchanged by this fix (re-run and confirmed). But the comment
+    #    above invites reuse, and a reader who did the compile-source check it asks for would
+    #    still have hit the collateral delete. Now an exact whole-entry match: no over-match, no
+    #    collateral, and a mismatched compile-source name no-ops exactly as documented -- the
+    #    xml is authoritative and lazbuild regenerates this include from it anyway.
+    $incFile = Join-Path $PcpDir "staticpackages.inc"
+    if (Test-Path $incFile) {
+        try {
+            $lines = Get-Content $incFile
+            $filtered = $lines | Where-Object { $_.Trim().TrimEnd(',').Trim() -ne $PackageName }
+            if (@($filtered).Count -ne @($lines).Count) {
+                Set-Content -Path $incFile -Value $filtered -Encoding utf8
+                Log-Info "Purged $PackageName from staticpackages.inc"
+            }
+        } catch {
+            Log-Warn "Could not rewrite staticpackages.inc to drop $PackageName -- $($_.Exception.Message)"
+        }
+    }
 }
 
 function Sanitize-PackageRegistrations {
@@ -1033,7 +1601,7 @@ function Clean-StalePackageArtifacts {
         try {
             [xml]$pkgXml = Get-Content $pkgFilesXml -Raw
             $userLinks = $pkgXml.CONFIG.UserPkgLinks
-            $itemNodes = $userLinks.ChildNodes | Where-Object { $_.Name -match '^Item\d+$' }
+            $itemNodes = $userLinks.ChildNodes | Where-Object { $_.LocalName -match '^Item\d+$' }
             foreach ($it in $itemNodes) {
                 $fileNode = $it.SelectSingleNode("Filename")
                 $nameNode = $it.SelectSingleNode("Name")
@@ -1079,6 +1647,89 @@ function Clean-StalePackageArtifacts {
     }
 }
 
+# c692: strip any unit artifact a previous run compiled from the COMPILER's own source tree
+# into a Lazarus package output dir. The .sh half has had this since c655; the .ps1 half
+# never did, and Windows is GOD's own workstation.
+#
+# Why this is reachable on Windows and not only on lazdev: $VPDir is a GIT CLONE of
+# adaloveless/vibepascal -- Check-VPUpdates refuses to run without $VPDir\.git -- so the full
+# compiler source tree is on disk beside whatever ppcx64.exe the extraction put there. The
+# win64 bin tarball is bin-only (21 entries, 0 compiler\*.pas, measured c692 on
+# vibepascal-v59-5c89c538b8-win64-bin.tar.gz), but it extracts INTO that clone, so the
+# collision exists anyway. Measured c692 on the real trees: 207 compiler sources, 3 of whose
+# unit names also exist in Lazarus -- compiler, macho and tokens. macho is the one that
+# actually bit lazdev (c672: "Can't find unit FpImgReaderMachoFile", which reads exactly like
+# a merge defect and is not).
+#
+# Preferring bin\ppcx64.exe (see $VPCompiler above) stops NEW wreckage; it does not remove
+# wreckage already on disk. An orphaned .ppu/.o fails the build ON ITS OWN, so a box that
+# ever ran the legacy compiler\ppcx64.exe layout stays broken on every future run with no
+# signal a user could act on -- the same permanent-silent-degradation shape as c634.
+#
+# What counts as wreckage is decided structurally, never from a name list: for each unit name
+# that exists BOTH beside the compiler binary and in the Lazarus tree, any .ppu/.o for that
+# name that is NOT under the directory of its own Lazarus source is an orphan. Lazarus itself
+# agrees and says so -- `Duplicate unit "macho" ... orphaned ppu "<path>"`.
+function Clean-ShadowedUnitArtifacts {
+    $ccDir = Split-Path -Parent $VPCompiler
+    # After extraction the binary may sit in bin\, so ask the real source tree.
+    if (-not (Get-ChildItem -Path $ccDir -Filter *.pas -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        $ccDir = Join-Path $VPDir "compiler"
+    }
+    if (-not (Test-Path $ccDir)) { return }
+
+    # LAST extension, not the first dot: the tree carries dotted unit filenames
+    # (chatgpt.Dto.pas, generics.collections.ppu) and keying those on "chatgpt"/"generics"
+    # would collide names that are not the same unit at all.
+    $stem = { param($n) ($n -replace '\.[^.]*$', '').ToLowerInvariant() }
+
+    $ccNames = @{}
+    foreach ($f in (Get-ChildItem -Path $ccDir -Filter *.pas -File -ErrorAction SilentlyContinue)) {
+        $ccNames[(& $stem $f.Name)] = $true
+    }
+    if ($ccNames.Count -eq 0) { return }
+
+    # ONE pass over the Lazarus tree, not one per name: the compiler tree has ~200 sources and
+    # the Lazarus tree has thousands of artifacts, so a scan per name would walk the tree 200
+    # times for a list that is usually three entries long. Sources build the owner map,
+    # artifacts are the candidates, and only names in $ccNames are ever held in memory.
+    $owners = @{}
+    $artifacts = @()
+    foreach ($f in (Get-ChildItem -Path $LazarusDir -Recurse -File -ErrorAction SilentlyContinue)) {
+        $b = (& $stem $f.Name)
+        if (-not $ccNames.ContainsKey($b)) { continue }
+        $ext = $f.Extension.ToLowerInvariant()
+        $inOutput = ($f.FullName -match '[\\/](lib|units)[\\/]')
+        if (($ext -eq '.pas' -or $ext -eq '.pp') -and (-not $inOutput)) {
+            if (-not $owners.ContainsKey($b)) { $owners[$b] = @() }
+            $owners[$b] += $f.DirectoryName
+        } elseif (($ext -eq '.ppu' -or $ext -eq '.o') -and $inOutput) {
+            $artifacts += $f.FullName
+        }
+    }
+
+    $removed = 0
+    foreach ($a in $artifacts) {
+        $b = (& $stem (Split-Path -Leaf $a))
+        # No Lazarus source owns this name -- not ours to judge, leave it alone.
+        if (-not $owners.ContainsKey($b)) { continue }
+        $ok = $false
+        foreach ($d in $owners[$b]) {
+            if ($a.StartsWith(($d + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)) { $ok = $true; break }
+        }
+        if ($ok) { continue }
+        Remove-Item -Force -LiteralPath $a -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $a)) {
+            $removed++
+            Log-Info "Removed shadowed unit artifact $a -- that unit name also exists beside the compiler binary and this is not its own package's output."
+        }
+    }
+
+    if ($removed -gt 0) {
+        Log-Warn "Removed $removed unit artifact(s) left by an earlier build that compiled a COMPILER source file into a Lazarus package. Left in place they keep failing the IDE build with `"Can't find unit ...`" on every future run."
+    }
+}
+
 function Rebuild-IDE {
     Log-Header "Rebuilding Lazarus IDE (lazarus.exe)"
 
@@ -1117,6 +1768,11 @@ function Rebuild-IDE {
             $env:PATH = "$makeDir;$env:PATH"
             Log-Info "PATH prepended with make dir: $makeDir"
         }
+    } elseif ($script:MakeRejected.Count -gt 0) {
+        # c718 -- say so rather than skipping in silence. Before the GNU check this branch
+        # could not be reached on an ex-Delphi box: Find-Make handed back Borland's make and
+        # we prepended C:\Program Files (x86)\Embarcadero\...\bin to PATH for lazbuild.
+        Log-Warn "Not prepending a make dir to PATH -- no GNU make found (rejected: $($script:MakeRejected -join '; '))"
     }
 
     # GOD mp3nzr3r: ensure customdrawn LCL controls are installed by default on
@@ -1252,6 +1908,12 @@ function Rebuild-IDE {
     # NEW -- read the first 'Error:' line printed above, do not assume the old 3069.
     # c636 (GOD mt93q21h): attempt 1 is the ONLY attempt that includes commonx, so the stale-
     # artifact cleanup has to happen HERE, before it -- not in the retry that drops the package.
+    # c692: strip any unit artifact an earlier run compiled from the COMPILER source tree
+    # into a Lazarus package output dir. Must run BEFORE attempt 1 -- such an artifact fails
+    # the build on its own, even with the compiler moved out of that tree. Mirrors the .sh
+    # half, which has called clean_shadowed_unit_artifacts at exactly this point since c655.
+    Clean-ShadowedUnitArtifacts
+
     if ($commonxLpkPath) {
         Clean-StalePackageArtifacts -ExtraPackageLpks @($commonxLpkPath)
     }
@@ -1274,6 +1936,15 @@ function Rebuild-IDE {
             $keptLpks = @($addPkgLpks | Where-Object { $_ -ne $commonxLpkPath })
             $attemptPkgArgs = @()
             if ($keptLpks.Count -gt 0) { $attemptPkgArgs = @("--add-package") + $keptLpks }
+            # Dropping the --add-package argument is NOT enough on its own: the package is
+            # still in the IDE's PERSISTED auto-install list and would be recompiled from
+            # config, failing this attempt identically to the last one. Purge it from the
+            # pcp dir lazbuild is actually passed ($envDir).
+            # c640 correction: an earlier note here warned that $envDir might differ from the
+            # dir Sanitize-PackageRegistrations hardcodes. Measured -- it does not. Both are
+            # Join-Path $env:LOCALAPPDATA "lazarus", computed identically, and --pcp=$envDir is
+            # the only pcp this script ever passes. Do not "fix" a divergence that is not there.
+            Remove-PackageFromAutoInstall -PcpDir $envDir -PackageName "PackageCommonX_LCL"
             Log-Warn "Retrying WITHOUT commonx (PackageCommonX_LCL) so the IDE still builds."
             Log-Warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
             Log-Warn "  The first 'Error:' line printed above is the cause. If it names a commonx unit with error 3069, the svn update did not take effect (see the svn messages from earlier in this run)."
@@ -1286,7 +1957,14 @@ function Rebuild-IDE {
         # was exactly the line that never reached us. Tee-Object does not change what is displayed
         # (Where-Object still gates that) and $LASTEXITCODE still reports lazbuild, not the pipeline.
         $attemptLog = Join-Path ([IO.Path]::GetTempPath()) ("lazbuild_attempt" + $attempt + ".log")
-        & $lazbuildExe --lazarusdir=$LazarusDir --build-ide= --compiler=$VPCompiler --pcp=$envDir --ws=win32 @attemptPkgArgs 2>&1 |
+        # --build-ide=-Sci: lazbuild compiles ide\lazarus.pp with the compiler DIRECTLY and passes
+        # no syntax switches of its own, while the IDE sources use C-style operators (`s+=...`).
+        # The make route has always added -Sci (ide/Makefile.fpc [compiler] options); without it
+        # this step dies at ide\checkcompileropts.pas(199) "C styled assignment operators are
+        # turned off" whenever the compiler's fpc.cfg does not already carry -Sc. Idempotent when
+        # it does. c699: e08afd4a5a fixed this on auto-update.sh and left the .ps1 -- i.e. fixed
+        # it everywhere EXCEPT the platform GOD actually runs (auto-update.bat -> this file).
+        & $lazbuildExe --lazarusdir=$LazarusDir --build-ide=-Sci --compiler=$VPCompiler --pcp=$envDir --ws=win32 @attemptPkgArgs 2>&1 |
             Tee-Object -FilePath $attemptLog |
             Where-Object { $_ -match "Linking|lines compiled|Fatal|Error" }
         $buildExit = $LASTEXITCODE
@@ -1338,10 +2016,28 @@ function Rebuild-IDE {
     if ($mds.Ok) {
         Log-Ok "MetaDarkStyle dark mode installed"
         foreach ($n in $mds.Notes) { Log-Info "  $n" }
+        Clear-FeatureAttempt -Feature "metadarkstyle"
     } else {
         Log-Err "MetaDarkStyle dark mode NOT installed -- this is a regression GOD will notice."
-        foreach ($n in $mds.Notes) { Log-Err "  $n" }
-        Log-Err "Fix: re-pull origin/main, then run -ResetConfig -ForceRebuild."
+        foreach ($n in $mds.Notes) { Log-ErrDetail "  $n" }
+        Log-ErrDetail "Fix: re-pull origin/main, then run -ResetConfig -ForceRebuild."
+        Record-FeatureAttempt -Feature "metadarkstyle"   # c699: lets a steady-state run heal this once
+    }
+
+    # GOD mu3jfytu (2026-09-16): the docked "modern Delphi style" layout is the default and
+    # rides two core packages. Same rule as MetaDarkStyle above: fail loud when the binary
+    # we just built does not carry them, because a floating-window IDE is exactly what GOD
+    # asked us to stop shipping.
+    $dock = Test-DockedLayoutInstalled -Dir $LazarusDir
+    if ($dock.Ok) {
+        Log-Ok "Docked IDE layout (AnchorDocking + docked form editor) installed"
+        foreach ($n in $dock.Notes) { Log-Info "  $n" }
+        Clear-FeatureAttempt -Feature "docked"
+    } else {
+        Log-Err "Docked IDE layout NOT installed -- the IDE will open as floating windows (GOD mu3jfytu)."
+        foreach ($n in $dock.Notes) { Log-ErrDetail "  $n" }
+        Log-ErrDetail "Fix: re-pull origin/main, then run -ForceRebuild and read the FIRST 'Error:' line."
+        Record-FeatureAttempt -Feature "docked"   # c699: lets a steady-state run heal this once
     }
 
     # c634 (GOD mt8zo2vh): verify GOD's own components actually made it into the binary.
@@ -1415,25 +2111,149 @@ function Rebuild-IDE {
     }
 }
 
+# --- Is the IDE the user LAUNCHES actually built from the source we just synced? ----------
+# (Lars, c698 2026-09-17 -- GOD mu5nkho9 / mu24b48i / mu3jfytu; mirror of auto-update.sh)
+#
+# Print-Summary printed "Lazarus HEAD: <sha>" right after pulling, which READS like a
+# statement about lazarus.exe and is not one: on a steady-state box the IDE is never
+# rebuilt, so HEAD moves and the binary does not.
+#
+# Measured 2026-09-17, which is what turns this from tidiness into a defect: all four of
+# GOD's UX deliverables -- 7256de3e38 (Linux dark editor default), 9b044e4527 (docked
+# layout default), a5ffe414b8 and e08afd4a5a -- landed 2026-09-16 and are NOT ancestors of
+# the newest published release tag lazarus-4.99-vp-20260818-r25 (commit ce12737bc1,
+# 2026-08-12), which is 99 commits behind main. So someone running a downloaded r25 -- or
+# any IDE this updater has not rebuilt since -- can set the dark colour scheme, restart,
+# and CORRECTLY report "still broken" while the fix itself is perfectly good.
+#
+# Compared BY DATE on purpose: the binary carries no commit stamp, so "newer than" is the
+# strongest honest claim available. One-sided -- it can prove a binary is STALE, never that
+# it is current -- and the message says so. An unreadable git (Get-GitOutput yields "" on
+# failure) is UNKNOWN, never "up to date".
+function Get-IdeBinaryStaleness {
+    $exe = Join-Path $LazarusDir "lazarus.exe"
+    if (-not (Test-Path $exe)) { return @{ Status = 'NoBinary' } }
+    $binWhen = (Get-Item $exe).LastWriteTime
+    $headEpochText = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("log", "-1", "--format=%ct", "HEAD")
+    if (-not $headEpochText -or ($headEpochText.Trim() -notmatch '^\d+$')) { return @{ Status = 'Unknown' } }
+    $headEpoch = [int64]$headEpochText.Trim()
+    $binEpoch = [int64]($binWhen.ToUniversalTime() - [datetime]'1970-01-01').TotalSeconds
+    $behind = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "--since=@$binEpoch", "HEAD")
+    if (-not $behind) { $behind = '?' } else { $behind = $behind.Trim() }
+    $headWhen = ([datetime]'1970-01-01').AddSeconds($headEpoch).ToLocalTime()
+    if ($binEpoch -ge $headEpoch) {
+        return @{ Status = 'Fresh'; BinWhen = $binWhen; HeadWhen = $headWhen; Behind = $behind }
+    }
+    return @{ Status = 'Stale'; BinWhen = $binWhen; HeadWhen = $headWhen; Behind = $behind }
+}
+
+function Report-IdeBinaryStaleness {
+    $r = Get-IdeBinaryStaleness
+    switch ($r.Status) {
+        'Fresh'    { Log-Ok ("IDE binary is newer than every commit in this checkout (lazarus.exe built {0:yyyy-MM-dd HH:mm})" -f $r.BinWhen) }
+        'Stale'    {
+            # -NoBuild/-Check asked for exactly this outcome, so it is a FINDING, not a
+            # failure of the run: same sentence, WARN severity, no ErrorCount/exit 1.
+            $msg = ("IDE BINARY IS OLDER THAN YOUR SOURCE -- lazarus.exe was built {0:yyyy-MM-dd HH:mm} and {1} commit(s) have landed since (newest {2:yyyy-MM-dd HH:mm}). The IDE you launch does NOT contain them. Rebuild with: auto-update.bat -ForceRebuild" -f $r.BinWhen, $r.Behind, $r.HeadWhen)
+            if ($NoBuild -or $Check) { Log-Warn ($msg + " (not done here: -NoBuild/-Check)") } else { Log-Err $msg }
+        }
+        'NoBinary' { Log-Warn "No lazarus.exe in $LazarusDir yet -- nothing to compare against the source (run -ForceRebuild)" }
+        default    { Log-Warn "Cannot tell whether lazarus.exe matches this source (git could not be read in $LazarusDir) -- verdict UNKNOWN, not 'up to date'" }
+    }
+}
+
+# --- The summary must report what HAPPENED, not what was AVAILABLE ----------------------
+# (Lars, c719 2026-09-18 -- reported by Miles/MonitoringSystemsDeveloper from MVMJ26.)
+#
+# Miles ran `auto-update.bat -Check` on 2026-09-18 and read "[+] Lazarus updated" over
+# "Lazarus HEAD: 7f9f209f0b" -- while his box stayed 16 days and 115 commits stale. Nothing
+# was wrong with his clone: it is a real clone of adaloveless/Lazarus on main, tracking
+# origin/main, working tree clean (his four `git -C C:\lazarus` lines, 2026-09-18).
+#
+# The cause is that $script:LazarusUpdated does not mean "updated". Check-LazarusOrigin sets
+# it when `HEAD..origin/main` counts MORE THAN ZERO -- i.e. when commits are AVAILABLE -- and
+# `-Check` then prints the summary and exits at the early-exit block below, BEFORE
+# Pull-LazarusOrigin is ever called. So on the one path advertised as a read-only dry run,
+# "[+] Lazarus updated" was printed precisely when nothing had been updated, and the more
+# commits the user was missing, the more confidently it said so. $script:VPUpdated and
+# $script:UpstreamUpdated carry exactly the same defect on the two lines above it.
+#
+# The fix is to stop reporting a flag and start reporting the repository: capture HEAD before
+# anything pulls and compare it at print time. That is true on every path at once -- it also
+# catches a pull that was attempted and FAILED, which the flag never could, and which is the
+# other half of Miles's ambiguity (an already-up-to-date `pull --ff-only` leaves no reflog
+# entry, so his transcript alone cannot separate "never pulled" from "pulled nothing").
+# An unreadable git is UNKNOWN, never "no changes" (c675, Steve's non-repository -Check).
+function Report-RepoOutcome {
+    param(
+        [string]$Label,      # "Lazarus", "VibePascal", "Lazarus upstream"
+        [bool]$Available,    # the Check-* flag: new commits were AVAILABLE, which is not the same as applied
+        $Before,             # head stamp taken before this run pulled anything ($null = unreadable)
+        $After,              # head stamp at print time ($null = unreadable)
+        [string]$Detail,     # why an available update may not have landed
+        [string]$State = "checked"   # c722: "not-configured" / "unknown" / "checked"
+    )
+    # c722 -- LABEL, never suppress. A line that vanishes is indistinguishable from a check
+    # that silently did not run, so an unchecked comparison says so in the same slot the real
+    # verdict would have occupied -- and prints NO sha, because the only sha available here is
+    # the origin head and that is exactly what gets misread as an upstream verdict.
+    if ($State -eq "not-configured") {
+        Write-Host "  [?] $Label : NOT CHECKED -- no 'upstream' remote in $LazarusDir, so this run never compared against fpc/Lazarus. That is not 'no changes'. Add it with: git remote add upstream https://github.com/fpc/Lazarus.git" -ForegroundColor Yellow
+        return
+    }
+    if ($State -eq "unknown") {
+        Write-Host "  [?] $Label : UNKNOWN -- the 'upstream' remote is configured but upstream/main could not be read in $LazarusDir, so nothing was compared. That is not 'no changes' -- see the [ERROR] line above." -ForegroundColor Yellow
+        return
+    }
+    if (-not $Before -or -not $After) {
+        Write-Host "  [?] $Label : HEAD could not be read, so this run's outcome is UNKNOWN -- not 'no changes'" -ForegroundColor Yellow
+        return
+    }
+    if ($Before.Sha -ne $After.Sha) {
+        Write-Host "  [+] $Label updated: $($Before.Short) -> $($After.Short) (HEAD now dated $($After.When))" -ForegroundColor Green
+        return
+    }
+    if ($Available) {
+        Write-Host "  [!] $Label NOT updated -- new commit(s) are available but HEAD is still $($After.Short) dated $($After.When). $Detail" -ForegroundColor Yellow
+        return
+    }
+    Write-Host "  [-] $Label : no changes (HEAD $($After.Short) dated $($After.When))" -ForegroundColor Cyan
+}
+
 function Print-Summary {
     Log-Header "Update Summary"
 
-    if ($script:VPUpdated) {
-        Write-Host "  [+] VibePascal updated" -ForegroundColor Green
+    # Read the repositories, not the flags (c719). The HEAD date prints on every branch on
+    # purpose: a stale box is then visible on sight, without anyone having to know a sha.
+    $lazNow = Get-HeadStamp -WorkDir $LazarusDir
+    $vpNow  = Get-HeadStamp -WorkDir $VPDir
+    if ($Check) {
+        $applyHint = "-Check reports only; it never pulls. Run auto-update.bat to apply them."
     } else {
-        Write-Host "  [-] VibePascal: no changes" -ForegroundColor Cyan
+        $applyHint = "the pull did NOT land -- see the [ERROR]/[WARN] lines above."
+    }
+    # The upstream merge and the origin pull move the SAME HEAD, so the mid-point stamp is
+    # what keeps the two lines attributable. On the -Check path it is $null (neither ran) and
+    # both lines correctly compare against the run's starting HEAD.
+    if ($script:LazarusHeadAfterUpstream) { $lazMid = $script:LazarusHeadAfterUpstream } else { $lazMid = $lazNow }
+    if ($script:LazarusHeadAfterUpstream) { $originBefore = $script:LazarusHeadAfterUpstream } else { $originBefore = $script:LazarusHeadBefore }
+
+    if (-not $script:UpstreamConfigured) {
+        $upstreamState = "not-configured"
+    } elseif ($script:UpstreamUnknown) {
+        $upstreamState = "unknown"
+    } else {
+        $upstreamState = "checked"
     }
 
-    if ($script:UpstreamUpdated) {
-        Write-Host "  [+] Lazarus upstream synced" -ForegroundColor Green
-    } else {
-        Write-Host "  [-] Lazarus upstream: no changes" -ForegroundColor Cyan
+    Report-RepoOutcome -Label "VibePascal" -Available $script:VPUpdated -Before $script:VPHeadBefore -After $vpNow -Detail $applyHint
+    Report-RepoOutcome -Label "Lazarus upstream" -Available $script:UpstreamUpdated -Before $script:LazarusHeadBefore -After $lazMid -Detail $applyHint -State $upstreamState
+    Report-RepoOutcome -Label "Lazarus" -Available $script:LazarusUpdated -Before $originBefore -After $lazNow -Detail $applyHint
+    if ($script:LazarusMergeFailed) {
+        Write-Host "  [X] Lazarus : MERGE FAILED -- origin/main could not be merged into $LazarusDir; the source is STALE and the IDE was NOT rebuilt. Fix the merge (git -C `"$LazarusDir`" merge origin/main), then re-run." -ForegroundColor Red
     }
-
-    if ($script:LazarusUpdated) {
-        Write-Host "  [+] Lazarus updated" -ForegroundColor Green
-    } else {
-        Write-Host "  [-] Lazarus: no changes" -ForegroundColor Cyan
+    if ($script:LazarusOffMain) {
+        Write-Host "  [X] Lazarus : NOT ON main and could not be switched; nothing was pulled or rebuilt. Fix: git -C `"$LazarusDir`" checkout main, then re-run." -ForegroundColor Red
     }
 
     if ($script:LocalBuildProductsRestored) {
@@ -1442,16 +2262,44 @@ function Print-Summary {
         Write-Host "  [!] Local build products missing" -ForegroundColor Yellow
     }
 
-    if (-not $script:VPUpdated -and -not $script:UpstreamUpdated -and -not $script:LazarusUpdated -and -not $script:BuildProductsWereMissing) {
+    if ($script:CheckFailed) {
         Write-Host ""
-        Log-Ok "Everything is up to date. Nothing to do."
+        Log-ErrDetail "Verdict UNKNOWN: a repository could not be read or refreshed (see the [ERROR]/[WARN] lines above). This is NOT 'up to date'."
+    } elseif (-not $script:VPUpdated -and -not $script:UpstreamUpdated -and -not $script:LazarusUpdated -and -not $script:BuildProductsWereMissing) {
+        Write-Host ""
+        if ($script:UpstreamConfigured) {
+            Log-Ok "Everything is up to date. Nothing to do."
+        } else {
+            # c722 -- bound the claim by what was actually checked. Upstream was skipped.
+            Log-Ok "Everything that was checked is up to date. Nothing to do. (Upstream fpc/Lazarus was NOT among them -- see the line above.)"
+        }
     }
 
     Write-Host ""
     $lazHead = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("log", "--oneline", "-1")
     $vpHead = Get-GitOutput -WorkDir $VPDir -GitArgs @("log", "--oneline", "-1")
+    if (-not $lazHead) { $lazHead = "(unreadable -- git log failed in $LazarusDir)" }
+    if (-not $vpHead) { $vpHead = "(unreadable -- git log failed in $VPDir)" }
     Write-Host "Lazarus HEAD: $lazHead"
     Write-Host "VibePascal HEAD: $vpHead"
+
+    # c720 -- the VibePascal VERSION as it stands NOW, re-read from dist\LATEST.txt at print
+    # time rather than remembered. The mid-run "dist LATEST.txt currently names ..." line is a
+    # PRE-PULL reading; this is the end state, and when the two differ it says so outright.
+    # Unreadable is reported as UNKNOWN, never as silence (c675).
+    $vpVersionNow = Get-VPDistVersion
+    if ($vpVersionNow) {
+        if ($script:VPVersionBefore -and $script:VPVersionBefore -ne $vpVersionNow) {
+            Write-Host "VibePascal version: $vpVersionNow  (was $($script:VPVersionBefore) when this run started)"
+        } else {
+            Write-Host "VibePascal version: $vpVersionNow"
+        }
+    } else {
+        Write-Host "VibePascal version: UNKNOWN -- $VPDir\dist\...\LATEST.txt is missing or unreadable. This is NOT 'unchanged'."
+    }
+
+    # The two HEAD lines above describe the SOURCE. This one describes the BINARY.
+    Report-IdeBinaryStaleness
 }
 
 function Test-LazarusDirectoryQuality {
@@ -1685,6 +2533,119 @@ function Get-CommonXStampPath {
     return (Join-Path (Join-Path $env:LOCALAPPDATA "lazarus") "commonx-install-attempt.txt")
 }
 
+# c699 (GOD mu66fghs, 2026-09-17): the pre-build self-heal was commonx-ONLY, so a steady-state
+# box whose IDE is missing a DIFFERENT flagship feature never rebuilt and reported success on
+# every run. Same stamp discipline, one file per feature. The material that decides whether a
+# CORE package links is the Lazarus source alone, so this stamp is HEAD -- no commonx revision.
+# An unreadable git yields "nogit" rather than "", so the first run still heals once instead of
+# comparing "" to "" and suppressing itself forever (unreadable git is UNKNOWN, not "current").
+function Get-FeatureStampPath {
+    param([Parameter(Mandatory=$true)][string]$Feature)
+    return (Join-Path (Join-Path $env:LOCALAPPDATA "lazarus") ($Feature + "-install-attempt.txt"))
+}
+
+function Get-LazarusSourceStamp {
+    $lazHead = ""
+    try { $lazHead = ((Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-parse", "HEAD")) -join "").Trim() } catch { }
+    if (-not $lazHead) { $lazHead = "nogit" }
+    return $lazHead
+}
+
+function Record-FeatureAttempt {
+    # Call AFTER a build that LEFT the feature missing, so the next run can tell whether a
+    # retry is worthwhile. Mirrors the commonx stamp written further up in Rebuild-IDE.
+    param([Parameter(Mandatory=$true)][string]$Feature)
+    try {
+        $sp = Get-FeatureStampPath -Feature $Feature
+        $sd = Split-Path -Parent $sp
+        if (-not (Test-Path $sd)) { New-Item -ItemType Directory -Path $sd -Force | Out-Null }
+        Set-Content -Path $sp -Value (Get-LazarusSourceStamp) -Encoding ASCII
+    } catch { }
+}
+
+function Clear-FeatureAttempt {
+    param([Parameter(Mandatory=$true)][string]$Feature)
+    try { Remove-Item (Get-FeatureStampPath -Feature $Feature) -Force -ErrorAction SilentlyContinue } catch { }
+}
+
+function Test-FeatureAttemptIsNew {
+    # $true = the source has CHANGED since the last attempt that failed to install it.
+    param([Parameter(Mandatory=$true)][string]$Feature)
+    $sp = Get-FeatureStampPath -Feature $Feature
+    $last = ""
+    if (Test-Path $sp) {
+        # [string] cast + try/catch: $ErrorActionPreference is "Stop" script-wide and an empty
+        # stamp file makes Get-Content -Raw return $null, so a bare .Trim() would abort the run.
+        try { $last = ([string](Get-Content $sp -Raw -ErrorAction SilentlyContinue)).Trim() } catch { $last = "" }
+    }
+    return ((Get-LazarusSourceStamp) -ne $last)
+}
+
+function Test-DockedLayoutInstalled {
+    # GOD mu3jfytu (2026-09-16): the docked single-window IDE ("modern Delphi style") is
+    # the DEFAULT, carried by two packages that are now CORE (LazarusIDEBasePkgNames in
+    # ide\packages\idepackager\pkgsysbasepkgs.pas): AnchorDockingDsgn and DockedFormEditor.
+    # Wiring is not the end state (c634): verify the design-time ppus were compiled AND
+    # the classes are linked into lazarus.exe -- the same symbol scan that
+    # Test-MetaDarkStyleInstalled and Test-CommonXComponentsInstalled rely on.
+    param([string]$Dir = $LazarusDir, [string]$Cpu = "x86_64", [string]$Os = "win64", [string]$Ws = "win32")
+
+    $result = @{ Ok = $true; Notes = @() }
+
+    $ppus = @(
+        (Join-Path $Dir "components\anchordocking\design\units\$Cpu-$Os\$Ws\anchordockingdsgn.ppu"),
+        (Join-Path $Dir "components\dockedformeditor\lib\$Cpu-$Os\$Ws\dockedformeditor.ppu")
+    )
+    # c690: the BINARY is the end state; a missing intermediate artifact must never veto it.
+    # The previous order gated on the two .ppu files and returned BEFORE scanning lazarus.exe,
+    # which made this report a false "NOT installed" on a perfectly good build. Measured, not
+    # theorised: Clean-StalePackageArtifacts (section 2, "Lazarus built-in packages") deletes
+    # every *.ppu under EVERY directory named "lib", and dockedformeditor's output lives at
+    # components\dockedformeditor\LIB\<cpu>-<os>\<ws>\ while anchordocking's lives under
+    # ...\design\UNITS\..., so that sweep removes exactly one of the two paths below. Two
+    # arms over the SAME byte-identical IDE binary (md5 806c055d7741, which provably contains
+    # both classes) differed only in that one .ppu and the shipped code answered Ok=True then
+    # Ok=False -- telling GOD his docked IDE was broken and to go read a build error that does
+    # not exist. Missing .ppus are now a DIAGNOSTIC on failure, never a verdict.
+    $missingPpus = @($ppus | Where-Object { -not (Test-Path $_) })
+
+    $lazExe = Join-Path $Dir "lazarus.exe"
+    if (-not (Test-Path $lazExe)) {
+        # Also c690: the old code left Ok=$true when lazarus.exe was absent, so a tree with
+        # ppus and no IDE reported "installed". A verdict with nothing to verify is not a pass.
+        $result.Ok = $false
+        $result.Notes += "lazarus.exe not found in $Dir -- the IDE has not been built in this tree, so the docked layout cannot be verified."
+        foreach ($p in $missingPpus) { $result.Notes += "  (design-time artifact also absent: $p)" }
+        return $result
+    }
+
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($lazExe)
+        $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+        $missing = @()
+        foreach ($sym in @("TIDEAnchorDockMaster", "TDockedMainIDE")) {
+            if (-not $text.Contains($sym)) { $missing += $sym }
+        }
+        if ($missing.Count -gt 0) {
+            $result.Ok = $false
+            $result.Notes += "lazarus.exe does NOT contain: $($missing -join ', ') -- the docking packages were not linked. Run -ForceRebuild."
+            foreach ($p in $missingPpus) {
+                $result.Notes += "  ...and its design-time artifact is missing too: $p (Rebuild-IDE did not compile it -- it is a base package, so read the FIRST 'Error:' line of the build)"
+            }
+        } else {
+            $result.Notes += "lazarus.exe contains the docked-layout classes (TIDEAnchorDockMaster, TDockedMainIDE)"
+            foreach ($p in $missingPpus) {
+                $result.Notes += "  (build artifact $p is absent, but the classes ARE linked into lazarus.exe -- the stale-artifact cleanup sweeps 'lib' dirs, so this is expected and is NOT a fault)"
+            }
+        }
+    } catch {
+        $result.Ok = $false
+        $result.Notes += "Could not scan lazarus.exe: $_ -- treating as NOT verified rather than as a pass."
+    }
+
+    return $result
+}
+
 function Test-MetaDarkStyleInstalled {
     # GOD directive moehki0x (2026-04-25): MetaDarkStyle is a flagship feature.
     # Post-cycle 322 #182: runtime units live in lcl/darkstyle/ (linked via
@@ -1702,27 +2663,40 @@ function Test-MetaDarkStyleInstalled {
         return $result
     }
 
+    # c690: SAME defect as Test-DockedLayoutInstalled, second instance of the class, so it is
+    # systemic rather than a one-off. metadarkstyledsgn.ppu sits under ...\dsgn\LIB\, which
+    # Clean-StalePackageArtifacts sweeps, and gating on it returned before lazarus.exe was ever
+    # scanned. The .lpk check above stays a hard gate (missing SOURCE really does block), but a
+    # missing compiled artifact is now a diagnostic, never the verdict.
     $dsPpu = Join-Path $Dir "components\metadarkstyle\dsgn\lib\$Cpu-$Os\metadarkstyledsgn.ppu"
-    if (-not (Test-Path $dsPpu)) {
+    $dsPpuMissing = -not (Test-Path $dsPpu)
+
+    $lazExe = Join-Path $Dir "lazarus.exe"
+    if (-not (Test-Path $lazExe)) {
         $result.Ok = $false
-        $result.Notes += "Build artifact missing: $dsPpu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
+        $result.Notes += "lazarus.exe not found in $Dir -- the IDE has not been built in this tree, so MetaDarkStyle cannot be verified."
+        if ($dsPpuMissing) { $result.Notes += "  (design-time artifact also absent: $dsPpu)" }
         return $result
     }
 
-    $lazExe = Join-Path $Dir "lazarus.exe"
-    if (Test-Path $lazExe) {
-        try {
-            $bytes = [System.IO.File]::ReadAllBytes($lazExe)
-            $text = [System.Text.Encoding]::ASCII.GetString($bytes)
-            if ($text -notmatch "(?i)metadarkstyle") {
-                $result.Ok = $false
-                $result.Notes += "lazarus.exe does NOT contain MetaDarkStyle symbols -- design-time package was not linked. Run -ForceRebuild."
-            } else {
-                $result.Notes += "lazarus.exe contains MetaDarkStyle symbols"
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($lazExe)
+        $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+        if ($text -notmatch "(?i)metadarkstyle") {
+            $result.Ok = $false
+            $result.Notes += "lazarus.exe does NOT contain MetaDarkStyle symbols -- design-time package was not linked. Run -ForceRebuild."
+            if ($dsPpuMissing) {
+                $result.Notes += "  ...and its design-time artifact is missing too: $dsPpu (Rebuild-IDE did not compile it -- check uses clause in ide\lazarus.pp)"
             }
-        } catch {
-            $result.Notes += "Could not scan lazarus.exe: $_"
+        } else {
+            $result.Notes += "lazarus.exe contains MetaDarkStyle symbols"
+            if ($dsPpuMissing) {
+                $result.Notes += "  (build artifact $dsPpu is absent, but the symbols ARE linked into lazarus.exe -- the stale-artifact cleanup sweeps 'lib' dirs, so this is expected and is NOT a fault)"
+            }
         }
+    } catch {
+        $result.Ok = $false
+        $result.Notes += "Could not scan lazarus.exe: $_ -- treating as NOT verified rather than as a pass."
     }
 
     return $result
@@ -1827,9 +2801,33 @@ function Invoke-Doctor {
     if ($mds.Ok) {
         Log-Ok "MetaDarkStyle (dark mode IDE skin): installed"
         foreach ($n in $mds.Notes) { Log-Info "  $n" }
+    } elseif (-not (Test-Path $lazExe)) {
+        # The IDE has never been built in this tree, which the lazarus.exe check above
+        # already reported. A missing metadarkstyledsgn.ppu is the GUARANTEED consequence
+        # of that, not an independent fault -- reporting it as an ERROR whose note says
+        # "check uses clause in ide\lazarus.pp" sends the reader hunting a source bug that
+        # cannot exist yet. Steve's 2026-09-11 -Doctor run on a fresh C:\lazarus checkout is
+        # exactly this: [WARN] lazarus.exe not built yet, then [ERROR] MetaDarkStyle NOT
+        # installed. Downgrade it and name the real cause; do not count it as a problem (c668).
+        Log-Warn "MetaDarkStyle (dark mode IDE skin): cannot be present yet -- the IDE has never been built in this tree."
+        Log-Warn "  Expected at this stage. Run -ForceRebuild, then re-run -Doctor to get a real answer."
     } else {
         Log-Err "MetaDarkStyle (dark mode IDE skin): NOT installed"
-        foreach ($n in $mds.Notes) { Log-Err "  $n" }
+        foreach ($n in $mds.Notes) { Log-ErrDetail "  $n" }
+        $problems++
+    }
+
+    # GOD mu3jfytu (2026-09-16): docked single-window layout is the default. Same
+    # not-built-yet downgrade as MetaDarkStyle above (c668).
+    $dock = Test-DockedLayoutInstalled -Dir $LazarusDir
+    if ($dock.Ok) {
+        Log-Ok "Docked IDE layout (AnchorDocking + docked form editor): installed"
+        foreach ($n in $dock.Notes) { Log-Info "  $n" }
+    } elseif (-not (Test-Path $lazExe)) {
+        Log-Warn "Docked IDE layout: cannot be present yet -- the IDE has never been built in this tree (see lazarus.exe above)."
+    } else {
+        Log-Err "Docked IDE layout (AnchorDocking + docked form editor): NOT installed"
+        foreach ($n in $dock.Notes) { Log-ErrDetail "  $n" }
         $problems++
     }
 
@@ -1850,7 +2848,7 @@ function Invoke-Doctor {
     } else {
         Log-Err "$problems problem(s) found."
         Log-Info "Suggested fixes:"
-        Log-Info "  1. Run: .\auto-update.ps1 -ResetConfig -ForceRebuild"
+        Log-Info "  1. Run: auto-update.bat -ResetConfig -ForceRebuild   (the .bat closes the running IDE first)"
         Log-Info "  2. If problems persist, check that VibePascal tarball is present in dist\\win64\\"
         Log-Info "  3. Verify Lazarus repo is clean: git status -- inside $LazarusDir"
     }
@@ -1880,6 +2878,12 @@ function Configure-Environment {
         Log-Info "Patching existing environmentoptions.xml"
         $xml = [xml](Get-Content $envOptsFile -Raw)
         $envOpts = $xml.CONFIG.EnvironmentOptions
+        # c686 (Otto, 2026-09-17): this rewrites a config the script does not own. On the
+        # bash side an updater run from a scratch checkout silently repointed the real
+        # shared IDE config at a throwaway rig with no backup and no way back; see
+        # configure_environment() in auto-update.sh. Same cure here: write only when
+        # something actually moved, and take a rolling backup first.
+        $envOptsChanged = $false
 
         # Always update LazarusDirectory: stale path here is the #1 cause of
         # "Without a proper Lazarus directory you will get a lot of warnings"
@@ -1893,6 +2897,7 @@ function Configure-Environment {
         if ($oldVal -ne $LazarusDir) {
             $lazDirNode.SetAttribute("Value", $LazarusDir)
             Log-Info "LazarusDirectory: $oldVal -> $LazarusDir"
+            $envOptsChanged = $true
         }
 
         $compilerNode = $envOpts.SelectSingleNode("CompilerFilename")
@@ -1904,6 +2909,7 @@ function Configure-Environment {
         if ($oldVal -ne $vpCompilerPath) {
             $compilerNode.SetAttribute("Value", $vpCompilerPath)
             Log-Info "CompilerFilename: $oldVal -> $vpCompilerPath"
+            $envOptsChanged = $true
         }
 
         $fpcSrcNode = $envOpts.SelectSingleNode("FPCSourceDirectory")
@@ -1915,10 +2921,23 @@ function Configure-Environment {
         if ($oldVal -ne $VPDir) {
             $fpcSrcNode.SetAttribute("Value", $VPDir)
             Log-Info "FPCSourceDirectory: $oldVal -> $VPDir"
+            $envOptsChanged = $true
         }
 
         $makeNode = $envOpts.SelectSingleNode("MakeFilename")
         $makePath = Find-Make
+        # c718 -- a make we refused must not be left sitting in the IDE's own config. We warn
+        # rather than delete: environmentoptions.xml is the user's file and -Doctor reports it
+        # as the healthy part of a broken box, so silently rewriting it is the wrong trade.
+        if (-not $makePath -and $makeNode -and $script:MakeRejected.Count -gt 0) {
+            $persisted = $makeNode.GetAttribute("Value")
+            foreach ($r in $script:MakeRejected) {
+                if ($persisted -and $r.StartsWith($persisted)) {
+                    Log-Warn "environmentoptions.xml MakeFilename points at a make that is NOT GNU make: $r"
+                    Log-Warn "  The IDE will fail to build from source while this is set. Clear it or point it at a GNU make."
+                }
+            }
+        }
         if ($makePath) {
             if (-not $makeNode) {
                 $makeNode = $xml.CreateElement("MakeFilename")
@@ -1928,11 +2947,24 @@ function Configure-Environment {
             if ($oldVal -ne $makePath) {
                 $makeNode.SetAttribute("Value", $makePath)
                 Log-Info "MakeFilename: $oldVal -> $makePath"
+                $envOptsChanged = $true
             }
         }
 
-        $xml.Save($envOptsFile)
-        Log-Ok "Updated $envOptsFile"
+        if (-not $envOptsChanged) {
+            Log-Ok "$envOptsFile already matches this VibePascal -- left unchanged"
+        } else {
+            $envOptsBackup = "$envOptsFile.autoupdate.bak"
+            try {
+                Copy-Item -LiteralPath $envOptsFile -Destination $envOptsBackup -Force -ErrorAction Stop
+                Log-Info "Backed up existing config to $envOptsBackup"
+                Log-Info "  undo: Copy-Item -LiteralPath '$envOptsBackup' -Destination '$envOptsFile' -Force"
+            } catch {
+                Log-Warn "Could not back up $envOptsFile -- patching anyway"
+            }
+            $xml.Save($envOptsFile)
+            Log-Ok "Updated $envOptsFile"
+        }
     } else {
         Log-Info "Creating new environmentoptions.xml from template"
         $templateFile = Join-Path $LazarusDir "tools\install\win\environmentoptions.xml"
@@ -2111,6 +3143,49 @@ if ($FixLpi) {
     exit 0
 }
 
+
+$upstreamRemote = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("remote", "get-url", "upstream")
+$script:UpstreamConfigured = [bool]$upstreamRemote   # c722 -- so the summary can say NOT CHECKED instead of "no changes"
+if ($upstreamRemote) {
+    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
+} else {
+    Log-Warn "No 'upstream' remote configured -- skipping upstream Lazarus (fpc/Lazarus) checks"
+    Log-Info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
+}
+
+# c719 -- take HEAD BEFORE anything can move it, so Print-Summary can tell "updated" from
+# "an update is available". Nothing above this point pulls: the fetches move remote-tracking
+# refs only, and Wipe-LocalChanges (reset --hard HEAD) does not move HEAD either.
+$script:LazarusHeadBefore = Get-HeadStamp -WorkDir $LazarusDir
+$script:VPHeadBefore = Get-HeadStamp -WorkDir $VPDir
+$script:VPVersionBefore = Get-VPDistVersion   # c720 -- same instant as the HEADs above, before anything pulls
+
+if (-not $UpstreamOnly) {
+    Check-VPUpdates
+}
+if ($upstreamRemote) {
+    Check-LazarusUpstream
+}
+Check-LazarusOrigin
+
+if ($Check) {
+    Print-Summary
+    # c675: a -Check that could not read or refresh a repository must not exit 0 (Steve's
+    # 2026-09-16 observation: a non-repository directory scored as "Everything is up to date").
+    if ($script:CheckFailed) { exit 3 }
+    exit 0
+}
+
+# c642 -- ORDER IS THE FIX, not a tidy-up. This block used to sit ABOVE the -Check early exit,
+# so `auto-update.bat -Check` -- advertised and used as a read-only dry run -- ran
+# `git reset --hard HEAD` + `git clean -fdx` over BOTH repos and extracted the VP binaries
+# before printing its summary and exiting. A developer asking "is there anything new?" lost
+# every uncommitted and untracked file in $LazarusDir and $VPDir to a command that then said
+# "Nothing to do." Nothing between the old and new positions needs a clean tree: the fetch and
+# all three Check-* helpers are git-query-only (Check-VPUpdates is rev-list HEAD..origin/main),
+# and Print-Summary reads only $script: flags that are set further down, past this point.
+# $scriptPreHash moves WITH the block so the wipe -> extract -> hash order a non-Check run sees
+# is byte-for-byte what it was; for those runs this commit is a pure relocation.
 if (-not $KeepLocal) {
     Wipe-LocalChanges -RepoDir $LazarusDir -Label "Lazarus"
     if (-not $UpstreamOnly -and (Test-Path (Join-Path $VPDir ".git"))) {
@@ -2128,27 +3203,6 @@ Extract-VPBinaries
 
 $scriptPreHash = (Get-FileHash -Path (Join-Path $LazarusDir "auto-update.ps1") -Algorithm SHA256).Hash
 
-$upstreamRemote = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("remote", "get-url", "upstream")
-if ($upstreamRemote) {
-    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
-} else {
-    Log-Warn "No 'upstream' remote configured -- skipping upstream Lazarus (fpc/Lazarus) checks"
-    Log-Info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
-}
-
-if (-not $UpstreamOnly) {
-    Check-VPUpdates
-}
-if ($upstreamRemote) {
-    Check-LazarusUpstream
-}
-Check-LazarusOrigin
-
-if ($Check) {
-    Print-Summary
-    exit 0
-}
-
 if (-not $UpstreamOnly) {
     Pull-VP
     # Re-extract VibePascal binaries after pulling source changes so the compiler always
@@ -2161,7 +3215,9 @@ if (-not $UpstreamOnly) {
         Extract-VPBinaries
     }
 }
+Ensure-LazarusOnMain   # c730: main only -- BEFORE the upstream merge and the origin pull, which both move HEAD
 Pull-LazarusUpstream
+$script:LazarusHeadAfterUpstream = Get-HeadStamp -WorkDir $LazarusDir   # c719: splits the upstream merge from the origin pull, which move the same HEAD
 Pull-LazarusOrigin
 
 Relaunch-IfUpdated -PreHash $scriptPreHash
@@ -2221,8 +3277,50 @@ if (-not $anyUpdated -and -not $NoBuild) {
         } else {
             Log-Err "PackageCommonX_LCL still not installed, and nothing has changed since the last attempt -- not rebuilding again."
             Log-ErrDetail "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
-            Log-ErrDetail "  Fix: run  .\auto-update.ps1 -ForceRebuild  and read the FIRST 'Error:' line of the build output."
+            Log-ErrDetail "  Fix: run  auto-update.bat -ForceRebuild  and read the FIRST 'Error:' line of the build output."
             Log-ErrDetail "  That first error is the commonx unit that fails to compile under the IDE build mode."
+        }
+    }
+}
+
+# c699 (GOD mu66fghs, 2026-09-17) -- SELF-HEAL THE OTHER TWO FLAGSHIP FEATURES.
+# The block above has asked exactly one question since c634: "are GOD's commonx components in
+# the binary?" An IDE built BEFORE the docking packages became core (9b044e4527, 2026-09-16)
+# answers YES, so $anyUpdated stays $false, Rebuild-IDE never runs, and the box keeps a
+# floating-window IDE forever while every run ends in success. GOD reported exactly that from
+# Windows: "your changes recently seemed to affect the linux builds... but my windows system is
+# still the fucking ancient looking delphi 7 style floating shit."
+#
+# Test-DockedLayoutInstalled and Test-MetaDarkStyleInstalled already existed -- they just ran
+# only AFTER a rebuild, i.e. never on the boxes that needed them. Both are pure reads of
+# lazarus.exe, so they are safe to run before the build too. Same stamp guard as commonx (one
+# stamp per feature) so a box that genuinely cannot build these gets ONE loud diagnosis rather
+# than a full IDE rebuild on every run. -ForceRebuild always overrides the guard.
+if (-not $anyUpdated -and -not $NoBuild -and (Test-Path (Join-Path $LazarusDir "lazarus.exe"))) {
+    $healChecks = @(
+        @{ Feature = "docked"
+           Verifier = { Test-DockedLayoutInstalled -Dir $LazarusDir }
+           Label    = "the docked single-window layout (GOD mu3jfytu)"
+           Package  = "AnchorDockingDsgn + DockedFormEditor"
+           Loss     = "The IDE will keep opening as floating windows (the Delphi 7 shape GOD asked us to stop shipping)." },
+        @{ Feature = "metadarkstyle"
+           Verifier = { Test-MetaDarkStyleInstalled -Dir $LazarusDir }
+           Label    = "the MetaDarkStyle design-time package (GOD moehki0x)"
+           Package  = "metadarkstyledsgn"
+           Loss     = 'Tools -> Options -> Environment -> "Theme" stays missing and the dark style is never applied at IDE start.' }
+    )
+    foreach ($check in $healChecks) {
+        $verdict = & $check.Verifier
+        if ($verdict.Ok) { continue }
+        Log-Warn "IDE is missing $($check.Label)"
+        foreach ($n in $verdict.Notes) { Log-Info "  $n" }
+        if (Test-FeatureAttemptIsNew -Feature $check.Feature) {
+            Log-Info "Forcing IDE rebuild to link $($check.Package) (source changed since the last attempt)"
+            $anyUpdated = $true
+        } else {
+            Log-Err "$($check.Package) still not linked, and the source has not moved since the last attempt -- not rebuilding again."
+            Log-ErrDetail "  $($check.Loss)"
+            Log-ErrDetail "  Fix: run  auto-update.bat -ForceRebuild  and read the FIRST 'Error:' line of the build output."
         }
     }
 }
@@ -2234,6 +3332,21 @@ $unmergedFiles = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("ls-files", "--un
 if ($unmergedFiles) {
     Log-Err "Working tree in $LazarusDir has unresolved merge conflicts -- refusing to rebuild (would compile conflict markers)."
     Log-Err "Resolve them, or run 'git merge --abort' / 'git reset --hard origin/main' in $LazarusDir, then re-run the updater."
+    Print-Summary
+    exit 1
+}
+
+# UPDATE FAILED gate (c730): a run whose origin merge failed, or whose checkout could not be
+# put on main, rebuilds NOTHING -- -ForceRebuild included. GOD's AGENTS.md section 1 records
+# what the old behaviour cost: an IDE rebuilt from stale source with an [OK] line under it.
+$blocked = Test-UpdateBlocked
+if ($blocked) {
+    Write-Host ""
+    Log-Err       "########################################################################"
+    Log-ErrDetail "#            UPDATE FAILED -- THE IDE WAS NOT REBUILT                  #"
+    Log-ErrDetail "########################################################################"
+    Log-ErrDetail $blocked
+    Log-ErrDetail "Fix the checkout, then re-run auto-update.bat. Do not debug the IDE you have: it is the OLD one."
     Print-Summary
     exit 1
 }
@@ -2264,7 +3377,7 @@ if ($quality.Quality -ne "Compatible") {
     Write-Host ""
     Log-Err "Lazarus directory check FAILED: $($quality.Quality) [$($quality.Note)]"
     Log-ErrDetail "IDE will show 'Without a proper Lazarus directory you will get a lot of warnings' on startup."
-    Log-Info "Run: .\auto-update.ps1 -Doctor for a full diagnosis."
+    Log-Info "Run: auto-update.bat -Doctor for a full diagnosis."
 }
 
 if (-not $NoLaunch) {

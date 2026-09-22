@@ -95,6 +95,7 @@ type
     procedure TestParseUnleashedFunctionReference;
     procedure TestParseUnleashedAnonFunc;
     procedure TestParseUnleashedInlineVar;
+    procedure TestUnleashedInlineVarInitTypeDisplay;
     procedure TestParseUnleashedMultilineString;
     procedure TestParseUnleashedInlineGenerics;
     procedure TestParseUnleashedPrefixedAttribute;
@@ -1469,6 +1470,105 @@ begin
   'end;',
   'end.']);
   ParseModule;
+end;
+
+procedure TTestPascalParser.TestUnleashedInlineVarInitTypeDisplay;
+// The type string identifier completion shows for an inline var that has no
+// explicit type annotation (ide/sourceeditprocs.pas ctnVarDefinition ->
+// ExtractInlineVarInitType). Ground truth is the compiler: VibePascal 3.3.1
+// x86_64 infers Int64 for every integer literal, sign or no sign, under
+// {$mode unleashed} and {$mode delphi} alike (SizeOf 8, RTTI name Int64).
+// A leading sign is a separate atom, so -1 and -1.0 used to miss the literal
+// scan entirely and come back with a different answer than 1 and 1.0 did.
+// The i..n cases are constant EXPRESSIONS rather than bare literals: a
+// literal that merely starts the term does not give the term's type
+// (1/2 is Double, 1+0.5 is a real), and an integer constant expression
+// reaching the generic resolver used to display the shared 'Integer'
+// default instead of the Int64 the compiler gives it.
+// o..q pin the REAL literal rule to the compiler after FPCDeveloper's v56
+// (VibePascal 3.3.1 2026/09/10) made an un-annotated real inline var take
+// the default real type: every real literal a Double can hold is Double
+// whatever its own precision (o), and only one that a Double CANNOT hold
+// widens to Extended -- too large (p) or underflowing to zero (q). Ground
+// truth for all three read at runtime via PTypeInfo, not inferred.
+// NOT covered here, and deliberately: `var r := s` for a declared
+// s: single, `var t := single(1.0)`, and `var u := IntToStr(1)` under
+// `uses SysUtils`. All three take the identifier path into
+// FindTermTypeAsString and all three come back EMPTY *in this harness*.
+// THAT IS A HARNESS ARTIFACT, NOT A CODETOOLS DEFECT. Measured in the real
+// IDE on 2026-09-11 and confirmed working: driving identifier completion
+// (the one production caller, ide/sourceeditprocs.pas ctnVarDefinition) on
+// a project unit holding exactly these cases, the list shows r : Single,
+// t : Single and u : String, alongside a : Int64 and q : TMyRec.
+// Both controls were in band, in the same list. An arm initialised from an
+// undefined identifier shows NO type column at all, so the display can
+// report empty -- it is sensitive, not promiscuous. And a normally declared
+// `s: single` shows the SOURCE spelling `single` while the inferred arms
+// show the resolved name `Single`, so those entries really did travel this
+// function rather than the declared-type path above it.
+// Two explanations for the harness EMPTY have now been measured and both
+// are WRONG: "no search paths" (a real FPC UnitSetCache attached to the
+// virtual directory -- the testctpas2js.pas recipe:
+// CompilerDefinesCache.TestFilename, then FindUnitSet + Init +
+// CreateFPCTemplate under a da_Directory template for VirtualDirectory,
+// with GetUnitSetForDirectory('') present and the cache demonstrably
+// resolving system.pp and sysutils.pp -- changes nothing), and "the answer
+// lives outside the unit being parsed" (the IDE resolves exactly those
+// cross-unit cases). Whatever context a real project supplies and a
+// virtual-file harness does not, it is not the unit path.
+// So these stay out: asserting them would pin a harness limitation into
+// the suite as though it were codetools' behaviour, and the next reader
+// would take a green run as proof of a defect that does not exist.
+// If one ever does fail here, note that FindExprTypeAsString RAISES on
+// xtNone and ExtractInlineVarInitType swallows it in a bare
+// `except Result:=''`, so a raise and a genuine cannot-infer are
+// indistinguishable from the empty string alone.
+var
+  Tool: TCodeTool;
+  Node: TCodeTreeNode;
+  Actual: string;
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'procedure Test;',
+  'implementation',
+  'procedure Test;',
+  'begin',
+  '  var a := 1;',
+  '  var b := -1;',
+  '  var c := 2147483648;',
+  '  var d := 1.0;',
+  '  var e := -1.0;',
+  '  var f := ''hello'';',
+  '  var g := true;',
+  '  var h := nil;',
+  '  var i := 1/2;',
+  '  var j := 1+0.5;',
+  '  var k := 2*3;',
+  '  var m := -(1);',
+  '  var n := 1 div 2;',
+  '  var o := 1.5e300;',
+  '  var p := 1.0e400;',
+  '  var q := 1.0e-4000;',
+  '  Writeln(a,b,c,d,e,f,g,i,j,k,m,n,o,p,q);',
+  'end;',
+  'end.']);
+  Add('end.');
+  DoParseModule(Code,Tool);
+  Actual:='';
+  Node:=Tool.Tree.Root;
+  while Node<>nil do begin
+    if Node.Desc=ctnVarDefinition then
+      Actual:=Actual+Tool.ExtractIdentifier(Node.StartPos)+'='
+             +Tool.ExtractInlineVarInitType(Node)+' ';
+    Node:=Node.Next;
+  end;
+  AssertEquals('inline var init type display',
+    'a=Int64 b=Int64 c=Int64 d=Double e=Double f=String g=Boolean h=Pointer '
+   +'i=Double j=Double k=Int64 m=Int64 n=Int64 o=Double p=Extended q=Extended ',
+    Actual);
 end;
 
 procedure TTestPascalParser.TestParseUnleashedMultilineString;

@@ -191,6 +191,7 @@ type
     procedure MainIDEFormCloseQuery(Sender: TObject; var CanClose: boolean);
     procedure HandleApplicationUserInput(Sender: TObject; var {%H-}Msg: TLMessage);
     procedure HandleApplicationIdle(Sender: TObject; var {%H-}Done: Boolean);
+    procedure FlushPendingComponentAddedDesigner;
     procedure HandleApplicationActivate(Sender: TObject);
     procedure HandleApplicationDeActivate(Sender: TObject);
     procedure HandleApplicationKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -1365,7 +1366,7 @@ begin
   OldVer:=EnvironmentOptions.OldLazarusVersion;
   NowVer:=LazarusVersionStr;
   //debugln(['TMainIDE.LoadGlobalOptions ',FEnvOptsCfgExisted,' diff=',OldVer<>NowVer,' Now=',NowVer,' Old=',OldVer,' Comp=',CompareLazarusVersion(NowVer,OldVer)]);
-  if FEnvOptsCfgExisted and (OldVer<>NowVer) then
+  if FEnvOptsCfgExisted and not SameLazarusVersion(OldVer,NowVer) then
   begin
     IsUpgrade:=CompareLazarusVersion(NowVer,OldVer)>0;
     if OldVer='' then
@@ -1455,6 +1456,7 @@ var
   ConfigFile: string;
   SkipAllTests: Boolean;
   i: Integer;
+  LazDirCandidates: TSDFileInfoList;
 begin
   {$IFDEF DebugSearchFPCSrcThread}
   ShowSetupDialog:=true;
@@ -1463,9 +1465,41 @@ begin
   SkipAllTests := GetSkipCheck(skcSetup);
 
   // check lazarus directory
-  if (not ShowSetupDialog)
-  and (not SkipAllTests)
-  and (not GetSkipCheck(skcLazDir))
+  if SkipAllTests or GetSkipCheck(skcLazDir) then
+  begin
+    // The interactive check is skipped (--skip-checks=LazarusDir/Setup/All on the
+    // command line or in lazarus.cfg). On a fresh configuration the Lazarus
+    // directory is still empty, so it resolves to the current directory, no base
+    // package .lpk can be found, and StartIDE dies with an access violation before
+    // the main window exists (measured 2026-09-22 on lazdev/gtk2 and by Miles on
+    // real Windows). Skipping the dialog must not skip the detection: when the
+    // configured value is not a Lazarus directory at all (empty, missing, or an
+    // existing directory without lcl/ide/packager -- sddqIncomplete, which is what
+    // the current directory reads as), search the candidates the setup dialog
+    // would offer and take the first compatible one. A configured directory of
+    // the wrong version is left alone: that is a choice, not an absence.
+    if (EnvironmentOptions.LazarusDirectory='')
+    or (CheckLazarusDirectoryQuality(EnvironmentOptions.GetParsedLazarusDirectory,Note)
+        in [sddqInvalid,sddqIncomplete]) then
+    begin
+      LazDirCandidates:=SearchLazarusDirectoryCandidates(true);
+      try
+        if (LazDirCandidates<>nil) and (LazDirCandidates.BestDir<>nil)
+        and (LazDirCandidates.BestDir.Quality=sddqCompatible) then
+        begin
+          debugln(['Hint: (lazarus) [TMainIDE.SetupInteractive] Lazarus directory check skipped and "',
+            EnvironmentOptions.GetParsedLazarusDirectory,'" is not a Lazarus directory: using "',
+            LazDirCandidates.BestDir.Filename,'"']);
+          EnvironmentOptions.LazarusDirectory:=LazDirCandidates.BestDir.Filename;
+        end else
+          debugln(['Warning: (lazarus) [TMainIDE.SetupInteractive] Lazarus directory check skipped, "',
+            EnvironmentOptions.GetParsedLazarusDirectory,'" is not a Lazarus directory and no candidate fits']);
+      finally
+        LazDirCandidates.Free;
+      end;
+    end;
+  end
+  else if (not ShowSetupDialog)
   and (CheckLazarusDirectoryQuality(EnvironmentOptions.GetParsedLazarusDirectory,Note)<>sddqCompatible)
   then begin
     debugln(['Warning: (lazarus) incompatible Lazarus directory: ',EnvironmentOptions.GetParsedLazarusDirectory]);
@@ -5893,11 +5927,13 @@ end;
 
 function TMainIDE.DoSaveEditorFile(AEditor: TSourceEditorInterface; Flags: TSaveFlags): TModalResult;
 begin
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(AEditor, Flags);
 end;
 
 function TMainIDE.DoSaveEditorFile(const Filename: string; Flags: TSaveFlags): TModalResult;
 begin
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(Filename, Flags);
 end;
 
@@ -5906,6 +5942,7 @@ function TMainIDE.DoSaveEditorFileAs(AEditor: TSourceEditorInterface;
 begin
   if not FilenameIsAbsolute(NewFilename) then
     raise Exception.Create('TMainIDE.DoSaveEditorFileAs: NewFilename must be absolute: '+NewFilename);
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(AEditor, Flags+[sfSaveAs], NewFilename);
 end;
 
@@ -6597,6 +6634,11 @@ end;
 
 function TMainIDE.DoSaveProject(Flags: TSaveFlags): TModalResult;
 begin
+  // Ensure a designer-added component is written to the form unit's .pas
+  // BEFORE save runs. Without this, a drag-drop-then-save (or run) sequence
+  // can race the Application.OnIdle flush and leave the .pas out of sync
+  // with the .lfm. See GOD mp262c0s (2026-05-12).
+  FlushPendingComponentAddedDesigner;
   Result:=SaveProject(Flags);
 end;
 
@@ -12659,6 +12701,35 @@ begin
     ToolStatus:=itCodeToolAborting;    // abort codetools
 end;
 
+procedure TMainIDE.FlushPendingComponentAddedDesigner;
+// Flush any designer-added component into the form unit's .pas source.
+// Called from HandleApplicationIdle (the asynchronous path) AND from every
+// synchronous save entry point -- DoSaveProject (Save Project / Save All /
+// Run+Build, via DoSaveForBuild) and DoSaveEditorFile/DoSaveEditorFileAs
+// (plain Ctrl+S) -- so a save or build that follows a component drop never
+// writes a .pas that lacks the component field while the .lfm references it.
+// Without the synchronous flush, dropping a component then immediately
+// saving/building races Application.OnIdle; the resulting .pas misses the
+// new published field and LFM streaming fails at runtime with
+// "no field of type 'TXxxx' exists on 'TForm1'" (GOD mp262c0s, 2026-05-12).
+// Measured on lazdev c661 with synthetic X input: on unpatched main the .lfm
+// gains the component and the .pas does not, on BOTH save paths.
+var
+  Ancestor: TComponent;
+begin
+  if not Assigned(FComponentAddedDesigner) then
+    Exit;
+  {$IFDEF VerboseIdle}
+  DebugLn(['TMainIDE.FlushPendingComponentAddedDesigner']);
+  {$ENDIF}
+  // Remember cursor position
+  SourceEditorManager.AddJumpPointClicked(Self);
+  // Add component definitions to form's source code
+  Ancestor:=GetAncestorLookupRoot(FComponentAddedUnit);
+  CompleteUnitComponent(FComponentAddedUnit,FComponentAddedDesigner.LookupRoot,Ancestor);
+  FComponentAddedDesigner:=nil;
+end;
+
 procedure TMainIDE.HandleApplicationIdle(Sender: TObject; var Done: Boolean);
 var
   SrcEdit: TSourceEditor;
@@ -12673,18 +12744,7 @@ begin
   GetDefaultProcessList.FreeStoppedProcesses;
   if (SplashForm<>nil) then FreeThenNil(SplashForm);
 
-  if Assigned(FComponentAddedDesigner) then
-  begin
-    {$IFDEF VerboseIdle}
-    DebugLn(['TMainIDE.HandleApplicationIdle FComponentAddedDesigner']);
-    {$ENDIF}
-    // Remember cursor position
-    SourceEditorManager.AddJumpPointClicked(Self);
-    // Add component definitions to form's source code
-    Ancestor:=GetAncestorLookupRoot(FComponentAddedUnit);
-    CompleteUnitComponent(FComponentAddedUnit,FComponentAddedDesigner.LookupRoot,Ancestor);
-    FComponentAddedDesigner:=nil;
-  end;
+  FlushPendingComponentAddedDesigner;
 
   if Assigned(FDesignerToBeFreed) then begin
     for FileItem in FDesignerToBeFreed do begin

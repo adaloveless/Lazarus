@@ -1470,7 +1470,16 @@ begin
   // In dark mode, the LCL Font is taller than system default -> MeasureText under-measures,
   // causing edit boxes to be too short and text to clip vertically. Fix matches TCheckBox/
   // TRadioButton/GroupBox pattern (GOD mrzkbqip lineage, 2026-07-24).
-  if MeasureTextForControl(AWinControl, GetControlText(AWinControl.Handle), PreferredWidth, PreferredHeight) then
+  // The measured string must be the content-independent reference 'Fj' (full
+  // ascender + descender), never the control's own text: an edit's height is a
+  // function of its FONT, not of what the user has typed.  Measuring the live
+  // text made GetTextExtentPoint32 return (0,0) for an EMPTY edit, so the
+  // preferred height collapsed to the border allowance alone -- 8 px with
+  // BorderStyle=bsSingle -- and flipped back to a normal height as soon as a
+  // character was typed.  Measured C450 (2026-09-03): light mode empty 8 px /
+  // typed 23 px; dark mode (TWin32WSCustomEditDark forces bsNone) empty 24 /
+  // typed 15.  Regression from 6102d439d8, which dropped the 'Fj' constant.
+  if MeasureTextForControl(AWinControl, 'Fj', PreferredWidth, PreferredHeight) then
   begin
     PreferredWidth := 0;
     if TCustomEdit(AWinControl).BorderStyle <> bsNone then
@@ -2296,7 +2305,12 @@ end;
 class procedure TWin32WSToggleBox.GetPreferredSize(const AWinControl: TWinControl;
   var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // MeasureTextForControl (LCL Font), not MeasureText (WM_GETFONT) -- the last check-box
+  // family site still on the window font. TCustomCheckBox and TRadioButton were moved by
+  // 6102d439d8; a toggle box paints the same caption with the same Font, so it must
+  // measure the same way. Measured C455 with the window font cleared: this site's
+  // preferred size collapsed 145x35 -> 95x20 while the moved sites did not move at all.
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     Inc(PreferredWidth, 20);
     Inc(PreferredHeight, 4);

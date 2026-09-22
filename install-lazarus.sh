@@ -113,7 +113,18 @@ if [[ -n "${GITHUB_TOKEN:-}" ]]; then
 fi
 
 log_info "Querying GitHub for latest release..."
-python3 - "$REPO_OWNER" "$REPO_NAME" "$LAZ_ARCH" "$GITHUB_API" "${API_HEADERS[@]}" <<'PY' > "$TMP_WORK/release-meta.txt"
+# `set -e` stops us before the download when the resolver exits 1 -- but it
+# stops us SILENTLY, so everything the user is left with is the resolver's bare
+# one-word token on stderr (measured 2026-09-18 against the live API with
+# --arch zzqq-notreal: `NO_TARBALL`, and nothing else, rc 1). That token is
+# honest and useless on its own. Capture the exit code and the stderr, reprint
+# the reason INSIDE the final failure block -- a human pastes the TAIL of a
+# log, so a line that only appears mid-run is not delivered -- and name what
+# each token means. install-lazarus.ps1 carries the same block for the same
+# reason, so the two scripts now fail the same way.
+resolver_rc=0
+python3 - "$REPO_OWNER" "$REPO_NAME" "$LAZ_ARCH" "$GITHUB_API" "${API_HEADERS[@]}" \
+    > "$TMP_WORK/release-meta.txt" 2> "$TMP_WORK/resolve-err.txt" <<'PY' || resolver_rc=$?
 import json, os, re, sys, urllib.request
 
 owner, repo, target_arch, api_base = sys.argv[1:5]
@@ -132,44 +143,106 @@ if not releases:
     print("NO_RELEASES", file=sys.stderr)
     sys.exit(1)
 
-data = releases[0]
-tag = data["tag_name"]
+# The -rNN segment is OPTIONAL. install-lazarus.ps1 has always allowed it to be
+# absent; this script required it, so a correctly published asset whose name
+# omitted it read as "no tarball for your platform". Keep the two in step.
 tarball_re = re.compile(
-    rf"^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}-r\d+\.tar\.gz$"
+    rf"^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}(?:-r\d+)?\.tar\.gz$"
 )
-sha_re = re.compile(rf"^SHA256SUMS-\d{{8}}-r\d+\.txt$")
+sha_re = re.compile(r"^SHA256SUMS-\d{8}(?:-r\d+)?\.txt$")
 
-tarball_url = None
-sha_url = None
+# Walk the releases newest-first and take the first one that actually carries an
+# asset for THIS architecture, instead of taking releases[0] unconditionally.
+# A single-platform release otherwise hides every older release from everyone
+# else: measured 2026-09-18, publishing the win64-only r26 turned x86_64-linux,
+# aarch64-linux and both darwin targets from a working install into NO_TARBALL,
+# because r25 -- which carries all of them -- was one position down the list.
+chosen = None
+tarball_url = sha_url = tarball_name = sha_name = expected_sha = None
+# Did ANY release carry a tarball for this arch? Drives the NO_TARBALL /
+# NO_SHA distinction below -- a release we skipped for want of a checksum is
+# NOT the same thing as no release having the platform at all.
+saw_tarball = False
 
-for asset in data.get("assets", []):
-    name = asset["name"]
-    if tarball_re.match(name):
-        tarball_url = asset["browser_download_url"]
-        tarball_name = name
-    elif sha_re.match(name):
-        sha_url = asset["browser_download_url"]
-        sha_name = name
+for data in releases:
+    cand_tarball_url = cand_sha_url = cand_tarball_name = cand_sha_name = None
+    cand_digest = None
+    for asset in data.get("assets", []):
+        name = asset["name"]
+        if tarball_re.match(name):
+            cand_tarball_url = asset["browser_download_url"]
+            cand_tarball_name = name
+            # GitHub reports a per-asset checksum of its own. install-lazarus.ps1
+            # has always accepted it; this script did not, so the two could walk
+            # to DIFFERENT releases for the same architecture -- a release with
+            # tarballs but no SHA256SUMS asset (r24 is exactly that shape) was
+            # taken by the .ps1 and skipped here. Keep the two predicates equal.
+            dig = asset.get("digest") or ""
+            if dig.startswith("sha256:"):
+                cand_digest = dig.split(":", 1)[1]
+        elif sha_re.match(name):
+            cand_sha_url = asset["browser_download_url"]
+            cand_sha_name = name
+    if cand_tarball_url:
+        saw_tarball = True
+    if cand_tarball_url and (cand_digest or cand_sha_url):
+        chosen = data
+        tarball_url, tarball_name = cand_tarball_url, cand_tarball_name
+        sha_url, sha_name = cand_sha_url, cand_sha_name
+        expected_sha = cand_digest
+        break
+    # A release carrying the tarball but NO checksum of either kind is not
+    # usable and must not stop the walk -- keep looking rather than failing.
 
-if not tarball_url:
-    print("NO_TARBALL", file=sys.stderr)
+if chosen is None:
+    # Distinguish the two failures. Reporting NO_TARBALL for a release whose
+    # tarball is sitting right there sends whoever debugs this hunting a file
+    # that exists.
+    if saw_tarball:
+        print("NO_SHA", file=sys.stderr)
+    else:
+        print("NO_TARBALL", file=sys.stderr)
     sys.exit(1)
-if not sha_url:
-    print("NO_SHA", file=sys.stderr)
-    sys.exit(1)
+
+tag = chosen["tag_name"]
 
 print(tag)
 print(tarball_name)
 print(tarball_url)
-print(sha_name)
-print(sha_url)
+# Lines 4 and 5 may now be EMPTY (release verified by API digest instead of a
+# SHA256SUMS asset). They must print as empty, never as the string "None".
+print(sha_name or "")
+print(sha_url or "")
+print(expected_sha or "")
 PY
+
+if [[ $resolver_rc -ne 0 ]]; then
+    log_err "Release resolver failed (exit $resolver_rc) for $LAZ_ARCH. Nothing was installed."
+    while IFS= read -r resolver_line; do
+        # `if`, never `[[ ... ]] && ...` -- a false && under `set -e` would exit
+        # the script here and eat the glossary lines below.
+        if [[ -n "$resolver_line" ]]; then
+            log_err "  resolver: $resolver_line"
+        fi
+    done < "$TMP_WORK/resolve-err.txt"
+    log_err "  NO_TARBALL  = no published release carries a tarball for this architecture."
+    log_err "  NO_SHA      = a tarball exists, but that release has neither a SHA256SUMS asset nor a GitHub API digest, so the download cannot be verified."
+    log_err "  NO_RELEASES = the repository has no published releases at all."
+    exit 1
+fi
+
+# Stderr is redirected above, so anything the resolver said on a SUCCESSFUL run
+# would otherwise be swallowed by this change. It normally says nothing.
+if [[ -s "$TMP_WORK/resolve-err.txt" ]]; then
+    log_warn "Release resolver stderr: $(tr '\n' ' ' < "$TMP_WORK/resolve-err.txt")"
+fi
 
 TAG="$(sed -n '1p' "$TMP_WORK/release-meta.txt")"
 TARBALL_NAME="$(sed -n '2p' "$TMP_WORK/release-meta.txt")"
 TARBALL_URL="$(sed -n '3p' "$TMP_WORK/release-meta.txt")"
 SHA_NAME="$(sed -n '4p' "$TMP_WORK/release-meta.txt")"
 SHA_URL="$(sed -n '5p' "$TMP_WORK/release-meta.txt")"
+EXPECTED_SHA="$(sed -n '6p' "$TMP_WORK/release-meta.txt")"
 
 log_info "Latest release: $TAG"
 log_info "Tarball:      $TARBALL_NAME"
@@ -180,16 +253,31 @@ download() {
     curl -fsSL --max-time 1500 --retry 1 -o "$out" "$url"
 }
 
-log_info "Downloading SHA256SUMS..."
-download "$SHA_URL" "$TMP_WORK/$SHA_NAME"
+if [[ -n "$SHA_URL" ]]; then
+    log_info "Downloading SHA256SUMS..."
+    download "$SHA_URL" "$TMP_WORK/$SHA_NAME"
+fi
 
 log_info "Downloading $TARBALL_NAME..."
 download "$TARBALL_URL" "$TMP_WORK/$TARBALL_NAME"
 
 # --- verify digest ---
+# Two checksum sources, same verifier. The SHA256SUMS asset is preferred where
+# it exists because that is the long-tested path; the API digest is the
+# fallback that lets this script accept the same releases install-lazarus.ps1
+# accepts. Neither is independent provenance -- both come from GitHub -- so
+# this guards a truncated or corrupted download, not a malicious one.
 log_info "Verifying tarball digest..."
-if ! grep -F " $TARBALL_NAME" "$TMP_WORK/$SHA_NAME" > "$TMP_WORK/expected-sha.txt"; then
-    log_err "Tarball name not found in $SHA_NAME"
+if [[ -n "$SHA_URL" ]]; then
+    if ! grep -F " $TARBALL_NAME" "$TMP_WORK/$SHA_NAME" > "$TMP_WORK/expected-sha.txt"; then
+        log_err "Tarball name not found in $SHA_NAME"
+        exit 1
+    fi
+elif [[ -n "$EXPECTED_SHA" ]]; then
+    log_info "No SHA256SUMS asset on this release; using the GitHub API digest."
+    printf '%s  %s\n' "$EXPECTED_SHA" "$TARBALL_NAME" > "$TMP_WORK/expected-sha.txt"
+else
+    log_err "No SHA256 digest available for $TARBALL_NAME"
     exit 1
 fi
 (cd "$TMP_WORK" && sha256sum -c "$TMP_WORK/expected-sha.txt")

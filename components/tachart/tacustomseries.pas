@@ -387,8 +387,17 @@ end;
 
 procedure TCustomChartSeries.AfterAdd;
 begin
-  Legend.SetOwner(FChart);
-  Shadow.SetOwner(FChart);
+  // AfterAdd can run BEFORE this series' own fields exist: TCustomChartSeries.Create
+  // calls "inherited Create(AOwner)" first, which does InsertComponent -> the owning
+  // form broadcasts opInsert -> TChart.Notification (tagraph.pas) -> TChart.AddSeries
+  // -> AfterAdd -- all while FLegend/FShadow are still nil (they are assigned a few
+  // lines further down in the constructor). Dereferencing them here is an AV on any
+  // design-time series streamed from a .lfm.
+  // Skipping the calls is safe: AddSeries assigns FChart before calling AfterAdd, so
+  // the constructor's TChartSeriesLegend.Create(FChart)/TChartShadow.Create(FChart)
+  // already receive the correct owner.
+  if FLegend <> nil then Legend.SetOwner(FChart);
+  if FShadow <> nil then Shadow.SetOwner(FChart);
 end;
 
 procedure TCustomChartSeries.Assign(ASource: TPersistent);
@@ -782,9 +791,17 @@ end;
 procedure TChartSeries.AfterAdd;
 begin
   inherited;
-  Marks.SetOwner(FChart);
-  Marks.Arrow.SetOwner(FChart);
-  Marks.Margins.SetOwner(FChart);
+  // Same early-AfterAdd hazard as TCustomChartSeries.AfterAdd: FMarks is assigned in
+  // TChartSeries.Create only AFTER "inherited Create(AOwner)", but that inherited
+  // constructor can already reach here via InsertComponent -> opInsert ->
+  // TChart.Notification -> TChart.AddSeries -> AfterAdd. TBasicPointSeries.AfterAdd
+  // already guards its own fields the same way. AddSeries sets FChart before calling
+  // AfterAdd, so the constructor's TChartMarks.Create(FChart) still gets the right owner.
+  if FMarks <> nil then begin
+    Marks.SetOwner(FChart);
+    Marks.Arrow.SetOwner(FChart);
+    Marks.Margins.SetOwner(FChart);
+  end;
 end;
 
 procedure TChartSeries.AfterDraw;
