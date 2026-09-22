@@ -19,6 +19,31 @@ DARWIN_AARCH64_CFG="$VP_DIR/vibepascal-darwin-aarch64.cfg"
 # agree on it: the one that BUILDS the IDE and the two that PACKAGE it.
 BUILD_STATE_DIR="$HOME/.cache/lazarus-build"
 
+# --- Which Win64 compiler SHIPS: the PUBLISHED pointer, not whatever branch the shared
+# tree happens to be on (Lars, c730 2026-09-22; Bruno's v60 letter) ------------------
+# copy_win64_compiler_to_staging used to take the highest-numbered
+# vibepascal-v*-win64-bin.tar.gz under $VP_DIR/dist/win64 -- and $VP_DIR is Otto's SHARED
+# checkout, which sits on whatever branch he is working on. Measured 2026-09-22: the tree
+# was on interface-temp-end-of-statement with dist at v59 while adaloveless/vibepascal
+# main had published v60 (GOD's 407ef9bb3a, the with-statement interface-temp fix his
+# IHolder test tripped on in r26). An r27 roll would have bundled v59 AGAIN and announced
+# nothing wrong, because a directory listing cannot know what was published, and the
+# win64 path carried no content check at all (the D003 md5 gate below covers only the
+# three Linux targets). The Windows updater, by contrast, installs exactly what
+# dist/win64/LATEST.txt on main names -- so a roll and an update could disagree about
+# which compiler "latest" is, and the user would never learn why.
+#
+# So the roll now bundles what the updater installs, by construction: fetch LATEST.txt
+# from the published branch FRESH on every roll, download the tarball it names, verify
+# tarball_md5 (+ sha256 when declared), extract bin/ppcx64.exe, verify ppcx64_exe_md5
+# and the PE32+ x86-64 arch, and only then stage it. Anything short of that FAILS CLOSED
+# -- no silent fall-back to the local dist, which would be the r16 defect in a new coat.
+# VP_WIN64_SOURCE=local keeps the old local-dist path, printed and noted as a deliberate
+# choice, for an offline roll or a compiler Otto has not published yet.
+VP_WIN64_SOURCE="${VP_WIN64_SOURCE:-published}"
+VP_WIN64_POINTER_BASE="${VP_WIN64_POINTER_BASE:-https://raw.githubusercontent.com/adaloveless/vibepascal/main/dist/win64}"
+VP_WIN64_PUBLISHED_CACHE="${VP_WIN64_PUBLISHED_CACHE:-$BUILD_STATE_DIR/vp-win64-published}"
+
 # --- Build-step status + artifact freshness (Lars, c645 2026-09-10) ---------
 # A darwin re-roll was one step from publishing a FOUR-MONTH-OLD IDE binary.
 # Two independent mechanisms allowed that, and both are addressed here.
@@ -462,9 +487,214 @@ get_latest_win64_bin_tarball() {
         cut -d' ' -f2-
 }
 
+pointer_field() {
+    # Print the single-token value of "key: value" line $2 in LATEST.txt $1; empty = absent.
+    awk -v k="$2:" '$1 == k { print $2; exit }' "$1" 2>/dev/null
+}
+
+is_hex_digest() {
+    # $1 = candidate, $2 = expected length (32 md5 / 64 sha256).
+    case "$1" in
+        *[!0-9a-fA-F]*|'') return 1 ;;
+    esac
+    [ "${#1}" -eq "$2" ]
+}
+
+stage_win64_compiler_from_published_pointer() {
+    # Bundle bin/ppcx64.exe from the tarball that the PUBLISHED dist/win64/LATEST.txt names.
+    # $1 = staging.
+    # rc: 0 = staged, every guard passed, COMPILER_NOTES.txt written
+    #     1 = the pointer could not be fetched or parsed -- nothing was tried against content
+    #     2 = content was fetched and REJECTED (md5/sha256/member/arch) -- nothing staged
+    # In neither failure case is anything left in $staging/compiler. The caller decides what
+    # a failure means; this function never falls back on its own.
+    local staging=$1
+    local notes="$staging/COMPILER_NOTES.txt"
+    local out="$staging/compiler/ppcx64.exe"
+    local cache="$VP_WIN64_PUBLISHED_CACHE"
+    local pointer="$cache/LATEST.txt"
+    local version source_commit versioned_tarball units_tarball tarball_md5 tarball_sha256 exe_md5 pointer_date
+    local tarball member actual_md5 actual_sha256 exe_actual arch
+    local local_tarball local_version pointer_version tree_branch tree_tip
+
+    mkdir -p "$cache" "$staging/compiler"
+    rm -f "$out"
+
+    # 1. The pointer, fetched FRESH every roll. A cached pointer would re-create exactly
+    #    the staleness this path exists to remove.
+    if ! curl -fsSL --max-time 60 --retry 2 "$VP_WIN64_POINTER_BASE/LATEST.txt" -o "$pointer.tmp"; then
+        rm -f "$pointer.tmp"
+        echo "ERROR: could not fetch the published Win64 pointer $VP_WIN64_POINTER_BASE/LATEST.txt" >&2
+        return 1
+    fi
+    mv -f "$pointer.tmp" "$pointer"
+
+    version=$(pointer_field "$pointer" version)
+    source_commit=$(pointer_field "$pointer" source_commit)
+    versioned_tarball=$(pointer_field "$pointer" versioned_tarball)
+    units_tarball=$(pointer_field "$pointer" units_tarball)
+    tarball_md5=$(pointer_field "$pointer" tarball_md5)
+    tarball_sha256=$(pointer_field "$pointer" tarball_sha256)
+    exe_md5=$(pointer_field "$pointer" ppcx64_exe_md5)
+    pointer_date=$(pointer_field "$pointer" date)
+
+    # 2. The pointer must name a plain versioned tarball (no path components: the name is
+    #    joined onto a URL and a cache dir, so "../" would be a write outside the cache) and
+    #    must declare the tarball's md5. A pointer that cannot be verified is not a pointer.
+    if ! [[ "$versioned_tarball" =~ ^vibepascal-v[0-9]+-[[:alnum:]._-]+-win64-bin\.tar\.gz$ ]]; then
+        echo "ERROR: published LATEST.txt names versioned_tarball '${versioned_tarball:-<absent>}'," >&2
+        echo "       which is not a vibepascal-v<N>-...-win64-bin.tar.gz file name. Not using it." >&2
+        return 1
+    fi
+    if ! is_hex_digest "$tarball_md5" 32; then
+        echo "ERROR: published LATEST.txt declares no usable tarball_md5 for $versioned_tarball" >&2
+        echo "       ('${tarball_md5:-<absent>}'). D003: nothing ships unverified. Not using it." >&2
+        return 1
+    fi
+    pointer_version=${versioned_tarball#vibepascal-v}
+    pointer_version=${pointer_version%%-*}
+
+    # 3. The tarball. Reuse the cached copy only when its md5 still matches the pointer;
+    #    anything else is re-downloaded, and a download that does not match is REJECTED.
+    tarball="$cache/$versioned_tarball"
+    if [ -f "$tarball" ] && [ "$(md5sum "$tarball" | cut -d' ' -f1)" = "$tarball_md5" ]; then
+        echo "Published Win64 compiler tarball $versioned_tarball already cached (md5 verified)."
+    else
+        rm -f "$tarball" "$tarball.part"
+        echo "Downloading $VP_WIN64_POINTER_BASE/$versioned_tarball ..."
+        if ! curl -fsSL --max-time 600 --retry 2 "$VP_WIN64_POINTER_BASE/$versioned_tarball" -o "$tarball.part"; then
+            rm -f "$tarball.part"
+            echo "ERROR: could not download $VP_WIN64_POINTER_BASE/$versioned_tarball" >&2
+            return 1
+        fi
+        actual_md5=$(md5sum "$tarball.part" | cut -d' ' -f1)
+        if [ "$actual_md5" != "$tarball_md5" ]; then
+            rm -f "$tarball.part"
+            echo "ERROR: $versioned_tarball downloaded with md5 $actual_md5, but the published" >&2
+            echo "       LATEST.txt declares $tarball_md5. REJECTED -- not bundling it." >&2
+            {
+                echo "NOTE: Win64 compiler REJECTED: $versioned_tarball from $VP_WIN64_POINTER_BASE"
+                echo "did not match the md5 its own LATEST.txt declares. Not bundled."
+            } > "$notes"
+            return 2
+        fi
+        mv -f "$tarball.part" "$tarball"
+    fi
+    actual_md5=$tarball_md5
+    if is_hex_digest "$tarball_sha256" 64; then
+        actual_sha256=$(sha256sum "$tarball" | cut -d' ' -f1)
+        if [ "$actual_sha256" != "$tarball_sha256" ]; then
+            rm -f "$tarball"
+            echo "ERROR: $versioned_tarball md5 matches but sha256 $actual_sha256 does not match" >&2
+            echo "       the published $tarball_sha256. REJECTED -- not bundling it." >&2
+            {
+                echo "NOTE: Win64 compiler REJECTED: $versioned_tarball passed md5 but failed the"
+                echo "sha256 its own LATEST.txt declares. Not bundled."
+            } > "$notes"
+            return 2
+        fi
+    fi
+
+    # 4. The member, its own declared md5, and its architecture. A FILENAME IS NOT EVIDENCE.
+    member=$(tar -tzf "$tarball" | awk '/(^|\/)bin\/ppcx64\.exe$/ { print; exit }')
+    if [ -z "$member" ]; then
+        echo "ERROR: published $versioned_tarball does not contain bin/ppcx64.exe. REJECTED." >&2
+        {
+            echo "NOTE: Win64 compiler REJECTED: published $versioned_tarball carries no"
+            echo "bin/ppcx64.exe. Not bundled."
+        } > "$notes"
+        return 2
+    fi
+    tar -xOzf "$tarball" "$member" > "$out" || { rm -f "$out"; echo "ERROR: could not extract $member from $versioned_tarball" >&2; return 2; }
+    exe_actual=$(md5sum "$out" | cut -d' ' -f1)
+    if is_hex_digest "$exe_md5" 32 && [ "$exe_actual" != "$exe_md5" ]; then
+        rm -f "$out"
+        echo "ERROR: bin/ppcx64.exe from $versioned_tarball has md5 $exe_actual, but the published" >&2
+        echo "       LATEST.txt declares ppcx64_exe_md5 $exe_md5. REJECTED -- not bundling it." >&2
+        {
+            echo "NOTE: Win64 compiler REJECTED: bin/ppcx64.exe inside $versioned_tarball did not"
+            echo "match the ppcx64_exe_md5 its own LATEST.txt declares. Not bundled."
+        } > "$notes"
+        return 2
+    fi
+    arch=$(file -b "$out" 2>/dev/null)
+    if ! printf '%s\n' "$arch" | grep -qE 'PE32\+.*x86-64'; then
+        rm -f "$out"
+        echo "ERROR: bin/ppcx64.exe from $versioned_tarball is not a PE32+ x86-64 binary: $arch" >&2
+        {
+            echo "NOTE: Win64 compiler REJECTED (wrong architecture: $arch). Not bundled."
+        } > "$notes"
+        return 2
+    fi
+    chmod +x "$out"
+
+    # 5. Say what shipped, and whether the shared tree agreed. The disagreement case is the
+    #    whole reason this path exists, so it is printed, not just noted.
+    tree_branch=$(git -C "$VP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+    tree_tip=$(git -C "$VP_DIR" rev-parse --short HEAD 2>/dev/null || echo "?")
+    local_tarball=$(get_latest_win64_bin_tarball)
+    local_version=""
+    if [ -n "$local_tarball" ]; then
+        local_version=$(basename "$local_tarball")
+        local_version=${local_version#vibepascal-v}
+        local_version=${local_version%%-*}
+    fi
+    {
+        echo "Bundled Win64 VibePascal compiler ${version:-v$pointer_version} (source commit ${source_commit:-unknown})"
+        echo "from the PUBLISHED pointer $VP_WIN64_POINTER_BASE/LATEST.txt (pointer date ${pointer_date:-unknown}),"
+        echo "tarball $versioned_tarball -- the same bytes auto-update.bat/.ps1 install."
+        echo "  tarball md5:    $actual_md5 (matches LATEST.txt tarball_md5)"
+        if [ -n "$actual_sha256" ]; then
+            echo "  tarball sha256: $actual_sha256 (matches LATEST.txt tarball_sha256)"
+        fi
+        if is_hex_digest "$exe_md5" 32; then
+            echo "  ppcx64.exe md5: $exe_actual (matches LATEST.txt ppcx64_exe_md5)"
+        else
+            echo "  ppcx64.exe md5: $exe_actual (LATEST.txt declares no ppcx64_exe_md5; the tarball md5 above covers it)"
+        fi
+        echo "  arch:           $arch"
+        echo "  paired unit set per the pointer: ${units_tarball:-not declared}"
+        if [ -n "$local_version" ] && [ "$local_version" != "$pointer_version" ]; then
+            echo "  The shared tree $VP_DIR ($tree_branch @ $tree_tip) had v$local_version as its newest"
+            echo "  dist tarball; the published pointer wins. A roll that read the tree would have"
+            echo "  bundled v$local_version and said nothing."
+        else
+            echo "  The shared tree $VP_DIR ($tree_branch @ $tree_tip) agrees: newest local dist tarball is v${local_version:-<none>}."
+        fi
+        echo "  The md5 above is the staging binary; for the digests of the file actually in this"
+        echo "  tarball, read the AS-SHIPPED block that stamp_shipped_compiler_hashes appends below."
+    } > "$notes"
+    echo "Bundled Win64 VibePascal compiler ${version:-v$pointer_version} (${source_commit:-?}) from the published pointer: $versioned_tarball, md5 verified."
+    if [ -n "$local_version" ] && [ "$local_version" != "$pointer_version" ]; then
+        echo "NOTE: $VP_DIR ($tree_branch @ $tree_tip) newest local dist tarball is v$local_version; the published pointer is v$pointer_version and WINS."
+    fi
+    return 0
+}
+
 copy_win64_compiler_to_staging() {
     local staging=$1
-    local tarball member
+    local notes="$staging/COMPILER_NOTES.txt"
+    local tarball member rc=0
+
+    case "$VP_WIN64_SOURCE" in
+        published)
+            stage_win64_compiler_from_published_pointer "$staging" || rc=$?
+            [ "$rc" -eq 0 ] && return 0
+            tarball=$(get_latest_win64_bin_tarball)
+            echo "ERROR: the published Win64 compiler could not be bundled (rc $rc above)." >&2
+            echo "       NOT falling back to $VP_DIR/dist/win64 (newest there: $(basename "${tarball:-<none>}") on branch" >&2
+            echo "       $(git -C "$VP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')): a directory listing is not" >&2
+            echo "       evidence of what is published. Re-run with VP_WIN64_SOURCE=local to bundle it deliberately." >&2
+            return 1
+            ;;
+        local)
+            echo "NOTE: VP_WIN64_SOURCE=local -- bundling from $VP_DIR/dist/win64 by request, NOT from the published pointer."
+            ;;
+        *)
+            echo "ERROR: VP_WIN64_SOURCE must be 'published' or 'local', not '$VP_WIN64_SOURCE'." >&2
+            return 1
+            ;;
+    esac
 
     tarball=$(get_latest_win64_bin_tarball)
     if [ -n "$tarball" ]; then
@@ -472,6 +702,14 @@ copy_win64_compiler_to_staging() {
         if [ -n "$member" ]; then
             tar -xOzf "$tarball" "$member" > "$staging/compiler/ppcx64.exe"
             echo "Bundled Win64 VibePascal compiler from $(basename "$tarball")."
+            {
+                echo "Bundled Win64 VibePascal compiler from the LOCAL shared tree on request (VP_WIN64_SOURCE=local):"
+                echo "  $tarball"
+                echo "  $VP_DIR is on $(git -C "$VP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?') @ $(git -C "$VP_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')."
+                echo "  This was NOT checked against the published dist/win64/LATEST.txt pointer, so it may"
+                echo "  not be the compiler auto-update.bat installs. md5 of the staging binary:"
+                echo "  $(md5sum "$staging/compiler/ppcx64.exe" | cut -d' ' -f1)"
+            } > "$notes"
             return 0
         fi
         echo "WARNING: $(basename "$tarball") does not contain bin/ppcx64.exe."
@@ -480,12 +718,14 @@ copy_win64_compiler_to_staging() {
     if [ -f "$VP_DIR/compiler/ppcx64.exe" ]; then
         cp "$VP_DIR/compiler/ppcx64.exe" "$staging/compiler/"
         echo "Bundled Win64 VibePascal compiler from compiler/ppcx64.exe."
+        echo "Bundled Win64 VibePascal compiler from $VP_DIR/compiler/ppcx64.exe (VP_WIN64_SOURCE=local; unverified against the published pointer)." > "$notes"
         return 0
     fi
 
     if [ -f "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" ]; then
         cp "$VP_DIR/dist/win64/staging/bin/ppcx64.exe" "$staging/compiler/"
         echo "WARNING: Bundled Win64 VibePascal compiler from legacy dist/win64/staging."
+        echo "WARNING: Bundled Win64 VibePascal compiler from the legacy $VP_DIR/dist/win64/staging (VP_WIN64_SOURCE=local; unverified against the published pointer)." > "$notes"
         return 0
     fi
 
@@ -632,6 +872,13 @@ usage() {
     echo "  osx64  - Build Lazarus for x86_64-darwin (macOS Intel)"
     echo "  osxarm - Build Lazarus for aarch64-darwin (macOS Apple Silicon)"
     echo "  all    - Build for all platforms"
+    echo ""
+    echo "Environment:"
+    echo "  VP_WIN64_SOURCE=published|local   where the SHIPPED win64 compiler/ppcx64.exe comes from."
+    echo "        published (default): the dist/win64/LATEST.txt pointer on adaloveless/vibepascal main,"
+    echo "        downloaded fresh and md5/sha256-verified -- the same bytes auto-update.bat installs."
+    echo "        local: the newest vibepascal-v*-win64-bin.tar.gz under the shared tree, unverified."
+    echo "  VP_WIN64_POINTER_BASE=<url>       base URL of that pointer (default raw.githubusercontent.com/.../main/dist/win64)"
     exit 1
 }
 
