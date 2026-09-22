@@ -1664,7 +1664,7 @@ begin
     try
       for i:=0 to Selection.Count-1 do
         NewSelection.Add(Selection[i].Persistent);
-      OI.ComponentTree.SetSelection(NewSelection);
+      OI.ComponentTree.Selection := NewSelection;
     finally
       NewSelection.Free;
     end;
@@ -2395,7 +2395,7 @@ begin
                   NewSelection:=TPersistentSelectionList.Create;
                   try
                     NewSelection.Add(MouseDownComponent);
-                    ComponentTree.SetSelection(NewSelection);
+                    ComponentTree.Selection := NewSelection;
                   finally
                     NewSelection.Free;
                   end;
