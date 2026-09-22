@@ -81,6 +81,23 @@ type
     procedure TestGetProcResultNode;
     procedure TestVarTypeSectionEndAtGenericProc;
     procedure TestVarWithClassOf;
+    procedure TestParseUnleashedBaseline;
+    procedure TestParseUnleashedGenericClass;
+    procedure TestParseUnleashedAdvancedRecord;
+    procedure TestParseUnleashedFunctionReference;
+    procedure TestParseUnleashedAnonFunc;
+    procedure TestParseUnleashedInlineVar;
+    procedure TestUnleashedInlineVarInitTypeDisplay;
+    procedure TestParseUnleashedMultilineString;
+    procedure TestParseUnleashedInlineGenerics;
+    procedure TestParseUnleashedPrefixedAttribute;
+    procedure TestParseUnleashedMatchExpression;
+    procedure TestParseUnleashedMultiHelpers;
+    procedure TestParseUnleashedStatementExpressions;
+    procedure TestParseUnleashedArrayEquality;
+    procedure TestParseUnleashedTuples;
+    procedure TestParseDelphiInlineVarAnonCaptureGenericReturn;
+    procedure TestParseDelphiGenericReturnType;
   end;
 
 procedure CheckNodeTree(Name: String; Tool: TCodeTool; Test: TTestCase; UnfinishedSource: boolean = False);
@@ -714,14 +731,6 @@ begin
   '    False: Result := 0;',
   '  end;',
   'end;',
-  'function MatchExpression(const AValue: string): Integer;',
-  'begin',
-  '  Result := match AValue of',
-  '    ''one'': 1;',
-  '  else',
-  '    0;',
-  '  end;',
-  'end;',
   'end.']);
   ParseModule;
 end;
@@ -1048,6 +1057,518 @@ begin
   '',
   'end.'
   ]);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedInlineGenerics;
+// Regression guard for the CodeTools implicit/inline-generics parse fix
+// (commit 042563423f): the fork's UNLEASHED mode now parses Delphi-style
+// "Name<T>" used in type position -- a generic interface/class declaration,
+// a nested generic type argument (Tarray<IHolder<TStringList>>, exercising the
+// "> >" close), and an inline generic specialization as a function RETURN type.
+// Before the fix these raised "expected =, but < found"; because a single
+// unparsable unit makes CodeTools Find-Declaration return false for every
+// identifier, IDE Ctrl+Click "went nowhere" in Unleashed-mode projects.
+// (unleashedmodeswitches gained m_implicit_generics via the fpc-unleashed
+// codetools overlay; see compiler/globals.pas.)
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  IHolder<T> = interface',
+  '    function Get: T;',
+  '  end;',
+  '  TBox<T> = class',
+  '    Value: T;',
+  '    procedure SetIt(const AValue: T);',
+  '  end;',
+  '  TFactory = class',
+  '    Cache: Tarray<IHolder<TStringList>>;',
+  '    function Make: IHolder<TObject>;',
+  '  end;',
+  'implementation',
+  'procedure TBox<T>.SetIt(const AValue: T);',
+  'begin',
+  '  Value := AValue;',
+  'end;',
+  'function TFactory.Make: IHolder<TObject>;',
+  'begin',
+  '  Result := nil;',
+  'end;']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseDelphiInlineVarAnonCaptureGenericReturn;
+// Parse coverage for the combined modern Pascal shape (verified by FPCDeveloper):
+// an inline var with inferred type ("var rs := Result"), an anonymous
+// procedure that captures that inline var and reads a field through it, plus an
+// inline var whose type is a Delphi-style generic specialization
+// (IHolder<TSERowSet>). delphi mode has m_inline_var + m_anonymous_functions +
+// m_implicit_generics, so all three parse together.
+begin
+  Add([
+  'program test1;',
+  '{$mode delphi}',
+  'type',
+  '  TIterProc = reference to procedure(item: string);',
+  '  TInnerObj = class',
+  '    Cur: Integer;',
+  '    procedure iterateAC(cb: TIterProc);',
+  '  end;',
+  '  TSERowSet = class',
+  '    o: TInnerObj;',
+  '  end;',
+  '  IHolder<T> = interface',
+  '    function Get: T;',
+  '  end;',
+  '  TBuilder = class',
+  '    class function MakeHolder(rs: TSERowSet): IHolder<TSERowSet>;',
+  '    class function BuildRowSet: TSERowSet;',
+  '  end;',
+  'procedure TInnerObj.iterateAC(cb: TIterProc);',
+  'begin',
+  'end;',
+  'class function TBuilder.MakeHolder(rs: TSERowSet): IHolder<TSERowSet>;',
+  'begin',
+  '  Result := nil;',
+  'end;',
+  'class function TBuilder.BuildRowSet: TSERowSet;',
+  'begin',
+  '  Result := TSERowSet.Create;',
+  '  var rs := Result;',
+  '  rs.o.iterateAC(procedure(item: string)',
+  '    begin',
+  '      rs.o.Cur := 1;',
+  '    end);',
+  '  var held: IHolder<TSERowSet> := MakeHolder(rs);',
+  'end;',
+  'begin']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedBaseline;
+// t01 baseline: {$mode unleashed} unit with a plain class.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TFoo = class',
+  '    x: Integer;',
+  '  end;',
+  'implementation',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedGenericClass;
+// t02 generic class: parameterized class declaration with implementation.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TBox<T> = class',
+  '    Value: T;',
+  '    procedure SetIt(const AValue: T);',
+  '  end;',
+  'implementation',
+  'procedure TBox<T>.SetIt(const AValue: T);',
+  'begin',
+  '  Value := AValue;',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedAdvancedRecord;
+// t03 advanced record: methods inside a record under {$mode unleashed}.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TPoint = record',
+  '    X, Y: Integer;',
+  '    procedure Offset(dx, dy: Integer);',
+  '    function Sum: Integer;',
+  '  end;',
+  'implementation',
+  'procedure TPoint.Offset(dx, dy: Integer);',
+  'begin',
+  '  X := X + dx; Y := Y + dy;',
+  'end;',
+  'function TPoint.Sum: Integer;',
+  'begin',
+  '  Result := X + Y;',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedFunctionReference;
+// t04 function reference: reference-to-function type under {$mode unleashed}.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TIntFn = reference to function(a: Integer): Integer;',
+  'var',
+  '  g: TIntFn;',
+  'implementation',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedAnonFunc;
+// t05 anonymous function assigned to a reference-to type.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TIntFn = reference to function(a: Integer): Integer;',
+  'procedure Test;',
+  'implementation',
+  'procedure Test;',
+  'var f: TIntFn;',
+  'begin',
+  '  f := function(a: Integer): Integer begin Result := a + 1; end;',
+  '  Writeln(f(2));',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedInlineVar;
+// t06 inline var declaration inside a procedure body.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'procedure Test;',
+  'implementation',
+  'procedure Test;',
+  'begin',
+  '  var x := 5;',
+  '  var s := ''hello'';',
+  '  Writeln(x, s);',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestUnleashedInlineVarInitTypeDisplay;
+// The type string identifier completion shows for an inline var that has no
+// explicit type annotation (ide/sourceeditprocs.pas ctnVarDefinition ->
+// ExtractInlineVarInitType). Ground truth is the compiler: VibePascal 3.3.1
+// x86_64 infers Int64 for every integer literal, sign or no sign, under
+// {$mode unleashed} and {$mode delphi} alike (SizeOf 8, RTTI name Int64).
+// A leading sign is a separate atom, so -1 and -1.0 used to miss the literal
+// scan entirely and come back with a different answer than 1 and 1.0 did.
+// The i..n cases are constant EXPRESSIONS rather than bare literals: a
+// literal that merely starts the term does not give the term's type
+// (1/2 is Double, 1+0.5 is a real), and an integer constant expression
+// reaching the generic resolver used to display the shared 'Integer'
+// default instead of the Int64 the compiler gives it.
+// o..q pin the REAL literal rule to the compiler after FPCDeveloper's v56
+// (VibePascal 3.3.1 2026/09/10) made an un-annotated real inline var take
+// the default real type: every real literal a Double can hold is Double
+// whatever its own precision (o), and only one that a Double CANNOT hold
+// widens to Extended -- too large (p) or underflowing to zero (q). Ground
+// truth for all three read at runtime via PTypeInfo, not inferred.
+// NOT covered here, and deliberately: `var r := s` for a declared
+// s: single, `var t := single(1.0)`, and `var u := IntToStr(1)` under
+// `uses SysUtils`. All three take the identifier path into
+// FindTermTypeAsString and all three come back EMPTY *in this harness*.
+// THAT IS A HARNESS ARTIFACT, NOT A CODETOOLS DEFECT. Measured in the real
+// IDE on 2026-09-11 and confirmed working: driving identifier completion
+// (the one production caller, ide/sourceeditprocs.pas ctnVarDefinition) on
+// a project unit holding exactly these cases, the list shows r : Single,
+// t : Single and u : String, alongside a : Int64 and q : TMyRec.
+// Both controls were in band, in the same list. An arm initialised from an
+// undefined identifier shows NO type column at all, so the display can
+// report empty -- it is sensitive, not promiscuous. And a normally declared
+// `s: single` shows the SOURCE spelling `single` while the inferred arms
+// show the resolved name `Single`, so those entries really did travel this
+// function rather than the declared-type path above it.
+// Two explanations for the harness EMPTY have now been measured and both
+// are WRONG: "no search paths" (a real FPC UnitSetCache attached to the
+// virtual directory -- the testctpas2js.pas recipe:
+// CompilerDefinesCache.TestFilename, then FindUnitSet + Init +
+// CreateFPCTemplate under a da_Directory template for VirtualDirectory,
+// with GetUnitSetForDirectory('') present and the cache demonstrably
+// resolving system.pp and sysutils.pp -- changes nothing), and "the answer
+// lives outside the unit being parsed" (the IDE resolves exactly those
+// cross-unit cases). Whatever context a real project supplies and a
+// virtual-file harness does not, it is not the unit path.
+// So these stay out: asserting them would pin a harness limitation into
+// the suite as though it were codetools' behaviour, and the next reader
+// would take a green run as proof of a defect that does not exist.
+// If one ever does fail here, note that FindExprTypeAsString RAISES on
+// xtNone and ExtractInlineVarInitType swallows it in a bare
+// `except Result:=''`, so a raise and a genuine cannot-infer are
+// indistinguishable from the empty string alone.
+var
+  Tool: TCodeTool;
+  Node: TCodeTreeNode;
+  Actual: string;
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'procedure Test;',
+  'implementation',
+  'procedure Test;',
+  'begin',
+  '  var a := 1;',
+  '  var b := -1;',
+  '  var c := 2147483648;',
+  '  var d := 1.0;',
+  '  var e := -1.0;',
+  '  var f := ''hello'';',
+  '  var g := true;',
+  '  var h := nil;',
+  '  var i := 1/2;',
+  '  var j := 1+0.5;',
+  '  var k := 2*3;',
+  '  var m := -(1);',
+  '  var n := 1 div 2;',
+  '  var o := 1.5e300;',
+  '  var p := 1.0e400;',
+  '  var q := 1.0e-4000;',
+  '  Writeln(a,b,c,d,e,f,g,i,j,k,m,n,o,p,q);',
+  'end;',
+  'end.']);
+  Add('end.');
+  DoParseModule(Code,Tool);
+  Actual:='';
+  Node:=Tool.Tree.Root;
+  while Node<>nil do begin
+    if Node.Desc=ctnVarDefinition then
+      Actual:=Actual+Tool.ExtractIdentifier(Node.StartPos)+'='
+             +Tool.ExtractInlineVarInitType(Node)+' ';
+    Node:=Node.Next;
+  end;
+  AssertEquals('inline var init type display',
+    'a=Int64 b=Int64 c=Int64 d=Double e=Double f=String g=Boolean h=Pointer '
+   +'i=Double j=Double k=Int64 m=Int64 n=Int64 o=Double p=Extended q=Extended ',
+    Actual);
+end;
+
+procedure TTestPascalParser.TestParseUnleashedMultilineString;
+// t07 triple-quoted multiline string constant.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'const',
+  '  S =',
+  '    ''''''',
+  '    line one',
+  '    line two',
+  '    '''''';',
+  'implementation',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedPrefixedAttribute;
+// t09 prefixed class attribute under {$mode unleashed}.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TMyAttr = class(TCustomAttribute) end;',
+  '  [TMyAttr]',
+  '  TFoo = class',
+  '  end;',
+  'implementation',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedMatchExpression;
+// Regression guard for match-as-expression in {$mode unleashed}.
+begin
+  Add([
+  'program test1;',
+  '{$mode unleashed}',
+  'var x: Integer;',
+  'begin',
+  '  x := match 2 of',
+  '    1: 10;',
+  '    2: 20;',
+  '  else',
+  '    30;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedMultiHelpers;
+// t10 multiple active class helpers for one type (cmUnleashed m_multi_helpers).
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TMyObject = class',
+  '    procedure DoThis_1;',
+  '  end;',
+  '  THelper1 = class helper for TMyObject',
+  '    procedure DoThis_2;',
+  '  end;',
+  '  THelper2 = class helper for TMyObject',
+  '    procedure DoThis_3;',
+  '  end;',
+  'implementation',
+  'procedure TMyObject.DoThis_1;',
+  'begin',
+  'end;',
+  'procedure THelper1.DoThis_2;',
+  'begin',
+  'end;',
+  'procedure THelper2.DoThis_3;',
+  'begin',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedStatementExpressions;
+// t11 case-as-expression on the right-hand side of an assignment
+// (cmUnleashed m_statement_expressions).
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'type',
+  '  TMyEnum = (meFirst, meSecond, meLast);',
+  'procedure Test;',
+  'implementation',
+  'procedure Test;',
+  'var',
+  '  s: String;',
+  'begin',
+  '  s := case meSecond of',
+  '    meFirst: ''Foo'';',
+  '    meSecond: ''Bar'';',
+  '    meLast: ''FooBar'';',
+  '  end;',
+  '  Writeln(s);',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedArrayEquality;
+// t12 dynamic-array compared against an array constructor
+// (cmUnleashed m_array_equality).
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'function Is1(constref arr: array of Integer): Boolean;',
+  'implementation',
+  'function Is1(constref arr: array of Integer): Boolean;',
+  'begin',
+  '  Result := arr = [1];',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseUnleashedTuples;
+// t13 anonymous tuple return types plus positional _1/_2 element access
+// (cmUnleashed m_tuples). This is the only one of the four that the per-feature
+// control proved mode-sensitive: under {$mode objfpc} it fails to parse.
+begin
+  Add([
+  'unit test1;',
+  '{$mode unleashed}',
+  'interface',
+  'function Pair: (Integer, Integer);',
+  'function Mixed: (Integer, String);',
+  'implementation',
+  'function Pair: (Integer, Integer);',
+  'begin',
+  '  Result._1 := 10;',
+  '  Result._2 := 20;',
+  'end;',
+  'function Mixed: (Integer, String);',
+  'begin',
+  '  Result._1 := 42;',
+  '  Result._2 := ''hello'';',
+  'end;',
+  'end.']);
+  ParseModule;
+end;
+
+procedure TTestPascalParser.TestParseDelphiGenericReturnType;
+// tretgen repro: Delphi-style generic specialization as a class-function RETURN
+// type. This is the deeper Part-B construct that CodeTools-unleashed learned to
+// parse once m_implicit_generics was enabled for the overlay.
+begin
+  Add([
+  'program test1;',
+  '{$mode delphi}',
+  'uses SysUtils;',
+  'type',
+  '  IHolder<T> = interface',
+  '    function Get: T;',
+  '  end;',
+  '  TObjectLifeTest = class',
+  '    Tag: Integer;',
+  '    constructor Create(ATag: Integer);',
+  '  end;',
+  '  THolder<T: class> = class(TInterfacedObject, IHolder<T>)',
+  '  private',
+  '    FValue: T;',
+  '  public',
+  '    constructor Create(AValue: T);',
+  '    function Get: T;',
+  '  end;',
+  '  TFactory = class',
+  '    class function CreateH: IHolder<TObjectLifeTest>;',
+  '  end;',
+  'constructor TObjectLifeTest.Create(ATag: Integer);',
+  'begin',
+  '  Tag := ATag;',
+  'end;',
+  'constructor THolder<T>.Create(AValue: T);',
+  'begin',
+  '  inherited Create;',
+  '  FValue := AValue;',
+  'end;',
+  'function THolder<T>.Get: T;',
+  'begin',
+  '  Result := FValue;',
+  'end;',
+  'class function TFactory.CreateH: IHolder<TObjectLifeTest>;',
+  'begin',
+  '  Result := THolder<TObjectLifeTest>.Create(TObjectLifeTest.Create(42));',
+  'end;',
+  'var',
+  '  h: IHolder<TObjectLifeTest>;',
+  'begin',
+  '  h := TFactory.CreateH;',
+  'end.']);
   ParseModule;
 end;
 

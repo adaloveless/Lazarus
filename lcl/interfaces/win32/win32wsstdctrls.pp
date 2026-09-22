@@ -314,6 +314,8 @@ type
   published
     class function CreateHandle(const AWinControl: TWinControl;
           const AParams: TCreateParams): HWND; override;
+    class procedure GetPreferredSize(const AWinControl: TWinControl;
+          var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean); override;
   end;
 
 { useful helper functions }
@@ -760,7 +762,11 @@ class procedure TWin32WSCustomGroupBox.GetPreferredSize(
   const AWinControl: TWinControl; var PreferredWidth, PreferredHeight: integer;
   WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth,
+  // Measure with the LCL Font (as the dark-mode caption paint DrawDarkGroupBoxWindow and
+  // the client caption inset GetLCLClientBoundsOffset both do) so AutoSize group boxes
+  // reserve enough height for the taller dark caption and it is not buried by the first
+  // row of items -- covers TCheckGroup and TRadioGroup (GOD mrzkbqip, 2026-07-24).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth,
                  PreferredHeight) then begin
     PreferredWidth += 19;
     PreferredHeight += 4;
@@ -1460,7 +1466,20 @@ class procedure TWin32WSCustomEdit.GetPreferredSize(
   const AWinControl: TWinControl; var PreferredWidth, PreferredHeight: integer;
   WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, 'Fj', PreferredWidth, PreferredHeight) then
+  // Use MeasureTextForControl to get actual font metrics (WM_SETFONT), not WM_GETFONT.
+  // In dark mode, the LCL Font is taller than system default -> MeasureText under-measures,
+  // causing edit boxes to be too short and text to clip vertically. Fix matches TCheckBox/
+  // TRadioButton/GroupBox pattern (GOD mrzkbqip lineage, 2026-07-24).
+  // The measured string must be the content-independent reference 'Fj' (full
+  // ascender + descender), never the control's own text: an edit's height is a
+  // function of its FONT, not of what the user has typed.  Measuring the live
+  // text made GetTextExtentPoint32 return (0,0) for an EMPTY edit, so the
+  // preferred height collapsed to the border allowance alone -- 8 px with
+  // BorderStyle=bsSingle -- and flipped back to a normal height as soon as a
+  // character was typed.  Measured C450 (2026-09-03): light mode empty 8 px /
+  // typed 23 px; dark mode (TWin32WSCustomEditDark forces bsNone) empty 24 /
+  // typed 15.  Regression from 6102d439d8, which dropped the 'Fj' constant.
+  if MeasureTextForControl(AWinControl, 'Fj', PreferredWidth, PreferredHeight) then
   begin
     PreferredWidth := 0;
     if TCustomEdit(AWinControl).BorderStyle <> bsNone then
@@ -1881,7 +1900,11 @@ class procedure TWin32WSCustomStaticText.GetPreferredSize(
   const AWinControl: TWinControl; var PreferredWidth, PreferredHeight: integer;
   WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // Use MeasureTextForControl to get actual font metrics (WM_SETFONT), not WM_GETFONT.
+  // In dark mode, the LCL Font is taller than system default -> MeasureText under-measures,
+  // causing static text labels to be too short and text to clip vertically. Fix matches
+  // TCheckBox/TRadioButton/GroupBox pattern (GOD mrzkbqip lineage, 2026-07-24).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     Inc(PreferredHeight);
     if TCustomStaticText(AWinControl).BorderStyle <> sbsNone then
@@ -1947,7 +1970,11 @@ end;
 class procedure TWin32WSButtonControl.GetPreferredSize(const AWinControl: TWinControl;
   var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // Use MeasureTextForControl to get actual font metrics (WM_SETFONT), not WM_GETFONT.
+  // In dark mode, the LCL Font is taller than system default -> MeasureText under-measures,
+  // causing buttons to be too short and button captions to clip vertically. Fix matches
+  // TCheckBox/TRadioButton/GroupBox pattern (GOD mrzkbqip lineage, 2026-07-24).
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     Inc(PreferredWidth, 20);
     Inc(PreferredHeight, 4);
@@ -2278,7 +2305,12 @@ end;
 class procedure TWin32WSToggleBox.GetPreferredSize(const AWinControl: TWinControl;
   var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean);
 begin
-  if MeasureText(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
+  // MeasureTextForControl (LCL Font), not MeasureText (WM_GETFONT) -- the last check-box
+  // family site still on the window font. TCustomCheckBox and TRadioButton were moved by
+  // 6102d439d8; a toggle box paints the same caption with the same Font, so it must
+  // measure the same way. Measured C455 with the window font cleared: this site's
+  // preferred size collapsed 145x35 -> 95x20 while the moved sites did not move at all.
+  if MeasureTextForControl(AWinControl, AWinControl.Caption, PreferredWidth, PreferredHeight) then
   begin
     Inc(PreferredWidth, 20);
     Inc(PreferredHeight, 4);
@@ -2314,6 +2346,15 @@ begin
   Result := Params.Window;
   // don't generate a BM_CLICK on focus
   SendMessage(Result, BM_SETDONTCLICK, 1, 0);
+end;
+
+class procedure TWin32WSRadioButton.GetPreferredSize(const AWinControl: TWinControl;
+  var PreferredWidth, PreferredHeight: integer; WithThemeSpace: Boolean);
+begin
+  // Radios must measure with the LCL Font like check boxes, or the caption is clipped
+  // and the hit-area truncated in dark mode. TWin32WSCustomCheckBox.GetPreferredSize
+  // already handles the TRadioButton glyph via its "is TRadioButton" branch; delegate.
+  TWin32WSCustomCheckBox.GetPreferredSize(AWinControl, PreferredWidth, PreferredHeight, WithThemeSpace);
 end;
 
 end.

@@ -153,6 +153,7 @@ type
     function PropNodeIsTypeLess(PropNode: TCodeTreeNode): boolean;
     function PropertyHasSpecifier(PropNode: TCodeTreeNode;
       const UpperKeyword: string; ExceptionOnNotFound: boolean = true): boolean;
+    function GetAutoPropertyFieldPrefix(CleanPropPos: integer): string;
 
     // procs
     function ExtractProcName(ProcNode: TCodeTreeNode;
@@ -1476,6 +1477,8 @@ end;
 
 procedure TPascalReaderTool.MoveCursorToProcName(ProcNode: TCodeTreeNode;
   SkipClassName: boolean);
+var
+  NamePos: TAtomPosition;
 begin
   if (ProcNode.Desc=ctnProcedure) and (ProcNode.FirstChild<>nil)
   and (ProcNode.FirstChild.Desc=ctnProcedureHead) then
@@ -1488,9 +1491,24 @@ begin
   end;
   if not SkipClassName then exit;
   repeat
+    // CurPos is on a name part (class name or proc name)
+    NamePos:=CurPos;
     ReadNextAtom;
+    // skip <T> generic parameter list between class name and dot
+    if AtomIsChar('<')
+    and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE])
+         or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) then begin
+      if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then begin
+        MoveCursorToAtomPos(NamePos);
+        break;
+      end;
+    end;
     if CurPos.Flag<>cafPoint then begin
-      UndoReadNextAtom;
+      // no dot follows: the name part just read IS the proc name. A skipped
+      // <T> list was the generic method's own parameter list (Delphi
+      // `procedure Foo<T>;`), so an UndoReadNextAtom here would land on '>'
+      // instead of the name -- restore the saved name position explicitly.
+      MoveCursorToAtomPos(NamePos);
       break;
     end;
     ReadNextAtom;
@@ -1498,6 +1516,15 @@ begin
 end;
 
 procedure TPascalReaderTool.MoveCursorBehindProcName(ProcNode: TCodeTreeNode);
+
+  procedure SkipGenericParams; inline;
+  begin
+    if AtomIsChar('<')
+    and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE])
+         or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) then
+      ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]);
+  end;
+
 begin
   if (ProcNode.FirstChild<>nil)
   and (ProcNode.FirstChild.Desc=ctnProcedureHead) then
@@ -1506,10 +1533,12 @@ begin
   ReadNextAtom;
   if AtomIsIdentifier then begin
     ReadNextAtom;
+    SkipGenericParams;
     while CurPos.Flag=cafPoint do begin
       ReadNextAtom;
       if not AtomIsIdentifier then exit;
       ReadNextAtom;
+      SkipGenericParams;
     end;
   end else if CurPos.Flag in [cafRoundBracketOpen,cafEdgedBracketOpen,cafColon]
   then begin
@@ -1521,6 +1550,8 @@ end;
 
 function TPascalReaderTool.PositionInProcName(ProcNode: TCodeTreeNode;
   SkipClassName: boolean; CleanPos: integer): boolean;
+var
+  NamePos: TAtomPosition;
 begin
   if (ProcNode.Desc=ctnProcedure) and (ProcNode.FirstChild<>nil)
   and (ProcNode.FirstChild.Desc=ctnProcedureHead) then
@@ -1534,9 +1565,20 @@ begin
   end;
   if CleanPos<CurPos.StartPos then exit(false);
   while CurPos.Flag=cafWord do begin
+    NamePos:=CurPos;
     ReadNextAtom;
+    // skip <T> generic parameter list between class name and dot
+    if AtomIsChar('<')
+    and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE])
+         or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)) then begin
+      if not ReadGenericParamList(True, False, [ppDontCreateNodes, ppDontRaiseExceptionOnError]) then begin
+        MoveCursorToAtomPos(NamePos);
+        break;
+      end;
+    end;
     if CurPos.Flag<>cafPoint then begin
-      UndoReadNextAtom;
+      // see MoveCursorToProcName: restore the name, not the atom before '>'
+      MoveCursorToAtomPos(NamePos);
       break;
     end;
     ReadNextAtom;
@@ -1873,6 +1915,26 @@ begin
     if CurPos.Flag=cafRoundBracketClose then
       ExtractNextAtom(Add,Attr);
     Result:=true;
+    exit;
+  end;
+  // inline array result type: `array of X`, also `packed`/`bitpacked` and
+  // a `[...]` range; the element type follows recursively (tuple, identifier
+  // or another array), the recursive call extracts the `of` itself
+  if (Scanner.CompilerMode=cmUnleashed)
+     and (UpAtomIs('ARRAY') or UpAtomIs('PACKED') or UpAtomIs('BITPACKED')) then begin
+    if not UpAtomIs('ARRAY') then
+      ExtractNextAtom(Add,Attr);
+    if not UpAtomIs('ARRAY') then exit;
+    ExtractNextAtom(Add,Attr);
+    if CurPos.Flag=cafEdgedBracketOpen then begin
+      ExtractNextAtom(Add,Attr);
+      while (CurPos.StartPos<=SrcLen) and (CurPos.Flag<>cafEdgedBracketClose) do
+        ExtractNextAtom(Add,Attr);
+      if CurPos.Flag<>cafEdgedBracketClose then exit;
+      ExtractNextAtom(Add,Attr);
+    end;
+    if not UpAtomIs('OF') then exit;
+    Result:=ExtractNextTypeRef(Add,Attr);
     exit;
   end;
   if not AtomIsIdentifier then exit;
@@ -3802,6 +3864,15 @@ begin
       exit;
     ReadNextAtom;
   end;
+end;
+
+function TPascalReaderTool.GetAutoPropertyFieldPrefix(CleanPropPos: integer): string;
+// backing-field name prefix for an accessor-less {$modeswitch autoproperties}
+// property: the {$autopropprefix} in effect at CleanPropPos, else the
+// --autopropprefix= command line value, else 'F'
+begin
+  Result:=Scanner.GetDirectiveValueAt(sdAutoPropPrefix,CleanPropPos);
+  if Result='' then Result:='F';
 end;
 
 function TPascalReaderTool.ProcNodeHasSpecifier(ProcNode: TCodeTreeNode;

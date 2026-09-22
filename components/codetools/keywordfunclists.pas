@@ -971,6 +971,7 @@ begin
     Add('HARDFLOAT'    ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('IOCHECK'      ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('LOCAL'        ,{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('ZEROINIT'     ,{$ifdef FPC}@{$endif}AllwaysTrue);
   end;
 
   IsKeyWordProcedureSpecifier:=TKeyWordFunctionList.Create('IsKeyWordProcedureSpecifier');
@@ -1022,6 +1023,7 @@ begin
     Add('VECTORCALL'   ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('WEAKEXTERNAL' ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('WINAPI'       ,{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('ZEROINIT'     ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('['            ,{$ifdef FPC}@{$endif}AllwaysTrue);
   end;
   
@@ -1380,7 +1382,10 @@ begin
   IsWordBuiltInFunc:=TKeyWordFunctionList.Create('IsWordBuiltInFunc');
   KeyWordLists.Add(IsWordBuiltInFunc);
   with IsWordBuiltInFunc do begin
+    Add('ALIGNOF'     ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('ASSIGNED'    ,{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('BITALIGNOF'  ,{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('BITOFFSETOF' ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('BREAK'       ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('CONCAT'      ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('CONTINUE'    ,{$ifdef FPC}@{$endif}AllwaysTrue);
@@ -1404,6 +1409,7 @@ begin
     Add('LOW'         ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('NEW'         ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('OBJCSELECTOR',{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('OFFSETOF'    ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('ORD'         ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('PRED'        ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('READ'        ,{$ifdef FPC}@{$endif}AllwaysTrue);
@@ -1547,7 +1553,10 @@ begin
     Add('TYPE',{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('UNIT',{$ifdef FPC}@{$endif}AllwaysTrue);
     // Note: VAR is intentionally NOT in this list - it is allowed inside
-    // begin..end blocks as an inline variable declaration
+    // begin..end blocks as an inline variable declaration.
+    // CONST stays listed: ReadTilBlockEnd intercepts it before this list is
+    // consulted when the InlineVars modeswitch allows inline constants, so
+    // the error only fires in modes where 'const' in a body is invalid.
   end;
   
   UnexpectedKeyWordInAsmBlock:=TKeyWordFunctionList.Create('UnexpectedKeyWordInAsmBlock');
@@ -1849,6 +1858,7 @@ begin
     Add('FALSE'      ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('FILE'       ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('INT64'      ,{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('INT128'     ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('LENGTH'     ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('LONGBOOL'   ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('LONGINT'    ,{$ifdef FPC}@{$endif}AllwaysTrue);
@@ -1865,6 +1875,7 @@ begin
     Add('STRING'     ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('TEXT'       ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('TRUE'       ,{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('UINT128'    ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('UNICODESTRING',{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('VARIANT'    ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('OLEVARIANT' ,{$ifdef FPC}@{$endif}AllwaysTrue);
@@ -1872,6 +1883,12 @@ begin
     Add('WIDESTRING' ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('WORD'       ,{$ifdef FPC}@{$endif}AllwaysTrue);
     Add('WORDBOOL'   ,{$ifdef FPC}@{$endif}AllwaysTrue);
+    // implicit worker-locals of unleashed `for parallel` bodies
+    Add('WORKERINDEX',{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('WORKERCOUNT',{$ifdef FPC}@{$endif}AllwaysTrue);
+    // `future of T` handles and the `async begin..end` cancel flag
+    Add('FUTURE'     ,{$ifdef FPC}@{$endif}AllwaysTrue);
+    Add('CANCELLED'  ,{$ifdef FPC}@{$endif}AllwaysTrue);
   end;
   // add functions
   WordIsPredefinedFPCIdentifier.Add(IsWordBuiltInFunc);

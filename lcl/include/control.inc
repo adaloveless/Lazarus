@@ -644,6 +644,11 @@ begin
   end;
 end;
 
+function TControl.ControlFontClass: TControlFontClass;
+begin
+  Result := TControlFont;
+end;
+
 procedure TControl.ParentFontChanged;
 begin
   //kept for compatibility. The real work is done in CMParentFontChanged
@@ -3412,7 +3417,7 @@ begin
     Result:='csDestroying'
   else if cfLoading in FControlFlags then
     Result:='cfLoading'
-  else if IsControlVisible then
+  else if not IsControlVisible then
     Result:='not IsControlVisible'
   else if AutoSizeDelayedHandle then
     Result:='AutoSizeDelayedHandle'
@@ -5341,7 +5346,7 @@ begin
     FParentShowHint := True;
     FWindowProc := @WndProc;
     FCursor := crDefault;
-    FFont := TControlFont.Create(Self);
+    FFont := ControlFontClass().Create(Self);
     FIsControl := False;
     FEnabled := True;
     FHelpType := htContext;

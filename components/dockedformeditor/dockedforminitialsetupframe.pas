@@ -102,7 +102,11 @@ function TDockedFormEditSetup.RequireSetup: boolean;
 begin
   if DockedOptions = nil then exit(False);
   DockedOptions.LoadSafe;
-  Result := not DockedOptions.DoneAskUserEnableDockedDesigner;
+  // The docked designer is on by default (GOD mu3jfytu), so a fresh configuration
+  // needs no setup dialog just to confirm it. Force the dialog only when the
+  // designer is OFF and nobody ever chose that.
+  Result := (not DockedOptions.DoneAskUserEnableDockedDesigner)
+        and (not DockedOptions.EnableDockedDesigner);
 end;
 
 procedure TDockedFormEditSetup.AddToDialog(AnOwner, AParent: TComponent; ADialog: ISetupDlgProvider);

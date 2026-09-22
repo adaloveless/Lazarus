@@ -232,12 +232,22 @@ type
     cmsInlineVars,         { allow inline variable declarations inside statement blocks }
     cmsTuples,             { allow anonymous tuple types and related syntax }
     cmsImplicitGenerics,   { Delphi-style generic syntax: 'generic'/'specialize' keywords optional, <T> allowed }
+    cmsStripRtti,          { strip type-name strings from RTTI/VMT (unleashed) }
+    cmsComposableRecords,  { record composition: union, `embed`, inline anon record, per-field sizing }
+    cmsStaticSection,      { allow `static` declaration section in function/procedure bodies }
+    cmsInlineStatic,       { allow `static x := ...` inline declarations inside statement blocks }
+    cmsThreadStatic,       { allow `threadstatic` section and `threadstatic x := ...` per-thread declarations }
+    cmsLock,               { `lock` block: wraps a statement in Enter/try/finally/LeaveCriticalSection }
+    cmsAsyncAwait,         { `async` spawns work on a worker thread returning a `future of T`; `await` joins it }
 
     // not yet in FPC, supported by pas2js:
     cmsExternalClass,      { pas2js: allow  class external [pkgname] name [symbol] }
     cmsIgnoreAttributes,   { pas2js: ignore attributes }
     cmsOmitRTTI,           { pas2js: treat class section 'published' as 'public' and typeinfo does not work on symbols declared with this switch }
-    cmsMultiLineStrings    { pas2js: Multiline strings }
+    cmsMultiLineStrings,   { pas2js: Multiline strings }
+    cmsInterpolatedStrings,{ Unleashed: $'text {expr} text' interpolated string literals }
+    cmsAutoProperties,     { Unleashed: accessor-less property synthesizes a backing field }
+    cmsParallelFor         { Unleashed: `for parallel` worker-pool loop, WorkerIndex/WorkerCount in the body }
     );
   TCompilerModeSwitches = set of TCompilerModeSwitch;
 const
@@ -283,9 +293,11 @@ const
      cmsRepeat_forward,cmsCvar_support,cmsInitfinal,cmsOut,cmsDefault_para,
      cmsHintdirective,cmsProperty,cmsDefault_inline,cmsExcept,
      cmsAdvancedRecords,cmsPrefixedAttributes,cmsMultiHelpers,
-     cmsFunctionReferences,cmsAnonymousFunctions,
+     cmsFunctionReferences,cmsAnonymousFunctions,cmsImplicitGenerics,
      cmsStatementExpressions,cmsArrayEquality,cmsInlineVars,cmsTuples,
-     cmsMultiLineStrings]
+     cmsComposableRecords,cmsMultiLineStrings,cmsStaticSection,cmsInlineStatic,
+     cmsThreadStatic,cmsInterpolatedStrings,cmsLock,cmsAsyncAwait,cmsAutoProperties,
+     cmsParallelFor]
     );
   cmAllModesWithGeneric = [cmDELPHI,cmDELPHIUNICODE,cmOBJFPC,cmUnleashed];
   Pas2jsFixedModeswitches = [cmsArray2dynarray,cmsArrayOperators,
@@ -341,11 +353,21 @@ const
     'INLINEVARS',
     'TUPLES',
     'IMPLICITGENERICS',
+    'STRIPRTTI',
+    'COMPOSABLERECORDS',
+    'STATICSECTION',
+    'INLINESTATIC',
+    'THREADSTATIC',
+    'LOCK',
+    'ASYNCAWAIT',
     // not yet in FPC, supported by pas2js:
     'EXTERNALCLASS',
     'IGNOREATTRIBUTES',
     'OMITRTTI',
-    'MULTILINESTRINGS'
+    'MULTILINESTRINGS',
+    'INTERPOLATEDSTRINGS',
+    'AUTOPROPERTIES',
+    'PARALLELFOR'
     );
 
 type
@@ -460,7 +482,7 @@ type
     Value: string;
   end;
 
-  TSequenceDirective = (sdScopedEnums);
+  TSequenceDirective = (sdScopedEnums, sdAutoPropPrefix);
 
   TDirectiveSequenceItem = class
   private
@@ -671,10 +693,14 @@ type
     function SetCDirective: boolean;
     function IncludeDirective: boolean;
     function IncludePathDirective: boolean;
+    function EmbedDirective(AsBytes: boolean): boolean;
+    function EmbedStrDirective: boolean;
+    function EmbedBytesDirective: boolean;
     function ShortSwitchDirective: boolean;
     function ReadNextSwitchDirective: boolean;
     function LongSwitchDirective: boolean;
     function LongSwitchDirectiveWithSequence(const ADirective: TSequenceDirective): boolean;
+    function AutoPropPrefixDirective: boolean;
     function MacroDirective: boolean;
     function ModeDirective: boolean;
     function ModeSwitchDirective: boolean;
@@ -874,7 +900,7 @@ type
 
 const
   DirectiveSequenceName: array [TSequenceDirective] of string =
-    ('SCOPEDENUMS');
+    ('SCOPEDENUMS', 'AUTOPROPPREFIX');
 var
   CompilerModeVars: array[TCompilerMode] of string;
 
@@ -2047,12 +2073,17 @@ begin
         inc(p);
       SrcPos:=p-PChar(Src)+1;
     end;
-  '$': // hex
+  '$': // hex constant or interpolated string ($'...')
     begin
-      TokenType:=lsttNone;
-      inc(p);
-      while IsHexNumberChar[p^] do
+      if p[1]='''' then begin
+        TokenType:=lsttStringConstant;
+        SkipPascalInterpolatedString(p,FNestedComments);
+      end else begin
+        TokenType:=lsttNone;
         inc(p);
+        while IsHexNumberChar[p^] do
+          inc(p);
+      end;
       SrcPos:=p-PChar(Src)+1;
     end;
   '=':
@@ -3337,6 +3368,7 @@ begin
         case UpChars[p[1]] of
         'L': if CompareIdentifiers(p,'ALIGN')=0 then Result:=LongSwitchDirective;
         'S': if CompareIdentifiers(p,'ASSERTIONS')=0 then Result:=LongSwitchDirective;
+        'U': if CompareIdentifiers(p,'AUTOPROPPREFIX')=0 then Result:=AutoPropPrefixDirective;
         end;
       'B':
         if CompareIdentifiers(p,'BOOLEVAL')=0 then Result:=LongSwitchDirective;
@@ -3361,6 +3393,9 @@ begin
               else if CompareIdentifiers(p,'ELSEIF')=0 then Result:=ElseIfDirective;
             end;
           end;
+        'M':
+          if CompareIdentifiers(p,'EMBEDSTR')=0 then Result:=EmbedStrDirective
+          else if CompareIdentifiers(p,'EMBEDBYTES')=0 then Result:=EmbedBytesDirective;
         'N':
           if CompareIdentifiers(p,'ENDC')=0 then Result:=EndCDirective
           else if CompareIdentifiers(p,'ENDIF')=0 then Result:=EndIfDirective;
@@ -3494,6 +3529,23 @@ begin
     RaiseExceptionFmt(20170422130115,ctsInvalidFlagValueForDirective,
         [copy(Src,ValStart,SrcPos-ValStart),FDirectiveName]);
   end;
+  Result:=ReadNextSwitchDirective;
+end;
+
+function TLinkScanner.AutoPropPrefixDirective: boolean;
+// example: {$autopropprefix MyPrefix}
+// stores the backing-field name prefix in effect from here on, queried later
+// per property node via GetDirectiveValueAt(sdAutoPropPrefix,...)
+var ValStart: integer;
+begin
+  if StoreDirectives then
+    FDirectives[FDirectivesCount-1].Kind:=lsdkLongSwitch;
+  ReadSpace;
+  ValStart:=SrcPos;
+  while (SrcPos<=SrcLen) and IsIdentChar[Src[SrcPos]] do
+    inc(SrcPos);
+  if SrcPos>ValStart then
+    SetDirectiveValueWithSequence(sdAutoPropPrefix,copy(Src,ValStart,SrcPos-ValStart));
   Result:=ReadNextSwitchDirective;
 end;
 
@@ -4047,6 +4099,110 @@ begin
   Values.Variables[ExternalMacroStart+'INCPATH']:=
     Values.Variables[ExternalMacroStart+'INCPATH']+':'+AddPath;
   Result:=true;
+end;
+
+function TLinkScanner.EmbedDirective(AsBytes: boolean): boolean;
+// shared body for $embedstr / $embedbytes. parses `[NAME] 'path'` and decides
+// 1-arg (path only) vs 2-arg (NAME + path) by token count, then injects a
+// synthesized declaration / literal in place of the directive so CodeTools
+// sees a valid symbol / expression. the file is never read - only the
+// synthesized symbol/type matters here, not the bytes.
+//   2-arg str:   const NAME:String='';
+//   1-arg str:   ''
+//   2-arg bytes: const NAME:array[0..0]of byte=(0);
+//   1-arg bytes: [0]
+var
+  ContentStr: string;
+  VarName: string;
+  Injection: string;
+  i, j: integer;
+  FirstToken: string;
+  RestHasToken: boolean;
+begin
+  Result:=true;
+  if StoreDirectives then
+    FDirectives[FDirectivesCount-1].Kind:=lsdkInclude;
+  inc(SrcPos);
+  ContentStr:=copy(Src, SrcPos, CommentInnerEndPos-SrcPos);
+  // peek the first whitespace-separated token (quoted or bare) and decide
+  // 1-arg vs 2-arg by whether anything non-whitespace follows it
+  i:=1;
+  while (i<=length(ContentStr)) and (ContentStr[i] in [' ', #9]) do inc(i);
+  if i>length(ContentStr) then begin
+    UpdateCleanedSource(CommentEndPos-1);
+    exit;
+  end;
+  if ContentStr[i] in ['''','"'] then begin
+    // quoted first token: scan to matching quote
+    j:=i+1;
+    while (j<=length(ContentStr)) and (ContentStr[j]<>ContentStr[i]) do inc(j);
+    FirstToken:=copy(ContentStr, i, j-i+1);
+    if j<=length(ContentStr) then inc(j);
+  end else begin
+    // bare first token: scan to whitespace
+    j:=i;
+    while (j<=length(ContentStr)) and not (ContentStr[j] in [' ', #9]) do inc(j);
+    FirstToken:=copy(ContentStr, i, j-i);
+  end;
+  // anything non-whitespace after first token -> 2-arg form
+  RestHasToken:=false;
+  while j<=length(ContentStr) do begin
+    if not (ContentStr[j] in [' ', #9]) then begin
+      RestHasToken:=true;
+      break;
+    end;
+    inc(j);
+  end;
+  if RestHasToken then begin
+    // 2-arg: first token is the identifier. FPC's GetToken strips surrounding
+    // quotes, so 'NAME'/"NAME" name the same const as bare NAME - unwrap.
+    if (length(FirstToken)>=2) and (FirstToken[1] in ['''','"']) and
+       (FirstToken[length(FirstToken)]=FirstToken[1]) then
+      FirstToken:=copy(FirstToken, 2, length(FirstToken)-2);
+    VarName:='';
+    if (length(FirstToken)>0) and (FirstToken[1] in ['A'..'Z','a'..'z','_']) then
+    begin
+      i:=2;
+      while (i<=length(FirstToken)) and
+            (FirstToken[i] in ['A'..'Z','a'..'z','_','0'..'9']) do
+        inc(i);
+      VarName:=copy(FirstToken, 1, i-1);
+    end;
+    if VarName='' then
+      Injection:=''
+    else if AsBytes then
+      Injection:='const '+VarName+':array[0..0]of byte=(0);'
+    else
+      Injection:='const '+VarName+':String='''';';
+  end else begin
+    // 1-arg: path-only, inject a bare literal usable in expression context
+    if AsBytes then
+      Injection:='[0]'
+    else
+      Injection:='''''';
+  end;
+  UpdateCleanedSource(CommentStartPos-1);
+  if Injection<>'' then begin
+    if length(Injection)>length(FCleanedSrc)-CleanedLen then
+      SetLength(FCleanedSrc, length(FCleanedSrc)+length(Injection)+1024);
+    AddLink(1, nil, slkCompilerString);
+    for i:=1 to length(Injection) do begin
+      inc(CleanedLen);
+      FCleanedSrc[CleanedLen]:=Injection[i];
+    end;
+  end;
+  CopiedSrcPos:=CommentEndPos-1;
+  AddLink(CommentEndPos, Code);
+end;
+
+function TLinkScanner.EmbedStrDirective: boolean;
+begin
+  Result:=EmbedDirective(false);
+end;
+
+function TLinkScanner.EmbedBytesDirective: boolean;
+begin
+  Result:=EmbedDirective(true);
 end;
 
 function TLinkScanner.LoadSourceCaseLoUp(const AFilename: string;
@@ -4690,6 +4846,14 @@ begin
           inc(p);
           while not (p^ in ['`',#0]) do inc(p);
           if p^='`' then
+            inc(p);
+        end;
+      '$':
+        begin
+          if p[1]='''' then
+            // skip interpolated string literal $'...'
+            SkipPascalInterpolatedString(p,FNestedComments)
+          else
             inc(p);
         end;
       #0:

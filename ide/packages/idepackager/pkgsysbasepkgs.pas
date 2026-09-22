@@ -33,7 +33,12 @@ type
     libpIdeConfig,
     libpIdePackager,
     libpIdeProject,
-    libpIdeDebugger
+    libpIdeDebugger,
+    // GOD mu3jfytu, 2026-09-16: the docked single-window IDE -- modern Delphi
+    // style -- is the DEFAULT on every platform, so the docking packages are
+    // core packages, not bigide extras that only --build-ide-release installs.
+    libpAnchorDockingDsgn,
+    libpDockedFormEditor
     {$IFDEF MSWINDOWS}
     ,libpMetaDarkStyleDSGN
     {$ENDIF}
@@ -66,16 +71,17 @@ const
     'IdeConfig',
     'IdePackager',
     'IdeProject',
-    'IdeDebugger'
+    'IdeDebugger',
+    'AnchorDockingDsgn',
+    'DockedFormEditor'
     {$IFDEF MSWINDOWS}
     ,'metadarkstyledsgn'
     {$ENDIF}
     );
 
   // extra packages for the release, alias "bigide"
-  LazarusIDEReleasePkgNames: array[0..34] of string = (
+  LazarusIDEReleasePkgNames: array[0..32] of string = (
 	  'SyneditDsgn',
-    'DockedFormEditor',
     'OnlinePackageManager',
     'cairocanvas_pkg',
     'RunTimeTypeInfoControls',
@@ -106,7 +112,6 @@ const
     'LazProjectGroups',
     'Pas2jsDsgn',
     'Charactermap_ide_pkg',
-    'AnchorDockingDsgn',
     'BGRABitmapPack',
     'bgracontrols'
     );

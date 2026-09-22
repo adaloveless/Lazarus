@@ -305,7 +305,13 @@ class procedure TWin32WSCustomFloatSpinEdit.GetPreferredSize(
   const AWinControl: TWinControl; var PreferredWidth, PreferredHeight: integer;
   WithThemeSpace: Boolean);
 begin
-  if MeasureTextForWnd(AWinControl.Handle, 'Fj', PreferredWidth, PreferredHeight) then
+  // MeasureTextForControl (LCL Font), not MeasureTextForWnd (WM_GETFONT): a spin edit is
+  // a TCustomEdit descendant and TWin32WSCustomEdit.GetPreferredSize already measures the
+  // LCL Font, so the two edit-family paths disagreed on the same control. Measured C455
+  // with the window font cleared: this site's preferred height fell 39 -> 24 while the
+  // plain edit's stayed at 39. Reference string stays 'Fj' -- a single-line edit's height
+  // is a function of its FONT, never of its content (C450).
+  if MeasureTextForControl(AWinControl, 'Fj', PreferredWidth, PreferredHeight) then
   begin
     PreferredWidth := 0;
     Inc(PreferredHeight, 8);

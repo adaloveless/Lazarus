@@ -252,6 +252,8 @@ type
     xtInt64,       // int64
     xtCardinal,    // cardinal
     xtQWord,       // qword
+    xtInt128,      // int128
+    xtUInt128,     // uint128
     xtBoolean,     // boolean
     xtByteBool,    // bytebool
     xtWordBool,    // wordbool
@@ -288,7 +290,8 @@ type
     xtOleVariant,  // OleVariant
     xtJSValue,     // jsvalue only in Pas2JS, similar to variant
     xtNil,         // nil  = pointer, class, procedure, method, ...
-    xtSizeInt      // SizeInt for Length intrinsic
+    xtSizeInt,     // SizeInt for Length intrinsic
+    xtFuture       // `future of T` thread handle
     );
   // Do not define: TExpressionTypeDescs = set of TExpressionTypeDesc;
   // There are too many enums, so the set would be big and slow
@@ -310,6 +313,8 @@ var
     'Int64',
     'Cardinal',
     'QWord',
+    'Int128',
+    'UInt128',
     'Boolean',
     'ByteBool',
     'WordBool',
@@ -346,7 +351,8 @@ var
     'OleVariant',
     'JSValue',
     'Nil',
-    'SizeInt'
+    'SizeInt',
+    'Future'
   );
 
 const
@@ -356,7 +362,7 @@ const
                      xtConstString,xtConstSet,xtCompilerFunc,xtNil];
   xtAllIdentTypes = xtAllTypes - xtAllConstTypes;
   xtAllIdentPredefinedTypes = xtAllIdentTypes - [xtContext];
-  xtAllIntegerTypes = [xtInt64, xtQWord, xtConstOrdInteger, xtLongint,
+  xtAllIntegerTypes = [xtInt64, xtQWord, xtInt128, xtUInt128, xtConstOrdInteger, xtLongint,
                        xtLongWord, xtWord, xtCardinal, xtSmallInt, xtShortInt,
                        xtByte,xtNativeInt,xtNativeUInt,xtSizeInt];
   xtAllBooleanTypes = [xtBoolean,
@@ -368,7 +374,7 @@ const
   xtAllWideStringTypes = [xtConstString, xtWideString, xtUnicodeString];
   xtAllPointerTypes = [xtPointer, xtNil];
   xtAllTypeHelperTypes = xtAllPredefinedTypes-[xtCompilerFunc,xtVariant,xtOleVariant,
-                                               xtJSValue,xtNil];
+                                               xtJSValue,xtNil,xtFuture];
   xtAllStringCompatibleTypes = xtAllStringTypes+[xtChar,xtAnsiChar,xtJSValue];
   xtAllWideStringCompatibleTypes = xtAllWideStringTypes+[xtWideChar,xtChar];
 
@@ -1026,6 +1032,8 @@ type
       out Context: TFindContext): boolean;
 
     function ExtractInlineVarInitType(VarDefNode: TCodeTreeNode): string;
+    function FindInlineVarTupleFieldDef(VarDefNode: TCodeTreeNode;
+      Params: TFindDeclarationParams; out FieldContext: TFindContext): boolean;
 
     // uses and units
     function FindNameInUsesSection(UsesNode: TCodeTreeNode; const AUnitName: string): TCodeTreeNode;
@@ -1110,6 +1118,8 @@ type
     function FindReferences(const CursorPos: TCodeXYPosition;
       SkipComments: boolean; out ListOfPCodeXYPosition: TFPList;
       Flags: TFindRefsFlags = []): boolean;
+    function GatherIdentifierReferences(const Identifier: string;
+      out TreeOfPCodeXYPosition: TAVLTree): boolean; // code-aware text scan (skips comments/strings), no resolution
     function FindSourceNameReferences(const TargetFilename: string; SkipComments: boolean;
       out LocalSrcName: string; out InFilenameCleanPos: integer;
       out TreeOfPCodeXYPosition: TAVLTree; SyntaxExceptions: boolean = false): boolean;
@@ -1335,6 +1345,7 @@ function IntegerTypesOrderList: TTypeAliasOrderList;
 begin
   if FIntegerTypesOrderList=nil then
     FIntegerTypesOrderList:=TTypeAliasOrderList.Create([
+       'Int128', 'UInt128',
        'Int64', 'QWord',
        'NativeInt', 'IntPtr', 'SizeInt', 'NativeUInt', 'UIntPtr',
        'Int32', 'Integer', 'LongInt', 'UInt32', 'Cardinal', 'LongWord',
@@ -1422,6 +1433,10 @@ begin
     Result:=xtCardinal
   else if CompareIdentifiers(Identifier,'QWORD')=0 then
     Result:=xtQWord
+  else if CompareIdentifiers(Identifier,'INT128')=0 then
+    Result:=xtInt128
+  else if CompareIdentifiers(Identifier,'UINT128')=0 then
+    Result:=xtUInt128
   else if CompareIdentifiers(Identifier,'BOOLEAN')=0 then
     Result:=xtBoolean
   else if CompareIdentifiers(Identifier,'BYTEBOOL')=0 then
@@ -1464,6 +1479,14 @@ begin
     Result:=xtText
   else if CompareIdentifiers(Identifier,'SIZEOF')=0 then
     Result:=xtConstOrdInteger
+  else if CompareIdentifiers(Identifier,'OFFSETOF')=0 then
+    Result:=xtConstOrdInteger
+  else if CompareIdentifiers(Identifier,'BITOFFSETOF')=0 then
+    Result:=xtConstOrdInteger
+  else if CompareIdentifiers(Identifier,'ALIGNOF')=0 then
+    Result:=xtConstOrdInteger
+  else if CompareIdentifiers(Identifier,'BITALIGNOF')=0 then
+    Result:=xtConstOrdInteger
   else if CompareIdentifiers(Identifier,'ORD')=0 then
     Result:=xtConstOrdInteger
   else if CompareIdentifiers(Identifier,'ASSIGNED')=0 then
@@ -1490,6 +1513,16 @@ begin
     Result:=xtByte
   else if CompareIdentifiers(Identifier,'PCHAR')=0 then
     Result:=xtPChar
+  else if (CompareIdentifiers(Identifier,'WORKERINDEX')=0)
+  or (CompareIdentifiers(Identifier,'WORKERCOUNT')=0) then
+    // implicit worker-locals of unleashed `for parallel` bodies
+    Result:=xtLongint
+  else if CompareIdentifiers(Identifier,'FUTURE')=0 then
+    // `future of T` thread handle
+    Result:=xtFuture
+  else if CompareIdentifiers(Identifier,'CANCELLED')=0 then
+    // implicit read-only cancel flag of `async begin..end` blocks
+    Result:=xtBoolean
   else if IsWordBuiltInFunc.DoItCaseInsensitive(Identifier) then
     Result:=xtCompilerFunc
   else begin
@@ -4448,6 +4481,27 @@ begin
       Node:=Node.Parent;
     end;
   end;
+  if (cmsParallelFor in FLastCompilerModeSwitches)
+  and ((CompareIdentifiers(Identifier,'WorkerIndex')=0)
+    or (CompareIdentifiers(Identifier,'WorkerCount')=0)) then begin
+    // implicit worker-locals of `for parallel` bodies
+    Node:=ContextNode;
+    while (Node<>nil) do begin
+      if Node.Desc=ctnBeginBlock then
+        exit(true);
+      Node:=Node.Parent;
+    end;
+  end;
+  if (cmsAsyncAwait in FLastCompilerModeSwitches)
+  and (CompareIdentifiers(Identifier,'Cancelled')=0) then begin
+    // implicit read-only cancel flag of `async begin..end` blocks
+    Node:=ContextNode;
+    while (Node<>nil) do begin
+      if Node.Desc=ctnBeginBlock then
+        exit(true);
+      Node:=Node.Parent;
+    end;
+  end;
   Params.ContextNode:=ContextNode;
   Params.SetIdentifier(Self,Identifier,nil);
   Params.Flags:=[fdfSearchInParentNodes,fdfSearchInAncestors,fdfSearchInHelpers,
@@ -4783,6 +4837,37 @@ var
       end;
       Node:=Node.NextBrother;
     end;
+  end;
+
+  function SearchInAnonymousEmbed: boolean;
+  // composablerecords: when ContextNode is an anon-embed carrier (a
+  // ctnVarDefinition tagged ctnsAnonymousEmbed), descend into the embedded
+  // type's record def and search there. The carrier itself is transparent
+  // for flat member lookup (`outer.x` -> embedded `x`).
+  var
+    EmbedContext: TFindContext;
+    OldFlags: TFindDeclarationFlags;
+    OldContextNode: TCodeTreeNode;
+    SubFound: boolean;
+  begin
+    Result:=false;
+    if (ContextNode.FirstChild=nil)
+    or (ContextNode.FirstChild.Desc<>ctnIdentifier) then exit;
+    EmbedContext:=FindBaseTypeOfNode(Params,ContextNode);
+    if (EmbedContext.Node=nil)
+    or (EmbedContext.Node.Desc<>ctnRecordType) then exit;
+    OldContextNode:=Params.ContextNode;
+    OldFlags:=Params.Flags;
+    Params.ContextNode:=EmbedContext.Node;
+    Params.Flags:=Params.Flags-[fdfIgnoreCurContextNode,fdfSearchInParentNodes];
+    try
+      SubFound:=EmbedContext.Tool.FindIdentifierInContext(Params,IdentifierFoundResult);
+    finally
+      Params.ContextNode:=OldContextNode;
+      Params.Flags:=OldFlags;
+    end;
+    if SubFound then
+      Result:=CheckResult(true,false);
   end;
 
   function SearchInTypeVarConstGlobPropDefinition(GenParamCnt: integer = 0; SkipEnums: boolean = False): boolean;
@@ -5179,6 +5264,8 @@ var
   function IdentifierIsFollowedByColon: boolean;
   begin
     Result:=false;
+    if Params.Identifier=nil then
+      exit;
     Params.IdentifierTool.MoveCursorToCleanPos(Params.Identifier);
     Params.IdentifierTool.ReadNextAtom;
     Params.IdentifierTool.ReadNextAtom;
@@ -5389,8 +5476,9 @@ var
           // these codetreenodes build a parent-child-relationship, but
           // for pascal it is only a range, hence after searching in the
           // children of the last node, search must continue in the children
-          // of the prior node
-          // Note: ctnBeginBlock is transparent to support inline var declarations
+          // of the prior node.
+          // Note: ctnBeginBlock is transparent so inline-var declarations
+          // inside the body are visible to identifier completion.
           ;
 
         ctnClass, ctnClassInterface, ctnDispinterface, ctnObject,
@@ -5566,22 +5654,46 @@ begin
           ctnRecordType, ctnRecordVariant,
           ctnClassHelper, ctnRecordHelper, ctnTypeHelper,
           ctnEnumerationType,
-          ctnParameterList,
-          ctnBeginBlock:
+          ctnParameterList:
             // these nodes build a parent-child relationship. But in pascal
             // they just define a range and not a context.
             // -> search in all children
-            // Note: ctnBeginBlock is included to support inline var declarations
             MoveContextNodeToChildren;
+
+          ctnBeginBlock:
+            // transparent so inline var/const declarations inside the body
+            // are visible to identifier completion - but only when the
+            // search starts inside this block. A begin..end reached as a
+            // prior sibling is a closed nested block whose declarations
+            // are block-scoped and invisible outside.
+            if (ContextNode=StartContextNode)
+            or StartContextNode.HasAsParent(ContextNode) then
+              MoveContextNodeToChildren;
 
           ctnTypeDefinition, ctnVarDefinition, ctnConstDefinition,
           ctnGlobalProperty:
             begin
-              // if looking for a generic, then don't accept other types
-              if (Params.IdentifierNode = nil)
-              or not(Params.IdentifierNode.Desc in [ctnSpecialize, ctnSpecializeType])
-              then
-                if SearchInTypeVarConstGlobPropDefinition then exit;
+              // anonymous embed (composablerecords): descend through the
+              // carrier into the embedded type's record so flat members
+              // (`outer.x` -> embedded `x`) resolve. The carrier's own name
+              // (`TName`) is hidden from completion to avoid listing the
+              // type-name slot as if it were a regular field, but stays
+              // matchable directly for the `outer.TName.field` path.
+              if (ContextNode.Desc=ctnVarDefinition)
+              and ((ContextNode.SubDesc and ctnsAnonymousEmbed)<>0) then begin
+                if SearchInAnonymousEmbed then exit;
+                if not (fdfCollect in Flags) then
+                  if (Params.IdentifierNode = nil)
+                  or not(Params.IdentifierNode.Desc in [ctnSpecialize, ctnSpecializeType])
+                  then
+                    if SearchInTypeVarConstGlobPropDefinition then exit;
+              end
+              else
+                // if looking for a generic, then don't accept other types
+                if (Params.IdentifierNode = nil)
+                or not(Params.IdentifierNode.Desc in [ctnSpecialize, ctnSpecializeType])
+                then
+                  if SearchInTypeVarConstGlobPropDefinition then exit;
             end;
 
           ctnGenericType:
@@ -5656,9 +5768,24 @@ begin
 
           ctnWithVariable:
             begin
-              if FindIdentifierInWithVarContext(ContextNode,Params)
-              and CheckResult(true,false) then
-                exit;
+              // A with variable ranges from the start of its expression to
+              // the end of the with statement and binds names only inside
+              // that range. The prior-brother step above already skips a
+              // with variable that does not cover the start context; a
+              // with variable reached by descending into a transparent
+              // begin..end block (inline var support: MoveContextNodeToChildren
+              // lands on the block's LastChild) bypassed that check, so a
+              // closed or later with statement captured identifiers outside
+              // its body, e.g. "Result" after "with c do ..." resolved to the
+              // record field c.Result instead of the function result.
+              if (StartContextNode.StartPos>=ContextNode.StartPos)
+              and (StartContextNode.StartPos<ContextNode.EndPos) then begin
+                if FindIdentifierInWithVarContext(ContextNode,Params)
+                and CheckResult(true,false) then
+                  exit;
+              end;
+              // else: this with statement does not cover the start context
+              // -> skip it and continue with the prior brother / parent
             end;
 
           ctnOnBlock:
@@ -5771,7 +5898,16 @@ begin
         exit;
       end;
     end;
-    if CurContextNode.FirstChild<>nil then begin
+    // composablerecords: anonymous enum constants stay scoped to the record
+    // that owns them. Skip descent into nested record bodies so the constants
+    // do not leak into the enclosing scope - matches the compiler behaviour
+    // where `tabstractrecordsymtable.insertdef` no longer redirects enum defs
+    // to the surrounding symtable. Qualified access (`TRec.kVal`) goes through
+    // the post-dot path which enters the record explicitly, bypassing this
+    if (CurContextNode.FirstChild<>nil)
+    and not ((CurContextNode.Desc=ctnRecordType)
+             and (cmsComposableRecords in Scanner.CompilerModeSwitches)) then
+    begin
       OldContextNode:=Params.ContextNode;
       Params.ContextNode:=CurContextNode;
       Result:=FindEnumInContext(Params);
@@ -6261,6 +6397,43 @@ begin
       end else
       if Result.Node.Desc=ctnProcedureHead then begin
         break;
+      end else
+      if (Result.Node.Desc=ctnTypeOfExpr) then begin
+        // unleashed: `Type(expr)` resolves to the static type of expr.
+        // expr lives in the source between the parens; resolve it via the
+        // expression-type machinery and continue with the resulting node.
+        if Result.Tool<>Self then begin
+          Result:=Result.Tool.FindBaseTypeOfNode(Params,Result.Node,AliasType,NodeStack);
+          break;
+        end;
+        MoveCursorToCleanPos(Result.Node.StartPos);
+        ReadNextAtom; // 'Type'
+        ReadNextAtom; // '('
+        if (CurPos.Flag<>cafRoundBracketOpen) then
+          break;
+        OldPos:=CurPos.EndPos; // position right after '('
+        if not ReadTilBracketClose(false) then
+          break;
+        TestContext.Tool:=Self;
+        TestContext.Node:=Result.Node;
+        try
+          Params.Save(OldInput);
+          Params.Flags:=[fdfSearchInParentNodes,fdfSearchInAncestors,
+                         fdfExceptionOnNotFound]
+                        +(fdfGlobals*Params.Flags);
+          Params.ContextNode:=Result.Node.Parent;
+          if Params.ContextNode<>nil then
+            with FindExpressionTypeOfTerm(OldPos,CurPos.StartPos,Params,false) do
+              if Context.Node<>nil then begin
+                Result.Tool:=Context.Tool;
+                Result.Node:=Context.Node;
+                TestContext.Node:=nil;
+              end;
+        finally
+          Params.Load(OldInput,true);
+        end;
+        if TestContext.Node<>nil then
+          break; // unresolved or predefined type, stop here
       end else
       if (Result.Node.Desc=ctnTypeType) then begin
         if fdfTypeType in Params.Flags then
@@ -6958,6 +7131,40 @@ begin
   Params.Load(OldInput,true);
 end;
 
+function TFindDeclarationTool.GatherIdentifierReferences(const Identifier: string;
+  out TreeOfPCodeXYPosition: TAVLTree): boolean;
+// scan the current unit for code occurrences of Identifier (the atom reader
+// skips comments and strings) and collect their source positions; used to
+// rename the implicit F<Name> backing field of an accessor-less property
+var
+  CodeXYPos: TCodeXYPosition;
+  IdentPtr: PChar;
+begin
+  Result:=false;
+  TreeOfPCodeXYPosition:=nil;
+  if Identifier='' then exit;
+  ActivateGlobalWriteLock;
+  try
+    BuildTree(lsrEnd);
+    IdentPtr:=PChar(Identifier);
+    MoveCursorToCleanPos(1);
+    repeat
+      ReadNextAtom;
+      if CurPos.StartPos>SrcLen then break;
+      if (CurPos.Flag=cafWord)
+      and (CompareIdentifiers(@Src[CurPos.StartPos],IdentPtr)=0)
+      and CleanPosToCaret(CurPos.StartPos,CodeXYPos) then begin
+        if TreeOfPCodeXYPosition=nil then
+          TreeOfPCodeXYPosition:=CreateTreeOfPCodeXYPosition;
+        AddCodePosition(TreeOfPCodeXYPosition,CodeXYPos);
+      end;
+    until false;
+    Result:=true;
+  finally
+    DeactivateGlobalWriteLock;
+  end;
+end;
+
 {-------------------------------------------------------------------------------
   function TFindDeclarationTool.FindReferences(const CursorPos: TCodeXYPosition;
     SkipComments: boolean; var ListOfPCodeXYPosition: TFPList): boolean;
@@ -7048,6 +7255,16 @@ var
       (Node.FirstChild.Desc=ctnClass) and
       (Node.FirstChild=Node.LastChild) )
     then
+      exit(true);
+
+    // ctnGenericType wraps a ctnGenericName name child - FindIdentifierInContext
+    // returns the parent ctnGenericType while DeclarationNode is the deepest
+    // node (ctnGenericName), so accept the wrapper as the same declaration.
+    if (Node.Desc=ctnGenericType) and (Node.FirstChild<>nil)
+    and (Node.FirstChild=DeclarationNode) then
+      exit(true);
+    if (Node.Desc=ctnGenericName) and (Node.Parent<>nil)
+    and (Node.Parent=DeclarationNode) then
       exit(true);
 
     // check method overrides
@@ -7388,6 +7605,190 @@ var
     end;
   end;
   
+  procedure ScanInterpolatedString; forward;
+
+  procedure ScanInterpExpr;
+  // StartPos is just past `{` of an interpolated expression; advance past the
+  // matching `}`, calling ReadIdentifier for identifiers inside the expression
+  // (and its comments) so rename / find-references reach them. A top-level `:`
+  // starts a raw `{expr:mask}` format mask which is not Pascal and is skipped.
+  var
+    Lvl: Integer;
+    PLvl: Integer;
+  begin
+    PLvl:=0;
+    while StartPos<=MaxPos do begin
+      case Src[StartPos] of
+      '}':
+        begin
+          inc(StartPos);
+          exit;
+        end;
+      ':':
+        if PLvl=0 then begin
+          // raw format mask - skip to the closing `}` without visiting it
+          while (StartPos<=MaxPos) and (Src[StartPos]<>'}') do inc(StartPos);
+        end else
+          inc(StartPos);
+      ')',']':
+        begin
+          if PLvl>0 then dec(PLvl);
+          inc(StartPos);
+        end;
+      '[':
+        begin
+          inc(PLvl);
+          inc(StartPos);
+        end;
+      '{':
+        begin
+          // `{...}` comment inside an expression
+          Lvl:=1;
+          inc(StartPos);
+          while StartPos<=MaxPos do begin
+            case Src[StartPos] of
+            '{': if Scanner.NestedComments then inc(Lvl);
+            '}':
+              begin
+                dec(Lvl);
+                if Lvl=0 then begin
+                  inc(StartPos);
+                  break;
+                end;
+              end;
+            'a'..'z','A'..'Z','_','&':
+              begin
+                ReadIdentifier(true);
+                continue;
+              end;
+            end;
+            inc(StartPos);
+          end;
+        end;
+      '(':
+        if (StartPos<MaxPos) and (Src[StartPos+1]='*') then begin
+          // `(*...*)` comment
+          inc(StartPos,2);
+          while StartPos<=MaxPos do begin
+            if (Src[StartPos]='*') and (StartPos<MaxPos) and (Src[StartPos+1]=')') then begin
+              inc(StartPos,2);
+              break;
+            end;
+            case Src[StartPos] of
+            'a'..'z','A'..'Z','_','&':
+              begin
+                ReadIdentifier(true);
+                continue;
+              end;
+            end;
+            inc(StartPos);
+          end;
+        end else begin
+          inc(PLvl);
+          inc(StartPos);
+        end;
+      '/':
+        if (StartPos<MaxPos) and (Src[StartPos+1]='/') then begin
+          // `//` line comment
+          inc(StartPos,2);
+          while (StartPos<=MaxPos) and not (Src[StartPos] in [#10,#13]) do begin
+            case Src[StartPos] of
+            'a'..'z','A'..'Z','_','&':
+              begin
+                ReadIdentifier(true);
+                continue;
+              end;
+            end;
+            inc(StartPos);
+          end;
+        end else
+          inc(StartPos);
+      '''':
+        begin
+          // regular single-quoted string literal (no identifiers inside)
+          inc(StartPos);
+          while StartPos<=MaxPos do begin
+            if Src[StartPos] in [#10,#13] then break;
+            if Src[StartPos]='''' then begin
+              if (StartPos<MaxPos) and (Src[StartPos+1]='''') then
+                inc(StartPos,2)
+              else begin
+                inc(StartPos);
+                break;
+              end;
+            end else
+              inc(StartPos);
+          end;
+        end;
+      '`':
+        begin
+          inc(StartPos);
+          while (StartPos<=MaxPos) and (Src[StartPos]<>'`') do inc(StartPos);
+          if StartPos<=MaxPos then inc(StartPos);
+        end;
+      '$':
+        if (StartPos<MaxPos) and (Src[StartPos+1]='''') then
+          ScanInterpolatedString
+        else begin
+          // hex constant
+          inc(StartPos);
+          while (StartPos<=MaxPos) and IsHexNumberChar[Src[StartPos]] do
+            inc(StartPos);
+        end;
+      '#':
+        begin
+          // char constant #nnn or #$hh
+          inc(StartPos);
+          if (StartPos<=MaxPos) and (Src[StartPos]='$') then begin
+            inc(StartPos);
+            while (StartPos<=MaxPos) and IsHexNumberChar[Src[StartPos]] do
+              inc(StartPos);
+          end else
+            while (StartPos<=MaxPos) and IsNumberChar[Src[StartPos]] do
+              inc(StartPos);
+        end;
+      'a'..'z','A'..'Z','_','&':
+        ReadIdentifier(false);
+      else
+        inc(StartPos);
+      end;
+    end;
+  end;
+
+  procedure ScanInterpolatedString;
+  // StartPos is at `$` of `$'...'`; advance past the closing apostrophe,
+  // descending into `{expr}` bodies so identifiers there are visited.
+  begin
+    inc(StartPos,2); // skip $'
+    while StartPos<=MaxPos do begin
+      case Src[StartPos] of
+      '''':
+        if (StartPos<MaxPos) and (Src[StartPos+1]='''') then
+          inc(StartPos,2) // doubled apostrophe
+        else begin
+          inc(StartPos);
+          exit;
+        end;
+      '{':
+        if (StartPos<MaxPos) and (Src[StartPos+1]='{') then
+          inc(StartPos,2) // escaped brace
+        else begin
+          inc(StartPos);
+          ScanInterpExpr;
+        end;
+      '}':
+        if (StartPos<MaxPos) and (Src[StartPos+1]='}') then
+          inc(StartPos,2) // escaped brace
+        else
+          inc(StartPos);
+      #10,#13:
+        exit; // string parts are single-line
+      else
+        inc(StartPos);
+      end;
+    end;
+  end;
+
   procedure SearchIdentifiers;
   var
     CommentLvl: Integer;
@@ -7494,7 +7895,7 @@ var
         
       'a'..'z','A'..'Z','_','&':
         ReadIdentifier(false);
-        
+
       '''':
         begin
           // skip string constant
@@ -7508,7 +7909,15 @@ var
             end;
           end;
         end;
-        
+
+      '$':
+        if (StartPos<MaxPos) and (Src[StartPos+1]='''') then
+          // descend into `$'...{expr}...'` so identifiers inside the
+          // expression body are visited by rename / find-references
+          ScanInterpolatedString
+        else
+          inc(StartPos);
+
       else
         inc(StartPos);
       end;
@@ -9510,10 +9919,24 @@ begin
   // move cursor to end of with-variable
   Params.Save(OldInput);
   Params.ContextNode:=WithVarNode;
+  // fdfCollect: with-var may be a partial prefix the user is still
+  // typing; bail gracefully so Ctrl+Space gathers parent-scope matches
   Params.Flags:=Params.Flags*fdfGlobals
-                +[fdfExceptionOnNotFound,fdfFunctionResult,fdfFindChildren];
+                +[fdfFunctionResult,fdfFindChildren];
+  if not (fdfCollect in OldInput.Flags) then
+    Include(Params.Flags,fdfExceptionOnNotFound);
   OldExtractedOperand:=Params.ExtractedOperand;
-  WithVarExpr:=FindExpressionTypeOfTerm(WithVarNode.StartPos,-1,Params,true);
+  try
+    WithVarExpr:=FindExpressionTypeOfTerm(WithVarNode.StartPos,-1,Params,true);
+  except
+    on E: ECodeToolError do begin
+      if fdfCollect in OldInput.Flags then begin
+        Params.Load(OldInput,true);
+        exit(false);
+      end;
+      raise;
+    end;
+  end;
   if fdfExtractOperand in Params.Flags then
     NewExtractedOperand:=Params.ExtractedOperand+'.'
   else
@@ -9523,6 +9946,10 @@ begin
   or (WithVarExpr.Context.Node=OldInput.ContextNode)
   or (not (WithVarExpr.Context.Node.Desc in (AllClasses+[ctnEnumerationType])))
   then begin
+    if fdfCollect in OldInput.Flags then begin
+      Params.Load(OldInput,true);
+      exit(false);
+    end;
     MoveCursorToCleanPos(WithVarNode.StartPos);
     RaiseException(20170421200254,ctsExprTypeMustBeClassOrRecord);
   end;
@@ -10421,7 +10848,14 @@ var
     end;
     FirstIdentifier:=true;
     if not (CurPos.Flag in AllCommonAtomWords) then exit;
-    if UpAtomIs('SPECIALIZE') then exit;
+    if UpAtomIs('SPECIALIZE') then begin
+      // term starting with 'specialize TFoo<X>' (e.g. inline-var initializer
+      // 'specialize TFoo<X>.Create(...)'); consume the specialize block and
+      // let the main loop continue with the trailing '.', '(', etc.
+      ReadSpecialize(False);
+      FirstIdentifier:=false;
+      exit;
+    end;
     AtomIsIdentifierE;
     FirstIdentifier:=false;
     ReadNextAtom;
@@ -10466,6 +10900,15 @@ begin
         UndoReadNextAtom;
       end else if UpAtomIs('SPECIALIZE') then begin
         FirstIdentifier:=false;
+        ReadSpecialize(False);
+        NextReadDone := True;
+      end else if AtomIsChar('<') and (not FirstIdentifier)
+        and ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE])
+          or (cmsImplicitGenerics in Scanner.CompilerModeSwitches))
+      then begin
+        // Delphi-style generic instantiation `TFoo<X>` after the name;
+        // ReadSpecialize for Delphi/implicit mode expects cursor on '<' and
+        // undoes back to the name internally.
         ReadSpecialize(False);
         NextReadDone := True;
       end else
@@ -10913,6 +11356,8 @@ var
     InlineVarExprStartPos, InlineVarExprEndPos: integer;
     InlineVarExprType: TExpressionType;
     InlineVarOldInput: TFindDeclarationInput;
+    InlineVarFieldContext: TFindContext;
+    ForInTermPos: TAtomPosition;
     CurAliasType: PFindContext;
     Context: TFindContext;
     FirstParamProcExpr: TExpressionType;
@@ -11017,6 +11462,79 @@ var
           end;
           Params.Load(InlineVarOldInput,true);
         end;
+      end
+      else if (InlineVarExprStartPos+1<=ExprType.Context.Tool.SrcLen)
+      and (ExprType.Context.Tool.Src[InlineVarExprStartPos] in ['i','I'])
+      and (ExprType.Context.Tool.Src[InlineVarExprStartPos+1] in ['n','N'])
+      and ((InlineVarExprStartPos+2>ExprType.Context.Tool.SrcLen)
+        or not (ExprType.Context.Tool.Src[InlineVarExprStartPos+2] in
+                ['a'..'z','A'..'Z','0'..'9','_'])) then
+      begin
+        // for-in inline var: `for var x in <collection> do` - x has the
+        // element type of the collection. find the collection term (after
+        // `in`, before the `do` keyword, bracket-aware) and infer via the
+        // existing FindForInTypeAsString
+        ForInTermPos.StartPos:=InlineVarExprStartPos+2;
+        while (ForInTermPos.StartPos<=ExprType.Context.Tool.SrcLen)
+        and (ExprType.Context.Tool.Src[ForInTermPos.StartPos] in [' ',#9,#10,#13]) do
+          inc(ForInTermPos.StartPos);
+        ForInTermPos.EndPos:=ForInTermPos.StartPos;
+        InlineVarExprEndPos:=0; // reuse as bracket depth
+        while (ForInTermPos.EndPos<=ExprType.Context.Tool.SrcLen) do begin
+          case ExprType.Context.Tool.Src[ForInTermPos.EndPos] of
+          '(','[': inc(InlineVarExprEndPos);
+          ')',']': if InlineVarExprEndPos>0 then dec(InlineVarExprEndPos);
+          ';': break;
+          'd','D':
+            if (InlineVarExprEndPos=0)
+            and (ForInTermPos.EndPos+1<=ExprType.Context.Tool.SrcLen)
+            and (ExprType.Context.Tool.Src[ForInTermPos.EndPos+1] in ['o','O'])
+            and ((ForInTermPos.EndPos=1)
+              or not (ExprType.Context.Tool.Src[ForInTermPos.EndPos-1] in
+                      ['a'..'z','A'..'Z','0'..'9','_']))
+            and ((ForInTermPos.EndPos+2>ExprType.Context.Tool.SrcLen)
+              or not (ExprType.Context.Tool.Src[ForInTermPos.EndPos+2] in
+                      ['a'..'z','A'..'Z','0'..'9','_'])) then
+              break;
+          end;
+          inc(ForInTermPos.EndPos);
+        end;
+        while (ForInTermPos.EndPos>ForInTermPos.StartPos)
+        and (ExprType.Context.Tool.Src[ForInTermPos.EndPos-1] in [' ',#9,#10,#13]) do
+          dec(ForInTermPos.EndPos);
+        if ForInTermPos.EndPos>ForInTermPos.StartPos then begin
+          ForInTermPos.Flag:=cafNone;
+          Params.Save(InlineVarOldInput);
+          try
+            Params.ContextNode:=ExprType.Context.Node;
+            Params.Flags:=[fdfSearchInParentNodes];
+            ExprType.Context.Tool.FindForInTypeAsString(
+              ForInTermPos,ExprType.Context.Node,Params,InlineVarExprType);
+            if InlineVarExprType.Desc<>xtNone then
+              ExprType:=InlineVarExprType;
+          except
+          end;
+          Params.Load(InlineVarOldInput,true);
+        end;
+      end
+      else if ExprType.Context.Tool.Src[InlineVarExprStartPos] in [',',')'] then
+      begin
+        // tuple destructure: `var (a, b) := expr` / `for var (a, b) in expr` -
+        // the name has the type of its positional field in the tuple
+        Params.Save(InlineVarOldInput);
+        try
+          if ExprType.Context.Tool.FindInlineVarTupleFieldDef(
+            ExprType.Context.Node,Params,InlineVarFieldContext) then
+          begin
+            InlineVarExprType:=InlineVarFieldContext.Tool.
+              ConvertNodeToExpressionType(InlineVarFieldContext.Node,Params,
+                                          CurAliasType);
+            if InlineVarExprType.Desc<>xtNone then
+              ExprType:=InlineVarExprType;
+          end;
+        except
+        end;
+        Params.Load(InlineVarOldInput,true);
       end;
     end;
     if (ExprType.Desc=xtContext)
@@ -11320,6 +11838,19 @@ var
     Params.Load(OldInput,false);
   end;
 
+  procedure ResolveFutureMember;
+  begin
+    // synthetic control members of a `future of T` handle: `await` reads the
+    // value, these probe/steer the worker
+    ExprType:=CleanExpressionType;
+    if CompareSrcIdentifiers(CurAtom.StartPos,'DONE')
+    or CompareSrcIdentifiers(CurAtom.StartPos,'CANCELLED') then
+      ExprType.Desc:=xtBoolean
+    else if CompareSrcIdentifiers(CurAtom.StartPos,'THREADID') then
+      ExprType.Desc:=xtNativeUInt;
+    // `Cancel` (a procedure) and unknown members stay xtNone
+  end;
+
   procedure ResolveIdentifier;
   var
     ProcNode: TCodeTreeNode;
@@ -11421,6 +11952,10 @@ var
     if not IdentFound then begin
       if not (ExprType.Desc in [xtContext,xtNone]) then
       begin
+        if ExprType.Desc=xtFuture then begin
+          ResolveFutureMember;
+          exit;
+        end;
         // find special sub identifier
         if (ExprType.Desc in xtAllTypeHelperTypes) then
         begin
@@ -11469,6 +12004,12 @@ var
           Context:=ExprType.Context
         else
           Context:=CreateFindContext(Self,StartNode);
+        if (ExprType.Desc=xtContext) and (Context.Node<>nil)
+        and (Context.Node.Desc=ctnFutureType) then begin
+          // member of an explicitly typed future variable
+          ResolveFutureMember;
+          exit;
+        end;
         Params.Save(OldInput);
         // build new param flags for sub identifiers
         Params.Flags:=[fdfSearchInAncestors,fdfExceptionOnNotFound,fdfSearchInHelpers]
@@ -11746,6 +12287,7 @@ var
 
   procedure ResolvePoint;
   begin
+    TrueSelf:=false;
     // for example 'A.B'
     if (ExprType.Context.Node=nil) then
       // 'a:array[0. '
@@ -11762,8 +12304,8 @@ var
 
     ResolveChildren;
 
-    if ExprType.Desc in xtAllTypeHelperTypes then begin
-      // helper type
+    if (ExprType.Desc in xtAllTypeHelperTypes) or (ExprType.Desc=xtFuture) then begin
+      // helper type or future handle
     end else if (ExprType.Context.Node=nil) then begin
       MoveCursorToCleanPos(CurAtom.StartPos);
       ReadNextAtom;
@@ -12474,14 +13016,22 @@ begin
     ReadNextAtom;
   if MaxEndPos<0 then MaxEndPos:=SrcLen;
 
-  // read unary operators which have no effect on the type: +, -, not
-  while AtomIsChar('+') or AtomIsChar('-') or UpAtomIs('NOT') do
+  // read unary operators which have no effect on the type: +, -, not, autofree
+  while AtomIsChar('+') or AtomIsChar('-') or UpAtomIs('NOT') or UpAtomIs('AUTOFREE') do
     ReadNextAtom;
+  // `async <call>` / `async begin..end` always yields a future - the rest of
+  // the operand cannot change the type, so skip it wholesale
+  if UpAtomIs('ASYNC') and (cmsAsyncAwait in Scanner.CompilerModeSwitches) then begin
+    Result.Desc:=xtFuture;
+    MoveCursorToCleanPos(MaxEndPos);
+    ReadNextAtom;
+    exit;
+  end;
   {$IFDEF ShowExprEval}
   DebugLn('[TFindDeclarationTool.ReadOperandTypeAtCursor] A Atom=',GetAtom);
   debugln(['TFindDeclarationTool.ReadOperandTypeAtCursor StartContext=',Params.ContextNode.DescAsString,'="',dbgstr(Src,Params.ContextNode.StartPos,15),'"']);
   {$ENDIF}
-  MaybeFuncAtCursor := AtomIsIdentifier or UpAtomIs('INHERITED');
+  MaybeFuncAtCursor := AtomIsIdentifier or UpAtomIs('INHERITED') or UpAtomIs('SPECIALIZE');
   if (MaybeFuncAtCursor)
   or (CurPos.Flag=cafRoundBracketOpen)
   or UpAtomIs('ARRAY')
@@ -13728,8 +14278,15 @@ begin
     if UpAtomIs('SPECIALIZE') and (not ((Scanner.CompilerMode in [cmDELPHI,cmDELPHIUNICODE]) or (cmsImplicitGenerics in Scanner.CompilerModeSwitches)))
     then begin
       Node:=FindDeepestNodeAtPos(CurPos.StartPos,false);
-      //if (Node<>nil) and (Node.Desc in [ctnSpecialize,ctnSpecializeParams,ctnSpecializeParam,ctnSpecializeType]) then
-      if (Node<>nil) and (Node.Desc in [ctnSpecialize, ctnBeginBlock]) then // no nodes in begin...end code
+      // ctnSpecialize for type/inheritance contexts. ctnBeginBlock for free
+      // expression code in a procedure body. ctnVarDefinition / ctnConstDefinition
+      // for inline-var initializers (`var t := specialize TFoo<X>.Create(...)`)
+      // - the parser does not split the initializer into expression nodes, so
+      // the deepest node at the SPECIALIZE position stays the surrounding
+      // definition rather than ctnSpecialize.
+      if (Node<>nil) and (Node.Desc in
+          [ctnSpecialize, ctnBeginBlock, ctnVarDefinition, ctnConstDefinition])
+      then
         exit(vatSpecialize)
       else
         exit(vatIdentifier);
@@ -15165,6 +15722,8 @@ function TFindDeclarationTool.FindForInTypeAsString(TermPos: TAtomPosition;
       xtInt64,
       xtCardinal,
       xtQWord,
+      xtInt128,
+      xtUInt128,
       xtPointer,
       xtFile,
       xtText,
@@ -15540,19 +16099,119 @@ end;
 function TFindDeclarationTool.ExtractInlineVarInitType(
   VarDefNode: TCodeTreeNode): string;
 // Infer a display type string for `var x := expr` declarations without an
-// explicit type annotation. Handles simple literals (Integer, Double, String,
+// explicit type annotation. Handles simple literals (Int64, Double, String,
 // Char, Boolean, Pointer), tuple literals with scalar or nested elements,
 // and identifier/function-call expressions resolved via FindTermTypeAsString.
 // Returns '' when inference is not possible.
 
-  function ScanLiteralType: string;
+  function RealLiteralIsDouble(const ALiteral: string): boolean;
+  // Does the compiler's default real type actually hold this literal?
+  // See the AtomIsRealNumber comment below for the measurement this encodes.
+  // Val parses into an Extended and never raises, so an out-of-range literal
+  // is answered rather than crashing the IDE's identifier completion.
+  const
+    // largest finite double, and the smallest positive DENORMAL double --
+    // denormals count as representable (1.0e-320 measured Double, 1.0e-330
+    // measured Extended).
+    MaxDbl = 1.7976931348623157e308;
+    MinDbl = 4.9406564584124654e-324;
+  var
+    Clean: string;
+    i, Code: integer;
+    Value: extended;
+    InExponent, MantissaIsZero: boolean;
+  begin
+    Result:=true;
+    Clean:='';
+    InExponent:=false;
+    MantissaIsZero:=true;
+    for i:=1 to length(ALiteral) do begin
+      // digit separators are lexical only; AtomIsRealNumber accepts them but
+      // Val does not
+      if ALiteral[i]='_' then continue;
+      if (ALiteral[i]='e') or (ALiteral[i]='E') then
+        InExponent:=true
+      else if (not InExponent) and (ALiteral[i]>='1') and (ALiteral[i]<='9') then
+        MantissaIsZero:=false;
+      Clean:=Clean+ALiteral[i];
+    end;
+    Val(Clean,Value,Code);
+    // not evaluable here (a form Val rejects) -- keep the default rather than
+    // guess
+    if Code<>0 then exit;
+    if Value=0 then
+      // either a true zero, or a magnitude so small it underflowed to zero
+      // even in an Extended -- and what a Extended cannot hold, a Double
+      // certainly cannot
+      exit(MantissaIsZero);
+    Result:=(Abs(Value)<=MaxDbl) and (Abs(Value)>=MinDbl);
+  end;
+
+  function ScanLiteralType(out WholeTerm: boolean): string;
+  // WholeTerm reports whether the literal is the ENTIRE initialiser. A literal
+  // that only starts the term (`1` in `1/2`) does not give the term's type.
+  var
+    SignStartPos, LiteralStartPos: integer;
   begin
     Result:='';
+    WholeTerm:=false;
     if CurPos.StartPos>SrcLen then exit;
-    if AtomIsRealNumber then
-      Result:='Double'
+    // A leading sign is its own atom, so `var x := -1` would otherwise miss the
+    // literal path entirely and fall through to the generic term resolver,
+    // which reports a different type than `var x := 1` does (measured
+    // 2026-09-10: -1.0 came out Extended while 1.0 came out Double). Consume
+    // the sign, and rewind if what follows is not a literal after all.
+    SignStartPos:=-1;
+    if (CurPos.EndPos-CurPos.StartPos=1) and (Src[CurPos.StartPos] in ['-','+'])
+    then begin
+      SignStartPos:=CurPos.StartPos;
+      ReadNextAtom;
+      if CurPos.StartPos>SrcLen then begin
+        MoveCursorToCleanPos(SignStartPos);
+        ReadNextAtom;
+        exit;
+      end;
+    end;
+    if AtomIsRealNumber then begin
+      // No longer a display default: this is what the compiler infers, as of
+      // VibePascal 3.3.1 2026/09/10 (FPCDeveloper's v56, compiler rebuilt
+      // 18:46). An un-annotated real inline var now takes the DEFAULT REAL
+      // TYPE instead of inheriting the literal's own narrowed precision, so
+      // the answer no longer depends on {$MINFPCONSTPREC} or on whether the
+      // constant round-trips exactly through single.
+      //
+      // THE EARLIER COMMENT HERE IS REFUTED, do not restore it: it recorded
+      // "Single when the constant round-trips exactly, Extended otherwise, so
+      // Double is unreachable at the default", measured hours before v56
+      // landed the same day. Re-measured after v56 against VibePascal 3.3.1
+      // x86_64, {$mode unleashed}, type read at runtime via PTypeInfo:
+      // 1.0, 0.5, 0.1, 3.4e38 and 1.5e300 all -> Double. All five of those
+      // were previously Single or Extended.
+      //
+      // The one thing magnitude still decides is whether a Double can hold
+      // the literal at all; when it cannot, the compiler widens to Extended.
+      // Measured the same way, and this is the whole boundary:
+      //   1.7976931348623157e308 -> Double     1.8e308   -> Extended
+      //   2.2250738585072014e-308 -> Double    1.0e400   -> Extended
+      //   1.0e-310, 1.0e-320 (denormals) -> Double
+      //   1.0e-330, 1.0e-4000 -> Extended      0.0       -> Double
+      // RealLiteralIsDouble reproduces every one of those.
+      //
+      // HONEST LIMIT: at the denormal floor the true predicate is "rounds to
+      // zero in a double", which splits at half the min denormal rather than
+      // at it, so literals in that ~2x window are called Extended when the
+      // compiler says Double. No such literal has been observed in real code.
+      if RealLiteralIsDouble(GetAtom) then
+        Result:='Double'
+      else
+        Result:='Extended';
+    end
     else if AtomIsNumber then
-      Result:='Integer'
+      // Not Integer: an inline var initialised from an integer literal is
+      // Int64 in every mode that accepts inline vars. Measured against
+      // VibePascal 3.3.1 x86_64 -- 1, -1 and 2147483648 all report SizeOf 8
+      // and RTTI name Int64, under {$mode unleashed} and {$mode delphi} alike.
+      Result:='Int64'
     else if AtomIsStringConstant then
       // Char literals are promoted to String in inline vars.
       Result:='String'
@@ -15562,12 +16221,28 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
       else if UpAtomIs('NIL') then
         Result:='Pointer';
     end;
+    if (Result='') and (SignStartPos>=0) then begin
+      // signed, but not a literal -- put the cursor back on the sign so the
+      // caller's fallback sees the whole term
+      MoveCursorToCleanPos(SignStartPos);
+      ReadNextAtom;
+    end;
+    if Result<>'' then begin
+      // peek one atom to see whether the literal ends the initialiser, then
+      // put the cursor back on the literal: callers rely on that position
+      LiteralStartPos:=CurPos.StartPos;
+      ReadNextAtom;
+      WholeTerm:=(CurPos.StartPos>SrcLen) or (CurPos.Flag=cafSemicolon);
+      MoveCursorToCleanPos(LiteralStartPos);
+      ReadNextAtom;
+    end;
   end;
 
   function ScanTupleType: string;
   var
     ElemType, FieldName: string;
     SavedPos: integer;
+    ElemWholeTerm: boolean;
   begin
     Result:='';
     if CurPos.Flag<>cafRoundBracketOpen then exit;
@@ -15592,7 +16267,9 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
       if CurPos.Flag=cafRoundBracketOpen then
         ElemType:=ScanTupleType()
       else
-        ElemType:=ScanLiteralType();
+        // inside a tuple the element, not the term, is being scanned, so the
+        // whole-term flag does not apply
+        ElemType:=ScanLiteralType(ElemWholeTerm);
       if ElemType='' then exit('');
       if FieldName<>'' then
         Result:=Result+FieldName+': '+ElemType
@@ -15609,10 +16286,14 @@ function TFindDeclarationTool.ExtractInlineVarInitType(
   end;
 
 var
-  ExprStart, ExprEnd, BracketDepth: integer;
+  ExprStart, ExprEnd, BracketDepth, TermStartPos: integer;
   TermPos: TAtomPosition;
   Params: TFindDeclarationParams;
   ExprType: TExpressionType;
+  FieldContext: TFindContext;
+  FieldTypeNode: TCodeTreeNode;
+  IsForIn, LiteralIsWholeTerm: boolean;
+  LiteralFallback: string;
 begin
   Result:='';
   if (VarDefNode=nil) or (VarDefNode.Desc<>ctnVarDefinition) then exit;
@@ -15622,14 +16303,87 @@ begin
   ReadNextAtom;
   if not AtomIsIdentifier then exit;
   ReadNextAtom;
-  if CurPos.Flag<>cafAssignment then exit;
+  if (cmsTuples in Scanner.CompilerModeSwitches)
+  and (CurPos.Flag in [cafComma,cafRoundBracketClose]) then begin
+    // tuple destructure `var (a, b) := expr` / `for var (a, b) in expr do`:
+    // show the type of the positional field
+    Params:=TFindDeclarationParams.Create(Self, VarDefNode);
+    try
+      try
+        if FindInlineVarTupleFieldDef(VarDefNode,Params,FieldContext) then begin
+          FieldTypeNode:=FieldContext.Tool.FindTypeNodeOfDefinition(FieldContext.Node);
+          if FieldTypeNode<>nil then
+            Result:=FieldContext.Tool.ExtractNode(FieldTypeNode,[]);
+        end;
+      except
+        Result:='';
+      end;
+    finally
+      Params.Free;
+    end;
+    exit;
+  end;
+  IsForIn:=UpAtomIs('IN');
+  if (not IsForIn) and (CurPos.Flag<>cafAssignment) then exit;
   ReadNextAtom;
   if CurPos.StartPos>SrcLen then exit;
+  if IsForIn then begin
+    // for-in inline var `for var x in expr do`: x has the element type of
+    // the enumerable; scan the term until 'do' and reuse the for-in inference
+    TermPos.StartPos:=CurPos.StartPos;
+    TermPos.EndPos:=TermPos.StartPos;
+    TermPos.Flag:=cafNone;
+    BracketDepth:=0;
+    repeat
+      if CurPos.StartPos>SrcLen then break;
+      case CurPos.Flag of
+        cafRoundBracketOpen,cafEdgedBracketOpen: inc(BracketDepth);
+        cafRoundBracketClose,cafEdgedBracketClose:
+          begin
+            if BracketDepth=0 then break;
+            dec(BracketDepth);
+          end;
+        cafSemicolon:
+          if BracketDepth=0 then break;
+        cafWord:
+          if (BracketDepth=0) and UpAtomIs('DO') then break;
+      end;
+      TermPos.EndPos:=CurPos.EndPos;
+      ReadNextAtom;
+    until false;
+    if TermPos.EndPos<=TermPos.StartPos then exit;
+    Params:=TFindDeclarationParams.Create(Self, VarDefNode);
+    try
+      try
+        Params.Flags:=[fdfSearchInParentNodes];
+        Result:=FindForInTypeAsString(TermPos,VarDefNode,Params,ExprType);
+      except
+        Result:='';
+      end;
+    finally
+      Params.Free;
+    end;
+    exit;
+  end;
   // literal paths first
+  LiteralFallback:='';
+  TermStartPos:=CurPos.StartPos;
   if CurPos.Flag=cafRoundBracketOpen then
     Result:=ScanTupleType()
-  else
-    Result:=ScanLiteralType();
+  else begin
+    Result:=ScanLiteralType(LiteralIsWholeTerm);
+    if (Result<>'') and (not LiteralIsWholeTerm) then begin
+      // The literal only STARTS the initialiser, so its own type is not the
+      // term's type: `var x := 1/2` is Double and `var x := 1+0.5` is a real,
+      // both measured, where the literal alone says Int64. Let the expression
+      // resolver answer, keeping the literal's type only as a backstop for
+      // when it cannot (it never answered better than this before).
+      LiteralFallback:=Result;
+      Result:='';
+      MoveCursorToCleanPos(TermStartPos);
+      ReadNextAtom;
+    end;
+  end;
   if Result<>'' then exit;
   // fallback: resolve the expression (identifier, function call, ...)
   // scan from first atom to end of term (';', or matched brackets)
@@ -15658,11 +16412,145 @@ begin
   try
     try
       Result:=FindTermTypeAsString(TermPos, Params, ExprType);
+      if Result<>'' then
+        case ExprType.Desc of
+        // FindExprTypeAsString serves every context codetools renders a type
+        // in, so it answers a constant expression with the historic defaults
+        // 'Integer'/'Extended'. For an inline var the constant's own type IS
+        // the variable's type: measured 2026-09-10 on VibePascal 3.3.1,
+        // `var n := -(1)`, `var n := 2*3` and `var n := 1 div 2` are all
+        // SizeOf 8 / Int64. Reals keep the Double display default the literal
+        // path uses (see ScanLiteralType). Inline-var-only on purpose --
+        // xtConstOrdInteger itself is shared far too widely to redefine.
+        xtConstOrdInteger: Result:='Int64';
+        xtConstReal: Result:='Double';
+        end;
     except
       Result:='';
     end;
   finally
     Params.Free;
+  end;
+  if Result='' then
+    Result:=LiteralFallback;
+end;
+
+function TFindDeclarationTool.FindInlineVarTupleFieldDef(
+  VarDefNode: TCodeTreeNode; Params: TFindDeclarationParams;
+  out FieldContext: TFindContext): boolean;
+// Resolve the positional tuple field behind a destructure declaration:
+//   var (a, b) := <tuple expr>;        - a, b get the tuple field types
+//   for var (a, b) in <collection> do  - fields of the collection element
+// VarDefNode is one of the typeless ctnVarDefinition siblings created for
+// the names between the brackets. Returns the ctnVarDefinition of the field
+// with the same position inside the tuple's ctnRecordType.
+var
+  Node: TCodeTreeNode;
+  FieldIndex, i: integer;
+  ExprStart, ExprEnd, BracketDepth: integer;
+  IsForIn: boolean;
+  TermPos: TAtomPosition;
+  TupleExprType: TExpressionType;
+  OldInput: TFindDeclarationInput;
+begin
+  Result:=false;
+  FieldContext:=CleanFindContext;
+  if (VarDefNode=nil) or (VarDefNode.Desc<>ctnVarDefinition) then exit;
+  if VarDefNode.FirstChild<>nil then exit;
+  if (VarDefNode.Parent=nil) or (VarDefNode.Parent.Desc<>ctnVarSection) then exit;
+  if not (cmsTuples in Scanner.CompilerModeSwitches) then exit;
+  // destructures declare at least two names
+  if (VarDefNode.PriorBrother=nil) and (VarDefNode.NextBrother=nil) then exit;
+  // position of this name among the siblings
+  FieldIndex:=0;
+  Node:=VarDefNode;
+  while Node.PriorBrother<>nil do begin
+    Node:=Node.PriorBrother;
+    if Node.Desc<>ctnVarDefinition then exit;
+    inc(FieldIndex);
+  end;
+  // the name list must be enclosed in brackets: require '(' in front of the
+  // first name, so plain groups `var a, b: T;` are rejected
+  i:=Node.StartPos-1;
+  while (i>=1) and (Src[i] in [' ',#9,#10,#13]) do dec(i);
+  if (i<1) or (Src[i]<>'(') then exit;
+  // read the remaining names, the ')' and the operator behind it
+  MoveCursorToCleanPos(VarDefNode.StartPos);
+  ReadNextAtom;
+  if not AtomIsIdentifier then exit;
+  ReadNextAtom;
+  while CurPos.Flag=cafComma do begin
+    ReadNextAtom;
+    if not AtomIsIdentifier then exit;
+    ReadNextAtom;
+  end;
+  if CurPos.Flag<>cafRoundBracketClose then exit;
+  ReadNextAtom;
+  IsForIn:=UpAtomIs('IN');
+  if (not IsForIn) and (CurPos.Flag<>cafAssignment) then exit;
+  ReadNextAtom;
+  if CurPos.StartPos>SrcLen then exit;
+  // scan the tuple expression: until ';' (:=) or 'do' (for-in), bracket aware
+  ExprStart:=CurPos.StartPos;
+  ExprEnd:=ExprStart;
+  BracketDepth:=0;
+  repeat
+    if CurPos.StartPos>SrcLen then break;
+    case CurPos.Flag of
+      cafRoundBracketOpen,cafEdgedBracketOpen: inc(BracketDepth);
+      cafRoundBracketClose,cafEdgedBracketClose:
+        begin
+          if BracketDepth=0 then break;
+          dec(BracketDepth);
+        end;
+      cafSemicolon:
+        if BracketDepth=0 then break;
+      cafWord:
+        if IsForIn and (BracketDepth=0) and UpAtomIs('DO') then break;
+    end;
+    ExprEnd:=CurPos.EndPos;
+    ReadNextAtom;
+  until false;
+  if ExprEnd<=ExprStart then exit;
+  // resolve the expression to the tuple type
+  TupleExprType:=CleanExpressionType;
+  Params.Save(OldInput);
+  try
+    try
+      if IsForIn then begin
+        TermPos.StartPos:=ExprStart;
+        TermPos.EndPos:=ExprEnd;
+        TermPos.Flag:=cafNone;
+        Params.ContextNode:=VarDefNode;
+        Params.Flags:=[fdfSearchInParentNodes];
+        FindForInTypeAsString(TermPos,VarDefNode,Params,TupleExprType);
+      end else begin
+        Params.ContextNode:=VarDefNode.Parent;
+        Params.Flags:=[fdfSearchInParentNodes,fdfFunctionResult];
+        TupleExprType:=FindExpressionResultType(Params,ExprStart,ExprEnd);
+      end;
+    except
+      // unresolvable initializer -> no field type
+    end;
+  finally
+    Params.Load(OldInput,true);
+  end;
+  if (TupleExprType.Desc<>xtContext) or (TupleExprType.Context.Node=nil) then exit;
+  Node:=TupleExprType.Context.Node;
+  if Node.Desc<>ctnRecordType then exit;
+  // pick the field with the same position
+  i:=0;
+  Node:=Node.FirstChild;
+  while Node<>nil do begin
+    if Node.Desc=ctnVarDefinition then begin
+      if i=FieldIndex then begin
+        FieldContext.Tool:=TupleExprType.Context.Tool;
+        FieldContext.Node:=Node;
+        exit(true);
+      end;
+      inc(i);
+    end;
+    Node:=Node.NextBrother;
   end;
 end;
 
@@ -15689,6 +16577,18 @@ begin
   end;
   if not UpAtomIs('OF') then exit;
   ReadNextAtom;
+  if (CurPos.Flag=cafRoundBracketOpen)
+  and (cmsTuples in Scanner.CompilerModeSwitches)
+  and (ArrayNode.LastChild<>nil) and (ArrayNode.LastChild.Desc=ctnRecordType)
+  then begin
+    // inline tuple element type `array of (a, b: T)`: the parser stored the
+    // tuple as a ctnRecordType child, use it directly
+    ExprType.Desc:=xtContext;
+    ExprType.Context.Tool:=Self;
+    ExprType.Context.Node:=ArrayNode.LastChild;
+    Result:=true;
+    exit;
+  end;
   if not AtomIsIdentifier then exit;
   Params:=TFindDeclarationParams.Create;
   Params.GenParams := ParentParams.GenParams;
@@ -15962,9 +16862,13 @@ function TFindDeclarationTool.FindExprTypeAsString(
         Tool.ReadNextAtom;
         Result:=Tool.CurPos.StartPos;
       end;
-      if (Result>0) and (Tool.CurPos.Flag in [cafSemicolon, cafRoundBracketClose])
+      if (Result>0) and (Tool.CurPos.Flag in [cafSemicolon, cafEqual])
+      // don't read variable initialization part e.g. "= (1,2,3);"
       then begin
-        stop:= Tool.CurPos.StartPos-1;
+        // ExtractCode already excludes the atom starting at 'stop'; the
+        // former StartPos-1 also dropped a one-char atom directly in front
+        // of the terminator, e.g. the ')' of `array of (a, b: integer);`
+        stop:= Tool.CurPos.StartPos;
         break;
       end;
     until Tool.CurPos.EndPos>=Tool.SrcLen;
@@ -16106,6 +17010,8 @@ begin
     xtInt64,
     xtCardinal,
     xtQWord,
+    xtInt128,
+    xtUInt128,
     xtPChar:
       Result:=ExpressionTypeDescNames[ExprType.Desc];
 
@@ -16125,6 +17031,8 @@ begin
         xtInt64,
         xtCardinal,
         xtQWord,
+        xtInt128,
+        xtUInt128,
         xtBoolean,
         xtByteBool,
         xtWordBool,

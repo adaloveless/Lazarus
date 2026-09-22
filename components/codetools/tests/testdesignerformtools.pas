@@ -36,6 +36,7 @@ type
     // add published variables
     procedure TestAddPublishedVariables_Empty;
     procedure TestAddPublishedVariables_Button1;
+    procedure TestAddPublishedVariables_Button1_IdeTemplate;
     procedure TestAddPublishedVariables_AmbiguousButtons1;
     procedure TestAddPublishedVariables_AmbiguousButtons2;
     // gather published variable types
@@ -210,6 +211,50 @@ begin
     ,'  { TBearForm1 }'
     ,'  TBearForm1 = class(TBearForm)'
     ,'    Button1: TBearButton;'
+    ,'  end;'
+    ,'implementation'
+    ,'end.']);
+end;
+
+procedure TTestDesignerFormTools.TestAddPublishedVariables_Button1_IdeTemplate;
+// Reproduces the IDE-generated project1 template structure where the form unit
+// has explicit `private` and `public` sections but NO explicit `published`
+// section. GOD bug mp262c0s 2026-05-12: adding a TButton to a blank form on
+// macOS produces runtime "no field of type 'TButton' exists on 'Form'".
+// Hypothesis B: codetools cannot find a published anchor in the template's
+// class layout. This test exercises the exact failure surface.
+var
+  Btn: Dsgn_BearButtons.TBearButton;
+begin
+  Btn:=Dsgn_BearButtons.TBearButton.Create(BearForm1);
+  Btn.Name:='Button1';
+
+  TestCompleteComponent('TestAddPublishedVariables_Button1_IdeTemplate',true,
+    ['unit test1;'
+    ,'{$mode objfpc}{$H+}'
+    ,'interface'
+    ,'uses Dsgn_BearControls, Dsgn_BearButtons;'
+    ,'type'
+    ,'  TBearForm1 = class(TBearForm)'
+    ,'  private'
+    ,''
+    ,'  public'
+    ,''
+    ,'  end;'
+    ,'implementation'
+    ,'end.'],
+    ['unit test1;'
+    ,'{$mode objfpc}{$H+}'
+    ,'interface'
+    ,'uses Dsgn_BearControls, Dsgn_BearButtons;'
+    ,'type'
+    ,'  { TBearForm1 }'
+    ,'  TBearForm1 = class(TBearForm)'
+    ,'    Button1: TBearButton;'
+    ,'  private'
+    ,''
+    ,'  public'
+    ,''
     ,'  end;'
     ,'implementation'
     ,'end.']);

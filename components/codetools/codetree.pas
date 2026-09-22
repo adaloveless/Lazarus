@@ -165,6 +165,11 @@ const
   ctnHintModifier       =122; // deprecated, platform, unimplemented, library, experimental
   ctnAttribute          =123; // children are ctnAttribParam
   ctnAttribParam        =124; // 1st child: ctnIdentifier, optional 2nd: ctnParamsRound
+  ctnTypeOfExpr         =125; // unleashed `Type(expr)` intrinsic; node range covers
+                              // the entire `Type(...)` construct, the parenthesised
+                              // expression is recovered from Src between `(` and `)`
+  ctnFutureType         =126; // `future of T` thread-handle type;
+                              // optional 1st child = element type
 
   ctnUser               =1000; // user constants start here
 
@@ -204,7 +209,8 @@ const
       ctnProcedureType,ctnReferenceTo,
       ctnSetType,ctnRangeType,ctnEnumerationType,
       ctnLabel,ctnTypeType,ctnFileType,ctnPointerType,
-      ctnClassOfType,ctnVariantType];
+      ctnClassOfType,ctnVariantType,
+      ctnTypeOfExpr,ctnFutureType];
   AllPascalTypeParts = AllPascalTypes
      +[ctnEnumIdentifier,ctnConstant,ctnRecordCase,ctnRecordVariant];
   AllProcTypes = [ctnProcedureType,ctnReferenceTo];
@@ -215,7 +221,8 @@ const
      [ctnProcedure];
   AllPointContexts = AllClasses+AllSourceTypes+
     [ctnEnumerationType,ctnInterface,ctnImplementation,ctnTypeType,
-     ctnUseUnitNamespace,ctnUseUnitClearName,ctnRangedArrayType,ctnOpenArrayType];
+     ctnUseUnitNamespace,ctnUseUnitClearName,ctnRangedArrayType,ctnOpenArrayType,
+     ctnFutureType];
 
   // CodeTreeNodeSubDescriptors
   ctnsNone                = 0;
@@ -225,6 +232,7 @@ const
   ctnsHasDefaultValue     = 1 shl 4;
   ctnsHasStrictSpecifier  = 1 shl 5;
   ctnsIsExternal          = 1 shl 6;
+  ctnsAnonymousEmbed      = 1 shl 7; // ctnVarDefinition carrier for `embed TName;` (composablerecords)
 
   ClassSectionNodeType: array[TPascalClassSection] of TCodeTreeNodeDesc = (
     ctnClassPrivate,
@@ -273,6 +281,7 @@ type
     psVarargs,
     psVectorCall,
     psVirtual,
+    psZeroInit,
     psEdgedBracket
     );
   TAllProcedureSpecifiers = set of TProcedureSpecifier;
@@ -315,6 +324,7 @@ const
       'VARARGS',
       'VECTORCALL',
       'VIRTUAL',
+      'ZEROINIT',
       '['
     );
 
@@ -559,6 +569,8 @@ begin
   ctnHintModifier: Result:='Hint Modifier';
   ctnAttribute: Result:='Attribute';
   ctnAttribParam: Result:='Attribute Param';
+  ctnTypeOfExpr: Result:='Type Of Expression';
+  ctnFutureType: Result:='Future Type';
   else
     Result:='invalid descriptor ('+IntToStr(Desc)+')';
   end;

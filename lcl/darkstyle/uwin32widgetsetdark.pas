@@ -208,6 +208,9 @@ type
     published
       class function CreateHandle(const AWinControl: TWinControl;
             const AParams: TCreateParams): HWND; override;
+      class procedure GetPreferredSize(const AWinControl: TWinControl;
+            var PreferredWidth, PreferredHeight: integer;
+            WithThemeSpace: Boolean); override;
       class function GetDefaultColor(const AControl: TControl;
             const ADefaultColorType: TDefaultColorType): TColor; override;
     end;
@@ -592,7 +595,13 @@ end;
 procedure TryEnforceDarkStyleForCtrl(AWinControl:TWinControl);
 begin
   if (AWinControl <> nil) then begin
-     if DrawControl.BorderStyleOverride then
+     // csDesigning guard to match TWin32WSCustomMemoDark.CreateHandle: a
+     // borderless memo measures short, and a short height reaching design time
+     // can be streamed permanently into a consumer's .lfm.  Harmless today only
+     // because TCustomMemo.Create sets AutoSize := False -- a condition, not a
+     // safety.  Colors below stay unguarded; only the border is the hazard.
+     if DrawControl.BorderStyleOverride and
+        not (csDesigning in AWinControl.ComponentState) then
        if (AWinControl Is TCustomMemo) then
           (AWinControl As TCustomMemo).BorderStyle := bsNone;
      AWinControl.Color := clWindow;
@@ -755,11 +764,11 @@ procedure DrawDarkPushButtonWindow(Window: HWND; DC: HDC);
 var
   Info: PWin32WindowInfo;
   Control: TWinControl;
-  R, CalcR, DrawR: TRect;
+  R, CalcR, DrawR, FocusR: TRect;
   Text: UnicodeString;
   State: LRESULT;
   FillColor, BorderColor, TextColor: TColor;
-  Hot: Boolean;
+  Hot, Focused, IsDefault: Boolean;
   OldBkMode, YOff: Integer;
   OldTextColor: COLORREF;
   OldPenColor, OldBrushColor: COLORREF;
@@ -774,6 +783,13 @@ begin
   GetClientRect(Window, R);
   State := SendMessage(Window, BM_GETSTATE, 0, 0);
   Hot := IsWindowEnabled(Window) and (GetProp(Window, PChar(DARK_BUTTON_HOT_PROP)) <> 0);
+  // GOD mrkzl7bj: distinguish the focused button and the Default (BS_DEFPUSHBUTTON)
+  // button. This dark WM_PAINT override fully replaces the standard button paint
+  // (WM_ERASEBKGND=1 + Exit(0)), which normally draws the focus rect and the
+  // default border -- so without this a focused/default dark button is
+  // indistinguishable from an ordinary one.
+  IsDefault := (GetWindowLongPtrW(Window, GWL_STYLE) and BS_DEFPUSHBUTTON) <> 0;
+  Focused := IsWindowEnabled(Window) and (GetFocus() = Window);
 
   FillColor := SysColor[COLOR_BTNFACE];
   BorderColor := SysColor[COLOR_BTNHIGHLIGHT];
@@ -798,6 +814,9 @@ begin
       FillColor := Lighter(FillColor, 125);
       BorderColor := Lighter(BorderColor, 135);
     end;
+    // Default button: accent the outline so the default action stands out.
+    if IsDefault then
+      BorderColor := SysColor[COLOR_HIGHLIGHT];
   end;
 
   OldPen := SelectObject(DC, GetStockObject(DC_PEN));
@@ -809,6 +828,32 @@ begin
   SetDCBrushColor(DC, OldBrushColor);
   SelectObject(DC, OldBrush);
   SelectObject(DC, OldPen);
+
+  // Default button: a second 1px-inset accent ring gives a subtly thicker
+  // outline, so Default reads differently from an ordinary button (mrkzl7bj).
+  if IsWindowEnabled(Window) and IsDefault then
+  begin
+    OldPen := SelectObject(DC, GetStockObject(DC_PEN));
+    OldBrush := SelectObject(DC, GetStockObject(NULL_BRUSH));
+    OldPenColor := SetDCPenColor(DC, ColorToRGB(SysColor[COLOR_HIGHLIGHT]));
+    Windows.RoundRect(DC, R.Left + 1, R.Top + 1, R.Right - 1, R.Bottom - 1, 7, 7);
+    SetDCPenColor(DC, OldPenColor);
+    SelectObject(DC, OldBrush);
+    SelectObject(DC, OldPen);
+  end;
+
+  // Focused button: draw the keyboard-focus rectangle the standard button
+  // paint would normally show (mrkzl7bj). Inset inside the border + text margin.
+  if Focused then
+  begin
+    FocusR := R;
+    InflateRect(FocusR, -4, -4);
+    OldTextColor := SetTextColor(DC, ColorToRGB(SysColor[COLOR_BTNTEXT]));
+    OldBrushColor := SetBkColor(DC, ColorToRGB(FillColor));
+    Windows.DrawFocusRect(DC, FocusR);
+    SetTextColor(DC, OldTextColor);
+    SetBkColor(DC, OldBrushColor);
+  end;
 
   InflateRect(R, -6, -2);
   if (State and BST_PUSHED) <> 0 then
@@ -1232,6 +1277,7 @@ function SyncDarkCheckRadioWindowBounds(Window: HWND; Control: TWinControl;
 var
   Parent: HWND;
   R: TRect;
+  WinLeft, WinTop: Integer;
 begin
   Result := False;
   if (Window = 0) or (Control = nil) or
@@ -1244,12 +1290,26 @@ begin
   if Parent <> 0 then
     MapWindowPoints(0, Parent, R, 2);
 
-  if (R.Left = Control.Left) and (R.Top = Control.Top) and
+  // Control.Left/Top are LCL client coordinates, and the LCL client area of a
+  // group box EXCLUDES the frame and the caption row. MapWindowPoints above put
+  // R in the parent's WIN32 client area, which for a BS_GROUPBOX button is the
+  // WHOLE window (frame + caption included). Comparing/assigning the two spaces
+  // directly drops GetLCLClientBoundsOffset -- (2, tmHeight+3) = (2,18) at 100%
+  // DPI -- so every grouped dark checkbox/radio was slammed 18px up and 2px left,
+  // landing the first item row exactly on top of the group caption ("buried
+  // heading" / "white dots", GOD mry3f78l/mrzkbqip) and pushing the last row past
+  // the group's bottom edge. The mismatched compare also never matched, so this
+  // re-fired on every sync and kept undoing correct LCL placement.
+  WinLeft := Control.Left;
+  WinTop := Control.Top;
+  LCLBoundsToWin32Bounds(Control, WinLeft, WinTop);
+
+  if (R.Left = WinLeft) and (R.Top = WinTop) and
      (R.Right - R.Left = Control.Width) and
      (R.Bottom - R.Top = Control.Height) then
     Exit;
 
-  SetWindowPos(Window, 0, Control.Left, Control.Top,
+  SetWindowPos(Window, 0, WinLeft, WinTop,
     Control.Width, Control.Height,
     SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
   InvalidateDarkChildPlacement(Window, ARedrawNow);
@@ -1509,10 +1569,12 @@ end;
 
 procedure DrawDarkGroupBoxWindow(Window: HWND; DC: HDC);
 var
-  R, BorderR, TextR: TRect;
+  R, BorderR, TextR, ClientOfs: TRect;
   Text: UnicodeString;
   Control: TWinControl;
   FontHandle, OldFont, OldPen, OldBrush: HGDIOBJ;
+  Org: TPoint;
+  DCIndex: Integer;
   OldBkMode: Integer;
   OldTextColor: COLORREF;
   Brush: HBRUSH;
@@ -1618,6 +1680,38 @@ begin
   SetBkMode(DC, OldBkMode);
   if OldFont <> 0 then
     SelectObject(DC, OldFont);
+
+  // GOD ms6qjsvb: this dark WM_PAINT override fully replaces
+  // TWinControl.PaintHandler, which paints the control surface and THEN its
+  // handle-less children (wincontrol.inc:5042). Only the first half was
+  // reproduced here, so TGraphicControl descendants (TLabel, TSpeedButton,
+  // TShape) inside a dark group box were never asked to paint -- ExcludeChildWindows
+  // above cannot clip them either, since both its loops key on a window handle --
+  // and the FillRect covered them.
+  // GOD ms6qjsvb residual: PaintControls places each handle-less child with
+  // MoveWindowOrg(DC, Left, Top) (wincontrol.inc:5121), where Left/Top are
+  // relative to the parent's LCL CLIENT origin -- but this DC comes from
+  // BeginPaint/WM_PRINTCLIENT and carries the WIN32 client origin. For an
+  // ordinary TWinControl the two coincide, which is why PaintHandler needs no
+  // correction; a group box's LCL client area is inset by the frame and the
+  // caption (GetLCLClientBoundsOffset -> Left=2, Top=tmHeight+3), so without
+  // this shift every handle-less child paints ~18px too high and 2px too left.
+  // The stock paint path applies the identical correction before delivering
+  // LM_PAINT (win32callback.inc:749); this override bypasses that path, so it
+  // has to apply the correction itself.
+  if Control <> nil then
+  begin
+    DCIndex := Windows.SaveDC(DC);
+    try
+      if GetLCLClientBoundsOffset(Control, ClientOfs)
+      and Windows.GetWindowOrgEx(DC, @Org) then
+        Windows.SetWindowOrgEx(DC, Org.X - ClientOfs.Left,
+          Org.Y - ClientOfs.Top, nil);
+      TWinControlDark(Control).PaintControls(DC, nil);
+    finally
+      Windows.RestoreDC(DC, DCIndex);
+    end;
+  end;
 end;
 
 function CallDarkGroupBoxOldProc(Window: HWND; Msg: UInt;
@@ -2942,6 +3036,32 @@ begin
   EnableDarkStyle(Result);
 end;
 
+class procedure TWin32WSCustomEditDark.GetPreferredSize(
+  const AWinControl: TWinControl; var PreferredWidth,
+  PreferredHeight: integer; WithThemeSpace: Boolean);
+begin
+  inherited GetPreferredSize(AWinControl, PreferredWidth, PreferredHeight,
+    WithThemeSpace);
+  // CreateHandle above forces BorderStyle := bsNone at RUNTIME so the edit can
+  // carry the flat dark frame.  That makes the inherited measurement skip its
+  // border allowance (win32wsstdctrls.pp: `if BorderStyle <> bsNone then
+  // Inc(PreferredHeight, 8)`), so a dark edit measures 'Fj' alone -- 15 px
+  // against 23 px for the SAME control in light mode.  Add the same 8 back so
+  // a dark edit gets identical breathing room; keep the constant equal to the
+  // widgetset's, never a dark-only value.
+  // Guarded exactly like the force it compensates for: csDesigning keeps this
+  // off the designer's own instances, which never lose the border and so must
+  // never be able to persist a dark-mode height into a .lfm.
+  // PreferredHeight > 0 matters: MeasureTextForControl leaves the value
+  // untouched when it fails, and padding an unmeasured 0 would manufacture the
+  // bogus `Height = 8` this allowance exists to prevent.
+  if (PreferredHeight > 0) and
+     DrawControl.BorderStyleOverride and
+     not (csDesigning in AWinControl.ComponentState) and
+     (TCustomEdit(AWinControl).BorderStyle = bsNone) then
+    Inc(PreferredHeight, 8);
+end;
+
 class function TWin32WSCustomEditDark.GetDefaultColor(
   const AControl: TControl; const ADefaultColorType: TDefaultColorType): TColor;
 begin
@@ -3826,6 +3946,12 @@ begin
 
   WSExtCtrls.RegisterCustomCheckGroup;
   RegisterWSComponent(TCustomCheckGroup, TWin32WSCustomCheckGroupDark);
+
+  // TButtonControl is the intermediate ancestor of BOTH TCustomButton and TCustomCheckBox.
+  // Every other family below registers its intermediate core class before its Dark override;
+  // this one did not, so the TButtonControl node was created lazily AFTER ApplyDarkStyle had
+  // finished, and its VClass merge then read a stale parent slot and never acquired SetBounds.
+  WSStdCtrls.RegisterButtonControl;
 
   WSStdCtrls.RegisterCustomButton;
   RegisterWSComponent(TCustomButton, TWin32WSButtonDark);

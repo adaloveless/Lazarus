@@ -1,6 +1,6 @@
 # Headless / agentic installer for Lazarus + VibePascal release tarballs on Windows.
 # Non-interactive, no GUI. Downloads the latest GitHub release for x86_64-win64,
-# verifies SHA256SUMS, extracts, writes a self-contained compilerpc.cfg,
+# verifies the release SHA-256 digest, extracts, writes a self-contained compilerpc.cfg,
 # and creates a lazbuild wrapper on the PATH.
 #
 # Usage:
@@ -74,42 +74,79 @@ if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $($env:GITHUB_TOKEN
 $py = @"
 import json, os, re, sys, urllib.request
 api_base, target_arch = sys.argv[1], sys.argv[2]
-headers = json.loads(sys.argv[3]) if len(sys.argv) > 3 else {}
+headers = json.loads(os.environ.get("INSTALL_LAZ_HEADERS", "{}"))
 url = f"{api_base}/releases"
 req = urllib.request.Request(url, headers=headers)
 with urllib.request.urlopen(req, timeout=60) as resp:
     releases = json.load(resp)
 if not releases:
     print("NO_RELEASES", file=sys.stderr); sys.exit(1)
-data = releases[0]
-tag = data["tag_name"]
-tarball_re = re.compile(rf'^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}-r\d+\.tar\.gz$')
-sha_re = re.compile(r'^SHA256SUMS-\d{8}-r\d+\.txt$')
-tarball_url = tarball_name = sha_url = sha_name = None
-for asset in data.get('assets', []):
-    name = asset['name']
-    if tarball_re.match(name):
-        tarball_url = asset['browser_download_url']; tarball_name = name
-    elif sha_re.match(name):
-        sha_url = asset['browser_download_url']; sha_name = name
+tarball_re = re.compile(rf'^lazarus-4\.99-vp-{re.escape(target_arch)}-\d{{8}}(?:-r\d+)?\.tar\.gz$')
+sha_re = re.compile(r'^SHA256SUMS-\d{8}(?:-r\d+)?\.txt$')
+# Walk newest-first for the first release carrying an asset for THIS arch, rather
+# than taking releases[0]. Measured 2026-09-18: the win64-only r26 turned the two
+# linux and both darwin targets from a working install into NO_TARBALL, because
+# r25 -- which carries all of them -- sat one position down the list.
+tag = tarball_url = tarball_name = expected_sha = sha_url = None
+# Did ANY release carry a tarball for this arch? Without this, a release we
+# skipped for want of a checksum reports as NO_TARBALL, which sends whoever
+# debugs it hunting a tarball that is sitting right there on the release.
+# install-lazarus.sh makes the same distinction; keep the two in step.
+saw_tarball = False
+for data in releases:
+    c_url = c_name = c_sha = c_shaurl = None
+    for asset in data.get('assets', []):
+        name = asset['name']
+        if tarball_re.match(name):
+            c_url = asset['browser_download_url']; c_name = name
+            dig = asset.get('digest') or ''
+            if dig.startswith('sha256:'):
+                c_sha = dig.split(':', 1)[1]
+        elif sha_re.match(name):
+            c_shaurl = asset['browser_download_url']
+    if c_url:
+        saw_tarball = True
+    if c_url and (c_sha or c_shaurl):
+        tag = data['tag_name']
+        tarball_url, tarball_name, expected_sha, sha_url = c_url, c_name, c_sha, c_shaurl
+        break
 if not tarball_url:
-    print('NO_TARBALL', file=sys.stderr); sys.exit(1)
-if not sha_url:
-    print('NO_SHA', file=sys.stderr); sys.exit(1)
+    print('NO_SHA' if saw_tarball else 'NO_TARBALL', file=sys.stderr); sys.exit(1)
 print(tag)
 print(tarball_name)
 print(tarball_url)
-print(sha_name)
-print(sha_url)
+print(expected_sha or '')
+print(sha_url or '')
 "@
 
+$pyFile = Join-Path $tmp "fetch-release-meta.py"
+Set-Content -Path $pyFile -Value $py -Encoding ASCII
 $headersJson = $headers | ConvertTo-Json -Compress
-python -c $py $ApiBase $Arch $headersJson | Set-Content $metaFile
+$env:INSTALL_LAZ_HEADERS = $headersJson
+python $pyFile $ApiBase $Arch | Set-Content $metaFile
+$resolverExit = $LASTEXITCODE
+Remove-Item Env:\INSTALL_LAZ_HEADERS -ErrorAction SilentlyContinue
+# The resolver's exit code MUST be checked here. Unchecked, a resolver that
+# exits 1 (NO_TARBALL / NO_SHA) leaves $metaFile absent or empty, $tag and
+# $tarballUrl come back $null, and this script walks on to download from a
+# null URL -- so the honest one-word reason the resolver printed is buried
+# under a wall of "Cannot index into a null array". install-lazarus.sh gets
+# the WALK-ON half of this for free from `set -euo pipefail` (measured: it
+# aborts before the next statement) but NOT the diagnosis half -- it died
+# printing the bare token and nothing else, so it now carries the same named
+# block; PowerShell gets neither for free. Deliberately NOT
+# redirecting the resolver's stderr -- 2> plus $ErrorActionPreference="Stop"
+# behaves differently on Windows PowerShell 5.1, which cannot be tested on
+# lazdev, and the token is already on the console line directly above.
+if ($resolverExit -ne 0) {
+    Write-ErrorX "Release resolver failed (exit $resolverExit) for $Arch. Its one-word reason is printed directly above: NO_TARBALL = no published release carries a tarball for this architecture; NO_SHA = a tarball exists but the release has neither a SHA256SUMS asset nor a GitHub API digest, so the download cannot be verified. Nothing was installed."
+    exit 1
+}
 
 $tag          = (Get-Content $metaFile)[0]
 $tarballName  = (Get-Content $metaFile)[1]
 $tarballUrl   = (Get-Content $metaFile)[2]
-$shaName      = (Get-Content $metaFile)[3]
+$expectedSha  = (Get-Content $metaFile)[3]
 $shaUrl       = (Get-Content $metaFile)[4]
 
 Write-Info "Latest release: $tag"
@@ -118,27 +155,46 @@ Write-Info "Tarball:        $tarballName"
 # --- download ---
 function Download-File($url, $out) {
     curl.exe -fsSL --max-time 1500 --retry 1 -o $out $url
+    # curl.exe is a NATIVE command, so a non-zero exit does NOT throw -- not even under
+    # the $ErrorActionPreference = "Stop" set at the top of this script.
+    # $PSNativeCommandUseErrorActionPreference is False on the pwsh this was measured on
+    # (7.6.6) and this script never sets it; Windows PowerShell 5.1 has no such setting at
+    # all, so the walk-on happens on BOTH hosts. Measured 2026-09-18 by driving this file
+    # with a curl.exe that exits 22: the run printed "Downloading ..." and then walked
+    # straight on to "Verifying tarball digest...", dying inside Get-FileHash on a tarball
+    # that was never written. That is the same walk-on shape the resolver exit check above
+    # exists to prevent, one function down -- and the symptom a user reports is a path error
+    # or a bogus "SHA256 mismatch" rather than "the download failed". install-lazarus.sh
+    # gets the abort for free from `set -euo pipefail`; PowerShell gets nothing for free.
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorX "Download failed (curl exit $LASTEXITCODE) for $url. Nothing was installed."
+        exit 1
+    }
 }
 
-$shaPath     = Join-Path $tmp $shaName
 $tarballPath = Join-Path $tmp $tarballName
-
-Write-Info "Downloading $shaName..."
-Download-File $shaUrl $shaPath
 
 Write-Info "Downloading $tarballName..."
 Download-File $tarballUrl $tarballPath
 
-# --- verify digest ---
-Write-Info "Verifying tarball digest..."
-$expected = (Select-String -Path $shaPath -Pattern "([a-f0-9]{64})\s+$([regex]::Escape($tarballName))").Matches.Groups[1].Value
-if (-not $expected) {
-    Write-ErrorX "Tarball name not found in $shaName"
+# --- determine expected digest (GitHub API per-asset digest preferred; SHA256SUMS asset fallback) ---
+if (-not $expectedSha -and $shaUrl) {
+    $shaName = Split-Path -Leaf $shaUrl
+    $shaPath = Join-Path $tmp $shaName
+    Write-Info "Downloading $shaName..."
+    Download-File $shaUrl $shaPath
+    $expectedSha = (Select-String -Path $shaPath -Pattern "([a-f0-9]{64})\s+$([regex]::Escape($tarballName))").Matches.Groups[1].Value
+}
+if (-not $expectedSha) {
+    Write-ErrorX "No SHA256 digest available for $tarballName"
     exit 1
 }
+
+# --- verify digest ---
+Write-Info "Verifying tarball digest..."
 $actual = (Get-FileHash -Path $tarballPath -Algorithm SHA256).Hash.ToLower()
-if ($expected -ne $actual) {
-    Write-ErrorX "SHA256 mismatch for $tarballName`nExpected: $expected`nActual:   $actual"
+if ($expectedSha.ToLower() -ne $actual) {
+    Write-ErrorX "SHA256 mismatch for $tarballName`nExpected: $expectedSha`nActual:   $actual"
     exit 1
 }
 Write-Ok "Digest verified"
@@ -217,7 +273,7 @@ Write-Ok "lazbuild.cmd -> $lazbuildExe"
 # --- smoke test ---
 if (-not $SkipSmoke) {
     Write-Info "Running smoke test..."
-    $ver = & $lazbuildExe --version 2`>`&1
+    $ver = & $lazbuildExe --version
     if ($LASTEXITCODE -ne 0) {
         Write-ErrorX "lazbuild --version failed"
         exit 1
@@ -232,12 +288,14 @@ begin
 end.
 "@ -Encoding ASCII
     $smokeOut = Join-Path $tmp "smoke_hello.exe"
-    & $compilerExe -n "@$cfgPath" $smokeSrc -o$smokeOut 2`>`&1 | Out-Null
+    $smokeLog = Join-Path $tmp "smoke_compile.log"
+    & $compilerExe -n "@$cfgPath" $smokeSrc "-o$smokeOut" *> $smokeLog
     if ($LASTEXITCODE -ne 0) {
-        Write-ErrorX "Compiler smoke test failed"
+        Write-ErrorX "Compiler smoke test failed (log: $smokeLog) -- compiler output:"
+        Get-Content $smokeLog | ForEach-Object { Write-Host "    $_" }
         exit 1
     }
-    $smokeRun = & $smokeOut 2`>`&1
+    $smokeRun = (& $smokeOut) | Out-String
     if ($smokeRun -notlike "*lazarus-installer-smoke-ok*") {
         Write-ErrorX "Compiler smoke test binary did not run as expected"
         exit 1

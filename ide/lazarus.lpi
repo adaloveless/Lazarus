@@ -37,7 +37,7 @@
     <RunParams>
       <FormatVersion Value="2"/>
     </RunParams>
-    <RequiredPackages Count="16">
+    <RequiredPackages Count="18">
       <Item1>
         <PackageName Value="IdePackager"/>
       </Item1>
@@ -88,6 +88,12 @@
       <Item16>
         <PackageName Value="metadarkstyledsgn"/>
       </Item16>
+      <Item17>
+        <PackageName Value="AnchorDockingDsgn"/>
+      </Item17>
+      <Item18>
+        <PackageName Value="DockedFormEditor"/>
+      </Item18>
     </RequiredPackages>
     <Units Count="210">
       <Unit0>

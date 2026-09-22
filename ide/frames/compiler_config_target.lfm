@@ -268,7 +268,7 @@ object CompilerConfigTargetFrame: TCompilerConfigTargetFrame
     Width = 128
     BorderSpacing.Top = 3
     Caption = 'LCLWidgetTypeLabel'
-    Font.Color = clBlue
+    Font.Color = clHotLight
     ParentColor = False
     ParentFont = False
     OnClick = LCLWidgetTypeLabelClick

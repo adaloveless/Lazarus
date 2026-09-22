@@ -166,6 +166,9 @@ resourcestring
   lisThereIsNoFpcExeInTheDirectoryOfUsuallyTheMakeExecu = 'There is no fpc.exe'
     +' in the directory of %s. Usually the make executable is installed '
     +'together with the FPC compiler.';
+  lisMakeExeIsNotGnuMake = 'The make executable %s identifies itself as '
+    +'"%s", so it is not GNU make. Building the IDE requires GNU make; '
+    +'Embarcadero and Borland make cannot be used.';
   lisUnusualCompilerFileNameUsuallyItStartsWithFpcPpcOr = 'Unusual compiler '
     +'file name. Usually it starts with fpc, ppc or ppcross.';
   lisCompilerCfgIsMissing = '%s is missing.';

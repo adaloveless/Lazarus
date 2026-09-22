@@ -191,6 +191,7 @@ type
     procedure MainIDEFormCloseQuery(Sender: TObject; var CanClose: boolean);
     procedure HandleApplicationUserInput(Sender: TObject; var {%H-}Msg: TLMessage);
     procedure HandleApplicationIdle(Sender: TObject; var {%H-}Done: Boolean);
+    procedure FlushPendingComponentAddedDesigner;
     procedure HandleApplicationActivate(Sender: TObject);
     procedure HandleApplicationDeActivate(Sender: TObject);
     procedure HandleApplicationKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -1359,7 +1360,7 @@ begin
   OldVer:=EnvironmentOptions.OldLazarusVersion;
   NowVer:=LazarusVersionStr;
   //debugln(['TMainIDE.LoadGlobalOptions ',FEnvOptsCfgExisted,' diff=',OldVer<>NowVer,' Now=',NowVer,' Old=',OldVer,' Comp=',CompareLazarusVersion(NowVer,OldVer)]);
-  if FEnvOptsCfgExisted and (OldVer<>NowVer) then
+  if FEnvOptsCfgExisted and not SameLazarusVersion(OldVer,NowVer) then
   begin
     IsUpgrade:=CompareLazarusVersion(NowVer,OldVer)>0;
     if OldVer='' then
@@ -3683,6 +3684,13 @@ begin
   ecStopProgram:              mnuStopProjectClicked(self);
   ecBuildFile:                DoBuildFile(false);
   ecRunFile:                  DoRunFile;
+  ecBreakIgnoreToggle:  DebugbossMgr.BreakPoints.IgnoreAll := not DebugbossMgr.BreakPoints.IgnoreAll;
+  ecBreakIgnoreOn:      DebugbossMgr.BreakPoints.IgnoreAll := True;
+  ecBreakIgnoreOff:     DebugbossMgr.BreakPoints.IgnoreAll := False;
+  ecExceptIgnoreToggle: DebugbossMgr.Exceptions.IgnoreAll := not DebugbossMgr.Exceptions.IgnoreAll;
+  ecExceptIgnoreOn:     DebugbossMgr.Exceptions.IgnoreAll := True;
+  ecExceptIgnoreOff:    DebugbossMgr.Exceptions.IgnoreAll := False;
+
   ecFindInFiles:              DoFindInFiles;
   ecJumpToNextSearchResult:   DoJumpToNextSearchResult(true);
   ecJumpToPrevSearchResult:   DoJumpToNextSearchResult(false);
@@ -3883,13 +3891,12 @@ begin
     TControl(AComponent).ControlStyle:=
       TControl(AComponent).ControlStyle-[csNoDesignVisible];
   // create designer
-  aDesigner:=TDesigner.Create(DesignerForm, TheControlSelection);;
+  aDesigner:=TDesigner.Create(DesignerForm, AnUnitInfo, TheControlSelection);;
   DesignerForm.Designer := aDesigner;
-  aDesigner.SetProjectFile(AnUnitInfo);
   {$IFDEF IDE_DEBUG}
   debugln('[TMainIDE.CreateDesignerForComponent] B');
   {$ENDIF}
-  with TDesigner(DesignerForm.Designer) do begin
+  with aDesigner do begin
     TheFormEditor := FormEditor1;
     OnActivated:=@DesignerActivated;
     OnCloseQuery:=@DesignerCloseQuery;
@@ -3916,6 +3923,7 @@ begin
     ShowNonVisualComponents:=EnvironmentGuiOpts.ShowNonVisualComponents;
     ShowComponentCaptions:=EnvironmentGuiOpts.ShowComponentCaptions;
   end;
+
   if AnUnitInfo<>nil then
     AnUnitInfo.LoadedDesigner:=true;
 end;
@@ -5083,8 +5091,8 @@ begin
     DebugLn(['Hint: (lazarus) TMainIDE.LoadDesktopSettings']);
   if ObjectInspector1<>nil then
     aOptions.ObjectInspectorOptions.AssignTo(ObjectInspector1);
-  if MessagesView<>nil then
-    MessagesView.ApplyIDEOptions;
+  Assert(Assigned(MessagesView), 'MessagesView=Nil');
+  MessagesView.ApplyIDEOptions;
 end;
 
 procedure TMainIDE.SaveDesktopSettings(aOptions: TEnvGuiOptions);
@@ -5841,11 +5849,13 @@ end;
 
 function TMainIDE.DoSaveEditorFile(AEditor: TSourceEditorInterface; Flags: TSaveFlags): TModalResult;
 begin
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(AEditor, Flags);
 end;
 
 function TMainIDE.DoSaveEditorFile(const Filename: string; Flags: TSaveFlags): TModalResult;
 begin
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(Filename, Flags);
 end;
 
@@ -5854,6 +5864,7 @@ function TMainIDE.DoSaveEditorFileAs(AEditor: TSourceEditorInterface;
 begin
   if not FilenameIsAbsolute(NewFilename) then
     raise Exception.Create('TMainIDE.DoSaveEditorFileAs: NewFilename must be absolute: '+NewFilename);
+  FlushPendingComponentAddedDesigner;
   Result:=SaveEditorFile(AEditor, Flags+[sfSaveAs], NewFilename);
 end;
 
@@ -6545,6 +6556,11 @@ end;
 
 function TMainIDE.DoSaveProject(Flags: TSaveFlags): TModalResult;
 begin
+  // Ensure a designer-added component is written to the form unit's .pas
+  // BEFORE save runs. Without this, a drag-drop-then-save (or run) sequence
+  // can race the Application.OnIdle flush and leave the .pas out of sync
+  // with the .lfm. See GOD mp262c0s (2026-05-12).
+  FlushPendingComponentAddedDesigner;
   Result:=SaveProject(Flags);
 end;
 
@@ -7002,11 +7018,11 @@ begin
   end;
 
   // show messages
-  IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
-
+  MessagesView.ApplyIDEOptions;
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
+    IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   // clear old error lines
   SourceEditorManager.ClearErrorLines;
-  ArrangeSourceEditorAndMessageView(false);
 
   // check common mistakes in search paths
   Result:=PkgBoss.CheckUserSearchPaths(Project1.CompilerOptions);
@@ -7323,7 +7339,8 @@ begin
     // check sources
     DoCheckFilesOnDisk;
   end;
-  IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
+    IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   if ConsoleVerbosity>=0 then
     debugln(['Info: (lazarus) [TMainIDE.DoBuildProject] Success']);
   Result:=mrOk;
@@ -7485,7 +7502,7 @@ begin
     end;
 
     if (dcrDwarfOnly in ReqOpts)
-    and (not (Project1.CompilerOptions.DebugInfoType in [dsDwarf2, dsDwarf2Set, dsDwarf3])) then
+    and (not (Project1.CompilerOptions.DebugInfoType in [dsDwarf2, dsDwarf2Set, dsDwarf3, dsDwarf4, dsDwarf5])) then
     begin
       // this debugger does ONLY support external debug symbols
       ChangeDebugInfoFormatDialog := TTaskDialog.Create(Self);
@@ -8092,11 +8109,11 @@ begin
   if DoAbortBuild(true)<>mrOK then exit;
 
   // show messages
-  IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
-
+  MessagesView.ApplyIDEOptions;
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
+    IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   // clear old error lines
   SourceEditorManager.ClearErrorLines;
-  ArrangeSourceEditorAndMessageView(false);
 
   Result:=DoSaveAll([sfDoNotSaveVirtualFiles]);
   if Result<>mrOk then begin
@@ -8708,7 +8725,8 @@ begin
   if CodeToolBoss.CheckSyntax(ActiveUnitInfo.Source,NewCode,NewX,NewY,
     NewTopLine,ErrorMsg) then
   begin
-    ArrangeSourceEditorAndMessageView(false);
+    if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
+      DoShowMessagesView(false);
     MessagesView.ClearCustomMessages;
     MessagesView.AddCustomMessage(mluImportant,lisMenuQuickSyntaxCheckOk);
   end else begin
@@ -9482,7 +9500,8 @@ begin
       TopLine:=LogCaretXY.Y-(SrcEdit.EditorComponent.LinesInWindow div 2);
       if TopLine<1 then TopLine:=1;
       if FocusEditor then begin
-        IDEWindowCreators.ShowForm(MessagesView,true);
+        if EnvironmentGuiOpts.MsgViewShowAutomatically <> mwsaNever then
+          DoShowMessagesView(true);
         SourceEditorManager.ShowActiveWindowOnTop(True);
       end;
       if IDETabMaster <> nil then
@@ -9567,7 +9586,11 @@ begin
         if LogCaretXY.Y>SrcEdit.EditorComponent.Lines.Count then
           LogCaretXY.Y:=SrcEdit.EditorComponent.Lines.Count;
         if FocusEditor then begin
-          IDEWindowCreators.ShowForm(SearchResultsView,true);
+          // Ensure the search results window is shown, but do NOT bring it to
+          // front: it is already the front window (the user just clicked it),
+          // and raising it here fights the source editor raise below for
+          // activation (endless bring-to-top loop on gtk3).
+          IDEWindowCreators.ShowForm(SearchResultsView,false);
           SourceEditorManager.ShowActiveWindowOnTop(True);
         end;
         if IDETabMaster <> nil then
@@ -10567,9 +10590,9 @@ begin
       debugln('Note: (lazarus) TMainIDE.DoJumpToCodeToolBossError No errormessage');
     exit;
   end;
-  // syntax error -> show error and jump
-  // show error in message view
-  ArrangeSourceEditorAndMessageView(false);
+  // syntax error -> show error in message view and jump
+  if EnvironmentGuiOpts.MsgViewShowAutomatically <> mwsaNever then
+    DoShowMessagesView(false);
   DoShowCodeToolBossError;
 
   // jump to error in source editor
@@ -10595,7 +10618,8 @@ begin
         ActiveSrcEdit:=SourceEditorManager.ActiveEditor;
     end;
     if ActiveSrcEdit<> nil then begin
-      IDEWindowCreators.ShowForm(MessagesView,true);
+      if EnvironmentGuiOpts.MsgViewShowAutomatically <> mwsaNever then
+        IDEWindowCreators.ShowForm(MessagesView,true);
       with ActiveSrcEdit.EditorComponent do begin
         LogicalCaretXY:=ErrorCaret;
         if ErrorTopLine>0 then
@@ -12511,6 +12535,35 @@ begin
     ToolStatus:=itCodeToolAborting;    // abort codetools
 end;
 
+procedure TMainIDE.FlushPendingComponentAddedDesigner;
+// Flush any designer-added component into the form unit's .pas source.
+// Called from HandleApplicationIdle (the asynchronous path) AND from every
+// synchronous save entry point -- DoSaveProject (Save Project / Save All /
+// Run+Build, via DoSaveForBuild) and DoSaveEditorFile/DoSaveEditorFileAs
+// (plain Ctrl+S) -- so a save or build that follows a component drop never
+// writes a .pas that lacks the component field while the .lfm references it.
+// Without the synchronous flush, dropping a component then immediately
+// saving/building races Application.OnIdle; the resulting .pas misses the
+// new published field and LFM streaming fails at runtime with
+// "no field of type 'TXxxx' exists on 'TForm1'" (GOD mp262c0s, 2026-05-12).
+// Measured on lazdev c661 with synthetic X input: on unpatched main the .lfm
+// gains the component and the .pas does not, on BOTH save paths.
+var
+  Ancestor: TComponent;
+begin
+  if not Assigned(FComponentAddedDesigner) then
+    Exit;
+  {$IFDEF VerboseIdle}
+  DebugLn(['TMainIDE.FlushPendingComponentAddedDesigner']);
+  {$ENDIF}
+  // Remember cursor position
+  SourceEditorManager.AddJumpPointClicked(Self);
+  // Add component definitions to form's source code
+  Ancestor:=GetAncestorLookupRoot(FComponentAddedUnit);
+  CompleteUnitComponent(FComponentAddedUnit,FComponentAddedDesigner.LookupRoot,Ancestor);
+  FComponentAddedDesigner:=nil;
+end;
+
 procedure TMainIDE.HandleApplicationIdle(Sender: TObject; var Done: Boolean);
 var
   SrcEdit: TSourceEditor;
@@ -12525,18 +12578,7 @@ begin
   GetDefaultProcessList.FreeStoppedProcesses;
   if (SplashForm<>nil) then FreeThenNil(SplashForm);
 
-  if Assigned(FComponentAddedDesigner) then
-  begin
-    {$IFDEF VerboseIdle}
-    DebugLn(['TMainIDE.HandleApplicationIdle FComponentAddedDesigner']);
-    {$ENDIF}
-    // Remember cursor position
-    SourceEditorManager.AddJumpPointClicked(Self);
-    // Add component definitions to form's source code
-    Ancestor:=GetAncestorLookupRoot(FComponentAddedUnit);
-    CompleteUnitComponent(FComponentAddedUnit,FComponentAddedDesigner.LookupRoot,Ancestor);
-    FComponentAddedDesigner:=nil;
-  end;
+  FlushPendingComponentAddedDesigner;
 
   if Assigned(FDesignerToBeFreed) then begin
     for FileItem in FDesignerToBeFreed do begin

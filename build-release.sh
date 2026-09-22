@@ -14,6 +14,163 @@ ARM_LINUX_CFG="$VP_DIR/vibepascal-arm-linux.cfg"
 DARWIN_X86_64_CFG="$VP_DIR/vibepascal-darwin-x86_64.cfg"
 DARWIN_AARCH64_CFG="$VP_DIR/vibepascal-darwin-aarch64.cfg"
 
+# Where cross-target IDE builds keep their PrimaryConfigPath and compiler wrapper.
+# NOT /tmp -- see build_darwin_ide. Single-sourced because three call sites have to
+# agree on it: the one that BUILDS the IDE and the two that PACKAGE it.
+BUILD_STATE_DIR="$HOME/.cache/lazarus-build"
+
+# --- Build-step status + artifact freshness (Lars, c645 2026-09-10) ---------
+# A darwin re-roll was one step from publishing a FOUR-MONTH-OLD IDE binary.
+# Two independent mechanisms allowed that, and both are addressed here.
+#
+# 1. STATUS LAUNDERING. Build steps were written `make ... 2>&1 | tail -N` with
+#    pipefail OFF, so the pipeline reports tail's exit 0 and a failed build walks
+#    on. build_lazbuild's `| grep -E "...|Error"` was worse: it matched the very
+#    word that signals failure and returned 0 for it. Measured, not assumed: a
+#    make returning 2 produced exit 0 through both shapes.
+# 2. PRESENCE, NEVER FRESHNESS. Every artifact copy tested only `[ -f "$x" ]`, so
+#    a binary left by an earlier roll -- or by a DIFFERENT TARGET, when a later
+#    link fails after an earlier one succeeded -- was packaged as if just built.
+#
+# Anything older than BUILD_EPOCH was not produced by this roll.
+BUILD_EPOCH="$(date +%s)"
+# Snapshot of the cumulative oom_kill counter at roll start. The counter is
+# cumulative since boot and never returns to 0, and kern.log lines survive
+# rotation for days -- so report_oom_evidence must decide on a DELTA against
+# this base, never on the absolute value, or it fires for any killed step for
+# as long as an old OOM line is readable (Otto/FPCDeveloper, 2026-09-11).
+OOM_BASE="$(awk '/^oom_kill /{print $2}' /proc/vmstat 2>/dev/null)"
+case "$OOM_BASE" in ''|*[!0-9]*) OOM_BASE="" ;; esac
+BUILD_LOG_DIR="${BUILD_LOG_DIR:-$HOME/lazarus-build-logs/$DATE_STAMP}"
+
+# report_oom_evidence -- call this when a step was KILLED rather than when it
+# FAILED. A SIGKILL from the OOM killer and a genuine compile failure look the
+# same in a build log, and that ambiguity has already cost us a cycle: a roll that
+# died of host memory got written up as a compiler AV.
+#
+# The instrument is the whole problem. `dmesg` is the obvious one and it is VOID
+# on lazdev -- kernel.dmesg_restrict=1, so an unprivileged `dmesg` exits 1 with
+# ZERO lines, which reads exactly like "no OOM happened". A zero from an
+# instrument that cannot see is not a clean answer, it is no answer. So: prefer
+# kern.log and `journalctl -k`, which carry the victim name and its RSS, and fall
+# back to /proc/vmstat's oom_kill counter, which needs no privileges at all and is
+# the one reading that is always available. Say plainly when nothing was readable.
+#
+# DECIDES BY DELTA, NOT BY ABSOLUTE STATE (Otto/FPCDeveloper, 2026-09-11): both
+# arms were sticky -- the counter is cumulative since boot and the kern.log
+# line survives rotation for up to ~14 days, so any killed step printed "OOM
+# EVIDENCE" pointing at an event from days earlier. Only oom_kill rising above
+# OOM_BASE (snapshot at BUILD_EPOCH) counts as a NEW kill; the logs are then
+# used to NAME the victim, never to decide.
+report_oom_evidence() {
+    local hits oom_now oom_delta=""
+
+    oom_now="$(awk '/^oom_kill /{print $2}' /proc/vmstat 2>/dev/null)"
+    case "$oom_now" in ''|*[!0-9]*) oom_now="" ;; esac
+
+    if [ -n "$oom_now" ] && [ -n "$OOM_BASE" ]; then
+        oom_delta=$((oom_now - OOM_BASE))
+        if [ "$oom_delta" -le 0 ]; then
+            # No NEW host OOM since this roll started, so whatever killed the step
+            # was not the OOM killer. kern.log may still hold OLD victim lines --
+            # they are not printed, because they would explain a kill they did
+            # not cause (the sticky-instrument defect Otto reported, 2026-09-11).
+            echo "         (no NEW OOM since this roll started: /proc/vmstat oom_kill is"
+            echo "         unchanged at $oom_now, so this kill had another cause -- look for"
+            echo "         a manual kill or a timeout in the log above.)"
+            return 1
+        fi
+    fi
+
+    # Either a NEW kill (oom_delta > 0) or the counter was unreadable at one end.
+    # The kernel log only NAMES the victim from here on; it never decides.
+    hits="$(cat /var/log/kern.log /var/log/kern.log.1 2>/dev/null \
+            | grep 'Out of memory: Killed process' | tail -3)"
+    if [ -z "$hits" ]; then
+        hits="$(journalctl -k --no-pager 2>/dev/null \
+                | grep 'Out of memory: Killed process' | tail -3)"
+    fi
+
+    if [ -n "$oom_delta" ]; then
+        echo "         OOM EVIDENCE -- the kernel killed a process for memory DURING THIS ROLL:"
+        echo "         /proc/vmstat oom_kill rose from $OOM_BASE to $oom_now. A build that dies"
+        echo "         this way is NOT a source or compiler defect."
+        if [ -n "$hits" ]; then
+            echo "         Newest kernel OOM lines (the last one is this roll's victim):"
+            printf '%s\n' "$hits" | sed 's/^/           /'
+        else
+            echo "         No kernel log was readable from here to name the victim."
+            echo "         Run: sudo dmesg | grep -i 'oom-kill'"
+        fi
+        return 0
+    fi
+
+    if [ -n "$hits" ]; then
+        echo "         OOM EVIDENCE, TIMING UNPROVEN: a kernel OOM line is readable below, but"
+        echo "         /proc/vmstat oom_kill could not be read (now='${oom_now:-?}', at roll"
+        echo "         start='${OOM_BASE:-?}'), so whether it fired DURING this roll is unknown."
+        echo "         Treat it as indicative only:"
+        printf '%s\n' "$hits" | sed 's/^/           /'
+        return 0
+    fi
+
+    echo "         NOTE: /proc/vmstat oom_kill was unreadable (now='${oom_now:-?}', at roll"
+    echo "         start='${OOM_BASE:-?}') and no kernel-log OOM line is readable, so whether"
+    echo "         the OOM killer fired is UNKNOWN here. That is not the same as 'it did"
+    echo "         not' -- do not read this silence as a clean result."
+    return 1
+}
+
+# run_build_step <logname> <summary-regex> -- <cmd...>
+# Runs cmd with the FULL output tee'd to a log that outlives the roll, prints a
+# filtered summary, and returns the COMMAND's status -- never the filter's.
+# Keeping the whole log is the point: the undefined-symbol list that root-caused
+# the darwin startlazarus failure had been cut off by `tail -10` for a month.
+run_build_step() {
+    local logname=$1; shift
+    local summary_re=$1; shift
+    [ "$1" = "--" ] && shift
+    mkdir -p "$BUILD_LOG_DIR"
+    local log="$BUILD_LOG_DIR/${logname}.log"
+    local rc=0
+    "$@" > "$log" 2>&1 || rc=$?
+    grep -E "$summary_re" "$log" | tail -40 || true
+    if [ "$rc" -ne 0 ]; then
+        echo "ERROR: build step '$logname' FAILED (exit $rc)."
+        echo "       Full log retained at: $log"
+        # Reprint the causal lines INSIDE the failure block. A human reading a
+        # long roll log truncates it from the top, so the one line that names
+        # the cause is exactly the line that never comes back.
+        echo "--- diagnostics ---"
+        grep -nE 'Undefined symbols|symbol\(s\) not found|^ld:|Fatal:|Error:' "$log" | head -20 || true
+        echo "--- tail ---"
+        tail -20 "$log"
+    fi
+    return $rc
+}
+
+# require_fresh_artifact <path> <label>
+# Fails unless <path> exists AND was written by THIS roll. Presence alone is not
+# evidence of a build.
+require_fresh_artifact() {
+    local path=$1
+    local label=$2
+    if [ ! -f "$path" ]; then
+        echo "ERROR: $label MISSING at $path -- this roll never produced it."
+        return 1
+    fi
+    local mtime
+    mtime=$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null || echo 0)
+    if [ "$mtime" -lt "$BUILD_EPOCH" ]; then
+        echo "ERROR: $label at $path is STALE."
+        echo "       mtime $(date -d "@$mtime" 2>/dev/null || echo "$mtime") predates this roll" \
+             "(started $(date -d "@$BUILD_EPOCH" 2>/dev/null || echo "$BUILD_EPOCH"))."
+        echo "       Refusing to package a binary this roll did not build."
+        return 1
+    fi
+    return 0
+}
+
 get_compiler_for_target() {
     local target=$1
     case "$target" in
@@ -30,6 +187,235 @@ get_compiler_for_target() {
             echo "$VP_DIR/compiler/ppcx64"
             ;;
     esac
+}
+
+# resolve_exec_compiler <compiler-path>
+# Echo the compiler path a build wrapper should EXEC, which is not always the one
+# get_compiler_for_target names.
+#
+# THE DEFECT. FPC derives its executable path from the REAL path of the binary it
+# was started as, and puts that directory on the unit, library and object search
+# paths. $VP_DIR/compiler holds 207 .pas files beside the binaries, so exec'ing
+# $VP_DIR/compiler/ppcx64 silently adds the compiler's own source tree to every
+# search path. Measured here 2026-09-11 with both controls, -vut on a trivial unit
+# through a wrapper of exactly the shape build_darwin_ide writes:
+#     exec $VP_DIR/compiler/ppcx64 -n @<darwin cfg>  -> "Using executable path:
+#         .../vibepascal/compiler/", 9 hits on .../vibepascal/compiler/ in the
+#         trace, including "Using unit path: .../vibepascal/compiler/"
+#     exec $VP_DIR/bin/ppcx64     -n @<darwin cfg>  -> "Using executable path:
+#         .../vibepascal/bin/", 0 hits
+# Both produced a .ppu, so the clean one is clean rather than broken. NOTE FPC
+# prints the /mnt-prefixed realpath, so a grep for the literal $VP_DIR/compiler
+# reads 0 and looks CLEAN when it is VOID -- match a substring.
+#
+# WHY IT HAS NOT BITTEN THE DARWIN ROLL YET, AND WHY THAT IS NOT PROTECTION.
+# In that trace the compiler's own directory is unit path entry 158 OF 158 -- dead
+# last, behind all 157 -Fu lines of vibepascal-darwin-x86_64.cfg, one of which
+# (line 123) is $LAZARUS_DIR/components/fpdebug. So the right macho.pas wins on
+# ORDER. But BOTH darwin cfgs are UNTRACKED in the VibePascal working copy
+# (git ls-files --error-unmatch fails on each; the same check fires correctly on a
+# file that IS tracked, so that is not a void result). There is no diff to notice
+# one of those lines changing and nothing to revert to. That is a coincidence, not
+# an immunity -- Bruno (BuildMaster_lazdev) found it, and it is why he authorised
+# this change rather than the do-nothing option.
+#
+# AND THERE ARE THREE COLLISIONS, NOT ONE. Comparing the 207 compiler source names
+# against the 3,657 unit names in this tree (excluding the vendored releases/ copy)
+# gives exactly three, and all three are inside the IDE build's closure:
+#     macho     components/fpdebug/macho.pas
+#     compiler  ide/packages/ideconfig/compiler.pp
+#     tokens    components/jcf2/Parse/Tokens.pas
+# `tokens` needs a case-INSENSITIVE search to find; a lowercase `find -name` says
+# it does not exist, which is how it stayed off the list.
+#
+# The rejections below mirror auto-update.sh resolve_vp_compiler, for the same
+# reasons documented there: a symlink is resolved by FPC before exepath is computed
+# and hashes as its target so no checksum can see it; bin/ is in upstream FPC's
+# .gitignore so in a checkout it can go stale and silently hand the build an OLD
+# compiler; sources in bin/ shadow exactly like compiler/ does. Anything rejected
+# falls through to a private copy, which has the property by construction.
+#
+# Failure is NEVER fatal here: every path echoes something runnable. The worst case
+# is the status quo, which is what the roll does today.
+resolve_exec_compiler() {
+    local cc=$1
+    local base src_dir installed copy_dir copy reject=""
+    [ -x "$cc" ] || { echo "$cc"; return 0; }
+    base=$(basename "$cc")
+    src_dir=$(dirname "$(readlink -f "$cc" 2>/dev/null || echo "$cc")")
+
+    # Nothing beside the binary to shadow => leave it alone. Checked against the
+    # RESOLVED directory: $VP_DIR/compiler/ppcrossaarch64 is itself a symlink to
+    # ppcrossa64 in that same directory, so the naive dirname would be right here
+    # by luck and wrong for any link that points elsewhere.
+    if [ -z "$(find "$src_dir" -maxdepth 1 -name '*.pas' -print -quit 2>/dev/null)" ]; then
+        echo "$cc"; return 0
+    fi
+
+    installed="$VP_DIR/bin/$base"
+    if [ -x "$installed" ]; then
+        if [ -L "$installed" ]; then
+            reject="it is a symlink and FPC follows it before computing exepath"
+        elif [ ! -f "$installed" ]; then
+            reject="it is not a regular file"
+        elif [ -n "$(find "$VP_DIR/bin" -maxdepth 1 -name '*.pas' -print -quit 2>/dev/null)" ]; then
+            reject="$VP_DIR/bin holds Pascal sources, which shadow exactly like compiler/ does"
+        elif ! cmp -s "$installed" "$cc"; then
+            reject="it differs from $cc, so it is a stale copy of some other build"
+        else
+            echo "$installed"; return 0
+        fi
+        echo "       ignoring $installed: $reject" >&2
+    fi
+
+    copy_dir="$BUILD_STATE_DIR/compiler"
+    copy="$copy_dir/$base"
+    mkdir -p "$copy_dir" 2>/dev/null || { echo "$cc"; return 0; }
+    if [ ! -f "$copy" ] || [ "$cc" -nt "$copy" ]; then
+        cp -f "$cc" "$copy" 2>/dev/null || { echo "$cc"; return 0; }
+        chmod +x "$copy" 2>/dev/null || true
+    fi
+    echo "$copy"
+}
+
+# assert_shipped_cross_compiler_matches_exec <staging> <target> <staged-exename>
+# Abort the roll if the compiler about to SHIP is not the compiler this roll EXEC'd.
+#
+# WHY -- D003, and it is my own demerit. r16 shipped a Win64 ppcx64.exe cut from a mutable
+# staging path while the roll had been driven by a different build, so the release advertised
+# a compiler fix it did not contain and GOD taskboard 3ea8500dfe4feb6f stayed blocked behind
+# it. The rule that came out of that: hash the member you are about to ship against the
+# compiler you actually used, BEFORE upload. Two paths holding the same FILENAME are not
+# evidence that they hold the same BYTES.
+#
+# resolve_exec_compiler re-opens exactly that gap on the three targets below, deliberately and
+# for a good reason. The five exec sites now run $VP_DIR/bin/<cc> so the compiler's own
+# 207-file source directory stays off the unit path, while package_release still ships
+# $VP_DIR/compiler/<cc> -- also correct, because the in-tree compiler is the one this tree is
+# built around and resolving it could stage a stale copy (the comment at that `cp` says so).
+# Both halves are right, and together they mean the roll now BUILDS with one path and SHIPS
+# another BY DESIGN. MEASURED 2026-09-11 (Bruno), not inferred: bin/ppcx64, bin/ppcrossaarch64
+# and bin/ppcrossarm are byte-identical regular files to their compiler/ twins, and $VP_DIR/bin
+# holds 0 .pas against compiler/'s 207 -- so realized risk today is ZERO and no re-roll is owed.
+# NOTHING ASSERTS IT -- but the case that actually reaches this guard is NOT the obvious one.
+# CORRECTED 2026-09-11 (Bruno), after Lars refuted the original rationale at 11bf146aa9 and I
+# re-drove all three cases against origin/main rather than taking his word. This comment used
+# to claim the trigger was "the day a rebuild lands in compiler/ without being re-installed to
+# bin/". THAT CASE CANNOT FIRE THIS GUARD AND NEVER COULD: resolve_exec_compiler above REJECTS
+# a bin/ copy that differs from compiler/ ("a stale copy of some other build") and falls back
+# to a $BUILD_STATE_DIR copy taken FROM compiler/ -- so the roll execs compiler/ and ships
+# compiler/, and they match BY CONSTRUCTION. The resolver had already closed that hole before
+# this guard was written. Driven: rebuild compiler/, leave bin/ stale -> exec'd and shipped
+# MATCH, guard silent.
+#
+# THE CASE THAT DOES FIRE IT, driven and not argued: the $BUILD_STATE_DIR/compiler/<cc> cache
+# copy is refreshed only when [ "$cc" -nt "$copy" ]. A compiler rebuilt WITHOUT its mtime
+# advancing leaves the stale cache copy in use, so the roll EXECS the previous build's bytes
+# and SHIPS this build's -- silent, no symptom until a user runs the shipped binary, and that
+# is D003 again. Measured: mtime-frozen rebuild -> exec'd and shipped DIVERGE, guard fires;
+# positive control, identical rebuild with mtime advanced -> they match, no fire.
+#
+# So the trigger is an MTIME HEURISTIC -- and NOT, as the line that used to sit here said,
+# "precisely the surface bruno/compiled-mtime-preserve touches, so if that branch lands this
+# guard's firing case stops being hypothetical." That linkage was MINE (Lars, 11bf146aa9),
+# Bruno refuted it the same day, and I re-measured both halves here rather than trust either
+# of our words for it:
+#   1. That branch is not pending. `git ls-remote origin refs/heads/bruno/compiled-mtime-preserve`
+#      is EMPTY -- positive control, the same command returns refs/heads/main -- the local ref
+#      454a9d47a8 is a stale leftover, and its content landed weeks ago as 29c12e2bcb, which
+#      IS an ancestor of main. `git patch-id --stable` gives both the same id, with a negative
+#      control on an unrelated commit returning a different one, so that match is real.
+#   2. It would not matter if it were pending. Every touch call in it targets .compiled
+#      PACKAGE STATE files under $staging -- the ones Lazarus uses to judge dependent-package
+#      staleness -- so it cannot move the mtime this guard actually depends on, which is $cc
+#      the compiler BINARY against its $BUILD_STATE_DIR copy in resolve_exec_compiler above.
+# The guard stays load-bearing. Its firing case is exactly as hypothetical as it was, and
+# nothing scheduled is about to make it live -- said plainly so the next reader does not go
+# hunting for an open branch that is not there.
+#
+# $VP_DIR/bin remains untracked and is Otto's install target, so it can still drift with no
+# commit in either repo -- it just is not what this guard catches.
+#
+# HONEST LIMIT: this re-derives the exec'd path at packaging time rather than recording what
+# was actually exec'd hours earlier. That is a proxy. It is the RIGHT proxy -- if the two
+# diverged mid-roll, that is the condition worth aborting on too.
+#
+# SCOPED TO THE THREE TARGETS WHERE SHIPPED AND EXEC'D ARE SUPPOSED TO BE THE SAME BINARY.
+# x86_64-win64 and both darwin ship a NATIVE host-<os> compiler that is deliberately a
+# different binary from the Linux-hosted cross compiler that did the building -- there the
+# difference IS the feature, and those paths already carry their own D003 guard (md5 against
+# the source tarball's own VERSION.txt). The internal case below is kept even though the call
+# site already selects, so that a later "finish the sweep" edit cannot break a darwin roll.
+# Driven read-only against all six targets before shipping: fires on none of them today.
+assert_shipped_cross_compiler_matches_exec() {
+    local staging=$1 target=$2 staged_name=$3
+    local notes="$staging/COMPILER_NOTES.txt"
+    local named execd shipped
+
+    case "$target" in
+        x86_64-linux|aarch64-linux|arm-linux) ;;
+        *) return 0 ;;
+    esac
+
+    shipped="$staging/compiler/$staged_name"
+    if [ ! -f "$shipped" ]; then
+        echo "ERROR: $target staged no compiler/$staged_name -- nothing to verify."
+        echo "NOTE: release ABORTED -- compiler/$staged_name was never staged." > "$notes"
+        return 1
+    fi
+
+    named=$(get_compiler_for_target "$target")
+    execd=$(resolve_exec_compiler "$named")
+
+    if cmp -s "$shipped" "$execd"; then
+        echo "    compiler check: compiler/$staged_name ships the bytes this roll built with (md5 $(md5sum "$shipped" | cut -d' ' -f1))"
+        return 0
+    fi
+
+    echo "ERROR: $target would ship a compiler this roll did not build with (D003)."
+    echo "       shipped  $shipped"
+    echo "                md5 $(md5sum "$shipped" | cut -d' ' -f1)"
+    echo "       exec'd   $execd"
+    echo "                md5 $(md5sum "$execd" | cut -d' ' -f1)"
+    echo "       named    $named"
+    echo "       $VP_DIR/bin and $VP_DIR/compiler have diverged. Re-install the compiler so the"
+    echo "       two agree (or ask Otto to), then re-run packaging. Do NOT ship this tarball."
+    echo "NOTE: release ABORTED -- compiler/$staged_name is not the compiler this build used." > "$notes"
+    return 1
+}
+
+# get_darwin_ide_binary <target>
+# Where the darwin IDE binary is STAGED for packaging, once build_darwin_ide has
+# lifted it out of the per-build PrimaryConfigPath.
+#
+# lazbuild writes it INSIDE that pcp. MEASURED 2026-09-10 (Bruno), not inferred:
+# TBuildLazarusProfile's DefaultTargetDirectory is '$(ConfDir)/bin'
+# (ide/packages/ideconfig/miscoptions.pas:267), ConfDir being the PrimaryConfigPath,
+# and lazbuild appends $(TargetCPU)-$(TargetOS). A full-log run of build_darwin_ide's
+# exact invocation ends the compiler call with
+#     Info: (lazarus) Param[12]="-o<pcp>/bin/x86_64-darwin/lazarus"
+# and leaves a 69497312-byte Mach-O 64-bit x86_64 executable there. The aarch64 half
+# of that shape is corroborated by the May-13 default-pcp artifacts, which lazbuild
+# wrote to bin/aarch64-darwin/lazarus back when the default pcp was still in use.
+#
+# But build_darwin_ide TEARS THE pcp DOWN when it returns, deliberately -- per-build
+# isolation, no cross-target leak through staticpackages.inc -- so the packaging
+# sites cannot read it there. Pointing them into the pcp only swaps a stale-binary
+# abort for a missing-binary abort, and the roll still never finishes. Hence a
+# staging path that OUTLIVES the pcp, single-sourced because three sites have to
+# agree on it: the one that BUILDS and the two that PACKAGE. That drift is the bug.
+#
+# It is NOT $HOME/.lazarus/bin/<target>/lazarus. That is the same expression under
+# the DEFAULT pcp, and nothing has written it since --pcp came in (da5c70f139,
+# 2026-05-13 06:29) -- the copy on this builder is dated 2026-05-13 05:27, 62 minutes
+# BEFORE that commit. Reading it is what let r25 ship a four-month-old IDE in BOTH
+# darwin .apps: each shipped Contents/MacOS/lazarus-bin is byte-identical (md5
+# d939a2af2427d8515deffd4494243766 x86_64, 42845d195b0879fdce30a28cf3fac5af aarch64)
+# to that May-13 binary run through `rcodesign sign`. The 905KB size difference was
+# the ad-hoc signature, not a rebuild.
+get_darwin_ide_binary() {
+    local target=$1
+    echo "$BUILD_STATE_DIR/ide/${target}/lazarus"
 }
 
 get_cfg_for_target() {
@@ -107,9 +493,109 @@ copy_win64_compiler_to_staging() {
     return 1
 }
 
+get_latest_vp_bin_tarball() {
+    # $1 = dist/<subdir>, $2 = target token in the filename.
+    # Same version-selection rule as get_latest_win64_bin_tarball (highest numeric v<N>),
+    # generalised so the Linux cross targets can use it too.
+    find "$VP_DIR/dist/$1" -maxdepth 1 -type f -name "vibepascal-v*-$2-bin.tar.gz" 2>/dev/null |
+        while IFS= read -r tarball; do
+            local base version
+            base=$(basename "$tarball")
+            version=${base#vibepascal-v}
+            version=${version%%-*}
+            case "$version" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            printf '%08d %s\n' "$version" "$tarball"
+        done |
+        sort -n |
+        tail -1 |
+        cut -d' ' -f2-
+}
+
+copy_native_linux_compiler_to_staging() {
+    # Bundle the NATIVE target-arch VibePascal compiler for a Linux cross target.
+    # $1 staging  $2 target  $3 native exename  $4 expected `file` arch substring
+    #
+    # WHY (D006 class -- "can a user go from extract to a working build with only what is
+    # inside?"): these tarballs bundled compiler/ppcross<cpu>, which is an x86_64 ELF. On the
+    # Pi the tarball targets it cannot run at all, so the answer was no. Otto ships a genuinely
+    # native compiler in dist/<target>/vibepascal-v*-<target>-bin.tar.gz. The cross compiler is
+    # still copied alongside (useful on the build host), so this is additive.
+    #
+    # TWO GUARDS, both learned the hard way -- neither is optional:
+    #   D003: hash the extracted binary against the md5 the tarball's own VERSION.txt declares,
+    #         so a stale or swapped member cannot ship unnoticed.
+    #   ppcarm clobber (2026-09-10): cross and native builds for the same non-host CPU BOTH
+    #         default to exename ppc<cpu>, so a native build silently overwrites the cross one.
+    #         It had already happened in the shared tree -- compiler/ppcarm was an x86_64 ELF.
+    #         The FILENAME is not evidence of the architecture; check `file` output.
+    # Either guard failing leaves the cross compiler in place and says so loudly in
+    # COMPILER_NOTES.txt, rather than silently shipping a compiler that cannot run.
+    local staging=$1 target=$2 exename=$3 arch_pattern=$4
+    local notes="$staging/COMPILER_NOTES.txt"
+    local tarball member declared actual out="$staging/compiler/$exename"
+
+    tarball=$(get_latest_vp_bin_tarball "$target" "$target")
+    if [ -z "$tarball" ]; then
+        echo "WARNING: no native $target compiler tarball under dist/$target."
+        echo "NOTE: no native $target compiler bundled. compiler/ppcross* is an x86_64 binary and will NOT run on $target." > "$notes"
+        return 1
+    fi
+
+    member=$(tar -tzf "$tarball" | awk -v n="$exename" '$0 ~ "(^|/)bin/" n "$" { print; exit }')
+    if [ -z "$member" ]; then
+        echo "WARNING: $(basename "$tarball") does not contain bin/$exename."
+        echo "NOTE: no native $target compiler bundled ($(basename "$tarball") has no bin/$exename)." > "$notes"
+        return 1
+    fi
+
+    tar -xOzf "$tarball" "$member" > "$out" || { rm -f "$out"; return 1; }
+
+    declared=$(tar -xOzf "$tarball" --wildcards '*VERSION.txt' 2>/dev/null |
+               awk -v n="$exename" '$0 ~ "bin/" n "[[:space:]]" { for (i=1;i<=NF;i++) if ($i=="md5") { print $(i+1); exit } }')
+    actual=$(md5sum "$out" | cut -d' ' -f1)
+    if [ -n "$declared" ] && [ "$declared" != "$actual" ]; then
+        echo "ERROR: $exename md5 $actual does not match $declared declared in $(basename "$tarball") VERSION.txt."
+        rm -f "$out"
+        echo "NOTE: native $target compiler REJECTED (md5 mismatch vs its own VERSION.txt). Not bundled." > "$notes"
+        return 1
+    fi
+
+    if ! file -b "$out" | grep -q "$arch_pattern"; then
+        echo "ERROR: $exename is not a $target binary: $(file -b "$out")"
+        rm -f "$out"
+        echo "NOTE: native $target compiler REJECTED (wrong architecture -- exename clobber). Not bundled." > "$notes"
+        return 1
+    fi
+
+    chmod +x "$out"
+    {
+        echo "Bundled native $target VibePascal compiler as compiler/$exename"
+        echo "  source: $(basename "$tarball")"
+        echo "  md5:    $actual${declared:+ (matches VERSION.txt)}"
+        echo "  arch:   $(file -b "$out")"
+        echo "compiler/ppcross* is the x86_64 CROSS compiler and runs on the BUILD host, not on $target."
+        echo ""
+        echo "REQUIRES BINUTILS ON THE TARGET MACHINE. This tarball bundles a compiler and the"
+        echo "RTL units, but no assembler and no linker -- verified, the archive contains zero"
+        echo "as/ld/ar binaries. compiler/$exename shells out to 'as' and 'ld' from PATH, so"
+        echo "$target needs its own binutils installed (Debian/Raspberry Pi OS: apt install"
+        echo "binutils). If they are missing, or if PATH resolves them to another architecture,"
+        echo "the compile dies at 'Assembling' with an invalid -march= option, or at 'Linking'"
+        echo "with 'skipping incompatible ... system.o'. Neither message names the real cause."
+    } > "$notes"
+    echo "Bundled native $target compiler $exename from $(basename "$tarball")."
+    return 0
+}
+
 build_darwin_fpcres() {
     local target=$1
     local dest=$2
+    # NOT routed through resolve_exec_compiler: this compiles VibePascal's OWN
+    # source ($VP_DIR/utils/fpcres/fpcres.pas), so $VP_DIR/compiler landing on
+    # the unit path is the compiler's own closure, not a foreign one shadowing
+    # this tree. The hardening is for building LAZARUS code; leave VP's alone.
     local compiler=$(get_compiler_for_target "$target")
     local cfg=$(get_cfg_for_target "$target")
     local os_target=$(echo "$target" | cut -d- -f2)
@@ -149,9 +635,68 @@ usage() {
     exit 1
 }
 
+# A package whose loadcheck failure is KNOWN-BENIGN on a given target. Kept tiny and
+# dated on purpose: an allowlist is a liability, so every entry names what was measured
+# and when, and anything NOT listed still aborts the roll.
+vp_loadcheck_known_benign() {
+    # $1=target  $2=MODE (the leading all-caps token of the loadcheck line)  $3=package
+    #
+    # THIS ALLOWLIST IS EMPTY, AND THAT IS THE FINDING RATHER THAN AN OVERSIGHT.
+    # It carried exactly one entry for the whole of its life -- x86_64-win64:FAILED:librsvg
+    # -- on the justification that rsvg.ppu "genuinely cannot load on this target, it is
+    # not staleness and no rebuild fixes it". THAT JUSTIFICATION WAS FALSE, and the
+    # measurement that retired it is my own: 2026-09-11, live shared tree,
+    #   dist/unit-set-loadcheck.sh x86_64-win64 compiler/ppcx64 $VP_DIR
+    #   -> loadcheck x86_64-win64: 111/111 packages load clean, 0 problem(s)   rc=0
+    # librsvg loads. So does gstreamer, which had never built for win64 at all.
+    #
+    # WHY IT WAS REALLY FAILING (Otto, vibepascal 30e82e4fee): a FAILED win64 gtk2 build on
+    # 2026-08-18 left buildgtk2.ppu behind as an ORPHAN. The fpmake build driver is the
+    # package's only EXPLICIT target, so with that one ppu present fpmake reported
+    # "[100%] Compiled package gtk2" and built NOTHING, on every run, forever. Deleting the
+    # orphan and re-running the UNCHANGED make line built all 12 units in seconds, and
+    # rsvg.ppu then resolved glib2. Nothing in the package sources needed changing and
+    # nothing needed allowlisting.
+    #
+    # SO THE ENTRY WAS NEVER WAVING THROUGH A LIMIT OF THE TARGET. It was waving through a
+    # wrecked unit dir for three weeks, and r25's shipped win64 asset was cut from that
+    # set. An allowlist entry is a standing promise that a symptom is harmless; this one
+    # outlived its evidence and would now HIDE a regression of the exact defect that was
+    # just fixed. Removed rather than kept "just in case": a benign failure that nobody can
+    # currently reproduce is not benign, it is unmeasured.
+    #
+    # THE MECHANISM STAYS, KEYED target:MODE:package, because the KEY is the part worth
+    # keeping. Every justification is a story about ONE symptom, so an entry may only ever
+    # fire on that symptom. FAILED means the unit could not be RESOLVED. RECOMPILED means
+    # it resolved and FPC rebuilt it anyway because recorded dependency CRCs no longer
+    # matched -- staleness, the exact thing this gate exists to catch. DRIVER-ONLY means
+    # the dir holds nothing but the wreckage of a failed build. Three different findings;
+    # one entry must never cover two of them.
+    #
+    # Until 2026-09-11 that scope was FAILED-only BY ACCIDENT: the caller captured with
+    # `[^:]*`, which stops at a colon, and a RECOMPILED line carries no colon after the
+    # package name -- so the name never reached this function intact and no entry could
+    # match it. It failed CLOSED, which is the right direction, but a scope set by a
+    # word-splitting bug is one refactor away from silently widening. Found by Lars
+    # 2026-09-10; extractor fixed below, scope now written down instead of inferred.
+    #
+    # TO ADD AN ENTRY: reproduce the symptom on the real tool first and paste the run into
+    # the comment. Do not add one from a sentence written about a different symptom.
+    case "$1:$2:$3" in
+        # No live entries. The shape, deliberately left inert:
+        #   x86_64-win64:FAILED:librsvg) return 0 ;;
+        *) ;;
+    esac
+    return 1
+}
+
 ensure_vp_packages() {
     local target=$1
     local cfg=$2
+    # NOT routed through resolve_exec_compiler: this never execs the compiler.
+    # The only use of $compiler below is inside the ERROR TEXT telling a human
+    # which `make rtl PP=...` to run, and that advice must name the real in-tree
+    # compiler, not a resolved copy under $BUILD_STATE_DIR.
     local compiler=$(get_compiler_for_target "$target")
     local rtl_units="$VP_DIR/rtl/units/$target"
 
@@ -161,42 +706,529 @@ ensure_vp_packages() {
         exit 1
     fi
 
-    local pkg_count=$(find "$VP_DIR/packages" -type d -name "$target" -path "*/units/*" 2>/dev/null | wc -l)
+    # WHY THIS GATE EXISTS. It used to be `pkg_count -lt 10`, an EXISTENCE test standing
+    # in for a usability test -- the same shape as D003 (r16 shipped a v39 compiler
+    # announced as v42 because packaging checked shape and never content). Measured
+    # 2026-09-10: 118 x86_64-darwin package unit dirs sat beside a freshly rebuilt RTL,
+    # so this printed "VibePascal packages ready for x86_64-darwin (118 packages)" and
+    # SKIPPED -- and the roll died five seconds later with
+    # `Fatal: (10022) Can't find unit Variants used by DB`. A count of 118 was true and
+    # meaningless. "How many are there" is the wrong question.
+    #
+    # WHY IT IS NOT AN MTIME SWEEP, WHICH IS WHAT I WROTE FIRST AND PUSHED TO THIS BRANCH.
+    # The first version asked "is any package unit older than rtl/units/<target>/system.ppu"
+    # and rebuilt a majority-stale set. That predicate is WRONG, and the one target it
+    # changed behaviour on is the target it is wrong about:
+    #
+    #   x86_64-linux, 2026-09-10: 146 of 146 unit dirs are SIXTEEN DAYS older than the
+    #   RTL -- and all 146 load clean. The 09-03 RTL rebuild re-emitted BYTE-IDENTICAL
+    #   ppus (105 of 105 identical to the installed 3.3.1 set, system.ppu md5
+    #   19bbad742165a073b148d8c650cc632c on both sides), so it moved mtimes and changed
+    #   nothing else. The mtime gate moved 146 GOOD unit dirs to .stale-units/ and forced
+    #   a pointless 146-package rebuild -- driven and confirmed on a fixture, not argued.
+    #
+    # mtime and ABI validity are INDEPENDENT. What actually kills a roll is a unit whose
+    # recorded dependency CRCs no longer match the RTL it is about to be compiled against,
+    # so measure THAT, with Otto's dist/unit-set-loadcheck.sh (vibepascal f5d7308485):
+    # one program per package using every unit it ships, `-Cn` so a missing .so cannot
+    # fake a failure, `-n` so the host's ~/.fpc.cfg cannot resolve units from OUTSIDE the
+    # tree, `-FU` at a scratch dir so a silent recompile can neither touch the tree nor
+    # pass unnoticed. 45s for x86_64-linux's 146 packages against a 40-minute roll.
+    # Verified in BOTH directions before being trusted -- a harness that has quietly
+    # stopped being able to fail proves nothing: real tree 146/146 rc=0, and the
+    # negative-control tree (~/src/vibepascal-slices/linux-pkg-freshness/) 123/146,
+    # 23 problems, rc=1, reproducing this roll's own "Can't find unit Variants used by
+    # DB" verbatim.
+    #
+    # WHY A FAILED LOADCHECK DOES NOT AUTO-REBUILD, WHICH IS THE THIRD VERSION OF THIS
+    # GATE AND THE REASON THE SIX-TARGET SWEEP IS MANDATORY. Sweeping all six with the
+    # real script on 2026-09-10 says a bare `rc!=0 -> rebuild` rule ALSO over-fires, on
+    # two of six targets, for two DIFFERENT reasons neither of which is staleness:
+    #
+    # FIRST SWEEP, 2026-09-10 22:45Z, against loadcheck de075cff4e -- kept because it is
+    # what bought two of the rules below, and deleting the measurement that justified a
+    # rule leaves the rule looking arbitrary:
+    #
+    #   x86_64-linux   146/146 clean      rc=0
+    #   arm-linux      142/142 clean      rc=0
+    #   x86_64-darwin  118/118 clean      rc=0
+    #   aarch64-darwin 115/115 clean      rc=0
+    #   x86_64-win64   108/110, 2 fail    -> gtk2 + librsvg
+    #   aarch64-linux    0/143, all fail  -> "Fatal error: invalid -march= option:
+    #                                        `armv8-a'" -- the HOST ASSEMBLER refusing
+    #                                        the job, not a unit failing to load.
+    #
+    # Both of those were reported to Otto rather than worked around here, and BOTH ARE
+    # NOW FIXED IN THE TOOL. RE-SWEPT 2026-09-10 23:20Z against f5d7308485, both changed
+    # targets re-measured with the compiler get_compiler_for_target actually passes:
+    #
+    #   aarch64-linux  143/143 clean      rc=0   <-- was 0/143
+    #   x86_64-win64   108/109, 1 fail    rc=1   <-- was 108/110, 2 fail
+    #   (the clean four are byte-for-byte the same numbers as above)
+    #
+    # THE aarch64 FIX WAS `-s`, NOT A CFG OR AN `-XP` PREFIX, and the reason matters to
+    # anyone tempted to "help" this gate along by feeding loadcheck a cfg: `-Cn` already
+    # suppressed the LINK, but the compiler still ASSEMBLED, while unit loading and
+    # dependency-CRC checking both happen at COMPILE time -- so the script never needed
+    # an assembler at all. `-s` ("do not call assembler and linker") deletes the binutils
+    # dependency outright and needs nothing installed or kept in sync with a roll. A cfg
+    # would have been WORSE: it puts the INSTALLED /home/jason/fpc/.../units/<target>
+    # dirs back on the search path and defeats the `-n` that stops the sweep resolving
+    # units from outside the tree. DO NOT ADD A CFG HERE.
+    # (Why arm-linux passed all along while aarch64 did not: arm uses FPC's INTERNAL
+    # assembler and never hands arguments to as(1); aarch64 uses external GAS. The host
+    # as(1) rejects arm's arguments too -- arm simply never asks. Different code path,
+    # not a more robust target.)
+    #
+    # win64's gtk2 was the tool miscounting an fpmake BUILD DRIVER as a unit; loadcheck
+    # now SKIPs build drivers and drops the denominator to 109. librsvg survives as the
+    # ONE genuine benign failure -- see vp_loadcheck_known_benign.
+    #
+    # So: an ALL-FAIL result means the harness cannot run here, not that 143 unit sets
+    # rotted simultaneously -- warn and continue. NOTE THAT NO LIVE TARGET TRIGGERS THAT
+    # ARM ANY MORE, and it STAYS, because it is what stopped a bad harness answer moving
+    # 143 healthy unit dirs aside: a unit set does not rot all at once, a toolchain does.
+    # A short, dated allowlist covers the one remaining benign win64 failure. ANYTHING
+    # ELSE ABORTS THE ROLL rather than rebuilding it, because on a starved box a
+    # half-finished rebuild leaves a PARTIAL unit set that is strictly worse than the one
+    # it replaced, and Policy #13 forbids unrequested rebuilding.
+    # VP_FORCE_STALE_REBUILD=1 opts into the repair; VP_SKIP_LOADCHECK=1 opts out of the
+    # measurement. Either way this NEVER AGAIN prints a bare "ready" over a set it has
+    # been told is broken -- that false claim is the actual defect being fixed here.
+    #
+    # HONEST LIMIT, carry it wherever a green run is quoted: this proves the unit set
+    # LOADS, i.e. its recorded dependency CRCs still match. It does NOT prove those
+    # objects assemble, link or run -- `-Cn` skips the link and `-s` skips the assembler
+    # ON PURPOSE, so a wrong-arch or truncated .o PASSES here. Runtime proof is a
+    # separate artifact (dist/arm-runtime-proof.sh, dist/win64-runtime-proof.sh).
+    local pkg_dirs pkg_count
+    pkg_dirs=$(find "$VP_DIR/packages" -type d -name "$target" -path "*/units/*" 2>/dev/null)
+    pkg_count=$(printf '%s' "$pkg_dirs" | grep -c . || true)
+
+    local loadcheck="$VP_DIR/dist/unit-set-loadcheck.sh"
+    # NOT /tmp: same reason as build_darwin_ide -- /tmp here is a 2G tmpfs shared by ~30
+    # agents and has been seen at 97% full and cleared under a running build.
+    local lc_scratch="$BUILD_STATE_DIR/loadcheck"
+    local need_rebuild="" verdict="" lc_out="$lc_scratch/$target.loadcheck.log"
+
     if [ "$pkg_count" -lt 10 ]; then
-        echo "Only $pkg_count VibePascal packages found for $target. Building packages..."
+        need_rebuild="count"
+    elif [ -n "${VP_FORCE_STALE_REBUILD:-}" ]; then
+        echo "VP_FORCE_STALE_REBUILD set: rebuilding $target packages without measuring."
+        need_rebuild="forced"
+    elif [ -n "${VP_SKIP_LOADCHECK:-}" ]; then
+        verdict="loadcheck SKIPPED at operator request"
+        echo "WARNING: VP_SKIP_LOADCHECK is set, so the $target package unit set is NOT"
+        echo "         being verified. The count below is an existence check, not a"
+        echo "         usability one -- the exact blind spot that let a doomed unit set"
+        echo "         into a 40-minute build on 2026-09-10."
+    elif [ -x "$loadcheck" ]; then
+        echo "Verifying the $target VibePascal package unit set actually LOADS (~45s)..."
+        mkdir -p "$lc_scratch"
+        local lc_rc=0
+        # RUN IT FROM ITS OWN SCRATCH DIR, NOT FROM $LAZARUS_DIR.
+        # loadcheck's preflight probe compiles with -s (vibepascal dist/unit-set-loadcheck.sh:202)
+        # and -s makes FPC write ppas.sh + link<pid>.res into the CALLER'S CWD. Every other path
+        # that script touches is absolute, so the caller is the only thing that decides where
+        # those two land -- and called from the tree root, every roll left two untracked files in
+        # a checkout 30+ agents read. That moves the dirt ruler HABITS uses to spot a REAL change
+        # (c700: `?? ppas.sh` was the whole of `git status` after the win64 roll, and a ruler that
+        # moves every roll is a ruler that cannot flag anything).
+        # MEASURED, both arms, against Otto's real script with the win64 set present:
+        #   CWD = tree-root stand-in -> ppas.sh AND link<pid>.res appear there
+        #   CWD = "$lc_scratch"      -> stand-in stays empty (canary-proved the count can read 1)
+        #   verdict identical either way: 111/111 packages load clean, 0 problem(s), rc 0
+        # SECOND REASON, and not cosmetic: FPC searches the CWD ahead of -Fu (c637), so a probe
+        # run from the tree root can be shadowed by any stray .pas sitting in it -- the same trap
+        # that cost uwin32widgetsetdark.pas 2.5 months. An empty scratch CWD removes it.
+        # Safe because every argument is absolute: $loadcheck and $compiler are $VP_DIR-rooted
+        # (get_compiler_for_target), $VP_DIR and $lc_out likewise. If the cd itself ever failed,
+        # the subshell's non-zero rc lands in the UNAVAILABLE arm below, which says so out loud.
+        ( cd "$lc_scratch" && TMPDIR="$lc_scratch" \
+            "$loadcheck" "$target" "$compiler" "$VP_DIR" ) > "$lc_out" 2>&1 || lc_rc=$?
+        cat "$lc_out"
+        # AN INTERRUPTED SWEEP IS A THIRD OUTCOME AND IT IS NOT READABLE FROM THE rc ALONE.
+        # loadcheck grew an EXIT/HUP/INT/TERM trap (vibepascal f791257d51) that prints an
+        # ABORTED header plus a summary line and exits 128+signal -- 143 for TERM. Every rc
+        # outside {0,1} used to land in the UNAVAILABLE arm below, which says "the harness
+        # never ran" and walks on. That is WRONG for this shape and wrongly reassuring: the
+        # sweep DID run, it was killed part-way, and the log can already NAME packages that
+        # failed before the kill. Bucketing it with "no compiler at <path>" throws measured
+        # badness away. So the discriminator is the ABORTED header, not the number:
+        #   rc=2      -> harness unusable, says NOTHING about the tree   (cy1110, unchanged)
+        #   rc=1      -> tree measured and bad                            (cy1110, unchanged)
+        #   ABORTED   -> tree PARTIALLY measured, measurement unfinished  (new, count it)
+        # Do NOT collapse any two of those three. Matching on the token rather than on
+        # 128+n also means a kill by any signal Otto adds a handler for is caught here
+        # without me editing a list -- the same reason this gate counts all-caps headers
+        # structurally instead of enumerating the words it knows today.
+        local lc_aborted=0
+        grep -q '^ABORTED ' "$lc_out" 2>/dev/null && lc_aborted=1
+        if [ "$lc_rc" = 0 ] && [ "$lc_aborted" = 0 ]; then
+            verdict="loadcheck PASS"
+        elif [ "$lc_rc" != 1 ] && [ "$lc_aborted" = 0 ]; then
+            # rc>=2 is the SCRIPT failing (no compiler, no RTL, cannot mktemp), not the
+            # unit set failing. Do not rebuild 146 packages because a harness broke, and
+            # do not silently claim the set is fine either.
+            verdict="loadcheck UNAVAILABLE (rc=$lc_rc)"
+            echo "WARNING: $loadcheck could not run (rc=$lc_rc)."
+            echo "         The $target unit set is UNVERIFIED. If this roll fails with"
+            echo "         \"Can't find unit <X> used by <Y>\", it is the unit set, not the source."
+        else
+            local lc_bad lc_total lc_ok lc_prob lc_unknown lc_real=0 lc_mode p
+            # WHAT COUNTS AS A PROBLEM LINE IS THE EMITTER'S DECISION, NOT MINE.
+            # loadcheck prints ONE header line per problem package and the leading ALL-CAPS
+            # token is the mode: FAILED (could not resolve), RECOMPILED (resolved, then
+            # rebuilt on load -- staleness) and, since vibepascal 30e82e4fee, DRIVER-ONLY
+            # (the dir holds only fpmake build drivers, i.e. the wreckage of a failed build,
+            # whose mere presence then makes every later fpmake run report the package built
+            # while doing no work).
+            # MATCHING THE TOKEN CLASS RATHER THAN THE THREE NAMES IS DELIBERATE. This file
+            # named FAILED|RECOMPILED for exactly one day and the emitter grew a third shape
+            # that same night (01:06Z). Measured on the real tool against a real driver-only
+            # dir before this change: the name-list version printed
+            #   "NOTE: 0 x86_64-win64 package(s) failed the loadcheck and ALL of them are
+            #          known-benign for this target. Continuing."
+            # and returned PASS on rc=1 -- a green gate asserting a clean bill of health
+            # over the precise defect that had kept win64 gtk2 unbuilt for three weeks.
+            # A gate that must be edited every time the tool learns a new word is a gate
+            # that is silently green in between.
+            # SKIPPED IS EXCLUDED, and only SKIPPED: it is the one all-caps line that was
+            # never a problem -- the pre-30e82e4fee tool printed it for driver-only dirs and
+            # deliberately left them out of its own count. Excluding it keeps this gate
+            # correct against an older tool as well as the current one.
+            lc_bad=$(grep -E '^[A-Z][A-Z0-9-]* ' "$lc_out" 2>/dev/null | grep -c -v '^SKIPPED ' || true)
+            lc_total=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
+            [ -n "$lc_total" ] || lc_total=0
+            # The NUMERATOR too, and only the INTERRUPTED arm reads it: on a killed sweep
+            # "how much got judged" is the only honest thing that can be said, and saying
+            # it is what stops "UNVERIFIED" being heard as "nothing happened".
+            lc_ok=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\1/p' "$lc_out" | tail -1)
+            [ -n "$lc_ok" ] || lc_ok=0
+            # THE TOOL'S OWN PROBLEM COUNT, reconciled against my line count. It is the only
+            # number in the log that is authoritative about how many packages the tool
+            # considered broken, and comparing the two is what catches a shape I cannot
+            # parse AT ALL: a problem the tool counted and this gate never saw must not be
+            # read as "no problem". -1 means the summary line is missing entirely.
+            lc_prob=$(sed -n 's/.*packages load clean, \([0-9]*\) problem(s).*/\1/p' "$lc_out" | tail -1)
+            [ -n "$lc_prob" ] || lc_prob=-1
+            lc_unknown=0
+            [ "$lc_prob" -gt "$lc_bad" ] && lc_unknown=$((lc_prob - lc_bad))
+            # ONE LOG LINE IN, ONE PACKAGE NAME OUT. `[^ :]*` stops at the first space OR
+            # colon, which is what makes BOTH emitted shapes yield a bare package name:
+            #     FAILED <pkg>:                                    <- stops at the colon
+            #     RECOMPILED <pkg> -- N unit(s) rebuilt on load:   <- stops at the space
+            # The old `[^:]*` ran to the colon at END OF LINE on the RECOMPILED shape, and
+            # the unquoted `for p in $( )` then split that phrase into SEVEN words: ONE
+            # recompiled package reported as seven, and no allowlist entry could ever match
+            # it. lc_bad counts LINES and was always right, so the two numbers disagreed.
+            # AND THE LOOP IS FED BY A HEREDOC, NOT A PIPE -- a pipe puts it in a subshell
+            # and lc_real silently stays 0 no matter what the log says. Do not "simplify".
+            while read -r lc_mode p; do
+                [ -n "$p" ] || continue
+                # ABORTED IS NOT A PACKAGE. The word after it is the TARGET, and the line
+                # means the sweep was killed. It STAYS counted in lc_bad -- Otto counts it
+                # in his own problem total (bad+1) precisely so the reconciliation above
+                # still closes -- but counting it as a unit set that does not load would
+                # print "1 of 24 package unit set(s) do not load" and send the operator to
+                # VP_FORCE_STALE_REBUILD=1, rebuilding the whole package set because a
+                # process got a signal. lc_real must mean PACKAGES, and only packages.
+                [ "$lc_mode" = ABORTED ] && continue
+                vp_loadcheck_known_benign "$target" "$lc_mode" "$p" || lc_real=$((lc_real + 1))
+            done <<EOF
+$(sed -n 's/^\([A-Z][A-Z0-9-]*\) \([^ :]*\).*/\1 \2/p' "$lc_out" | grep -v '^SKIPPED ')
+EOF
+            if [ "$lc_prob" -lt 0 ]; then
+                # rc=1 but NO summary line: the tool died part-way through its own sweep.
+                # That is a harness failure, not a unit set failure, so it is handled like
+                # rc>=2 -- loud and UNVERIFIED, not a reason to rebuild 146 packages and
+                # not a reason to abort a roll.
+                verdict="loadcheck UNUSABLE (no summary line)"
+                echo "WARNING: $loadcheck exited 1 but printed no summary line, so its own"
+                echo "         problem count cannot be read and this gate cannot reconcile"
+                echo "         against it. The $target unit set is UNVERIFIED; continuing."
+            elif [ "$lc_unknown" -gt 0 ]; then
+                echo "ERROR: $loadcheck reported $lc_prob problem(s) on $target but only $lc_bad"
+                echo "       of them are in a line shape this gate can classify -- $lc_unknown"
+                echo "       problem(s) went unread. A PASS here would be an assertion about"
+                echo "       lines that were never examined. Full log: $lc_out"
+                echo "       Fix: teach the extractor above the new shape, then re-run."
+                exit 1
+            elif [ "$lc_aborted" = 1 ]; then
+                # THE SWEEP WAS KILLED. Reconciliation has already closed (the ABORTED
+                # header is counted on both sides), so whatever WAS measured is readable
+                # and must not be thrown away -- that is the whole reason this arm exists
+                # ahead of the "every package failed" one. Two outcomes, and they are not
+                # the same finding:
+                if [ "$lc_real" -gt 0 ]; then
+                    echo "ERROR: the $target loadcheck was KILLED mid-sweep, but it had already"
+                    echo "       named $lc_real failing package(s) before it died (see above)."
+                    echo "       Refusing to build on a unit set that was measured bad -- an"
+                    echo "       interrupted measurement does not un-measure what it found, and"
+                    echo "       there may be MORE: the packages after the kill were never judged."
+                    echo "       Full log: $lc_out"
+                    echo "       Re-run the loadcheck to completion; if it still names packages,"
+                    echo "       re-run this with VP_FORCE_STALE_REBUILD=1 to rebuild the set."
+                    report_oom_evidence || true
+                    exit 1
+                fi
+                verdict="loadcheck INTERRUPTED (rc=$lc_rc, $lc_ok/$lc_total judged)"
+                echo "WARNING: the $target loadcheck was killed before it finished (rc=$lc_rc)."
+                echo "         $lc_ok of $lc_total package(s) were judged and none of them failed,"
+                echo "         but the rest were never measured, so this is NOT a pass. The"
+                echo "         $target unit set is UNVERIFIED; continuing."
+                echo "         If something is killing builds on this box, that is the thing to"
+                echo "         fix -- so do not send the reader off to look for it, read it here:"
+                report_oom_evidence || true
+            elif [ "$lc_total" -gt 0 ] && [ "$lc_bad" -ge "$lc_total" ]; then
+                # EVERY package failed. A unit set does not rot all at once; a toolchain
+                # does fail all at once. Treat this as an unusable harness, not as 143
+                # simultaneously broken packages.
+                verdict="loadcheck UNUSABLE on this host ($lc_bad/$lc_total failed)"
+                echo "WARNING: every $target package failed the loadcheck ($lc_bad of $lc_total)."
+                echo "         That is a harness/toolchain problem, not a unit set problem --"
+                echo "         check the first error above for an assembler or linker message."
+                echo "         The $target unit set is UNVERIFIED; continuing."
+            elif [ "$lc_real" -gt 0 ]; then
+                echo "ERROR: $lc_real of $lc_total $target package unit set(s) do not load against"
+                echo "       rtl/units/$target. Named above; full log: $lc_out"
+                echo "       Refusing to start a build on them -- it dies on its first unit with"
+                echo "       \"Can't find unit <X>\" and blames the SOURCE rather than the unit set."
+                echo "       Re-run with VP_FORCE_STALE_REBUILD=1 to rebuild the unit set first."
+                exit 1
+            elif [ "$lc_bad" -gt 0 ]; then
+                verdict="loadcheck PASS ($lc_bad known-benign)"
+                echo "NOTE: $lc_bad $target package(s) failed the loadcheck and ALL of them are"
+                echo "      known-benign for this target (see vp_loadcheck_known_benign). Continuing."
+            else
+                # rc=1 with nothing to show for it. DO NOT print "0 package(s) failed and
+                # ALL of them are known-benign" -- that sentence is vacuously true and reads
+                # as a clean bill of health. It is exactly what this gate printed over a
+                # real DRIVER-ONLY defect on 2026-09-11. Belt and braces with lc_unknown
+                # above: that branch catches a miscount, this one catches a miscount whose
+                # summary line ALSO says zero.
+                verdict="loadcheck UNUSABLE (rc=1, no problem package named)"
+                echo "WARNING: $loadcheck exited 1 but named no problem package that this gate"
+                echo "         could read. The $target unit set is UNVERIFIED; continuing."
+            fi
+        fi
+    else
+        verdict="loadcheck ABSENT"
+        echo "WARNING: no $loadcheck, so the $target unit set is UNVERIFIED."
+        echo "         Expected it in the VibePascal tree (de075cff4e, fixed in f5d7308485)."
+    fi
+
+    # INFORMATIONAL ONLY -- NEVER A GATE. Reported because the mtime skew is real, looks
+    # alarming, and cost two of us an evening on 2026-09-10 before we established it was
+    # harmless. Printing it next to a loadcheck PASS is what stops the next person
+    # rediscovering "the landmine" and rebuilding 146 good packages over it.
+    case "$verdict" in
+    "loadcheck PASS"*)
+        if [ -f "$rtl_units/system.ppu" ]; then
+            local d older=0
+            while IFS= read -r d; do
+                [ -n "$d" ] || continue
+                if [ -n "$(find "$d" -name '*.ppu' ! -newer "$rtl_units/system.ppu" -print -quit 2>/dev/null)" ]; then
+                    older=$((older + 1))
+                fi
+            done <<EOF
+$pkg_dirs
+EOF
+            if [ "$older" -gt 0 ]; then
+                echo "NOTE: $older of $pkg_count $target unit dir(s) predate rtl/units/$target/system.ppu"
+                echo "      ($(date -r "$rtl_units/system.ppu" '+%F %T' 2>/dev/null)) and ALL OF THEM LOAD CLEAN."
+                echo "      mtime is not the discriminator here -- do not rebuild on this alone."
+            fi
+        fi ;;
+    esac
+
+    if [ -n "$need_rebuild" ]; then
+        if [ "$need_rebuild" = count ]; then
+            echo "Only $pkg_count VibePascal package unit set(s) found for $target. Building packages..."
+        else
+            # A plain `make packages` here is a NO-OP and that is the trap: fpmake compares
+            # package SOURCES to their units, the sources have not changed, so it returns
+            # rc=0 in about a second having rebuilt nothing. Measured 2026-09-10. Moving
+            # the unit dir aside is not a workaround for a stubborn tool -- an ABSENT unit
+            # dir is the exact input that makes fpmake rebuild it cleanly (Otto recovered
+            # 15 x86_64-darwin dirs this way the same day). Moved, never deleted, so a bad
+            # rebuild is recoverable.
+            local attic="$VP_DIR/.stale-units/$target-$(date -u '+%Y%m%dT%H%M%SZ')"
+            mkdir -p "$attic"
+            printf '%s\n' "$pkg_dirs" | while IFS= read -r d; do
+                [ -n "$d" ] || continue
+                mv "$d" "$attic/$(printf '%s' "${d#$VP_DIR/packages/}" | tr / _)" 2>/dev/null || true
+            done
+            echo "  Previous units moved to $attic"
+        fi
+
         cd "$VP_DIR"
         local os_target=$(echo "$target" | cut -d- -f2)
         local cpu_target=$(echo "$target" | cut -d- -f1)
         make packages PP="$compiler" OS_TARGET="$os_target" CPU_TARGET="$cpu_target" OPT="-n @$cfg" 2>&1 | grep -E "^\[|Compiled package|Fatal|Error" || true
         cd "$LAZARUS_DIR"
+
+        # Re-measure rather than assume. Declaring "ready" over a set that is still broken
+        # IS the original defect, so refuse loudly instead of handing a doomed unit set to
+        # a 40-minute IDE build that dies on its first unit and blames the source.
+        pkg_dirs=$(find "$VP_DIR/packages" -type d -name "$target" -path "*/units/*" 2>/dev/null)
+        pkg_count=$(printf '%s' "$pkg_dirs" | grep -c . || true)
+        if [ "$pkg_count" -lt 10 ]; then
+            echo "ERROR: only $pkg_count VibePascal package unit set(s) for $target after a rebuild."
+            echo "       Previous units are in $VP_DIR/.stale-units if this needs unpicking."
+            exit 1
+        fi
+        if [ -x "$loadcheck" ] && [ -z "${VP_SKIP_LOADCHECK:-}" ]; then
+            echo "Re-verifying the rebuilt $target unit set..."
+            mkdir -p "$lc_scratch"
+            local lc_rc2=0
+            # Same CWD containment as the first call site, same reason -- see it. This site
+            # runs after a package rebuild, so skipping it here would leave the droppings
+            # in the tree on exactly the rolls that do the most work.
+            ( cd "$lc_scratch" && TMPDIR="$lc_scratch" \
+                "$loadcheck" "$target" "$compiler" "$VP_DIR" ) > "$lc_out" 2>&1 || lc_rc2=$?
+            cat "$lc_out"
+            # Same three-way split as the first call site, same discriminator -- see the
+            # long comment there. This site is the easier one to get wrong: it runs AFTER a
+            # rebuild, where a kill is likelier (the box has just done real work) and where
+            # the number is read by someone already half-convinced the tree is broken.
+            local lc_aborted2=0
+            grep -q '^ABORTED ' "$lc_out" 2>/dev/null && lc_aborted2=1
+            if [ "$lc_rc2" = 1 ] || [ "$lc_aborted2" = 1 ]; then
+                local lc_bad2 lc_total2 lc_ok2 lc_prob2 lc_unknown2 lc_real2=0 lc_mode2 p2
+                lc_bad2=$(grep -E '^[A-Z][A-Z0-9-]* ' "$lc_out" 2>/dev/null | grep -c -v '^SKIPPED ' || true)
+                lc_total2=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\2/p' "$lc_out" | tail -1)
+                [ -n "$lc_total2" ] || lc_total2=0
+                lc_ok2=$(sed -n 's/.*: \([0-9]*\)\/\([0-9]*\) packages load clean.*/\1/p' "$lc_out" | tail -1)
+                [ -n "$lc_ok2" ] || lc_ok2=0
+                lc_prob2=$(sed -n 's/.*packages load clean, \([0-9]*\) problem(s).*/\1/p' "$lc_out" | tail -1)
+                [ -n "$lc_prob2" ] || lc_prob2=-1
+                lc_unknown2=0
+                [ "$lc_prob2" -gt "$lc_bad2" ] && lc_unknown2=$((lc_prob2 - lc_bad2))
+                # Same extractor, same heredoc-not-a-pipe rule as the first call site --
+                # see the comment there. THIS SITE CARRIED THE IDENTICAL DEFECT and it is
+                # the easier one to miss, because it only runs after VP_FORCE_STALE_REBUILD
+                # or a rebuild, where the count feeds "STILL does not load after a rebuild".
+                while read -r lc_mode2 p2; do
+                    [ -n "$p2" ] || continue
+                    # ABORTED names the TARGET, not a package -- see the first call site.
+                    [ "$lc_mode2" = ABORTED ] && continue
+                    vp_loadcheck_known_benign "$target" "$lc_mode2" "$p2" || lc_real2=$((lc_real2 + 1))
+                done <<EOF
+$(sed -n 's/^\([A-Z][A-Z0-9-]*\) \([^ :]*\).*/\1 \2/p' "$lc_out" | grep -v '^SKIPPED ')
+EOF
+                if [ "$lc_prob2" -lt 0 ]; then
+                    verdict="loadcheck UNUSABLE after rebuild (no summary line)"
+                    echo "WARNING: the re-verify exited 1 with no summary line; its own problem"
+                    echo "         count cannot be read. $target is UNVERIFIED; continuing."
+                elif [ "$lc_unknown2" -gt 0 ]; then
+                    echo "ERROR: the $target re-verify reported $lc_prob2 problem(s) but only"
+                    echo "       $lc_bad2 are in a shape this gate can classify. Refusing to"
+                    echo "       continue on $lc_unknown2 unread problem(s). Log: $lc_out"
+                    exit 1
+                elif [ "$lc_aborted2" = 1 ]; then
+                    if [ "$lc_real2" -gt 0 ]; then
+                        echo "ERROR: the $target re-verify was KILLED mid-sweep and had already"
+                        echo "       named $lc_real2 failing package(s) before it died. The rebuild"
+                        echo "       did NOT fix them and the rest were never judged. Refusing to"
+                        echo "       continue. Log: $lc_out"
+                        echo "       Previous units are in $VP_DIR/.stale-units if this needs unpicking."
+                        report_oom_evidence || true
+                        exit 1
+                    fi
+                    verdict="loadcheck INTERRUPTED after rebuild (rc=$lc_rc2, $lc_ok2/$lc_total2 judged)"
+                    echo "WARNING: the $target re-verify was killed before it finished (rc=$lc_rc2)."
+                    echo "         $lc_ok2 of $lc_total2 judged, none failing, rest unmeasured -- so the"
+                    echo "         rebuild is NOT confirmed. UNVERIFIED; continuing."
+                    report_oom_evidence || true
+                elif [ "$lc_total2" -gt 0 ] && [ "$lc_bad2" -ge "$lc_total2" ]; then
+                    verdict="loadcheck UNUSABLE on this host ($lc_bad2/$lc_total2 failed)"
+                    echo "WARNING: every $target package failed after the rebuild -- harness/toolchain,"
+                    echo "         not the unit set. Continuing UNVERIFIED."
+                elif [ "$lc_real2" -gt 0 ]; then
+                    echo "ERROR: the $target VibePascal package unit set STILL does not load after a"
+                    echo "       rebuild ($lc_real2 of $lc_total2). Refusing to continue."
+                    echo "       Previous units are in $VP_DIR/.stale-units if this needs unpicking."
+                    exit 1
+                elif [ "$lc_bad2" -gt 0 ]; then
+                    verdict="loadcheck PASS after rebuild ($lc_bad2 known-benign)"
+                else
+                    # Same reason as the first call site: rc=1 with nothing named is not a
+                    # pass. This site is the easier one to miss and the worse one to get
+                    # wrong -- its number is read by someone already half-convinced the
+                    # tree is broken.
+                    verdict="loadcheck UNUSABLE after rebuild (rc=1, no problem package named)"
+                    echo "WARNING: the $target re-verify exited 1 but named no problem package"
+                    echo "         this gate could read. UNVERIFIED; continuing."
+                fi
+            elif [ "$lc_rc2" != 0 ]; then
+                echo "WARNING: could not re-verify $target after the rebuild (rc=$lc_rc2); continuing UNVERIFIED."
+                verdict="loadcheck UNAVAILABLE (rc=$lc_rc2)"
+            else
+                verdict="loadcheck PASS after rebuild"
+            fi
+        else
+            verdict="rebuilt, UNVERIFIED"
+        fi
+        # A rebuild legitimately yields FEWER package dirs than the previous set: on
+        # 2026-09-10 the x86_64-darwin rebuild returned 103 of 118, and the 15 that
+        # dropped out are not Lazarus IDE dependencies -- the IDE build ran straight past
+        # them. A shrinking count is not an error; only the <10 floor is.
     fi
-    echo "VibePascal packages ready for $target ($pkg_count packages)"
+    echo "VibePascal packages ready for $target ($pkg_count packages, $verdict)"
 }
 
 build_lazbuild() {
     local target=$1
     local cfg=$2
-    local compiler=$(get_compiler_for_target "$target")
+    # Same exec-target hardening as build_darwin_ide (:987) and
+    # build_bgra_release_packages (:1331). `make ... PP=<compiler>` execs the
+    # compiler directly, so FPC puts the exec'd binary's directory on the unit,
+    # library and object paths -- and $VP_DIR/compiler holds 207 .pas files.
+    # Measured here 2026-09-11 that make derives NOTHING ELSE from PP's
+    # directory: `make -n` for a real component emits a byte-identical compile
+    # command under both PP values, every -Fu/-Fl/-FU/-FE and the cfg the same,
+    # the compiler path itself the only difference.
+    local compiler
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
 
     echo "=== Building lazbuild for $target ==="
     local os_target=$(echo "$target" | cut -d- -f2)
     local cpu_target=$(echo "$target" | cut -d- -f1)
 
-    make -C "$LAZARUS_DIR" lazbuild \
+    # Was `| grep -E "Linking|lines compiled|Fatal|Error"` with pipefail off,
+    # which returned grep's status: a make that failed while printing "Error"
+    # matched, and the step reported SUCCESS.
+    run_build_step "lazbuild-$target" "Linking|lines compiled|Fatal|Error" -- \
+        make -C "$LAZARUS_DIR" lazbuild \
         PP="$compiler" \
         FPCDIR="$VP_DIR" \
         OS_TARGET="$os_target" \
         CPU_TARGET="$cpu_target" \
-        OPT="-n @$cfg" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+        OPT="-n @$cfg"
 }
 
 build_darwin_ide() {
     local target=$1
     local cfg=$2
-    local compiler=$(get_compiler_for_target "$target")
+    # What the WRAPPER execs, not what get_compiler_for_target names -- see
+    # resolve_exec_compiler. This changes the exec TARGET, never the wrapper's own
+    # path, so lazbuild still sees the same --compiler string and no package is
+    # rebuilt for it (Bruno, 2026-09-11, who also established the roll rebuilds
+    # everything unconditionally anyway: the wrapper is regenerated with cat > on
+    # every roll and the stored state carries a fixed Date, so a Date mismatch
+    # already forces the rebuild this was once costed against).
+    local compiler
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
     local cpu_target=$(echo "$target" | cut -d- -f1)
-    local wrapper="/tmp/ppc${cpu_target}-darwin-wrapper"
-    local pcp="/tmp/lazbuild-pcp-${target}"
+    # NOT /tmp: on this builder /tmp is a 2G tmpfs shared by ~30 agents and has
+    # been observed at 97% full and cleared under running builds. A cross-target
+    # --build-ide whose PrimaryConfigPath vanishes mid-run can complete without
+    # linking an IDE at all. Keep both under a real filesystem.
+    local build_state="$BUILD_STATE_DIR"
+    mkdir -p "$build_state"
+    local wrapper="$build_state/ppc${cpu_target}-darwin-wrapper"
+    local pcp="$build_state/lazbuild-pcp-${target}"
 
     echo "=== Building Darwin IDE for $target ==="
 
@@ -207,7 +1239,7 @@ build_darwin_ide() {
     # only as long as lazbuild's fpcdefines.xml cache covered the wrapper path.
     cat > "$wrapper" << EOF
 #!/bin/bash
-exec $compiler -n @$cfg "\$@"
+exec "$compiler" -n @"$cfg" "\$@"
 EOF
     chmod +x "$wrapper"
 
@@ -216,17 +1248,50 @@ EOF
     # staticpackages.inc keeps the user-install list deterministic across runs.
     rm -rf "$pcp"
     mkdir -p "$pcp"
+    # A previous roll's staged IDE binary must not be able to reach packaging if
+    # THIS build fails. require_fresh_artifact would catch it on mtime; not leaving
+    # it lying there at all is one fewer way to publish the wrong binary.
+    rm -f "$(get_darwin_ide_binary "$target")"
 
     # Build IDE with customdrawn LCL controls installed by default (GOD mp3l6s84:
     # "I want to have customdrawn LCL controls as a default fucking package").
     # --add-package registers + links customdrawn; --build-ide (NOT --build-ide-minimal)
     # is required because TBuildIDE.Minimal skips LoadAutoInstallPackages.
-    set -o pipefail
-    "$LAZARUS_DIR/lazbuild" --pcp="$pcp" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
+    # `--build-ide 2>&1 | tail -40` kept only the last 40 lines -- all of them
+    # routine unit compiles -- so a run that produced no "Linking" line and no
+    # IDE binary was indistinguishable from a good one. Keep the whole log.
+    run_build_step "darwin-ide-$target" "Linking|lines compiled|Fatal|Error|Fatal:" -- \
+        "$LAZARUS_DIR/lazbuild" --pcp="$pcp" --lazarusdir="$LAZARUS_DIR" --compiler="$wrapper" \
         --cpu="$cpu_target" --os=darwin --ws=cocoa \
         --add-package "$LAZARUS_DIR/components/customdrawn/customdrawn.lpk" \
-        --build-ide 2>&1 | tail -40
-    set +o pipefail
+        --build-ide
+
+    # Exit status alone is not evidence -- assert the artifact, at the step that
+    # produces it rather than three functions downstream.
+    #
+    # The absent "Linking" line that prompted this check was a LOGGING artifact,
+    # not a build failure (Bruno, 2026-09-10, full-log re-run): the IDE link
+    # happens ~400 lines before lazbuild's last output, so `| tail -40` never
+    # showed it. The build was fine; the PICKUP PATH was wrong. Both are fixed.
+    local built_ide="$pcp/bin/${target}/lazarus"
+    if ! require_fresh_artifact "$built_ide" "Darwin IDE binary for $target"; then
+        echo "       lazbuild --build-ide reported success but produced no fresh IDE binary."
+        return 1
+    fi
+
+    # Lift it out of the pcp BEFORE the teardown at the end of this function
+    # removes it. -p so the staged copy keeps the link mtime and the downstream
+    # freshness asserts still measure when the IDE was LINKED, not when it was
+    # copied -- a copy-time mtime would pass require_fresh_artifact by construction
+    # and quietly turn it back into a presence check.
+    local staged_ide
+    staged_ide=$(get_darwin_ide_binary "$target")
+    mkdir -p "$(dirname "$staged_ide")"
+    rm -f "$staged_ide"
+    if ! cp -p "$built_ide" "$staged_ide"; then
+        echo "ERROR: could not stage the $target IDE binary out of the build pcp." >&2
+        return 1
+    fi
 
     # Rewrite the build-side wrapper path in every .compiled state file so user
     # invocations of `lazbuild --compiler=<tarball>/compiler/ppcX` don't trip
@@ -264,11 +1329,40 @@ EOF
     # user-side rebuild.
     local compiled_file
     local mtime_ref
+    # MATCH ON THE WRAPPER'S BASENAME, NOT ITS ABSOLUTE PATH, AND FIND THE FILES
+    # WITH find(1) RATHER THAN grep -r. Measured 2026-09-11 against the SHIPPED
+    # x86_64-darwin asset of release 372618806: this loop processed ZERO files and
+    # 36 of its 244 .compiled members went out carrying
+    # `Value="../../../../../.cache/lazarus-build/ppcx86_64-darwin-wrapper" Date="..."`
+    # plus an un-stripped `-Tdarwin` in Params -- i.e. BOTH Melissa C326 finding 3
+    # and Melissa C18 finding 2, live in a published release. The cause, and then
+    # why discovery moved from grep -r to find(1), which is NOT a second cause:
+    #   1. THE CAUSE, sufficient on its own. lazbuild stores the compiler path
+    #      RELATIVE to the .compiled file, so an absolute "$wrapper" pattern can
+    #      never match. Zero files in the tree carry the absolute form; all 36 carry
+    #      a ../../../.. form, and the number of .. segments varies with the file's
+    #      depth, so no single literal ever could. files-processed 0 -> 36 is the
+    #      proof, and it is the only thing the fix rests on.
+    #   2. WHY find(1). It has NO ignore semantics under ANY grep, so this loop is
+    #      immune to whichever grep a caller's environment supplies. That is worth
+    #      buying because the environment really does vary here: an INTERACTIVE
+    #      AGENT SHELL on lazdev has `grep` as a bash function dispatching to ugrep
+    #      7.8.4, which does skip gitignored paths (`grep -rl --include='*.compiled'
+    #      CONFIG .` -> 85 of 206). THAT IS A PROPERTY OF THAT SHELL, NOT OF THIS
+    #      BOX. The function is not exported, so a plain .sh like this one gets
+    #      /usr/bin/grep (GNU grep 3.11) and sees all 206. grep -r in a build script
+    #      here is NOT blind, and grep -r call sites elsewhere do NOT need rewriting.
+    # -print0 is portable and the per-file grep -q is a plain non-recursive match,
+    # identical under GNU grep and ugrep. The basename is [A-Za-z0-9_-] only, so it
+    # needs no regex quoting.
+    local wrapper_base
+    wrapper_base=$(basename "$wrapper")
     while IFS= read -r -d '' compiled_file; do
+        grep -q "$wrapper_base" "$compiled_file" 2>/dev/null || continue
         mtime_ref=$(mktemp)
         touch -r "$compiled_file" "$mtime_ref"
         if sed -i \
-            -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g" \
+            -e "s|Value=\"[^\"]*${wrapper_base}\"\( Date=\"[0-9]*\"\)\{0,1\}|Value=\"\$(LazarusDir)compiler/${user_compiler_name}\"|g" \
             -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/ \+"/"/g' \
@@ -279,7 +1373,7 @@ EOF
             rm -f "$mtime_ref"
             return 1
         fi
-    done < <(grep -rlZ --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null || true)
+    done < <(find "$LAZARUS_DIR" -name '*.compiled' -type f -print0 2>/dev/null)
 
     rm -f "$wrapper"
     rm -rf "$pcp"
@@ -354,12 +1448,17 @@ rewrite_bgra_compiled_state() {
     local compiled_file=""
     local mtime_ref=""
     local replacement="\$(LazarusDir)compiler/${compiler_name}"
+    # Same defect and same fix as build_darwin_ide -- see the long comment there.
+    # This site had the extra no-Date arm already, which is why it looked correct;
+    # it was not, because BOTH arms anchored on the absolute "$wrapper".
+    local wrapper_base
+    wrapper_base=$(basename "$wrapper")
     while IFS= read -r -d '' compiled_file; do
+        grep -q "$wrapper_base" "$compiled_file" 2>/dev/null || continue
         mtime_ref=$(mktemp)
         touch -r "$compiled_file" "$mtime_ref"
         if sed -i \
-            -e "s|Value=\"${wrapper}\" Date=\"[0-9]*\"|Value=\"${replacement}\"|g" \
-            -e "s|Value=\"${wrapper}\"|Value=\"${replacement}\"|g" \
+            -e "s|Value=\"[^\"]*${wrapper_base}\"\( Date=\"[0-9]*\"\)\{0,1\}|Value=\"${replacement}\"|g" \
             -e '/Params Value=/ s/-T[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/-P[A-Za-z0-9_]\+ *//g' \
             -e '/Params Value=/ s/ \+"/"/g' \
@@ -375,10 +1474,10 @@ rewrite_bgra_compiled_state() {
     # as dependencies -- stamping THEIR .compiled files with the wrapper path
     # too (Melissa r18 aarch64-darwin F7, 2026-05-19: 11 core packages carried
     # the stale /tmp/lazrelease-*-compiler-wrapper path + -Tdarwin Params). A
-    # subdir-scoped grep missed them. grep -l only returns files that CONTAIN
-    # "$wrapper", so widening to $LAZARUS_DIR is a no-op for already-clean
-    # state files. Mirrors build_darwin_ide's rewrite scope.
-    done < <(grep -rlZ --include='*.compiled' "$wrapper" "$LAZARUS_DIR" 2>/dev/null || true)
+    # subdir-scoped scan missed them. Widening to $LAZARUS_DIR is a no-op for
+    # already-clean state files because the per-file grep -q above skips any file
+    # that does not contain the wrapper basename. Mirrors build_darwin_ide's scope.
+    done < <(find "$LAZARUS_DIR" -name '*.compiled' -type f -print0 2>/dev/null)
 }
 
 verify_bgra_release_package_outputs() {
@@ -426,8 +1525,45 @@ verify_bgra_release_package_outputs() {
 build_bgra_release_packages() {
     local target=$1
     local cfg=$2
+    # Same exec-target hardening as build_darwin_ide (:987), for the same measured
+    # reason: this wrapper's `exec "$compiler"` puts the exec'd binary's directory
+    # on the unit path, and $VP_DIR/compiler holds 207 .pas files. Resolved, never
+    # the wrapper's own path, so lazbuild still sees the same --compiler string.
+    #
+    # THIS IS DEFENSIVE, NOT CORRECTIVE -- it fixes nothing that is broken today,
+    # and no re-roll is owed for it. Measured by Bruno (BuildMaster_lazdev)
+    # 2026-09-11 through a wrapper emitted by THIS function, on every live target
+    # rather than the one Lars measured:
+    #
+    #   target          unit paths   compiler/ dir lands at
+    #   x86_64-linux       149            149 of 149
+    #   x86_64-win64       113            113 of 113   (needs -Twin64 to reach a .ppu)
+    #   aarch64-linux      145            145 of 145
+    #   arm-linux          144            144 of 144
+    #   x86_64-darwin      158            158 of 158   (reproduces Lars's number)
+    #
+    # So the exposure is identical on all five arms and it is always LAST, and a
+    # command-line -Fu lands FIRST (measured: entry 1 of 150) -- so every path
+    # lazbuild passes per package outranks it. The compiler's own sources are
+    # reachable only as a LAST RESORT, for a unit nothing else on the path holds.
+    #
+    # WHY IT CANNOT BITE THIS FUNCTION TODAY, AND WHY THAT IS NOT A REASON TO SKIP
+    # IT. The 207 compiler source names collide with exactly three of the 3,657
+    # unit names in this tree -- macho (components/fpdebug), compiler
+    # (ide/packages/ideconfig) and tokens (components/jcf2/Parse; needs a
+    # case-INSENSITIVE find). All three are in the IDE closure, which is why
+    # build_darwin_ide needed this. NONE of the three is in the BGRA closure: the
+    # three .lpk seeds resolve to 14 packages by RequiredPkgs, and none holds any
+    # of those units. The realized risk here is currently ZERO on every target.
+    #
+    # It goes in anyway for two reasons that outlive that measurement. (1) This
+    # function runs for EVERY target INCLUDING darwin (:2548), so without it one
+    # roll resolves the compiler two different ways for the same target, and the
+    # next reader of :987 will reasonably assume this site matches. (2) The closure
+    # is not frozen -- it already pulls in debuggerintf and ideintf, and the day it
+    # grows fpdebug the exposure becomes live with nothing to announce it.
     local compiler
-    compiler=$(get_compiler_for_target "$target")
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
     local os_target=$(echo "$target" | cut -d- -f2)
     local cpu_target=$(echo "$target" | cut -d- -f1)
     local widget
@@ -488,24 +1624,48 @@ EOF
 build_darwin_starter() {
     local target=$1
     local cfg=$2
-    local compiler=$(get_compiler_for_target "$target")
+    # Hardened like build_lazbuild above; this is a make PP= site too. It is
+    # DARWIN, which is where the hazard is not merely theoretical: the two
+    # darwin cfgs are the ONLY ones of the six that carry -Fu lines outside
+    # $VP_DIR (38 each, into this tree; the four non-darwin cfgs carry zero),
+    # and all six are untracked, so that immunity can drift away unversioned.
+    local compiler
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
 
     echo "=== Building Darwin startlazarus for $target ==="
     local os_target=$(echo "$target" | cut -d- -f2)
     local cpu_target=$(echo "$target" | cut -d- -f1)
 
-    make -C "$LAZARUS_DIR" starter \
+    # -weak_framework UserNotifications: startlazarus links the cocoa widgetset,
+    # and cocoawsextctrls references five UserNotifications.framework ObjC classes
+    # (UNUserNotificationCenter, UNMutableNotificationContent, UNNotificationRequest,
+    # UNNotificationSound, UNTimeIntervalNotificationTrigger) from
+    # TCocoaWSCustomTrayIcon.newUserNotify. That framework is declared ONLY as
+    # UsageLinkerOptions in lcl/interfaces/lcl.lpk, which the package system
+    # applies -- so lazbuild-built targets link and make-built ones do not. This
+    # is why startlazarus has been absent from every darwin .app we have shipped.
+    # WEAK, matching the .lpk: the call site has no runtime availability guard,
+    # so hard-linking would break app LOAD on macOS older than 10.14.
+    # Non-fatal on purpose: a missing startlazarus degrades the bundle, whereas
+    # aborting the roll ships nothing at all. The copy sites assert freshness, so
+    # a failure here can no longer produce a symlink to a file we never bundled.
+    if ! run_build_step "darwin-starter-$target" "Linking|lines compiled|Fatal|Error|Undefined symbols|symbol\(s\) not found" -- \
+        make -C "$LAZARUS_DIR" starter \
         PP="$compiler" \
         FPCDIR="$VP_DIR" \
         OS_TARGET="$os_target" \
         CPU_TARGET="$cpu_target" \
-        OPT="-n @$cfg" LCL_PLATFORM=cocoa 2>&1 | tail -10
+        OPT="-n @$cfg -k-weak_framework -kUserNotifications" LCL_PLATFORM=cocoa; then
+        echo "WARNING: startlazarus did not build for $target; the .app will ship without it."
+    fi
 }
 
 build_darwin_lhelp() {
     local target=$1
     local cfg=$2
-    local compiler=$(get_compiler_for_target "$target")
+    # Hardened like build_darwin_starter above; same make PP= shape, same arm.
+    local compiler
+    compiler=$(resolve_exec_compiler "$(get_compiler_for_target "$target")")
 
     echo "=== Building Darwin lhelp for $target ==="
     local os_target=$(echo "$target" | cut -d- -f2)
@@ -563,6 +1723,48 @@ sign_darwin_app_machos() {
         fi
     done < <(find "$app_root" -type f -perm /111 -print0)
     echo "Signed $signed_count Mach-O file(s) inside $(basename "$app_root")."
+}
+
+stamp_shipped_compiler_hashes() {
+    # COMPILER_NOTES.txt is written when the compiler is COPIED into staging, but darwin
+    # packaging then ad-hoc signs every bundled Mach-O (sign_darwin_app_machos), and the
+    # bundled compiler is hard-linked into the .app by `cp -al`, so that signature rewrites
+    # the top-level compiler/ppc* too. The md5 the notes declare -- taken from the UNSIGNED
+    # staging binary and quoted as "matches VERSION.txt" -- therefore never matches the file
+    # that ships: the 2026-09-10 x86_64 tarball documents 29f2a740e3e79c1dd168843d0ad0f7e8
+    # while compiler/ppcx64 inside the archive is 3f10e570fcad85205276ce7fd3ce52c5 (both
+    # measured; running `rcodesign sign` on the staged copy reproduces the shipped hash and
+    # size exactly). A user who verifies the documented hash concludes the download is
+    # corrupt. Stamp the AS-SHIPPED digests last, after every mutation, so the notes
+    # describe the artifact instead of an intermediate.
+    local staging=$1
+    local notes="$staging/COMPILER_NOTES.txt"
+    local header_written=0
+    local compiler_bin=""
+
+    [ -f "$notes" ] || return 0
+    for compiler_bin in "$staging"/compiler/ppc*; do
+        [ -f "$compiler_bin" ] || continue
+        if [ "$header_written" -eq 0 ]; then
+            {
+                echo ""
+                echo "AS SHIPPED IN THIS TARBALL"
+                echo "--------------------------"
+                echo "Digests of the bundled compiler(s) as they exist in this archive, computed"
+                echo "after packaging finished. Darwin packaging ad-hoc signs every bundled Mach-O"
+                echo "with rcodesign, which appends a code signature and CHANGES the file's hash,"
+                echo "so any md5/sha256 quoted above (those describe the unsigned staging binary,"
+                echo "or VibePascal's own VERSION.txt) will NOT match what you received. These do:"
+            } >> "$notes"
+            header_written=1
+        fi
+        {
+            echo "  compiler/$(basename "$compiler_bin")"
+            echo "    size   $(stat -c%s "$compiler_bin") bytes"
+            echo "    md5    $(md5sum "$compiler_bin" | cut -d' ' -f1)"
+            echo "    sha256 $(sha256sum "$compiler_bin" | cut -d' ' -f1)"
+        } >> "$notes"
+    done
 }
 
 rewrite_darwin_lpk_output_dirs() {
@@ -728,16 +1930,44 @@ strip_stale_host_arch_artifacts() {
     # built in the shared workdir. The targeted strips above only cover the
     # test/BGRA/mouse/lhelp leaks; this catch-all removes any NON-target arch's
     # units|lib state tree so the tarball ships only its own arch's .compiled/
-    # .ppu/.o. The fully-anchored regex matches only clean arch-token leaf dirs
-    # (e.g. units/x86_64-darwin) -- never the widget-suffixed BGRA dirs
-    # (lib/<target>-gtk2-<hash>) handled above, nor arch-neutral Makefile.compiled
-    # at package roots. -prune stops find descending into a dir we then rm.
+    # .ppu/.o. -prune stops find descending into a dir we then rm.
+    #
+    # The optional (-[^/]*)? suffix is REQUIRED, not cosmetic. This regex was
+    # originally anchored at the bare arch token on the theory that a widget
+    # suffix meant "BGRA dir, already handled above". That was wrong, and it
+    # shipped: r25's aarch64-darwin tarball still carried 202 x86_64-darwin files
+    # (incl. 4 orphan .compiled) from components/virtualtreeview/lib/ and
+    # components/lclextensions/lib/, whose dirs are named <arch>-<widget>
+    # (x86_64-darwin-cocoa) and are covered by NO targeted strip above. Verified
+    # 2026-09-10 by listing the shipped r25 tarball. A widget suffix says nothing
+    # about which ARCH the dir belongs to -- so match the suffix and decide on the
+    # arch token instead.
+    #
+    # Hence the keep-guard is PREFIX-aware ($target or $target-$widget*), not
+    # equality: aarch64-darwin-cocoa must survive an aarch64-darwin build. The
+    # suffix is pinned to THIS target's widget rather than left open as $target-*,
+    # so a right-arch/WRONG-widget dir (aarch64-darwin-gtk2 in an aarch64-darwin
+    # build) is stripped as well. Outside the two BGRA libroots that shape is
+    # covered by no targeted strip above: components/virtualtreeview/lib and
+    # components/lclextensions/lib name their dirs <arch>-<widget>, so a
+    # $target-* guard would ship a wrong-widget lib dir -- the same stale-unit
+    # class this whole function exists to keep off the search path.
+    # Measured 2026-09-10 over BOTH the real shipped r25 tarball landscape and
+    # the live workdir landscape, all 6 targets: pinning the widget changes
+    # NOTHING that exists today (survivor sets byte-identical to the $target-*
+    # form in all 12 runs). With a wrong-widget dir planted in those two libroots
+    # the $target-* form keeps it while this form removes it and leaves every
+    # right-widget dir intact.
     local cross_arch_dir=""
+    local cross_arch_base=""
     while IFS= read -r -d '' cross_arch_dir; do
-        [ "$(basename "$cross_arch_dir")" = "$target" ] && continue
+        cross_arch_base=$(basename "$cross_arch_dir")
+        case "$cross_arch_base" in
+            "$target"|"$target"-"$widget"*) continue ;;
+        esac
         rm -rf "$cross_arch_dir"
     done < <(find "$staging" -type d -regextype posix-extended \
-        -regex '.*/(units|lib)/(x86_64|aarch64|arm|i386)-(linux|darwin|win64|win32)' \
+        -regex '.*/(units|lib)/(x86_64|aarch64|arm|i386)-(linux|darwin|win64|win32)(-[^/]*)?' \
         -prune -print0 2>/dev/null)
 }
 
@@ -747,26 +1977,389 @@ create_darwin_app_bundle() {
 
     echo "=== Creating Lazarus.app for $target ==="
     local app_name="lazarus-${cpu_target}-darwin.app"
-    local pcp_bin="$HOME/.lazarus/bin/${target}/lazarus"
+    local pcp_bin="$(get_darwin_ide_binary "$target")"
 
     rm -rf "$LAZARUS_DIR/$app_name"
     cp -r "$LAZARUS_DIR/lazarus.app" "$LAZARUS_DIR/$app_name"
     mkdir -p "$LAZARUS_DIR/$app_name/Contents/MacOS"
     rm -f "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus"
 
-    # Copy IDE binary (from lazbuild primary config path or fallback)
-    if [ -f "$pcp_bin" ]; then
-        cp "$pcp_bin" "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus"
-    else
-        echo "WARNING: IDE binary not found at $pcp_bin"
+    # Copy IDE binary. FATAL if it is not fresh: this guard used to be a bare
+    # `[ -f "$pcp_bin" ]`, and a roll was caught about to package an IDE binary
+    # four months old because the file merely existed. Shipping nothing beats
+    # shipping a stale IDE under a new version number.
+    if ! require_fresh_artifact "$pcp_bin" "IDE binary for $target"; then
+        return 1
     fi
+    cp "$pcp_bin" "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus"
 
-    # Copy startlazarus
-    if [ -f "$LAZARUS_DIR/startlazarus" ]; then
+    # Copy startlazarus. Non-fatal, but freshness still required: the tree root
+    # holds ONE startlazarus for all targets, so a failed link here after a
+    # successful one for the other target would otherwise copy the WRONG
+    # ARCHITECTURE's binary into this bundle.
+    if require_fresh_artifact "$LAZARUS_DIR/startlazarus" "startlazarus for $target"; then
         cp "$LAZARUS_DIR/startlazarus" "$LAZARUS_DIR/$app_name/Contents/MacOS/startlazarus"
+    else
+        echo "WARNING: bundling $app_name WITHOUT startlazarus."
     fi
 
     file "$LAZARUS_DIR/$app_name/Contents/MacOS/lazarus" 2>/dev/null || true
+}
+
+get_latest_darwin_bin_tarball() {
+    # Newest VERSIONED darwin compiler tarball for $1, or nothing at all.
+    #
+    # Deliberately written in get_latest_win64_bin_tarball's shape -- parse v<N>, sort
+    # NUMERICALLY -- and not in a cleverer one. get_latest_darwin_native_dir's header
+    # spends a paragraph on why: a git sha carries no ordering, so a lexicographic sort
+    # ranks two same-day builds by the hex of their commit, and it looks completely
+    # healthy whichever way it lands. Two halves of one script disagreeing about what
+    # "latest" means is the drift that produced the darwin IDE pickup bug.
+    #
+    # Two tarballs sharing one v<N> would still tie here, exactly as they can on the
+    # win64 path. That is NOT covered by this selector and I am not claiming it is --
+    # it is covered downstream: a coin flip that picks the wrong v59 loses the md5
+    # comparison against dist/$target/VERSION.txt and is REJECTED loudly.
+    local target=$1
+    find "$VP_DIR/dist/$target" -maxdepth 1 -type f \
+         -name "vibepascal-v*-${target}-bin.tar.gz" 2>/dev/null |
+        while IFS= read -r tarball; do
+            local base version
+            base=$(basename "$tarball")
+            version=${base#vibepascal-v}
+            version=${version%%-*}
+            case "$version" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            printf '%08d %s\n' "$version" "$tarball"
+        done |
+        sort -n |
+        tail -1 |
+        cut -d' ' -f2-
+}
+
+declared_md5_for_dist_member() {
+    # Print the md5 that VERSION.txt $1 declares for member bin/$2. Empty = no declaration.
+    #
+    # THIS IS NOT THE ONE-LINE awk THE darwin-native PATH USES BELOW, AND IT MUST NOT BE.
+    # The two files carry the same fact in different SHAPES. A darwin-native staging
+    # VERSION.txt puts the hash on the Binary line itself:
+    #     Binary: bin/ppcx64  md5 <hash>
+    # Otto's dist VERSION.txt puts SIZE there and the hash on a CONTINUATION line:
+    #     Binary: bin/ppcx64  size   9269400
+    #                         md5    a1a5e4639ca5118b58245285f05eca2e
+    #                         sha256 2ce1bfae552a40cb...
+    # Measured on dist/{x86_64,aarch64}-darwin/VERSION.txt at v59 on 2026-09-18. Run the
+    # one-line awk against those and it returns EMPTY -- and empty means "no declaration"
+    # to the caller, which SKIPS the D003 check while still looking like it ran. A guard
+    # that cannot fire is worse than no guard, and that is the whole reason this exists.
+    #
+    # A LOOSE FILE-WIDE `grep md5` WOULD BE WORSE THAN NOTHING HERE. dist/x86_64-darwin's
+    # VERSION.txt names FOUR md5s and the FIRST one is not the member: line 9 is the
+    # linux-hosted ppcx64 that DROVE the cross-build (12220bfd5b3a...). A loose grep
+    # compares the member against the driver and rejects a perfectly good compiler.
+    #
+    # So: anchor on the Binary line naming exactly this member, read md5 out of that
+    # line if it is there, else out of its indented continuation block, and stop at the
+    # first line that is not indented continuation (which includes the blank line).
+    local version_txt=$1 exename=$2
+    [ -f "$version_txt" ] || return 0
+    awk -v n="$exename" '
+        $1 == "Binary:" {
+            inblock = ($2 == "bin/" n)
+            if (inblock) { for (i = 3; i <= NF; i++) if ($i == "md5") { print $(i+1); exit } }
+            next
+        }
+        inblock && $0 !~ /^[[:space:]]/ { exit }
+        inblock && $1 == "md5" { print $2; exit }
+    ' "$version_txt"
+}
+
+stage_darwin_compiler_from_dist_tarball() {
+    # Bundle the native macOS-hosted compiler out of Otto's VERSIONED dist tarball.
+    # $1 staging  $2 target  $3 native exename  $4 expected `file` arch substring
+    # rc: 0 = staged and both guards passed
+    #     1 = nothing to try (no tarball, or no such member) -- caller reports DEGRADED
+    #     2 = a candidate was found and REJECTED; COMPILER_NOTES.txt already says why
+    #
+    # WHY THIS EXISTS. copy_native_darwin_compiler_to_staging reads exactly ONE place,
+    # $VP_DIR/dist/darwin-native, and that directory does not exist on this build host
+    # (re-stat'ed 2026-09-18). Meanwhile dist/x86_64-darwin and dist/aarch64-darwin each
+    # carry a real macOS-hosted compiler -- classified by file(1), never inferred from the
+    # name: bin/ppcx64 is "Mach-O 64-bit x86_64 executable" at 9,269,400 B and bin/ppca64
+    # is "Mach-O 64-bit arm64" at 7,333,274 B, both v59. So "there is no Mac compiler to
+    # bundle" was TRUE OF THE PATH THE ROLL LOOKS AT and FALSE ABOUT THE BOX.
+    #
+    # This is the same source-of-truth copy_win64_compiler_to_staging has used since D003:
+    # a tracked, versioned tarball instead of a mutable staging directory.
+    #
+    # IT IS A FALLBACK, NOT A REPLACEMENT. dist/darwin-native still wins whenever it has
+    # a build for the target, so a natively-built compiler appearing there later is not
+    # preempted by this -- and neither is anyone's decision about whether to produce one.
+    #
+    # BOTH GUARDS OF THE PRIMARY PATH SURVIVE HERE AND NEITHER IS WEAKENED:
+    #   D003: the member's md5 must equal what that dist dir's own VERSION.txt declares
+    #         for it. r16 shipped a v39 compiler announced as v42 because packaging
+    #         checked shape and never content.
+    #   arch: file -b must match $4. A FILENAME IS NOT EVIDENCE -- compiler/ppcarm was an
+    #         x86_64 ELF in the shared tree for exactly this reason, and the release-gate
+    #         half of that story is e4eafa2a42.
+    # Either guard failing REMOVES the compiler and writes the reason to
+    # COMPILER_NOTES.txt: a tarball with no compiler and a note explaining why beats one
+    # carrying a compiler that cannot run.
+    local staging=$1 target=$2 exename=$3 arch_pattern=$4
+    local notes="$staging/COMPILER_NOTES.txt"
+    local out="$staging/compiler/$exename"
+    local tarball member declared actual
+
+    tarball=$(get_latest_darwin_bin_tarball "$target")
+    if [ -z "$tarball" ]; then
+        echo "WARNING: no vibepascal-v*-${target}-bin.tar.gz under $VP_DIR/dist/$target either." >&2
+        return 1
+    fi
+
+    member=$(tar -tzf "$tarball" | awk -v n="$exename" '$0 ~ "(^|/)bin/" n "$" { print; exit }')
+    if [ -z "$member" ]; then
+        echo "WARNING: $(basename "$tarball") does not contain bin/$exename." >&2
+        return 1
+    fi
+
+    tar -xOzf "$tarball" "$member" > "$out" || { rm -f "$out"; return 1; }
+
+    declared=$(declared_md5_for_dist_member "$(dirname "$tarball")/VERSION.txt" "$exename")
+    actual=$(md5sum "$out" | cut -d' ' -f1)
+    if [ -n "$declared" ] && [ "$declared" != "$actual" ]; then
+        echo "ERROR: $exename md5 $actual does not match $declared declared for bin/$exename" >&2
+        echo "       in dist/$target/VERSION.txt. Not bundling it." >&2
+        rm -f "$out"
+        {
+            echo "NOTE: native $target compiler REJECTED (md5 mismatch against the md5"
+            echo "dist/$target/VERSION.txt declares for bin/$exename). Not bundled."
+            echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately."
+        } > "$notes"
+        return 2
+    fi
+
+    if ! file -b "$out" | grep -q "$arch_pattern"; then
+        echo "ERROR: $exename from $(basename "$tarball") is not a $target binary: $(file -b "$out")" >&2
+        rm -f "$out"
+        {
+            echo "NOTE: native $target compiler REJECTED (wrong architecture). Not bundled."
+            echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately."
+        } > "$notes"
+        return 2
+    fi
+
+    chmod +x "$out"
+    {
+        echo "Bundled native $target VibePascal compiler from $(basename "$tarball")."
+        echo "  md5:  $actual${declared:+ (matches the md5 dist/$target/VERSION.txt declares)}"
+        echo "  arch: $(file -b "$out")"
+        echo "  Source: the versioned dist tarball, because $VP_DIR/dist/darwin-native holds"
+        echo "  no vibepascal-native-${target}-* build. That tarball is the same versioned"
+        echo "  source-of-truth the Win64 compiler has used since D003."
+        echo "  The md5 above is the UNSIGNED staging binary, which is what this guard checked."
+        echo "  For the digests of the file actually in this tarball, read the AS-SHIPPED block"
+        echo "  that stamp_shipped_compiler_hashes appends below."
+    } > "$notes"
+    echo "Bundled native $target compiler $exename from $(basename "$tarball")."
+    return 0
+}
+
+get_latest_darwin_native_dir() {
+    # Pick the newest macOS-hosted VibePascal compiler staging dir for $1 (a darwin target).
+    # Prints the path. rc: 0 = found, 1 = none staged, 2 = AMBIGUOUS (two tie for newest).
+    #
+    # WHY THIS IS NOT `sort | tail -1`, which is what it replaces: the names are
+    # vibepascal-native-<target>-<YYYYMMDD>[-v<N>]-<git-sha>, and a git sha carries NO
+    # ordering. A lexicographic sort therefore ranks two same-day builds by the hex of
+    # their commit -- a coin flip, and it looks completely healthy whichever way it lands.
+    # On 2026-09-10 it came up heads only because Otto tagged the newer directory: v56 is
+    # sha a187bbac34, v55 is eae5d3e919, same date, and 'a' sorts before 'e'. Untagged,
+    # `tail -1` would have bundled the OLDER compiler into both Mac tarballs and nothing
+    # anywhere would have said so. That is D003 exactly -- r16 shipped a v39 compiler
+    # announced as v42, because packaging checked shape and never content.
+    #
+    # The linux half of this script has never had the hole: get_latest_vp_bin_tarball
+    # parses v<N> and sorts NUMERICALLY. Two halves of one script disagreeing about what
+    # "latest" means is the same drift that produced the darwin IDE pickup bug, so this is
+    # deliberately written in that function's shape rather than a cleverer one.
+    #
+    # Key is (date, version), both numeric, version 0 when the name carries no -v<N>-.
+    # If the top two candidates TIE on that key, the names genuinely do not say which is
+    # newer, so this REFUSES instead of guessing: the caller then ships a tarball with no
+    # compiler and a note saying why -- loud and recoverable -- instead of a 50/50 pick
+    # that ships silently. The fix for a tie is one rename by whoever staged the build.
+    local target=$1 ranked top second top_path second_path
+    ranked=$(find "$VP_DIR/dist/darwin-native" -maxdepth 1 -type d \
+                  -name "vibepascal-native-${target}-*" 2>/dev/null |
+        while IFS= read -r dir; do
+            local base rest date_part version
+            base=$(basename "$dir")
+            rest=${base#vibepascal-native-${target}-}
+            date_part=${rest%%-*}
+            case "$date_part" in
+                ''|*[!0-9]*) continue ;;
+            esac
+            version=0
+            case "$rest" in
+                *-v[0-9]*)
+                    version=${rest#*-v}
+                    version=${version%%-*}
+                    case "$version" in
+                        ''|*[!0-9]*) version=0 ;;
+                    esac
+                    ;;
+            esac
+            printf '%s %08d %s\n' "$date_part" "$version" "$dir"
+        done |
+        sort -k1,1n -k2,2n)
+
+    [ -z "$ranked" ] && return 1
+
+    top=$(printf '%s\n' "$ranked" | tail -1)
+    second=$(printf '%s\n' "$ranked" | tail -2 | head -1)
+    top_path=$(printf '%s\n' "$top" | cut -d' ' -f3-)
+    second_path=$(printf '%s\n' "$second" | cut -d' ' -f3-)
+    if [ "$top" != "$second" ] && \
+       [ "$(printf '%s\n' "$top" | cut -d' ' -f1,2)" = "$(printf '%s\n' "$second" | cut -d' ' -f1,2)" ]; then
+        echo "ERROR: cannot tell which $target compiler is newest -- these tie on date+version:" >&2
+        echo "         $(basename "$top_path")" >&2
+        echo "         $(basename "$second_path")" >&2
+        echo "       A git sha does not sort. Rename one to carry its version segment" >&2
+        echo "       (vibepascal-native-${target}-<date>-v<N>-<sha>) and re-run." >&2
+        return 2
+    fi
+    printf '%s\n' "$top_path"
+}
+
+copy_native_darwin_compiler_to_staging() {
+    # Bundle the NATIVE macOS-hosted VibePascal compiler for a darwin target.
+    # $1 staging  $2 target  $3 native exename  $4 expected `file` arch substring
+    #
+    # This is the darwin twin of copy_native_linux_compiler_to_staging, and it exists
+    # because the two darwin arms it replaces had NEITHER of that function's guards:
+    # they tested -x and copied. Otto flagged the asymmetry; the call was mine.
+    # Deciding it needed the numbers from a real roll, and the 2026-09-10 re-roll
+    # supplied them.
+    #
+    # THE GUARD MUST RUN HERE, AT COPY TIME, AND NOWHERE LATER. sign_darwin_app_binaries
+    # rewrites this file in place with `rcodesign sign` further down the roll, so after
+    # that point the shipped bytes CANNOT equal the md5 VERSION.txt declares -- the
+    # signature is real content, ~900KB of it on the IDE binary. A check placed after
+    # signing fails on a perfectly good compiler, and the obvious "fix" is to delete the
+    # check. Measured on the 2026-09-10 roll: staged ppcx64 29f2a740e3e79c1dd168843d0ad0f7e8
+    # ships as 3f10e570fcad85205276ce7fd3ce52c5, and signing a copy of the staged binary
+    # reproduces the shipped bytes exactly. Anything auditing the PACKAGED tarball has to
+    # reproduce the signature rather than compare against VERSION.txt.
+    #
+    # Same two failure modes as the linux side, and both are silent without the guards:
+    #   D003: a stale or swapped member ships unnoticed -- r16 shipped a v39 compiler
+    #         announced as v42 because packaging checked shape and never content.
+    #   arch: exename is not evidence of architecture. compiler/ppcarm was an x86_64 ELF
+    #         in the shared tree for exactly this reason.
+    # Either guard failing REMOVES the compiler and says so in COMPILER_NOTES.txt. A
+    # tarball with no compiler and a note explaining why beats one carrying a compiler
+    # that cannot run -- r25's darwin pair shipped the note without the explanation and
+    # the guessed cause was read downstream as current fact for months.
+    local staging=$1 target=$2 exename=$3 arch_pattern=$4
+    local notes="$staging/COMPILER_NOTES.txt"
+    local native_dir declared actual out="$staging/compiler/$exename"
+    local sel_rc=0
+    local fb_rc=0
+
+    # `|| sel_rc=$?` is load-bearing, not defensive noise. A bare
+    #     native_dir=$(get_latest_darwin_native_dir "$target")
+    # is a SIMPLE COMMAND under this script's `set -e`, so on the rc=2 (ambiguous)
+    # return the shell exits AT THE ASSIGNMENT and the branch below never runs. Today
+    # that is masked because both call sites in package_release wrap this function in
+    # `|| true`, which suspends errexit for the call's whole dynamic extent -- so the
+    # degraded path works by accident of the CALLER rather than by anything here.
+    # Driven both ways against a genuine tie fixture:
+    #   with the caller's `|| true`: rc=2 branch runs, COMPILER_NOTES.txt written, warnings print
+    #   without it (bare call):      script DIES here, rc=2, NO note, NO warning -- a silent
+    #                                exit 2 with no diagnosis, the exact opposite of the point
+    # Capturing the status makes the diagnosis independent of how we are called.
+    # (The linux twin needs no such fix: get_latest_vp_bin_tarball ends in a `cut`
+    # pipeline, always rc=0, and its caller guards on emptiness rather than on `$?`.)
+    native_dir=$(get_latest_darwin_native_dir "$target") || sel_rc=$?
+    if [ "$sel_rc" -eq 2 ]; then
+        # Ambiguous, not missing. The shipped note must say which one it is: r25's darwin
+        # pair shipped a note that guessed a cause, and the guess was read downstream as a
+        # current fact for months.
+        echo "WARNING: $target roll is DEGRADED -- the newest native compiler is not decidable" >&2
+        echo "         from the staging directory names (see the tie reported above)." >&2
+        echo "         The tarball will ship WITHOUT compiler/$exename." >&2
+        {
+            echo "NOTE: this build does not bundle a native $target compiler. Two staged builds on"
+            echo "the build host tie on date and version, so which is newer is not decidable from"
+            echo "their names, and this script will not guess. Nothing is wrong with this download."
+            echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately."
+        } > "$notes"
+        return 1
+    fi
+
+    if [ -z "$native_dir" ] || [ ! -x "$native_dir/bin/$exename" ]; then
+        # dist/darwin-native has no build for this target. Before shipping a Mac with no
+        # compiler at all, try the VERSIONED dist tarball, which on this build host is
+        # where the real macOS-hosted compiler actually lives. Same two guards, neither
+        # weakened -- see stage_darwin_compiler_from_dist_tarball.
+        stage_darwin_compiler_from_dist_tarball "$staging" "$target" "$exename" "$arch_pattern" || fb_rc=$?
+        if [ "$fb_rc" -eq 0 ]; then
+            return 0
+        fi
+        if [ "$fb_rc" -eq 2 ]; then
+            # The fallback found a candidate and REJECTED it, and has already written the
+            # specific reason to COMPILER_NOTES.txt. Do NOT overwrite that with the generic
+            # "none staged" note below: the reason is the entire value of the note, and
+            # r25's darwin pair shipped a note whose guessed cause was read downstream as
+            # current fact for months.
+            return 1
+        fi
+
+        echo "WARNING: $target roll is DEGRADED -- no native compiler found under" >&2
+        echo "         $VP_DIR/dist/darwin-native (wanted vibepascal-native-${target}-*/bin/$exename)," >&2
+        echo "         and none could be bundled from $VP_DIR/dist/$target either." >&2
+        echo "         The tarball will ship WITHOUT compiler/$exename." >&2
+        echo "NOTE: this build does not bundle a native $target compiler." > "$notes"
+        echo "Cross-compilation from Linux works. To compile on macOS, install FPC separately." >> "$notes"
+        return 1
+    fi
+
+    cp "$native_dir/bin/$exename" "$out" || { rm -f "$out"; return 1; }
+
+    # Only the "Binary: bin/<exename>  md5 <hash>" line. VERSION.txt also quotes the
+    # PREVIOUS release's md5 in its section-triage prose, so a looser match returns two
+    # hashes and the comparison fails against a two-word string no matter what shipped.
+    declared=$(awk -v n="$exename" '$0 ~ "bin/" n "[[:space:]]" { for (i=1;i<=NF;i++) if ($i=="md5") { print $(i+1); exit } }' \
+                   "$native_dir/VERSION.txt" 2>/dev/null)
+    actual=$(md5sum "$out" | cut -d' ' -f1)
+    if [ -n "$declared" ] && [ "$declared" != "$actual" ]; then
+        echo "ERROR: $exename md5 $actual does not match $declared declared in $(basename "$native_dir")/VERSION.txt." >&2
+        rm -f "$out"
+        echo "NOTE: native $target compiler REJECTED (md5 mismatch vs its own VERSION.txt). Not bundled." > "$notes"
+        return 1
+    fi
+
+    if ! file -b "$out" | grep -q "$arch_pattern"; then
+        echo "ERROR: $exename is not a $target binary: $(file -b "$out")" >&2
+        rm -f "$out"
+        echo "NOTE: native $target compiler REJECTED (wrong architecture). Not bundled." > "$notes"
+        return 1
+    fi
+
+    chmod +x "$out"
+    {
+        echo "Bundled native $target VibePascal compiler from $(basename "$native_dir")."
+        echo "  md5:  $actual${declared:+ (matches VERSION.txt)}"
+        echo "  arch: $(file -b "$out")"
+        echo "  The md5 above is the UNSIGNED staging binary, which is what this guard checked."
+        echo "  For the digests of the file actually in this tarball, read the AS-SHIPPED block"
+        echo "  that stamp_shipped_compiler_hashes appends below."
+    } > "$notes"
+    [ -f "$native_dir/COMPILER_NOTES.txt" ] && cat "$native_dir/COMPILER_NOTES.txt" >> "$notes"
+    echo "Bundled native $target compiler $exename from $(basename "$native_dir")."
+    return 0
 }
 
 package_release() {
@@ -784,6 +2377,12 @@ package_release() {
 
     cp "$LAZARUS_DIR/lazbuild${ext}" "$staging/bin/"
 
+    # DELIBERATELY NOT routed through resolve_exec_compiler, unlike the five
+    # exec sites. This one does not EXEC the compiler, it SHIPS it: the path is
+    # a `cp` source for the release staging tree. Resolving it could stage a
+    # different binary than the one this roll built with -- exactly the "stale
+    # copy" case resolve_exec_compiler exists to reject, but here the in-tree
+    # compiler is the RIGHT answer. Do not "finish the sweep" here.
     local compiler=$(get_compiler_for_target "$target")
     if [ "$target" = "x86_64-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcx64"
@@ -791,31 +2390,24 @@ package_release() {
         copy_win64_compiler_to_staging "$staging"
     elif [ "$target" = "aarch64-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcrossaarch64"
+        copy_native_linux_compiler_to_staging "$staging" aarch64-linux ppca64 "ARM aarch64" || true
     elif [ "$target" = "arm-linux" ]; then
         cp "$compiler" "$staging/compiler/ppcrossarm"
+        copy_native_linux_compiler_to_staging "$staging" arm-linux ppcarm "ARM, EABI5" || true
     elif [ "$target" = "x86_64-darwin" ]; then
-        local native_dir=$(find "$VP_DIR/dist/darwin-native" -maxdepth 1 -type d -name 'vibepascal-native-x86_64-darwin-*' 2>/dev/null | sort | tail -1)
-        if [ -n "$native_dir" ] && [ -x "$native_dir/bin/ppcx64" ]; then
-            cp "$native_dir/bin/ppcx64" "$staging/compiler/ppcx64"
-            chmod +x "$staging/compiler/ppcx64"
-            echo "Bundled native x86_64-darwin VibePascal compiler from $(basename "$native_dir")." > "$staging/COMPILER_NOTES.txt"
-            [ -f "$native_dir/COMPILER_NOTES.txt" ] && cat "$native_dir/COMPILER_NOTES.txt" >> "$staging/COMPILER_NOTES.txt"
-        else
-            echo "NOTE: Native x86_64-darwin compiler not yet available (linker issue under investigation)." > "$staging/COMPILER_NOTES.txt"
-            echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
-        fi
+        copy_native_darwin_compiler_to_staging "$staging" x86_64-darwin ppcx64 "Mach-O 64-bit x86_64" || true
     elif [ "$target" = "aarch64-darwin" ]; then
-        local native_dir=$(find "$VP_DIR/dist/darwin-native" -maxdepth 1 -type d -name 'vibepascal-native-aarch64-darwin-*' 2>/dev/null | sort | tail -1)
-        if [ -n "$native_dir" ] && [ -x "$native_dir/bin/ppca64" ]; then
-            cp "$native_dir/bin/ppca64" "$staging/compiler/ppca64"
-            chmod +x "$staging/compiler/ppca64"
-            echo "Bundled native aarch64-darwin VibePascal compiler from $(basename "$native_dir")." > "$staging/COMPILER_NOTES.txt"
-            [ -f "$native_dir/COMPILER_NOTES.txt" ] && cat "$native_dir/COMPILER_NOTES.txt" >> "$staging/COMPILER_NOTES.txt"
-        else
-            echo "NOTE: Native aarch64-darwin compiler not yet available (self-compile crash under investigation)." > "$staging/COMPILER_NOTES.txt"
-            echo "Cross-compilation from Linux works; native compiler WIP. Install FPC separately to compile." >> "$staging/COMPILER_NOTES.txt"
-        fi
+        copy_native_darwin_compiler_to_staging "$staging" aarch64-darwin ppca64 "Mach-O 64-bit arm64" || true
     fi
+
+    # D003 gate. Bare calls: `set -e` is on, so a mismatch ABORTS the roll here rather
+    # than uploading a tarball whose compiler is not the one that built it. Re-running
+    # packaging is cheap; a wrong shipped compiler cost a blocked GOD taskboard once.
+    case "$target" in
+        x86_64-linux)   assert_shipped_cross_compiler_matches_exec "$staging" "$target" ppcx64 ;;
+        aarch64-linux)  assert_shipped_cross_compiler_matches_exec "$staging" "$target" ppcrossaarch64 ;;
+        arm-linux)      assert_shipped_cross_compiler_matches_exec "$staging" "$target" ppcrossarm ;;
+    esac
 
     if [[ "$target" == *-darwin ]]; then
         echo "Bundling native Darwin fpcres for $target..."
@@ -882,11 +2474,15 @@ package_release() {
     # Darwin: include IDE binary, startlazarus, and .app bundle
     if [[ "$target" == *-darwin ]]; then
         local cpu_target=$(echo "$target" | cut -d- -f1)
-        local pcp_bin="$HOME/.lazarus/bin/${target}/lazarus"
-        if [ -f "$pcp_bin" ]; then
-            cp "$pcp_bin" "$staging/bin/lazarus"
+        # Same presence-not-freshness guard as create_darwin_app_bundle had.
+        # Both sites must assert, or the .app is fixed while the tarball's
+        # bin/lazarus stays stale.
+        local pcp_bin="$(get_darwin_ide_binary "$target")"
+        if ! require_fresh_artifact "$pcp_bin" "staged IDE binary for $target"; then
+            return 1
         fi
-        if [ -f "$LAZARUS_DIR/startlazarus" ]; then
+        cp "$pcp_bin" "$staging/bin/lazarus"
+        if require_fresh_artifact "$LAZARUS_DIR/startlazarus" "staged startlazarus for $target"; then
             cp "$LAZARUS_DIR/startlazarus" "$staging/bin/startlazarus"
         fi
         local app_name="lazarus-${cpu_target}-darwin.app"
@@ -903,7 +2499,17 @@ package_release() {
             # ../../../../MacOS/startlazarus lands on the outer Contents/MacOS/startlazarus
             # binary that create_darwin_app_bundle already places, so the .app stays
             # self-contained no matter where it lives.
-            ln -sf ../../../../MacOS/startlazarus "$app_resources/startlazarus.app/Contents/MacOS/startlazarus"
+            # Only if the target actually exists in this bundle. Every darwin
+            # .app shipped so far carries a startlazarus.app pointing at a
+            # Contents/MacOS/startlazarus that was never built, because the link
+            # was written unconditionally while the build that produced it had
+            # been failing silently.
+            if [ -f "$app_macos/startlazarus" ]; then
+                ln -sf ../../../../MacOS/startlazarus "$app_resources/startlazarus.app/Contents/MacOS/startlazarus"
+            else
+                echo "WARNING: no startlazarus in $app_name; removing the inner startlazarus.app rather than shipping a dangling symlink."
+                rm -rf "$app_resources/startlazarus.app"
+            fi
 
             # Also make the app self-contained for Finder drag-to-/Applications installs.
             # LazarusDirectory quality checks require these source-tree neighbors; if they
@@ -1309,6 +2915,58 @@ MACINSTALL
         chmod +x "$staging/install-macos.command"
     fi
 
+    # Last mutation before the archive is sealed: make COMPILER_NOTES.txt describe the
+    # files that actually ship (ad-hoc signatures included), not the staging intermediates.
+    stamp_shipped_compiler_hashes "$staging"
+
+    # END-STATE GATE (c700, 2026-09-18). This script cut 25 releases without one
+    # feature-level check on what it was shipping: grep for TTouchButton /
+    # TBetterWebBrowser / AnchorDock / MetaDarkStyle over the whole file returned ZERO,
+    # while BOTH updaters have carried three such checks since c634/c691. r25 is the bill
+    # for that -- its win64 asset was cut from a wrecked gtk2 unit dir and sat on the
+    # release page for 32 days containing none of the 2026-09-16 UX fixes, and GOD asked
+    # twice why his Windows IDE was still undocked. Wiring is not the end state (#389).
+    #
+    # NO TARBALL IS CUT IF THIS FAILS, deliberately: line ~1230's rule ("it lying there at
+    # all is one fewer way to publish the wrong binary") applies with more force to a
+    # release than to an intermediate. The staging tree is LEFT IN PLACE on failure so the
+    # missing piece can be read off disk instead of reproduced.
+    #
+    # NON-FATAL to the roll, by the same reasoning restore_host_lazbuild records: `all`
+    # calls build_platform bare under `set -e`, so returning non-zero here would throw away
+    # every later target as well. The roll still exits 1 at the end with a DEGRADED banner,
+    # so a degraded roll cannot be mistaken for a clean one.
+    #
+    # rc 3 ("not verifiable") is treated as a NO-SHIP exactly like rc 1: an unreadable
+    # instrument is not a clean bill of health (c654).
+    local info="$staging/RELEASE-INFO.txt"
+    local endstate_rc=0
+    if [ -x "$LAZARUS_DIR/release-verify-staging.sh" ]; then
+        "$LAZARUS_DIR/release-verify-staging.sh" "$staging" "$target" "$LAZARUS_DIR" \
+            > "$info" 2>&1 || endstate_rc=$?
+        cat "$info"
+    else
+        echo "WARNING: $LAZARUS_DIR/release-verify-staging.sh is missing or not executable;" >&2
+        echo "         the END STATE of this staging tree was NOT verified." >&2
+        endstate_rc=4
+    fi
+    if [ "$endstate_rc" != 0 ]; then
+        echo "" >&2
+        echo "########################################################################" >&2
+        echo "#            END STATE NOT VERIFIED -- NO TARBALL FOR $target" >&2
+        echo "########################################################################" >&2
+        echo "release-verify-staging.sh exited $endstate_rc (1=missing, 3=not verifiable," >&2
+        echo "4=verifier absent). The staging tree is LEFT at:" >&2
+        echo "  $staging" >&2
+        echo "Read the RELEASE-INFO.txt in it, fix what is missing, and re-roll this" >&2
+        echo "target. Do NOT hand-tar that directory: whatever the check found is still" >&2
+        echo "wrong in it." >&2
+        RELEASE_ENDSTATE_FAILED=1
+        RELEASE_ENDSTATE_FAILED_TARGETS="$RELEASE_ENDSTATE_FAILED_TARGETS $target"
+        cd "$LAZARUS_DIR"
+        return 0
+    fi
+
     cd "$RELEASE_DIR"
     tar czf "${release_name}.tar.gz" "$release_name"
     echo "Release: $RELEASE_DIR/${release_name}.tar.gz"
@@ -1319,13 +2977,63 @@ MACINSTALL
     cd "$LAZARUS_DIR"
 }
 
+restore_host_lazbuild() {
+    # Put an x86_64-linux lazbuild back at the SHARED tree root after a cross roll.
+    #
+    # The branches in build_platform deliberately restore the TARGET lazbuild to
+    # $LAZARUS_DIR/lazbuild before packaging, because package_release copies from exactly
+    # that path into the tarball. Nothing then put the host one back, so a darwin,
+    # aarch64-linux or arm-linux build ENDED with a binary at the tree root that cannot
+    # execute on this box. That root is shared with ~30 other agents who run ./lazbuild;
+    # after an arm-linux roll on 2026-09-10 every one of them got
+    #   arm-binfmt-P: Could not open '/lib/ld-linux-armhf.so.3'
+    # until Lars rebuilt it by hand -- and the next roll clobbered it again 12 minutes later.
+    #
+    # HABITS has carried "after an osxarm build, rebuild the host lazbuild" as a MANUAL step
+    # for months. A manual step that four of six targets need is a missing script step, and it
+    # only ever named osxarm because nobody noticed aarch64-linux doing the same thing.
+    # x86_64-win64 is exempt for a real reason, not by omission: its lazbuild is lazbuild.exe,
+    # a different filename, so it never occupies the host path.
+    local target=$1
+    [ "$target" = "x86_64-linux" ] && return 0
+    [ "$(get_lazbuild_path_for_target "$target")" != "$LAZARUS_DIR/lazbuild" ] && return 0
+
+    echo "=== Restoring host x86_64-linux lazbuild at tree root (last target: $target) ==="
+    make -C "$LAZARUS_DIR" lazbuild \
+        PP="$VP_DIR/compiler/ppcx64" \
+        FPCDIR="$VP_DIR" \
+        OS_TARGET=linux \
+        CPU_TARGET=x86_64 \
+        OPT="-n @$LINUX_CFG" 2>&1 | tail -3
+
+    # Assert rather than assume -- a silent failure here is what makes the box unusable,
+    # and the failure mode is invisible until another agent runs ./lazbuild.
+    # ELF-qualified: a bare "x86-64" match also accepts a win64 PE, whose file(1)
+    # line reads `PE32+ executable (console) x86-64`. Not reachable from here
+    # (win64 is exempt above, its lazbuild is lazbuild.exe) but the loose form is
+    # worth removing while the change is provably a no-op on everything present.
+    if file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null | grep -q "ELF 64-bit.*x86-64"; then
+        echo "Host lazbuild restored at tree root: $(file -b "$LAZARUS_DIR/lazbuild" | cut -d, -f1-2)"
+        return 0
+    fi
+    echo "ERROR: tree-root lazbuild is NOT x86-64 after restore -- the shared workdir is left broken." >&2
+    echo "ERROR: file says: $(file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null)" >&2
+    return 1
+}
+
 build_platform() {
     local target=$1
     local cfg=$2
 
     ensure_vp_packages "$target" "$cfg"
 
-    make -C "$LAZARUS_DIR" clean 2>&1 | tail -1
+    # A silently failing clean leaves stale objects on the search path, which is
+    # the exact class that has twice produced a compiler crash in a shipped IDE.
+    if ! run_build_step "clean-$target" "Fatal|Error" -- \
+        make -C "$LAZARUS_DIR" clean; then
+        echo "ERROR: 'make clean' failed for $target; refusing to build on a dirty tree." >&2
+        return 1
+    fi
 
     build_lazbuild "$target" "$cfg"
 
@@ -1334,12 +3042,26 @@ build_platform() {
         # Save darwin lazbuild and restore native lazbuild for IDE build
         local saved_lazbuild="$LAZARUS_DIR/lazbuild-${target}"
         cp "$LAZARUS_DIR/lazbuild" "$saved_lazbuild"
-        make -C "$LAZARUS_DIR" lazbuild \
+        # Swaps the tree-root lazbuild back to a NATIVE one so package builds can
+        # actually execute it. Was `| tail -5` with pipefail off, so a failed
+        # rebuild left the CROSS-TARGET binary in place and the next step invoked
+        # a non-executable file. restore_host_lazbuild asserts this at the END of
+        # the roll; assert it here too, where it can still be acted on.
+        if ! run_build_step "native-lazbuild-restore-$target" "Linking|lines compiled|Fatal|Error" -- \
+            make -C "$LAZARUS_DIR" lazbuild \
             PP="$VP_DIR/compiler/ppcx64" \
             FPCDIR="$VP_DIR" \
             OS_TARGET=linux \
             CPU_TARGET=x86_64 \
-            OPT="-n @$LINUX_CFG" 2>&1 | tail -5
+            OPT="-n @$LINUX_CFG"; then
+            echo "ERROR: could not rebuild the native lazbuild for $target package builds." >&2
+            return 1
+        fi
+        if ! file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null | grep -q "ELF 64-bit.*x86-64"; then
+            echo "ERROR: tree-root lazbuild is not x86-64 after the native rebuild for $target;" >&2
+            echo "       package builds would invoke a cross-target binary." >&2
+            return 1
+        fi
 
         build_darwin_ide "$target" "$cfg"
         build_darwin_starter "$target" "$cfg"
@@ -1370,12 +3092,26 @@ build_platform() {
             return 1
         fi
         cp "$target_lazbuild" "$saved_lazbuild"
-        make -C "$LAZARUS_DIR" lazbuild \
+        # Swaps the tree-root lazbuild back to a NATIVE one so package builds can
+        # actually execute it. Was `| tail -5` with pipefail off, so a failed
+        # rebuild left the CROSS-TARGET binary in place and the next step invoked
+        # a non-executable file. restore_host_lazbuild asserts this at the END of
+        # the roll; assert it here too, where it can still be acted on.
+        if ! run_build_step "native-lazbuild-restore-$target" "Linking|lines compiled|Fatal|Error" -- \
+            make -C "$LAZARUS_DIR" lazbuild \
             PP="$VP_DIR/compiler/ppcx64" \
             FPCDIR="$VP_DIR" \
             OS_TARGET=linux \
             CPU_TARGET=x86_64 \
-            OPT="-n @$LINUX_CFG" 2>&1 | tail -5
+            OPT="-n @$LINUX_CFG"; then
+            echo "ERROR: could not rebuild the native lazbuild for $target package builds." >&2
+            return 1
+        fi
+        if ! file -b "$LAZARUS_DIR/lazbuild" 2>/dev/null | grep -q "ELF 64-bit.*x86-64"; then
+            echo "ERROR: tree-root lazbuild is not x86-64 after the native rebuild for $target;" >&2
+            echo "       package builds would invoke a cross-target binary." >&2
+            return 1
+        fi
 
         if ! build_bgra_release_packages "$target" "$cfg"; then
             cp "$saved_lazbuild" "$target_lazbuild"
@@ -1388,10 +3124,34 @@ build_platform() {
     fi
 
     package_release "$target"
+
+    # Must come AFTER package_release: the tarball is cut from $LAZARUS_DIR/lazbuild, so the
+    # target binary has to still be there when packaging runs. By the time package_release
+    # returns, the tarball exists and the root is free to hold a host binary again.
+    #
+    # NON-FATAL BY DECISION, not by oversight (Lars measured the alternative and asked me to
+    # choose). This script is `set -e` and the `all` path calls build_platform bare, so a bare
+    # call here aborted the WHOLE roll: simulated on aarch64-linux, target 3 of 6, arm-linux
+    # and both darwins never built and "Release builds complete" never printed. That is
+    # strictly worse than continuing, because restore runs AFTER package_release -- this
+    # target's tarball is already cut and safe -- so aborting throws away the remaining
+    # targets AND still leaves the shared tree root broken, since nothing downstream repairs
+    # it. Continuing costs nothing that was not already lost. The roll still fails loudly at
+    # the end with a non-zero exit so a degraded roll cannot be mistaken for a clean one.
+    restore_host_lazbuild "$target" || HOST_LAZBUILD_BROKEN=1
 }
 
 TARGET="${1:-all}"
 mkdir -p "$RELEASE_DIR"
+
+# Set by build_platform when restore_host_lazbuild fails. Checked once at the end.
+HOST_LAZBUILD_BROKEN=0
+
+# Set by package_release when release-verify-staging.sh rejects a staging tree, i.e. the
+# feature the user is waiting for is not in what we were about to ship. Checked at the end
+# so one bad target cannot be mistaken for a clean roll, and so `all` still builds the rest.
+RELEASE_ENDSTATE_FAILED=0
+RELEASE_ENDSTATE_FAILED_TARGETS=""
 
 echo "Lazarus Release Builder (VibePascal)"
 echo "Compiler: $VP_COMPILER"
@@ -1433,3 +3193,49 @@ esac
 echo ""
 echo "=== Release builds complete ==="
 ls -lh "$RELEASE_DIR"/*.tar.gz 2>/dev/null
+
+# Reported BEFORE the host-lazbuild block, which can exit 1 on its own and would otherwise
+# swallow this message. The exit itself happens at the very END of the file so both
+# conditions are always printed, whichever fired.
+if [ "$RELEASE_ENDSTATE_FAILED" = "1" ]; then
+    echo "" >&2
+    echo "########################################################################" >&2
+    echo "#                      RELEASE DEGRADED -- NOT SHIPPABLE                #" >&2
+    echo "########################################################################" >&2
+    echo "No tarball was cut for:$RELEASE_ENDSTATE_FAILED_TARGETS" >&2
+    echo "Their staging trees are still under $RELEASE_DIR with a RELEASE-INFO.txt" >&2
+    echo "naming exactly what was missing. Any tarballs listed above are fine." >&2
+fi
+
+# One last repair attempt, then fail the roll if the shared root is still not executable here.
+# ~30 agents share this tree and run ./lazbuild; leaving a cross binary at the root breaks all
+# of them, and the artifacts above are worthless to me if I cannot say the box is intact.
+if [ "$HOST_LAZBUILD_BROKEN" = "1" ]; then
+    echo ""
+    echo "=== Host lazbuild restore FAILED earlier -- retrying once at end of roll ===" >&2
+    # "aarch64-linux" here is not a target being restored FOR -- it is any value that clears
+    # both of restore_host_lazbuild's early-return guards, so the rebuild actually runs.
+    if restore_host_lazbuild "aarch64-linux"; then
+        echo "Host lazbuild recovered on the end-of-roll retry. Artifacts above are complete." >&2
+    else
+        echo "" >&2
+        echo "########################################################################" >&2
+        echo "#                          RELEASE DEGRADED                            #" >&2
+        echo "########################################################################" >&2
+        echo "The tarballs listed above were built and are valid, but the tree root" >&2
+        echo "lazbuild is NOT an x86_64-linux binary. Every agent sharing this tree" >&2
+        echo "will fail on ./lazbuild until it is rebuilt. Do not announce a release" >&2
+        echo "until this is fixed. Rebuild by hand with:" >&2
+        echo "" >&2
+        echo "  make -C $LAZARUS_DIR lazbuild PP=$VP_DIR/compiler/ppcx64 \\" >&2
+        echo "    FPCDIR=$VP_DIR OS_TARGET=linux CPU_TARGET=x86_64 OPT=\"-n @$LINUX_CFG\"" >&2
+        echo "" >&2
+        exit 1
+    fi
+fi
+
+# Final verdict. An end-state rejection fails the roll even when every build step was green:
+# the artifacts we did produce are valid, but a target the caller asked for has no tarball.
+if [ "$RELEASE_ENDSTATE_FAILED" = "1" ]; then
+    exit 1
+fi

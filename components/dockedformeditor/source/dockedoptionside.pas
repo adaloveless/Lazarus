@@ -125,7 +125,10 @@ type
     property TabPosition: TTabPosition read FTabPosition write SetTabPosition;
     property TreatAlign: Boolean read FTreatAlign write SetTreatAlign;
     property TreatBorder: Boolean read FTreatBorder write SetTreatBorder;
-    property EnableDockedDesigner: boolean read FEnableDockedDesigner write SetEnableDockedDesigner default False;
+    // GOD mu3jfytu (2026-09-16): the form designer docked in the source editor
+    // (Code / Form tabs, the Delphi shape) is the DEFAULT. An explicit opt-out is
+    // persisted by SetDeleteValue against the same default, so it sticks.
+    property EnableDockedDesigner: boolean read FEnableDockedDesigner write SetEnableDockedDesigner default True;
     property DoneAskUserEnableDockedDesigner: boolean read FDoneAskUserEnableDockedDesigner write SetDoneAskUserEnableDockedDesigner default False;
   end;
 
@@ -297,7 +300,7 @@ begin
   FTabPosition        := tpTop;
   FTreatAlign         := True;
   FTreatBorder        := True;
-  FEnableDockedDesigner            := False;
+  FEnableDockedDesigner            := True; // docked by default (GOD mu3jfytu)
   FDoneAskUserEnableDockedDesigner := False;
 end;
 
@@ -345,7 +348,7 @@ begin
     Cfg.SetDeleteValue('TabPosition/Value',        Integer(TabPosition), Integer(tpTop));
     Cfg.SetDeleteValue('TreatAlign/Value',         TreatAlign,         True);
     Cfg.SetDeleteValue('TreatBorder/Value',        TreatBorder,        True);
-    Cfg.SetDeleteValue('EnableDockedDesigner/Value',             EnableDockedDesigner,            False);
+    Cfg.SetDeleteValue('EnableDockedDesigner/Value',             EnableDockedDesigner,            True);
     Cfg.SetDeleteValue('DoneAskUserEnableDockedDesigner/Value',  DoneAskUserEnableDockedDesigner, False);
   finally
     Cfg.Free;
@@ -374,7 +377,7 @@ begin
     TabPosition        := TTabPosition(Cfg.GetValue('TabPosition/Value', Integer(tpTop)));
     TreatAlign         := Cfg.GetValue('TreatAlign/Value',         True);
     TreatBorder        := Cfg.GetValue('TreatBorder/Value',        True);
-    EnableDockedDesigner            := Cfg.GetValue('EnableDockedDesigner/Value',             False);
+    EnableDockedDesigner            := Cfg.GetValue('EnableDockedDesigner/Value',             True);
     DoneAskUserEnableDockedDesigner := Cfg.GetValue('DoneAskUserEnableDockedDesigner/Value',  False);
   finally
     Cfg.Free;

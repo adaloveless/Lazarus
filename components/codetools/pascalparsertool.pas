@@ -175,6 +175,8 @@ type
     // type/var/const/resourcestring
     function KeyWordFuncType: boolean;
     function KeyWordFuncVar: boolean;
+    function KeyWordFuncStatic: boolean;
+    function KeyWordFuncThreadStatic: boolean;
     function KeyWordFuncConst: boolean;
     function KeyWordFuncResourceString: boolean;
     function KeyWordFuncExports: boolean;
@@ -204,11 +206,17 @@ type
     function KeyWordFuncTypeProc: boolean;
     function KeyWordFuncTypeReferenceTo: boolean;
     function KeyWordFuncTypeSet: boolean;
+    function KeyWordFuncTypeFuture: boolean;
     function KeyWordFuncTypeLabel: boolean;
     function KeyWordFuncTypeType: boolean;
     function KeyWordFuncTypeFile: boolean;
     function KeyWordFuncTypePointer: boolean;
     function KeyWordFuncTypeRecordCase: boolean;
+    function KeyWordFuncTypeRecordUnion: boolean;
+    function KeyWordFuncTypeRecordInlineAnon: boolean;
+    function KeyWordFuncTypeRecordEmbed: boolean;
+    function KeyWordFuncTypeRecordPad: boolean;
+    procedure ParseComposableRecordModifiers;
     function KeyWordFuncTypeDefault: boolean;
     // procedures/functions/methods
     function KeyWordFuncProc: boolean;
@@ -257,6 +265,7 @@ type
     function ReadWithStatement(ExceptionOnError, CreateNodes: boolean): boolean;
     function ReadOnStatement(ExceptionOnError, CreateNodes: boolean): boolean;
     procedure ReadInlineVarDeclaration(CreateNodes: boolean);
+    procedure ReadInlineConstDeclaration(CreateNodes: boolean);
     procedure ReadVariableType;
     function ReadHintModifiers(AllowSemicolonSep: boolean): boolean;
     function ReadTilTypeOfProperty(PropertyNode: TCodeTreeNode): boolean;
@@ -281,6 +290,7 @@ type
     function WordIsStatemendEnd: boolean;
     function IsTryExpression(TryStartPos: integer): boolean;
     function IsCaseExpression(CaseStartPos: integer): boolean;
+    function IsMatchKeyword: boolean;
     function WordIsModifier: boolean;
     function WordIsGenericProcStart: boolean;
     function AllowAttributes: boolean; inline;
@@ -447,6 +457,9 @@ begin
     Add('TYPE',@KeyWordFuncType);
     Add('VAR',@KeyWordFuncVar);
     Add('THREADVAR',@KeyWordFuncVar);
+    Add('STATIC',@KeyWordFuncStatic);
+    Add('THREADSTATIC',@KeyWordFuncThreadStatic);
+    Add('TSTATIC',@KeyWordFuncThreadStatic);
     Add('CONST',@KeyWordFuncConst);
     Add('RESOURCESTRING',@KeyWordFuncResourceString);
     Add('EXPORTS',@KeyWordFuncExports);
@@ -491,7 +504,10 @@ begin
   'F':
     case UpChars[p[1]] of
     'I': if CompareSrcIdentifiers('FILE',p) then exit(KeyWordFuncTypeFile);
-    'U': if CompareSrcIdentifiers('FUNCTION',p) then exit(KeyWordFuncTypeProc);
+    'U': if CompareSrcIdentifiers('FUNCTION',p) then exit(KeyWordFuncTypeProc)
+         else if CompareSrcIdentifiers('FUTURE',p)
+         and (cmsAsyncAwait in Scanner.CompilerModeSwitches) then
+           exit(KeyWordFuncTypeFuture);
     end;
   'I':
     if CompareSrcIdentifiers('INTERFACE',p) then exit(KeyWordFuncTypeClassInterface(ctnClassInterface));
@@ -561,7 +577,9 @@ begin
   'D':
     if CompareSrcIdentifiers(p,'DESTRUCTOR') then exit(KeyWordFuncClassMethod);
   'E':
-    if CompareSrcIdentifiers(p,'END') then exit(false);
+    if CompareSrcIdentifiers(p,'END') then exit(false)
+    else if (ClassDesc=ctnRecordType) and (cmsComposableRecords in Scanner.CompilerModeSwitches) and
+            CompareSrcIdentifiers(p,'EMBED') then exit(KeyWordFuncTypeRecordEmbed);
   'F':
     case UpChars[p[1]] of
     'U': if CompareSrcIdentifiers(p,'FUNCTION') then exit(KeyWordFuncClassMethod);
@@ -575,6 +593,12 @@ begin
       exit(KeyWordFuncClassMethod);
   'P':
     case UpChars[p[1]] of
+    'A':
+      if (ClassDesc=ctnRecordType) and (cmsComposableRecords in Scanner.CompilerModeSwitches) then
+        case UpChars[p[2]] of
+        'C': if CompareSrcIdentifiers(p,'PACKED') then exit(KeyWordFuncTypeRecordInlineAnon);
+        'D': if CompareSrcIdentifiers(p,'PAD') then exit(KeyWordFuncTypeRecordPad);
+        end;
     'R':
       case UpChars[p[2]] of
       'I': if CompareSrcIdentifiers(p,'PRIVATE') then exit(KeyWordFuncClassSection);
@@ -593,10 +617,15 @@ begin
         'S': if CompareSrcIdentifiers(p,'PUBLISHED') then exit(KeyWordFuncClassSection);
         end;
     end;
+  'B':
+    if (ClassDesc=ctnRecordType) and (cmsComposableRecords in Scanner.CompilerModeSwitches) and
+       CompareSrcIdentifiers(p,'BITPACKED') then exit(KeyWordFuncTypeRecordInlineAnon);
   'R':
     if CompareSrcIdentifiers(p,'REQUIRED')
     and (CurNode.Parent.Desc=ctnObjCProtocol)
-    then exit(KeyWordFuncClassSection);
+    then exit(KeyWordFuncClassSection)
+    else if (ClassDesc=ctnRecordType) and (cmsComposableRecords in Scanner.CompilerModeSwitches) and
+            CompareSrcIdentifiers(p,'RECORD') then exit(KeyWordFuncTypeRecordInlineAnon);
   'S':
     if CompareSrcIdentifiers(p,'STATIC')
     and (CurNode.Parent.Desc=ctnObject) and (Scanner.Values.IsDefined('STATIC'))
@@ -609,6 +638,9 @@ begin
     if CompareSrcIdentifiers(p,'OPTIONAL')
     and (CurNode.Parent.Desc=ctnObjCProtocol)
     then exit(KeyWordFuncClassSection);
+  'U':
+    if (ClassDesc=ctnRecordType) and (cmsComposableRecords in Scanner.CompilerModeSwitches) and
+       CompareSrcIdentifiers(p,'UNION') then exit(KeyWordFuncTypeRecordUnion);
   'V':
     if CompareSrcIdentifiers(p,'VAR') then exit(KeyWordFuncClassVarSection);
   end;
@@ -638,8 +670,25 @@ begin
     case UpChars[p[1]] of
     'A': if CompareSrcIdentifiers(p,'CASE') then exit(KeyWordFuncTypeRecordCase);
     end;
+  'B':
+    if (cmsComposableRecords in Scanner.CompilerModeSwitches) and
+       CompareSrcIdentifiers(p,'BITPACKED') then exit(KeyWordFuncTypeRecordInlineAnon);
   'E':
-    if CompareSrcIdentifiers(p,'END') then exit(false);
+    if CompareSrcIdentifiers(p,'END') then exit(false)
+    else if (cmsComposableRecords in Scanner.CompilerModeSwitches) and
+            CompareSrcIdentifiers(p,'EMBED') then exit(KeyWordFuncTypeRecordEmbed);
+  'P':
+    if (cmsComposableRecords in Scanner.CompilerModeSwitches) then
+      case UpChars[p[2]] of
+      'C': if CompareSrcIdentifiers(p,'PACKED') then exit(KeyWordFuncTypeRecordInlineAnon);
+      'D': if CompareSrcIdentifiers(p,'PAD') then exit(KeyWordFuncTypeRecordPad);
+      end;
+  'R':
+    if (cmsComposableRecords in Scanner.CompilerModeSwitches) and
+       CompareSrcIdentifiers(p,'RECORD') then exit(KeyWordFuncTypeRecordInlineAnon);
+  'U':
+    if (cmsComposableRecords in Scanner.CompilerModeSwitches) and
+       CompareSrcIdentifiers(p,'UNION') then exit(KeyWordFuncTypeRecordUnion);
   end;
   Result:=KeyWordFuncClassIdentifier;
 end;
@@ -1932,6 +1981,11 @@ begin
          and (CurPos.Flag=cafRoundBracketOpen) then
         // tuple return type: parse as inline type via KeyWordFuncTypeDefault
         KeyWordFuncTypeDefault
+      else if (Scanner.CompilerMode=cmUnleashed)
+        and (UpAtomIs('ARRAY') or UpAtomIs('PACKED') or UpAtomIs('BITPACKED')) then
+        // unleashed: inline `array of X` (also `packed`/`bitpacked array of X`)
+        // as a function result type; classic modes still require a named type
+        ParseType(CurPos.StartPos)
       else
         ReadTypeReference(pphCreateNodes in ParseAttr);
     end
@@ -1994,6 +2048,14 @@ begin
                              Src,CurPos.StartPos,CurPos.EndPos-CurPos.StartPos);
     end else
       IsSpecifier:=false;
+    // unleashed staticsection: in a method body `static` after the header
+    // opens a static declaration section, not a method directive (the
+    // directive only applies to the declaration inside the class body) -
+    // yield it to the section parser
+    if IsSpecifier and UpAtomIs('STATIC')
+    and (cmsStaticSection in Scanner.CompilerModeSwitches)
+    and (pphIsMethodBody in ParseAttr) then
+      IsSpecifier:=false;
     if not IsSpecifier then begin
       // current atom does not belong to procedure/method declaration
       UndoReadNextAtom; // unread unknown atom
@@ -2037,22 +2099,15 @@ begin
       AtomIsIdentifierSaveE(20180411194054);
       ReadNextAtom;
     end else if CurPos.Flag=cafEdgedBracketOpen then begin
-      // '[' in proc-spec context: ambiguous between Delphi-style attribute
-      // (cmsPrefixedAttributes/cmsIgnoreAttributes) and FPC proc modifier
-      // ([internproc:name], [alias:'name'], [public,alias:'name'], etc).
-      // When attribute-modes are active, peek the next atom: if it is a
-      // known FPC proc-bracket specifier, treat as FPC proc modifier.
-      BracketIsAttribute:=
-        ([cmsPrefixedAttributes,cmsIgnoreAttributes]*Scanner.CompilerModeSwitches<>[]);
-      if BracketIsAttribute then begin
-        ReadNextAtom;
-        if (CurPos.Flag in AllCommonAtomWords)
-            and IsKeyWordProcedureBracketSpecifier.DoIdentifier(@Src[CurPos.StartPos])
-        then
-          BracketIsAttribute:=false;
-        UndoReadNextAtom;
-      end;
-      if BracketIsAttribute then begin
+      // disambiguate a proc modifier block ([public,alias:..]) from a prefixed
+      // attribute on the following declaration: a modifier block starts with a
+      // known bracket-specifier keyword, an attribute starts with a class name
+      ReadNextAtom;
+      IsSpecifier:=(CurPos.Flag in AllCommonAtomWords)
+        and IsKeyWordProcedureBracketSpecifier.DoIdentifier(@Src[CurPos.StartPos]);
+      UndoReadNextAtom;
+      if ([cmsPrefixedAttributes,cmsIgnoreAttributes]*Scanner.CompilerModeSwitches<>[])
+      and not IsSpecifier then begin
         // Delphi attribute
         UndoReadNextAtom;
         break;
@@ -2097,7 +2152,9 @@ begin
         until false;
         if CurPos.Flag=cafColon then begin
           ReadNextAtom;
-          if (not AtomIsStringConstant) and (not AtomIsIdentifier) then
+          // internproc: <intrinsic number> uses a numeric id, not a string
+          if (not AtomIsStringConstant) and (not AtomIsIdentifier)
+          and (not AtomIsNumber) then
             SaveRaiseStringExpectedButAtomFound(20170421195508,ctsStringConstant);
           ReadConstant(true,false,[]);
         end;
@@ -2777,6 +2834,12 @@ begin
       ReadNextAtom;
       if CurPos.Flag<>cafSemicolon then
         RaiseSemicolonAfterPropSpecMissing('enumerator');
+    end else if (cmsAutoProperties in Scanner.CompilerModeSwitches)
+        and (UpAtomIs('READONLY') or UpAtomIs('WRITEONLY')) then begin
+      // accessor-less property direction directive: `property X: T; readonly;`
+      ReadNextAtom;
+      if CurPos.Flag<>cafSemicolon then
+        RaiseSemicolonAfterPropSpecMissing('readonly');
     end else
       UndoReadNextAtom;
 
@@ -2907,7 +2970,12 @@ begin
       CurSection:=CurNode.Desc;
       ScannedRange:=lsrFinalizationStart;
       if ord(ScanTill)<=ord(ScannedRange) then exit;
-    end else if CurrentAtomStartsBlockStatement then begin
+    end else if BlockStatementStartKeyWordFuncList.DoIdentifier(@Src[CurPos.StartPos])
+    and (not UpAtomIs('MATCH') or IsMatchKeyword)
+    then begin
+      // 'match' is a context-sensitive keyword; IsMatchKeyword decides
+      // identifier (e.g. obj.Match, result := match;) vs block-keyword
+      // (statement match X of ...; end or match-as-expression)
       if not ReadTilBlockEnd(false,true) then
         SaveRaiseEndOfSourceExpected(20170421195551);
     end else if UpAtomIs('WITH') then begin
@@ -3130,7 +3198,10 @@ begin
     BlockType:=ebtIf
   else if UpAtomIs('CASE') or UpAtomIs('MATCH') then begin
     BlockType:=ebtCase;
-    IsExprCase:=UpAtomIs('CASE') and IsCaseExpression(CurPos.StartPos);
+    // match-as-expression with 'else' terminates after the else value just
+    // like case-as-expression (no trailing 'end'); detect both the same way
+    IsExprCase:=(UpAtomIs('CASE') or UpAtomIs('MATCH'))
+                and IsCaseExpression(CurPos.StartPos);
   end
   else if UpAtomIs('ASM') then
     BlockType:=ebtAsm
@@ -3182,7 +3253,12 @@ begin
       end;
     end else if CurPos.Flag<>cafWord then begin
       continue;
-    end else if CurrentAtomStartsBlockStatement then begin
+    end else if BlockStatementStartKeyWordFuncList.DoIdentifier(@Src[CurPos.StartPos])
+    and (not UpAtomIs('MATCH') or IsMatchKeyword)
+    then begin
+      // 'match' is a context-sensitive keyword; IsMatchKeyword decides
+      // identifier (e.g. obj.Match, result := match;) vs block-keyword
+      // (statement match X of ...; end or match-as-expression)
       if (BlockType<>ebtRecord) then begin
         ReadTilBlockEnd(false,CreateNodes);
         if (BlockType=ebtIf) and (CurPos.Flag in [cafSemicolon]) then
@@ -3253,6 +3329,38 @@ begin
       ReadWithStatement(true,CreateNodes);
     end else if UpAtomIs('VAR')
     and (BlockType in [ebtBegin,ebtTry,ebtRepeat]) then begin
+      ReadInlineVarDeclaration(CreateNodes);
+    end else if UpAtomIs('CONST')
+    and (BlockType in [ebtBegin,ebtTry,ebtRepeat])
+    and (cmsInlineVars in Scanner.CompilerModeSwitches) then begin
+      // unleashed inline-const (gated by the same modeswitch as inline-var
+      // in FPC): const NAME = EXPR; or const NAME: TYPE = EXPR;
+      ReadInlineConstDeclaration(CreateNodes);
+    end else if UpAtomIs('TYPE')
+    and (Scanner.CompilerMode=cmUnleashed)
+    and (BlockType in [ebtBegin,ebtTry,ebtRepeat,ebtIf,ebtCase]) then begin
+      // unleashed: Type(expr) intrinsic can appear in expression position
+      // inside a body (e.g. typecast `Type(x)(v)`, `SizeOf(Type(x))`,
+      // assignment `y := Type(x)(v)`). skip the parenthesised body so the
+      // bare `type` keyword is not flagged as an unexpected section header.
+      ReadNextAtom;
+      if CurPos.Flag=cafRoundBracketOpen then
+        ReadTilBracketClose(false)
+      else
+        UndoReadNextAtom;
+    end else if UpAtomIs('STATIC')
+    and (BlockType in [ebtBegin,ebtTry,ebtRepeat])
+    and (cmsInlineStatic in Scanner.CompilerModeSwitches) then begin
+      // unleashed inline-static: shares the post-keyword syntax with inline-var
+      // (`static name [: T] [:= expr];`); reuse the inline-var reader so the
+      // variable is registered in scope the same way
+      ReadInlineVarDeclaration(CreateNodes);
+    end else if (UpAtomIs('THREADSTATIC') or UpAtomIs('TSTATIC'))
+    and (BlockType in [ebtBegin,ebtTry,ebtRepeat])
+    and (cmsThreadStatic in Scanner.CompilerModeSwitches) then begin
+      // unleashed inline-threadstatic (`tstatic` is the short alias): same
+      // post-keyword syntax as inline-var (`threadstatic name [: T] [:= expr];`);
+      // reuse the inline-var reader so the variable is registered in scope
       ReadInlineVarDeclaration(CreateNodes);
     end else if UpAtomIs('ON') and (BlockType=ebtTry)
     and (TryType=ttExcept) then begin
@@ -3533,6 +3641,96 @@ begin
   end;
 end;
 
+function TPascalParserTool.IsMatchKeyword: boolean;
+{ Returns true if 'match' at CurPos starts a match block (needs 'end'),
+  false if it is an identifier. Rules out member access (obj.match) and
+  selector keywords (case/if/for/while/until); expression-context priors
+  use peek-ahead; statement-context defaults to block keyword since
+  condition-form `match expr: stmt; end` can put any expression before
+  the first ':'. Cursor is restored to the 'match' atom on exit. }
+var
+  SavedPos: integer;
+  PriorAtom: TAtomPosition;
+begin
+  Result:=false;
+  PriorAtom:=LastAtoms.GetPriorAtom;
+  // member access: obj.match -> identifier
+  if PriorAtom.Flag=cafPoint then exit;
+  // selector/condition contexts where match is the operand identifier
+  // (case match of, if match then, while match do, until match, for match
+  // := ...). Pattern: previous atom is the enclosing keyword.
+  if (PriorAtom.Flag=cafWord) and (PriorAtom.StartPos>=1)
+  and (PriorAtom.EndPos>PriorAtom.StartPos)
+  and (PriorAtom.EndPos-1<=SrcLen) then begin
+    case UpChars[Src[PriorAtom.StartPos]] of
+    'C': if CompareIdentifiers(@Src[PriorAtom.StartPos],'CASE')=0 then exit;
+    'I': if CompareIdentifiers(@Src[PriorAtom.StartPos],'IF')=0 then exit;
+    'F': if CompareIdentifiers(@Src[PriorAtom.StartPos],'FOR')=0 then exit;
+    'W': if CompareIdentifiers(@Src[PriorAtom.StartPos],'WHILE')=0 then exit;
+    'U': if CompareIdentifiers(@Src[PriorAtom.StartPos],'UNTIL')=0 then exit;
+    end;
+  end;
+  // statement-context: default to block keyword - only expression-context
+  // priors fall through to the peek-ahead below
+  if not (PriorAtom.Flag in
+    [cafAssignment,cafEqual,cafComma,cafColon,cafOtherOperator,
+     cafRoundBracketOpen,cafEdgedBracketOpen]) then
+    exit(true);
+  SavedPos:=CurPos.StartPos;
+  ReadNextAtom;
+  try
+    if CurPos.StartPos>SrcLen then exit;
+    // explicit match-expression keywords next
+    if (CurPos.Flag=cafWord)
+    and (UpAtomIs('OF') or UpAtomIs('ALL')) then
+      exit(true);
+    // bare 'match end' as statement is a no-op in FPC (pstatmnt.pas).
+    // recurse so the inner 'end' belongs to match; the cost is that
+    // 'result := match end' (nonsensical) is also recursed, but the
+    // parser tree stays consistent with the user-visible source instead
+    // of swallowing an enclosing 'end' as the match block terminator
+    if CurPos.Flag=cafEnd then
+      exit(true);
+    // structural atoms = identifier
+    if CurPos.Flag in [cafSemicolon,cafAssignment,cafEqual,cafPoint,
+       cafComma,cafRoundBracketOpen,cafRoundBracketClose,
+       cafEdgedBracketOpen,cafEdgedBracketClose,cafOtherOperator,
+       cafColon] then
+      exit;
+    // word that is itself a terminator keyword = identifier
+    if CurPos.Flag=cafWord then begin
+      if UpAtomIs('DO') or UpAtomIs('THEN') or UpAtomIs('ELSE')
+      or UpAtomIs('UNTIL') or UpAtomIs('FINALLY') or UpAtomIs('EXCEPT')
+      or UpAtomIs('OTHERWISE') or UpAtomIs('TO') or UpAtomIs('DOWNTO') then
+        exit;
+    end;
+    // identifier subject or literal subject - peek for `of`/`:`/`,`,
+    // skipping past call-args `(...)`, subscripts `[...]` and dotted
+    // member access so subjects like `match obj.foo(x).bar of` resolve
+    ReadNextAtom;
+    if CurPos.StartPos>SrcLen then exit;
+    while true do begin
+      if CurPos.Flag in [cafRoundBracketOpen,cafEdgedBracketOpen] then begin
+        if not ReadTilBracketClose(false) then exit;
+        ReadNextAtom;
+        if CurPos.StartPos>SrcLen then exit;
+      end else if CurPos.Flag=cafPoint then begin
+        ReadNextAtom;
+        if (CurPos.StartPos>SrcLen) or (CurPos.Flag<>cafWord) then exit;
+        ReadNextAtom;
+        if CurPos.StartPos>SrcLen then exit;
+      end else
+        break;
+    end;
+    Result:=((CurPos.Flag=cafWord) and UpAtomIs('OF'))
+         or (CurPos.Flag=cafColon)
+         or (CurPos.Flag=cafComma);
+  finally
+    MoveCursorToCleanPos(SavedPos);
+    ReadNextAtom;
+  end;
+end;
+
 function TPascalParserTool.WordIsModifier: boolean;
 var
   p: PChar;
@@ -3628,7 +3826,12 @@ function TPascalParserTool.ReadTilStatementEnd(ExceptionOnError,
 begin
   Result:=true;
   while CurPos.StartPos<=SrcLen do begin
-    if CurrentAtomStartsBlockStatement then begin
+    if BlockStatementStartKeyWordFuncList.DoIdentifier(@Src[CurPos.StartPos])
+    and (not UpAtomIs('MATCH') or IsMatchKeyword)
+    then begin
+      // 'match' is a context-sensitive keyword; IsMatchKeyword decides
+      // identifier (e.g. obj.Match, result := match;) vs block-keyword
+      // (statement match X of ...; end or match-as-expression).
       // Statement expression try (e.g. s := try X except Y) has no 'end'
       if UpAtomIs('TRY') and IsTryExpression(CurPos.StartPos) then begin
         // Note: except/finally/else are PART of the expression, not enders
@@ -3703,46 +3906,71 @@ function TPascalParserTool.ReadWithStatement(ExceptionOnError,
       // set all with variable ends
       repeat
         WithVarNode:=WithVarNode.PriorBrother;
-        if (WithVarNode=nil) or (WithVarNode.Desc<>ctnWithVariable)
-        or (WithVarNode.EndPos>0) then break;
+        if WithVarNode=nil then break;
+        // unleashed inline-var entries leave a ctnVarSection sibling between
+        // with-vars; step over it so EndPos still propagates to prior with-vars
+        if WithVarNode.Desc=ctnVarSection then continue;
+        if (WithVarNode.Desc<>ctnWithVariable) or (WithVarNode.EndPos>0) then
+          break;
         WithVarNode.EndPos:=EndPos;
       until false;
     end;
   end;
   
+var
+  IdentStartPos: integer;
 begin
-  ReadNextAtom; // read start of variable
-  if CreateNodes then begin
-    CreateChildNode;
-    CurNode.Desc:=ctnWithVariable;
-  end;
-  // read til the end of the variable
-  if not ReadTilVariableEnd(ExceptionOnError,true) then begin
-    CloseNodes;
-    Result:=false;
-    exit;
-  end;
-  // read all other variables
-  while CurPos.Flag=cafComma do begin
+  ReadNextAtom; // peek first with-entry atom
+  repeat
+    if UpAtomIs('VAR') then begin
+      // unleashed inline-var: var IDENT [: TYPE] [:= EXPR]
+      // ReadInlineVarDeclaration creates a ctnVarSection sibling so the
+      // identifier is registered in scope; cursor is left on the atom
+      // before the next terminator (',' or last decl atom before 'do')
+      ReadNextAtom; // peek IDENT to remember position for ctnWithVariable
+      IdentStartPos := CurPos.StartPos;
+      UndoReadNextAtom; // back to 'var'
+      ReadInlineVarDeclaration(CreateNodes);
+      // when followed by another entry cursor is already on ','; otherwise
+      // it sits on the last decl atom and we need one more step toward 'do'
+      if CurPos.Flag<>cafComma then
+        ReadNextAtom;
+      // ctnWithVariable referencing the inline var so unprefixed member
+      // access in the with-body resolves the same way as classic 'with x do';
+      // EndPos is left at -1 for non-last entries - CloseNodes walks the
+      // PriorBrother chain (skipping ctnVarSection siblings) to set EndPos
+      // to end-of-with so the with-var range covers the body.
+      if CreateNodes then begin
+        CreateChildNode;
+        CurNode.Desc := ctnWithVariable;
+        CurNode.StartPos := IdentStartPos;
+      end;
+    end else begin
+      if UpAtomIs('AUTOFREE') then
+        ReadNextAtom;
+      if CreateNodes then begin
+        CreateChildNode;
+        CurNode.Desc:=ctnWithVariable;
+      end;
+      if not ReadTilVariableEnd(ExceptionOnError,true) then begin
+        CloseNodes;
+        Result:=false;
+        exit;
+      end;
+    end;
+    if CurPos.Flag<>cafComma then break;
     if CreateNodes then
       EndChildNode;
-    ReadNextAtom;
-    if CreateNodes then begin
-      CreateChildNode;
-      CurNode.Desc:=ctnWithVariable
-    end;
-    if not ReadTilVariableEnd(ExceptionOnError,true) then begin
-      CloseNodes;
-      Result:=false;
-      exit;
-    end;
-  end;
+    ReadNextAtom; // past comma to next entry's first atom
+  until false;
   // read DO
   if not UpAtomIs('DO') then begin
+    // close ctnWithVariable in both branches; otherwise an incomplete
+    // `with X<cursor>` leaves EndPos=-1 and tree walkers AV
+    CloseNodes;
     if ExceptionOnError then
       SaveRaiseStringExpectedButAtomFound(20170421195614,'"do"')
     else begin
-      CloseNodes;
       Result:=false;
       exit;
     end;
@@ -3851,13 +4079,39 @@ var
   BracketDepth: integer;
   TryExprDepth: integer;
   CaseExprDepth: integer;
+  MatchExprDepth: integer;
+  BeginDepth: integer;
   InCaseElse: boolean;
+  // stack of entries: 'C' (case), 'M' (match), 'B' (begin) - newest at the
+  // right - so an 'end' read inside a nested case/match/begin block pops
+  // the right counter
+  ExprStack: string;
 begin
   if CreateNodes then begin
     CreateChildNode;
     CurNode.Desc := ctnVarSection;
   end;
-  ReadNextAtom; // read identifier name
+  ReadNextAtom; // read identifier name or '(' for destructure
+  if (cmsTuples in Scanner.CompilerModeSwitches)
+  and (CurPos.Flag=cafRoundBracketOpen) then begin
+    // destructure: var (a, b, c) := expr; - each name becomes its own
+    // ctnVarDefinition sibling under the ctnVarSection
+    ReadNextAtom;
+    while AtomIsIdentifier do begin
+      if CreateNodes then begin
+        CreateChildNode;
+        CurNode.Desc := ctnVarDefinition;
+        CurNode.EndPos := CurPos.EndPos;
+        EndChildNode;
+      end;
+      ReadNextAtom;
+      if CurPos.Flag<>cafComma then break;
+      ReadNextAtom;
+    end;
+    if CurPos.Flag=cafRoundBracketClose then
+      ReadNextAtom;
+    UndoReadNextAtom; // leave the atom after ')' for the skip-til-';' loop
+  end else
   if AtomIsIdentifier then begin
     if CreateNodes then begin
       CreateChildNode;
@@ -3875,10 +4129,24 @@ begin
         KeyWordFuncTypeDefault;
         UndoReadNextAtom;
       end else
+      if (cmsAsyncAwait in Scanner.CompilerModeSwitches)
+      and UpAtomIs('FUTURE') then begin
+        // `future of T` thread-handle type
+        ParseType(CurPos.StartPos);
+        UndoReadNextAtom;
+      end else
       if AtomIsIdentifier then begin
         // Simple / qualified / generic identifier type: 'TMyType', 'Unit.TMyType'
         ReadTypeReference(true); // creates ctnIdentifier child; CurPos on atom after type
         UndoReadNextAtom;        // put that atom back for the skip loop below
+      end else if (CurPos.StartPos<=SrcLen) and (Src[CurPos.StartPos]='^') then begin
+        // pointer type: `^TYPE`; full ParseType so refactor can resolve `p^.field`
+        ParseType(CurPos.StartPos);
+        UndoReadNextAtom;
+      end else if AtomIsKeyWord then begin
+        // anonymous structured type: record/class/object/array/set/file/function...
+        ParseType(CurPos.StartPos);
+        UndoReadNextAtom;
       end else begin
         UndoReadNextAtom; // put back the type atom
         UndoReadNextAtom; // put back the colon
@@ -3890,31 +4158,76 @@ begin
     BracketDepth := 0;
     TryExprDepth := 0;
     CaseExprDepth := 0;
+    MatchExprDepth := 0;
+    BeginDepth := 0;
     InCaseElse := false;
+    ExprStack := '';
     repeat
       ReadNextAtom;
       if CurPos.StartPos > SrcLen then break;
+      // an anonymous function in the initializer (var f := function...; or as
+      // a call argument Timeout(..., function...)) must be parsed into a
+      // ctnProcedure subtree, not skipped textually - otherwise later
+      // ReadTilBracketClose finds no node for it and Find/Rename fails with
+      // "bracket ) not found"
+      if CreateNodes and (CurPos.Flag=cafWord)
+      and (UpAtomIs('FUNCTION') or UpAtomIs('PROCEDURE'))
+      and AllowAnonymousFunctions
+      and (LastAtoms.GetPriorAtom.Flag in
+           [cafAssignment,cafComma,cafRoundBracketOpen,cafEdgedBracketOpen]) then begin
+        ReadAnonymousFunction(true);
+        continue;
+      end;
       case CurPos.Flag of
         cafRoundBracketOpen, cafEdgedBracketOpen:
           inc(BracketDepth);
         cafRoundBracketClose, cafEdgedBracketClose:
           dec(BracketDepth);
         cafEnd:
-          // 'end' inside an open case-expression (no else, full coverage)
-          // closes the case-expression. Otherwise it terminates the var stmt.
+          // 'end' inside an open case-/match-expression or nested begin
+          // block closes the innermost one tracked on ExprStack. Otherwise
+          // it terminates the var statement.
           if BracketDepth = 0 then begin
-            if (CaseExprDepth > 0) and (not InCaseElse) then
-              dec(CaseExprDepth)
-            else begin
-              UndoReadNextAtom;
-              break;
+            if (ExprStack<>'') then begin
+              case ExprStack[Length(ExprStack)] of
+              'B':
+                begin
+                  dec(BeginDepth);
+                  SetLength(ExprStack,Length(ExprStack)-1);
+                  continue;
+                end;
+              'M':
+                begin
+                  dec(MatchExprDepth);
+                  SetLength(ExprStack,Length(ExprStack)-1);
+                  continue;
+                end;
+              'C':
+                if (CaseExprDepth > 0) and (not InCaseElse) then begin
+                  dec(CaseExprDepth);
+                  SetLength(ExprStack,Length(ExprStack)-1);
+                  continue;
+                end;
+              end;
             end;
+            if (CaseExprDepth > 0) and (not InCaseElse) then begin
+              dec(CaseExprDepth);
+              continue;
+            end;
+            UndoReadNextAtom;
+            break;
           end;
         cafSemicolon:
-          // ';' between case-expression branches (CaseExprDepth>0 and not yet
-          // in else) is part of the case, not the var statement terminator
+          // ';' between case-/match-expression branches (depths>0 and not
+          // yet in else) is part of the construct, not the var statement
+          // terminator. case-with-else and match-with-else as expression
+          // have no trailing 'end' - the ';' after the else value ends
+          // both the construct and (if outermost) the var statement.
+          // statement-expression 'begin..end' branches likewise keep going
           if (BracketDepth = 0)
-          and ((CaseExprDepth = 0) or InCaseElse) then break;
+          and (((CaseExprDepth = 0) and (MatchExprDepth = 0))
+               or InCaseElse)
+          and (BeginDepth = 0) then break;
       end;
       if (BracketDepth = 0) and (CurPos.Flag = cafWord) then begin
         // Track statement expression try depth
@@ -3937,18 +4250,52 @@ begin
           if (LastAtoms.GetPriorAtom.Flag in
               [cafAssignment,cafRoundBracketOpen,cafEdgedBracketOpen,
                cafComma,cafEqual])
-          or (CaseExprDepth > 0) then begin
+          or (CaseExprDepth > 0) or (MatchExprDepth > 0) then begin
             inc(CaseExprDepth);
+            ExprStack := ExprStack + 'C';
             InCaseElse := false;
           end;
         end
-        else if (CaseExprDepth > 0) and (not InCaseElse)
+        // match-expression always closes with 'end' regardless of else/_;
+        // track separately so 'else' inside match doesn't terminate the var
+        else if UpAtomIs('MATCH') then begin
+          if (LastAtoms.GetPriorAtom.Flag in
+              [cafAssignment,cafRoundBracketOpen,cafEdgedBracketOpen,
+               cafComma,cafEqual])
+          or (CaseExprDepth > 0) or (MatchExprDepth > 0) then begin
+            inc(MatchExprDepth);
+            ExprStack := ExprStack + 'M';
+          end;
+        end
+        // 'else'/'otherwise' inside case- or match-expression switches to
+        // the catch-all branch. case-with-else and match-with-else have no
+        // trailing 'end' in expression context (FPC pstatmnt.pas) - the
+        // statement-expression terminates at the ';' after the else value
+        else if ((CaseExprDepth > 0) or (MatchExprDepth > 0))
+        and (not InCaseElse)
         and (UpAtomIs('ELSE') or UpAtomIs('OTHERWISE')) then begin
           InCaseElse := true;
         end
-        else if UpAtomIs('END') or UpAtomIs('BEGIN') or UpAtomIs('VAR')
-        or UpAtomIs('UNTIL') or UpAtomIs('FINALLY') or UpAtomIs('EXCEPT')
-        or UpAtomIs('ELSE') or UpAtomIs('THEN') then begin
+        // statement-expression 'begin..end' as the var initializer or
+        // as the value of a case/match branch: push 'B' so 'end' pops
+        // this block instead of mistakenly closing the outer match/case
+        else if UpAtomIs('BEGIN')
+        and ((LastAtoms.GetPriorAtom.Flag in
+               [cafAssignment,cafRoundBracketOpen,cafEdgedBracketOpen,
+                cafComma,cafEqual,cafColon])
+          or (CaseExprDepth > 0) or (MatchExprDepth > 0)
+          or (BeginDepth > 0)) then begin
+          inc(BeginDepth);
+          ExprStack := ExprStack + 'B';
+        end
+        // inside a match-expression or nested begin-expression these
+        // keywords belong to the body; only the outermost 'end' closes
+        else if (MatchExprDepth = 0) and (BeginDepth = 0)
+        and (UpAtomIs('END') or UpAtomIs('BEGIN') or UpAtomIs('VAR')
+          or UpAtomIs('UNTIL') or UpAtomIs('FINALLY') or UpAtomIs('EXCEPT')
+          or UpAtomIs('ELSE') or UpAtomIs('THEN')
+          or UpAtomIs('TO') or UpAtomIs('DOWNTO') or UpAtomIs('DO')
+          or UpAtomIs('OF')) then begin
           UndoReadNextAtom;
           break;
         end;
@@ -3963,6 +4310,91 @@ begin
   if CreateNodes then begin
     CurNode.EndPos := CurPos.EndPos;
     EndChildNode; // close ctnVarSection
+  end;
+end;
+
+procedure TPascalParserTool.ReadInlineConstDeclaration(CreateNodes: boolean);
+{ Reads an inline constant declaration inside a begin..end block.
+  Cursor must be on the 'const' keyword.
+  Examples:
+    const K = 50;
+    const S: string = 'test';
+    const A: array[3] of integer = (1, 2, 3);
+  Creates ctnConstSection > ctnConstDefinition nodes when CreateNodes=true.
+  The value lands in a ctnConstant child so the type of an untyped constant
+  can be inferred from the expression (like ReadConstExpr does for regular
+  const sections). Block scoping falls out of the node position inside the
+  ctnBeginBlock, same as inline-var. }
+var
+  BracketDepth: integer;
+  ConstantNode: boolean;
+begin
+  if CreateNodes then begin
+    CreateChildNode;
+    CurNode.Desc := ctnConstSection;
+  end;
+  ReadNextAtom; // the constant name
+  if AtomIsIdentifier then begin
+    if CreateNodes then begin
+      CreateChildNode;
+      CurNode.Desc := ctnConstDefinition;
+    end;
+    ReadNextAtom; // peek: ':' (typed constant) or '=' (untyped)
+    if CreateNodes and (CurPos.Flag=cafColon) then begin
+      // typed constant: parse the type so completion can resolve members
+      // (e.g. 'const P: TPoint = ...' followed by 'P.')
+      ReadNextAtom;
+      ParseType(CurPos.StartPos);
+      // ParseType leaves CurPos on the atom behind the type (normally '=')
+    end;
+    ConstantNode:=false;
+    if CreateNodes and (CurPos.Flag=cafEqual) then begin
+      // the value starts behind '='
+      ReadNextAtom;
+      if (CurPos.StartPos<=SrcLen) and (CurPos.Flag<>cafSemicolon)
+      and (CurPos.Flag<>cafEND) then begin
+        CreateChildNode;
+        CurNode.Desc:=ctnConstant;
+        ConstantNode:=true;
+      end else
+        UndoReadNextAtom;
+    end;
+    // skip to the terminating ';'; stop in front of keywords that can only
+    // mean the declaration is unfinished so completion keeps working while
+    // the user is still typing
+    BracketDepth:=0;
+    repeat
+      if CurPos.StartPos>SrcLen then break;
+      case CurPos.Flag of
+        cafRoundBracketOpen,cafEdgedBracketOpen:
+          inc(BracketDepth);
+        cafRoundBracketClose,cafEdgedBracketClose:
+          if BracketDepth>0 then dec(BracketDepth);
+      end;
+      if BracketDepth=0 then begin
+        if CurPos.Flag=cafSemicolon then break;
+        if (CurPos.Flag in AllCommonAtomWords) and AtomIsKeyWord
+        and (not IsKeyWordInConstAllowed.DoIdentifier(@Src[CurPos.StartPos]))
+        then begin
+          UndoReadNextAtom;
+          break;
+        end;
+      end;
+      if ConstantNode then
+        CurNode.EndPos:=CurPos.EndPos;
+      ReadNextAtom;
+    until false;
+    if ConstantNode then
+      EndChildNode; // close ctnConstant
+    if CreateNodes then begin
+      CurNode.EndPos := CurPos.EndPos;
+      EndChildNode; // close ctnConstDefinition
+    end;
+  end else
+    UndoReadNextAtom;
+  if CreateNodes then begin
+    CurNode.EndPos := CurPos.EndPos;
+    EndChildNode; // close ctnConstSection
   end;
 end;
 
@@ -4027,7 +4459,45 @@ begin
   ReadNextAtom;
   // type
   TypeStart:=CurPos.StartPos;
-  ParseType(CurPos.StartPos);
+  // C-style bitfield (composablerecords): `name: N` where N is an integer
+  // literal in a record body means `name: <default-type> bitsize N`. consume
+  // the literal without building a type subtree - the compiler enforces that
+  // we're inside a bitpacked record with an active default type.
+  if (cmsComposableRecords in Scanner.CompilerModeSwitches)
+  and AtomIsNumber
+  and (CurNode.Parent<>nil)
+  and (CurNode.Parent.Desc in [ctnRecordType, ctnRecordCase, ctnRecordVariant]
+                              + AllClassSections) then
+    ReadNextAtom
+  else
+    ParseType(CurPos.StartPos);
+
+  // optional `count IDENT` clause for flexible array members:
+  // record field of type array[] of T may be followed by `count <field>`
+  // binding the FAM to a sibling integer field for debugger pretty-print
+  if UpAtomIs('COUNT') and (CurNode.LastChild<>nil)
+  and (CurNode.LastChild.Desc=ctnRangedArrayType) then
+  begin
+    ReadNextAtom;
+    AtomIsIdentifierSaveE(20260504123000);
+    CreateChildNode;
+    CurNode.Desc:=ctnIdentifier;
+    CurNode.EndPos:=CurPos.EndPos;
+    EndChildNode;
+    ReadNextAtom;
+  end;
+
+  // optional per-field sizing/alignment modifiers (composablerecords):
+  // `field: typ align N`, `field: typ bitsize 1`, combinations in any order.
+  // each takes one constant expression; position is between the type and any
+  // hint directive. permissive: gated on the modeswitch only - the compiler
+  // enforces that they only make sense inside a record body
+  if cmsComposableRecords in Scanner.CompilerModeSwitches then
+    while UpAtomIs('ALIGN') or UpAtomIs('BITALIGN')
+       or UpAtomIs('SIZE') or UpAtomIs('BITSIZE') do begin
+      ReadNextAtom;
+      ReadConstant(true,false,[]);
+    end;
 
   ParentNode:=CurNode.Parent;
 
@@ -4372,6 +4842,174 @@ begin
       end;
       // read type
       ReadVariableType;
+    end else if (CurPos.Flag=cafEdgedBracketOpen) and AllowAttributes then begin
+      ReadAttribute;
+    end else begin
+      UndoReadNextAtom;
+      break;
+    end;
+  until false;
+  CurNode.EndPos:=CurPos.EndPos;
+  EndChildNode;
+  FixLastAttributes;
+  Result:=true;
+end;
+
+function TPascalParserTool.KeyWordFuncStatic: boolean;
+{ unleashed staticsection: writeable typed-const-style declarations at the top
+  of a function/procedure body. Modelled as ctnVarSection so identifier
+  completion treats the entries like locals.
+
+  examples:
+
+    procedure Foo;
+    static
+      x: Integer;             // zero-init
+      y: Integer = 42;        // explicit value
+      a, b: Integer;          // multi-name
+      a, b: Integer = 5;      // multi-name with shared init
+      greet := 'hello';       // type inference (single name)
+    begin
+    end;
+}
+var
+  LastIdentifierEnd: LongInt;
+  NameCount: integer;
+begin
+  // outside the staticsection modeswitch, `static` here is unexpected
+  if not (cmsStaticSection in Scanner.CompilerModeSwitches) then
+    SaveRaiseUnexpectedKeyWord(20260605120001);
+  // only legal inside a function/procedure body
+  if (CurNode=nil) or (CurNode.Desc<>ctnProcedure) then
+    SaveRaiseUnexpectedKeyWord(20260605120002);
+  CreateChildNode;
+  CurNode.Desc:=ctnVarSection;
+  repeat
+    ReadNextAtom;
+    if AtomIsIdentifier then begin
+      CreateChildNode;
+      CurNode.Desc:=ctnVarDefinition;
+      LastIdentifierEnd:=CurPos.EndPos;
+      NameCount:=1;
+      ReadNextAtom;
+      while (CurPos.Flag=cafComma) do begin
+        CurNode.EndPos:=LastIdentifierEnd;
+        EndChildNode;
+        ReadNextAtom;
+        AtomIsIdentifierSaveE(20260605120003);
+        CreateChildNode;
+        CurNode.Desc:=ctnVarDefinition;
+        LastIdentifierEnd:=CurPos.EndPos;
+        Inc(NameCount);
+        ReadNextAtom;
+      end;
+      if CurPos.Flag=cafAssignment then begin
+        // `name := expr` type inference; only single name allowed
+        if NameCount>1 then
+          SaveRaiseCharExpectedButAtomFound(20260605120004,':');
+        // skip the initializer expression up to the terminating ';';
+        // leave cursor on the ';' so the outer loop's ReadNextAtom advances
+        // to the next entry's first atom (same convention as ReadVariableType)
+        repeat
+          ReadNextAtom;
+          if CurPos.StartPos>SrcLen then break;
+          if CurPos.Flag=cafSemicolon then break;
+          if CurPos.Flag in [cafRoundBracketOpen,cafEdgedBracketOpen] then
+            ReadTilBracketClose(true);
+        until false;
+        CurNode.EndPos:=CurPos.EndPos;
+        EndChildNode;
+      end else if CurPos.Flag=cafColon then begin
+        // `name [, ...] : Type [= Value]` -- same shape as a var-section entry,
+        // ReadVariableType already accepts the optional `= Value` when parent
+        // is ctnVarSection under a ctnProcedure
+        ReadVariableType;
+      end else
+        SaveRaiseCharExpectedButAtomFound(20260605120005,':');
+    end else if (CurPos.Flag=cafEdgedBracketOpen) and AllowAttributes then begin
+      ReadAttribute;
+    end else begin
+      UndoReadNextAtom;
+      break;
+    end;
+  until false;
+  CurNode.EndPos:=CurPos.EndPos;
+  EndChildNode;
+  FixLastAttributes;
+  Result:=true;
+end;
+
+function TPascalParserTool.KeyWordFuncThreadStatic: boolean;
+{ unleashed threadstatic: per-thread declarations at the top of a
+  function/procedure body. Same syntax as the `static` section, modelled as
+  ctnVarSection so identifier completion treats the entries like locals.
+
+  examples:
+
+    procedure Foo;
+    threadstatic
+      x: Integer;             // zero-init per thread
+      y: Integer = 42;        // explicit per-thread value
+      a, b: Integer;          // multi-name
+      a, b: Integer = 5;      // multi-name with shared init
+      greet := 'hello';       // type inference (single name)
+    begin
+    end;
+}
+var
+  LastIdentifierEnd: LongInt;
+  NameCount: integer;
+begin
+  // outside the threadstatic modeswitch, `threadstatic` here is unexpected
+  if not (cmsThreadStatic in Scanner.CompilerModeSwitches) then
+    SaveRaiseUnexpectedKeyWord(20260625120001);
+  // only legal inside a function/procedure body
+  if (CurNode=nil) or (CurNode.Desc<>ctnProcedure) then
+    SaveRaiseUnexpectedKeyWord(20260625120002);
+  CreateChildNode;
+  CurNode.Desc:=ctnVarSection;
+  repeat
+    ReadNextAtom;
+    if AtomIsIdentifier then begin
+      CreateChildNode;
+      CurNode.Desc:=ctnVarDefinition;
+      LastIdentifierEnd:=CurPos.EndPos;
+      NameCount:=1;
+      ReadNextAtom;
+      while (CurPos.Flag=cafComma) do begin
+        CurNode.EndPos:=LastIdentifierEnd;
+        EndChildNode;
+        ReadNextAtom;
+        AtomIsIdentifierSaveE(20260625120003);
+        CreateChildNode;
+        CurNode.Desc:=ctnVarDefinition;
+        LastIdentifierEnd:=CurPos.EndPos;
+        Inc(NameCount);
+        ReadNextAtom;
+      end;
+      if CurPos.Flag=cafAssignment then begin
+        // `name := expr` type inference; only single name allowed
+        if NameCount>1 then
+          SaveRaiseCharExpectedButAtomFound(20260625120004,':');
+        // skip the initializer expression up to the terminating ';';
+        // leave cursor on the ';' so the outer loop's ReadNextAtom advances
+        // to the next entry's first atom (same convention as ReadVariableType)
+        repeat
+          ReadNextAtom;
+          if CurPos.StartPos>SrcLen then break;
+          if CurPos.Flag=cafSemicolon then break;
+          if CurPos.Flag in [cafRoundBracketOpen,cafEdgedBracketOpen] then
+            ReadTilBracketClose(true);
+        until false;
+        CurNode.EndPos:=CurPos.EndPos;
+        EndChildNode;
+      end else if CurPos.Flag=cafColon then begin
+        // `name [, ...] : Type [= Value]` -- same shape as a var-section entry,
+        // ReadVariableType already accepts the optional `= Value` when parent
+        // is ctnVarSection under a ctnProcedure
+        ReadVariableType;
+      end else
+        SaveRaiseCharExpectedButAtomFound(20260625120005,':');
     end else if (CurPos.Flag=cafEdgedBracketOpen) and AllowAttributes then begin
       ReadAttribute;
     end else begin
@@ -4755,6 +5393,7 @@ procedure TPascalParserTool.ReadTypeNameAndDefinition;
     generic name<name>=type;  // this is the only case where >= are two operators
     name<name,name> = type;  // delphi style
     TTest19<T1: record; T2,T3: class; T4: constructor; T5: name> = type
+    expose name = type;     // unleashed: whitelist type from m_strip_rtti stripping
 }
 var
   TypeNode: TCodeTreeNode;
@@ -4763,6 +5402,14 @@ var
 begin
   CreateChildNode;
   TypeNode:=CurNode;
+  // unleashed: optional `expose` prefix whitelists the type from m_strip_rtti.
+  // contextual - skip only when the next atom is another identifier, so that
+  // `type expose = integer;` (alias named `expose`) keeps parsing correctly
+  if (Scanner.CompilerMode=cmUnleashed) and UpAtomIs('EXPOSE') then begin
+    ReadNextAtom;
+    if not AtomIsIdentifier then
+      UndoReadNextAtom;
+  end;
   if (Scanner.CompilerMode in [cmOBJFPC,cmFPC,cmUnleashed]) and UpAtomIs('GENERIC') then begin
     IsGeneric:=true;
     CurNode.Desc:=ctnGenericType;
@@ -5351,6 +5998,14 @@ begin
         EndChildNode;
         ReadNextAtom;
       end;
+      // optional pre-body modifiers on a record body (composablerecords):
+      // `of TYPE`, `size N`, `bitsize N`, `align N`, `bitalign N` in any order,
+      // plus an optional `;` separator before the body. Compiler enforces
+      // context restrictions (e.g., `of T` only on bitpacked record); the
+      // parser is permissive.
+      if (ClassDesc=ctnRecordType)
+      and (cmsComposableRecords in Scanner.CompilerModeSwitches) then
+        ParseComposableRecordModifiers;
       if UpAtomIs('EXTERNAL') then begin
         if (ClassDesc in [ctnObjCClass,ctnObjCCategory])
         or (cmsExternalClass in Scanner.CompilerModeSwitches)
@@ -5632,7 +6287,13 @@ begin
     if (CurPos.Flag=cafColon) then begin
       ReadNextAtom;
       NodeEnd := CurPos.EndPos;
-      if ReadTypeReference(true) then
+      if (Scanner.CompilerMode=cmUnleashed)
+        and (UpAtomIs('ARRAY') or UpAtomIs('PACKED') or UpAtomIs('BITPACKED')) then begin
+        // unleashed: inline `array of X` as procedural-type result
+        if ParseType(CurPos.StartPos) then
+          NodeEnd := CurNode.LastChild.EndPos;
+      end
+      else if ReadTypeReference(true) then
         NodeEnd := CurNode.LastChild.EndPos;
     end else begin
       SaveRaiseCharExpectedButAtomFound(20170421195810,':');
@@ -5760,6 +6421,27 @@ begin
   Result:=true;
 end;
 
+function TPascalParserTool.KeyWordFuncTypeFuture: boolean;
+{
+  examples:
+    future
+    future of Identifier
+}
+begin
+  CreateChildNode;
+  CurNode.Desc:=ctnFutureType;
+  CurNode.EndPos:=CurPos.EndPos;
+  if ReadNextUpAtomIs('OF') then begin
+    ReadNextAtom;
+    KeyWordFuncTypeDefault;
+    CurNode.EndPos:=CurPos.EndPos;
+  end;
+  // on a bare `future` the cursor is already on the atom behind, matching the
+  // trailing ReadNextAtom of the other single-keyword type handlers
+  EndChildNode;
+  Result:=true;
+end;
+
 function TPascalParserTool.KeyWordFuncTypeLabel: boolean;
 // 'label;'
 begin
@@ -5772,7 +6454,7 @@ begin
 end;
 
 function TPascalParserTool.KeyWordFuncTypeType: boolean;
-// 'type identifier'
+// 'type identifier' (strong alias) or unleashed `Type(expr)` intrinsic
 var
   StartPos: Integer;
 begin
@@ -5781,6 +6463,22 @@ begin
   if UpAtomIs('HELPER') then begin
     UndoReadNextAtom;
     Result := KeyWordFuncTypeClass;
+  end else
+  if (CurPos.Flag=cafRoundBracketOpen)
+  and (Scanner.CompilerMode=cmUnleashed) then
+  begin
+    { unleashed Type(expr): the parenthesised expression is the operand whose
+      static type the intrinsic yields. body is not parsed into the tree, it
+      is preserved as a text range and resolved on demand by the find-
+      declaration resolver. }
+    CreateChildNode;
+    CurNode.StartPos:=StartPos;
+    CurNode.Desc:=ctnTypeOfExpr;
+    ReadTilBracketClose(true);
+    ReadNextAtom;
+    CurNode.EndPos:=CurPos.StartPos;
+    EndChildNode;
+    Result:=true;
   end else
   begin
     CreateChildNode;
@@ -5837,10 +6535,12 @@ var
 
   procedure ReadTillTypeEnd;
   begin
-    // read till ';', ':', ')', '=', 'end'
+    // read till ';', ':', ':=', ')', '=', 'end'. ':=' ends an inline-var
+    // type just like '=' ends a typed-const type - without it the element
+    // type of `array[..] of T := (..)` swallows the initializer
     while (CurPos.StartPos<=SrcLen) do begin
       if (CurPos.Flag in [cafSemicolon,cafColon,cafRoundBracketClose,
-        cafEqual,cafEdgedBracketClose])
+        cafEqual,cafEdgedBracketClose,cafAssignment])
       or (AtomIsKeyWord
           and (not IsKeyWordInConstAllowed.DoIdentifier(@Src[CurPos.StartPos])))
       then
@@ -5852,6 +6552,24 @@ var
           SaveRaiseException(20170421195139,ctsUnexpectedSubRangeOperatorFound);
         SubRangeOperatorFound:=true;
       end;
+      ReadNextAtom;
+    end;
+  end;
+
+  procedure ParseAnonEnumStorageType;
+  // composablerecords: optional `(...) of T` storage type clause after an
+  // anonymous enum body. Mirrors the `union of T` / `bitpacked record of T`
+  // syntax. Permissive: the IDE only consumes the tokens, the compiler
+  // validates that T is ordinal and every enumerator fits in T's range.
+  begin
+    if not (cmsComposableRecords in Scanner.CompilerModeSwitches) then exit;
+    if not UpAtomIs('OF') then exit;
+    ReadNextAtom;
+    AtomIsIdentifierSaveE(20260523100000);
+    ReadNextAtom;
+    while CurPos.Flag=cafPoint do begin
+      ReadNextAtom;
+      AtomIsIdentifierSaveE(20260523100001);
       ReadNextAtom;
     end;
   end;
@@ -5905,16 +6623,15 @@ begin
             IsTupleType:=true
           else if AtomIsIdentifier then begin
             ReadNextAtom;
-            if CurPos.Flag=cafColon then
-              IsTupleType:=true
-            else if CurPos.Flag=cafComma then begin
+            // multi-name group (a, b, c, ... : type) needs unbounded lookahead
+            // to find the eventual ':'; short peek missed groups with 3+ names
+            while CurPos.Flag=cafComma do begin
               ReadNextAtom;
-              if AtomIsIdentifier then begin
-                ReadNextAtom;
-                if CurPos.Flag=cafColon then
-                  IsTupleType:=true;
-              end;
+              if not AtomIsIdentifier then break;
+              ReadNextAtom;
             end;
+            if CurPos.Flag=cafColon then
+              IsTupleType:=true;
           end;
           // restore to '('
           MoveCursorToCleanPos(SavedPos);
@@ -6075,6 +6792,7 @@ begin
             CurNode.EndPos:=CurPos.EndPos;
             EndChildNode;
             ReadNextAtom;
+            ParseAnonEnumStorageType;
           end;
         end else begin
           // no TUPLES modeswitch: standard enum parsing
@@ -6100,6 +6818,7 @@ begin
           CurNode.EndPos:=CurPos.EndPos;
           EndChildNode;
           ReadNextAtom;
+          ParseAnonEnumStorageType;
         end;
       end else
         SaveRaiseException(20170421195144,ctsInvalidType);
@@ -6339,6 +7058,222 @@ begin
   {$IFDEF VerboseRecordCase}
   debugln(['TPascalParserTool.KeyWordFuncTypeRecordCase END CurNode=',CurNode.DescAsString,' Atom="',GetAtom,'" at ',CleanPosToStr(CurPos.StartPos)]);
   {$ENDIF}
+  Result:=true;
+end;
+
+procedure TPascalParserTool.ParseComposableRecordModifiers;
+{ Consume the optional pre-body modifier list shared by `union` and `record`
+  under composablerecords. Modifiers may appear in any order:
+    `of TYPE`        - default field type for C-style `name: N` bitfields
+                       inside; on `union`, also defaults size/align to the
+                       type's sizeof/AlignOf
+    `size <const>`   - byte-size assertion on the container
+    `bitsize <const>` - bit-size assertion (rounded up to ceil(N/8) bytes)
+    `align <const>`  - byte-level alignment
+    `bitalign <const>` - bit-level alignment (collapses to ceil(N/8) bytes)
+  A trailing `;` between the last modifier and the body is also accepted.
+
+  Permissive parse: the compiler enforces context, ordering (`of T` first,
+  duplicates rejected) and `size`/`bitsize` mutex. The IDE only consumes
+  the tokens so the rest of the body parses cleanly. }
+var
+  HadModifier: boolean;
+begin
+  HadModifier:=false;
+  while UpAtomIs('SIZE') or UpAtomIs('BITSIZE')
+     or UpAtomIs('ALIGN') or UpAtomIs('BITALIGN') or UpAtomIs('OF') do begin
+    if UpAtomIs('OF') then begin
+      HadModifier:=true;
+      ReadNextAtom;
+      AtomIsIdentifierSaveE(20260513000020);
+      ReadNextAtom;
+      while CurPos.Flag=cafPoint do begin
+        ReadNextAtom;
+        AtomIsIdentifierSaveE(20260513000021);
+        ReadNextAtom;
+      end;
+    end
+    else begin
+      // peek past the modifier-looking identifier: if the next atom is `:`,
+      // `,` or `;` then it is actually the first field name (e.g. record
+      // `Size, Usage: DWORD;`), not a modifier. Undo and exit the loop so
+      // the body parser handles it as a field
+      ReadNextAtom;
+      if CurPos.Flag in [cafColon,cafComma,cafSemicolon] then begin
+        UndoReadNextAtom;
+        break;
+      end;
+      HadModifier:=true;
+      ReadConstant(true,false,[]);
+    end;
+  end;
+  // optional `;` between the last modifier and the body
+  if HadModifier and (CurPos.Flag=cafSemicolon) then
+    ReadNextAtom;
+end;
+
+function TPascalParserTool.KeyWordFuncTypeRecordUnion: boolean;
+{ `union ... end;` (composablerecords): each line of the body is a single
+  field-declaration variant - regular field, named subrecord, inline anonymous
+  record, or anonymous embed. Mapped to ctnRecordCase so identifier lookup on
+  the surrounding record walks the variants as children.
+
+  Optional pre-body modifiers (`of TYPE` / `size N` / `bitsize N` / `align N`
+  / `bitalign N`, any order) sit between the `union` keyword and the first
+  variant. See ParseComposableRecordModifiers.
+
+  Example:
+    union of Byte bitsize 8
+      BitField: byte;
+      bitpacked record b1, b2: boolean; end;
+    end;
+}
+var
+  UnionStartPos: integer;
+begin
+  if not UpAtomIs('UNION') then
+    SaveRaiseException(20260512000001,'[KeyWordFuncTypeRecordUnion] internal');
+  // contextual disambiguation: keep `union: T;` and `union, x: T;` as regular
+  // field declarations whose name happens to be `union`
+  UnionStartPos:=CurPos.StartPos;
+  ReadNextAtom;
+  if CurPos.Flag in [cafColon,cafComma] then begin
+    UndoReadNextAtom;
+    Result:=KeyWordFuncClassIdentifier;
+    exit;
+  end;
+  ParseComposableRecordModifiers;
+  CreateChildNode;
+  CurNode.StartPos:=UnionStartPos;
+  CurNode.Desc:=ctnRecordCase;
+  repeat
+    if not ParseInnerBasicRecord(CurPos.StartPos) then begin
+      if CurPos.Flag<>cafEnd then
+        SaveRaiseStringExpectedButAtomFound(20260512000002,'end');
+      break;
+    end;
+    ReadNextAtom;
+  until false;
+  // CurPos is on the union's END; step past it to land on the trailing `;`
+  ReadNextAtom;
+  if CurPos.Flag=cafSemicolon then
+    UndoReadNextAtom; // leave `;` for the outer record-body loop
+  CurNode.EndPos:=CurPos.EndPos;
+  EndChildNode;
+  Result:=true;
+end;
+
+function TPascalParserTool.KeyWordFuncTypeRecordEmbed: boolean;
+{ `embed TName;` (composablerecords): anonymous embed of an existing record
+  type. carrier is a ctnVarDefinition starting at the type identifier so
+  identifier lookup reads its name as `TName` (qualified access via
+  `outer.TName.field` works). A mirroring ctnIdentifier subnode lets
+  FindBaseTypeOfNode chase the carrier to the embedded record def.
+  ctnsAnonymousEmbed tags the carrier for flatten-lookup follow-up - the flat
+  path (`outer.field` -> embedded type's field) needs additional integration
+  in FindIdentifierInContext and is intentionally not handled here.
+
+  `embed` is contextual: followed by `:` or `,` it stays a regular field name
+  (`embed: integer;` / `embed, x: T;`). }
+var
+  TypeStartPos, TypeEndPos: integer;
+begin
+  if not UpAtomIs('EMBED') then
+    SaveRaiseException(20260512000005,'[KeyWordFuncTypeRecordEmbed] internal');
+  ReadNextAtom;
+  if CurPos.Flag in [cafColon,cafComma] then begin
+    UndoReadNextAtom;
+    Result:=KeyWordFuncClassIdentifier;
+    exit;
+  end;
+  AtomIsIdentifierSaveE(20260512000006);
+  TypeStartPos:=CurPos.StartPos;
+  TypeEndPos:=CurPos.EndPos;
+  CreateChildNode;
+  CurNode.StartPos:=TypeStartPos;
+  CurNode.Desc:=ctnVarDefinition;
+  CurNode.SubDesc:=CurNode.SubDesc or ctnsAnonymousEmbed;
+  CreateChildNode;
+  CurNode.Desc:=ctnIdentifier;
+  CurNode.StartPos:=TypeStartPos;
+  CurNode.EndPos:=TypeEndPos;
+  EndChildNode;
+  ReadNextAtom;
+  if CurPos.Flag<>cafSemicolon then
+    SaveRaiseCharExpectedButAtomFound(20260512000007,';');
+  CurNode.EndPos:=CurPos.StartPos;
+  EndChildNode;
+  Result:=true;
+end;
+
+function TPascalParserTool.KeyWordFuncTypeRecordPad: boolean;
+{ `pad N;` (composablerecords): reserves N anonymous padding bits inside a
+  bitpacked record body with an active default type. The compiler synthesises
+  a hidden `$pad$N` field with `strict private` visibility; the IDE doesn't
+  emit a node for it - the construct is invisible to identifier completion.
+
+  `pad` is contextual: followed by `:` or `,` it stays a regular field name
+  (`pad: byte;` / `pad, x: 2;`). }
+begin
+  if not UpAtomIs('PAD') then
+    SaveRaiseException(20260513000010,'[KeyWordFuncTypeRecordPad] internal');
+  ReadNextAtom;
+  if CurPos.Flag in [cafColon,cafComma] then begin
+    UndoReadNextAtom;
+    Result:=KeyWordFuncClassIdentifier;
+    exit;
+  end;
+  if not AtomIsNumber then
+    SaveRaiseStringExpectedButAtomFound(20260513000011,'integer literal');
+  ReadNextAtom;
+  if CurPos.Flag<>cafSemicolon then
+    SaveRaiseCharExpectedButAtomFound(20260513000012,';');
+  UndoReadNextAtom; // leave `;` for the outer record-body loop
+  Result:=true;
+end;
+
+function TPascalParserTool.KeyWordFuncTypeRecordInlineAnon: boolean;
+{ inline anonymous record (`record`, `packed record`, or `bitpacked record`
+  followed by `fields end;`) appearing as a member of an outer record under
+  composablerecords. body parses as regular record fields; the carrier is a
+  nested ctnRecordType so lookup walks its children when resolving members on
+  the outer record. the optional `packed` / `bitpacked` prefix flips the
+  enclosing record to bit-packed layout (PEB-style boolean bitfields), but is
+  layout-only - the node shape and lookup are unchanged. }
+var
+  StartingPos: integer;
+begin
+  if not (UpAtomIs('RECORD') or UpAtomIs('PACKED') or UpAtomIs('BITPACKED')) then
+    SaveRaiseException(20260512000003,'[KeyWordFuncTypeRecordInlineAnon] internal');
+  StartingPos:=CurPos.StartPos;
+  if UpAtomIs('PACKED') or UpAtomIs('BITPACKED') then begin
+    ReadNextAtom;
+    if not UpAtomIs('RECORD') then
+      SaveRaiseStringExpectedButAtomFound(20260512000008,'"record"');
+  end;
+  CreateChildNode;
+  CurNode.StartPos:=StartingPos;
+  CurNode.Desc:=ctnRecordType;
+  ReadNextAtom;
+  // optional pre-body modifiers (composablerecords): `of TYPE`, `size N`,
+  // `bitsize N`, `align N`, `bitalign N` in any order, plus an optional `;`
+  // separator. Compiler enforces context (e.g., `of T` only on bitpacked,
+  // size/bitsize mutex); parser is permissive.
+  ParseComposableRecordModifiers;
+  repeat
+    if not ParseInnerBasicRecord(CurPos.StartPos) then begin
+      if CurPos.Flag<>cafEnd then
+        SaveRaiseStringExpectedButAtomFound(20260512000004,'end');
+      break;
+    end;
+    ReadNextAtom;
+  until false;
+  // CurPos is on the inline record's END
+  ReadNextAtom;
+  if CurPos.Flag=cafSemicolon then
+    UndoReadNextAtom;
+  CurNode.EndPos:=CurPos.EndPos;
+  EndChildNode;
   Result:=true;
 end;
 
@@ -6985,7 +7920,8 @@ function TPascalParserTool.ReadSpecialize(ParserFlags: TPascalParserFlags; Extra
 begin
   Result := False;
   //debugln(['TPascalParserTool.ReadSpecialize START ',GetAtom]);
-  if Scanner.CompilerMode in [cmOBJFPC,cmUnleashed] then begin
+  if (Scanner.CompilerMode in [cmOBJFPC,cmUnleashed])
+  and not (cmsImplicitGenerics in Scanner.CompilerModeSwitches) then begin
     {$IFDEF CheckNodeTool}
     if not UpAtomIs('SPECIALIZE') then
       SaveRaiseIllegalQualifier(20171106150016);
