@@ -95,6 +95,10 @@ type
     procedure TestCompleteLocalVar_EnumUsedUnitOverload;
     procedure TestCompleteLocalVar_EnumInClass;
     procedure TestCompleteLocalVar_EnumInClass2;
+    procedure TestCompleteLocalVar_IfExpr;
+    procedure TestCompleteLocalVar_IfExprCommonAncestor;
+    procedure TestCompleteLocalVar_CaseExpr;
+    procedure TestCompleteLocalVar_TryExpr;
     procedure TestCompleteLocalVarForAnonymousFunction1;
     procedure TestCompleteLocalVarForAnonymousFunction2;
 
@@ -2066,6 +2070,116 @@ begin
     '  c: TColor;',
     'begin',
     '  c:=Red;',
+    'end;',
+    'begin',
+    'end.']);
+end;
+
+procedure TTestCodeCompletion.TestCompleteLocalVar_IfExpr;
+begin
+  Test('TestCompleteLocalVar_IfExpr',
+    ['program Project1;',
+    '{$mode delphi}',
+    'type TColor = (red,blue);',
+    'procedure Fly(b: boolean);',
+    'begin',
+    '  c:=if b then red else blue;',
+    'end;',
+    'begin',
+    'end.'],
+    6,3,
+    ['program Project1;',
+    '{$mode delphi}',
+    'type TColor = (red,blue);',
+    'procedure Fly(b: boolean);',
+    'var',
+    '  c: TColor;',
+    'begin',
+    '  c:=if b then red else blue;',
+    'end;',
+    'begin',
+    'end.']);
+end;
+
+procedure TTestCodeCompletion.TestCompleteLocalVar_IfExprCommonAncestor;
+begin
+  Test('TestCompleteLocalVar_IfExprCommonAncestor',
+    ['program Project1;',
+    '{$mode delphi}',
+    'type',
+    '  TAnimal = class end;',
+    '  TAnt = class(TAnimal) end;',
+    '  TBird = class(TAnimal) end;',
+    'procedure Fly(b: boolean; Ant: TAnt; Bird: TBird);',
+    'begin',
+    '  a:=if b then Ant else Bird;',
+    'end;',
+    'begin',
+    'end.'],
+    9,3,
+    ['program Project1;',
+    '{$mode delphi}',
+    'type',
+    '  TAnimal = class end;',
+    '  TAnt = class(TAnimal) end;',
+    '  TBird = class(TAnimal) end;',
+    'procedure Fly(b: boolean; Ant: TAnt; Bird: TBird);',
+    'var',
+    '  a: TAnimal;',
+    'begin',
+    '  a:=if b then Ant else Bird;',
+    'end;',
+    'begin',
+    'end.']);
+end;
+
+procedure TTestCodeCompletion.TestCompleteLocalVar_CaseExpr;
+begin
+  Test('TestCompleteLocalVar_CaseExpr',
+    ['program Project1;',
+    '{$mode delphi}',
+    'type TColor = (red,green,blue);',
+    'procedure Fly(i: integer);',
+    'begin',
+    '  c:=case i of 1: red; 2: green; else blue end;',
+    'end;',
+    'begin',
+    'end.'],
+    6,3,
+    ['program Project1;',
+    '{$mode delphi}',
+    'type TColor = (red,green,blue);',
+    'procedure Fly(i: integer);',
+    'var',
+    '  c: TColor;',
+    'begin',
+    '  c:=case i of 1: red; 2: green; else blue end;',
+    'end;',
+    'begin',
+    'end.']);
+end;
+
+procedure TTestCodeCompletion.TestCompleteLocalVar_TryExpr;
+begin
+  Test('TestCompleteLocalVar_TryExpr',
+    ['program Project1;',
+    '{$mode delphi}',
+    'type TColor = (red,green,blue);',
+    'procedure Fly(i: integer);',
+    'begin',
+    '  c:=try red except on E: TObject do green; else blue end;',
+    'end;',
+    'begin',
+    'end.'],
+    6,3,
+    ['program Project1;',
+    '{$mode delphi}',
+    'type TColor = (red,green,blue);',
+    'procedure Fly(i: integer);',
+    'var',
+    '  c: TColor;',
+    'begin',
+    '  c:=try red except on E: TObject do green; else blue end;',
     'end;',
     'begin',
     'end.']);

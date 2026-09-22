@@ -1232,11 +1232,14 @@ resourcestring
   dlgResetActiveDesktopBtnHint = 'Restore window layout of active desktop';
   dlgToggleDebugDesktopBtnCaption = 'Toggle as debug desktop';
   dlgToggleDebugDesktopBtnHint = 'Toggle as debug desktop';
+  dlgToggleDesignDesktopBtnCaption = 'Toggle as design desktop';
+  dlgToggleDesignDesktopBtnHint = 'Activate this desktop while the form designer is shown (Toggle Form/Unit)';
   dlgDesktopName = 'Desktop name';
   dlgOverwriteDesktop = 'Desktop with the name "%s" was found.'+sLineBreak+'Should the old desktop be overwritten?';
   dlgDebugDesktop = 'debug';
+  dlgDesignDesktop = 'design';
   dlgActiveDesktop = 'active';
-  dlgImportDesktopExists = 'A desktop with the same name already exists.'+sLineBreak+'Please confirm the desktop name:';
+  dlgImportDesktopExists = 'A desktop with the same name already exists.'+sLineBreak+'Please confirm or change the desktop name:';
   dlgDesktopsImported = '%d desktop(s) successfully imported from "%s"';
   dlgDesktopsExported = '%d desktop(s) successfully exported to "%s"';
   lisExportSelected = 'Export selected';
@@ -1247,6 +1250,8 @@ resourcestring
   dlgAutoSaveActiveDesktopHint = 'Save active desktop on IDE close'+sLineBreak+'Save debug desktop on IDE close and debug end';
   dlgAssociatedDebugDesktop = 'Associated debug desktop for "%s"';
   dlgAssociatedDebugDesktopHint = 'If you select the desktop, the associated debug desktop will be selected as well.';
+  dlgAssociatedDesignDesktop = 'Associated design desktop for "%s"';
+  dlgAssociatedDesignDesktopHint = 'If you select the desktop, the associated design desktop will be selected as well.';
 
   // Window options
   dlgShowingWindows = 'Showing Windows';
@@ -1307,9 +1312,19 @@ resourcestring
   dlgMaxCntr = 'Maximum counter';
   dlgEdBSubDir = 'Sub directory';
   dlgEnvOtherFiles = 'Other Files';
-  dlgMaxRecentFiles = 'Max recent files';
-  dlgMaxRecentProjs = 'Max recent project files';
+  dlgRecent = 'Recent';
+  dlgMaxRecentCount = 'Max count of recent items';
+  dlgRecentFilesCaption = 'Files';
+  dlgRecentProjectsCaption = 'Projects';
+  dlgRecentPackagesCaption = 'Packages';
   dlgMaxRecentHint = 'Value 0 means unlimited.';
+  dlgShowInOpenCoolbarButton = 'Show in "Open" drop-down toolbar button';
+  // Headers for the drop-down list of the "Open" toolbar button. Packages may
+  // display favorites in this list, so need to clarify that these are recent items.
+  dlgRecentProjectsHeader = 'Recent Projects:';
+  dlgRecentPackagesHeader = 'Recent Packages:';
+  dlgRecentFilesHeader = 'Recent Files:';
+
   dlgLazarusDir = 'Lazarus directory (default for all projects)';
   lisLazarusDirHint = 'Lazarus sources. This path is relative to primary config directory (%s).';
   dlgFpcExecutable = 'Compiler executable (e.g. %s)';
@@ -1320,6 +1335,11 @@ resourcestring
   lisSetThisToTranslateTheCompilerMessagesToAnotherLang = 'Set this to '
     +'translate the compiler messages to another language (i.e. not English). '
     +'For example: German: $(FPCSrcDir)/compiler/msg/errordu.msg.';
+
+  dlgNewDebuggerBackend = 'New debugger backend';
+  dlgPleaseChooseTheDebuggerBackend = 'Please choose the debugger backend to '
+    +'add.';
+  dlgClass = 'Class:';
 
   dlgDebugType = 'Debugger type and path';
   dlgTestPrjDir = 'Directory for building test projects';
@@ -1820,9 +1840,10 @@ resourcestring
   dlgKeyLink = '(Edit Key)';
   dlgBracketHighlight = 'Bracket highlight';
   dlgNoBracketHighlight = 'No Highlight';
-  dlgHighlightLeftOfCursor = 'Left Of Caret';
-  dlgHighlightRightOfCursor = 'Right Of Caret';
-  gldHighlightBothSidesOfCursor = 'On Both Sides';
+  dlgHighlightLeftOfCursor = 'Left of Caret';
+  dlgHighlightRightOfCursor = 'Right of Caret';
+  dlgHighlightBothSidesOfCursorLeft = 'On both sides (left first)';
+  dlgHighlightBothSidesOfCursorRight = 'On both sides (right first)';
   dlgTrimSpaceTypeCaption = 'Trim spaces style';
   dlgTrimSpaceTypeLeaveLine = 'Leave line';
   dlgTrimSpaceTypeEditLine = 'Line Edited';
@@ -1936,6 +1957,7 @@ resourcestring
   dlgMarkupGroup = 'Highlight all occurrences of Word under Caret';
   dlgBracketMatchGroup = 'Matching bracket and quote pairs';
   dlgPasExtHighlightGroup = 'Extended Pascal Highlight Options';
+  dlgSqlExtHighlightGroup = 'Extended SQL Highlight Options';
   dlgPasParamTypes = 'Types and values in declarations and params';
   dlgPasKeywordsMatches = 'Matching Keywords';
   dlgPasKeywordsMarkup = 'Markup (on caret)';
@@ -1986,6 +2008,7 @@ resourcestring
   dlgIncludeIdentifiersContainingPrefix = 'Include identifiers containing prefix';
   lisAutomaticFeatures = 'Completion and Hints';
   lisPascalHighlightOpts = 'Pascal highlight';
+  lisSqlHighlightOpts = 'SQL highlight';
   lisAutoMarkup = 'Pairs/Matches and Structure';
   dlgUseIconsInCompletionBox = 'Icons in code completion box';
   dlgIncludeWordsToIdentCompl = 'Include words';
@@ -2462,13 +2485,14 @@ resourcestring
   lisThePackageWantsToUseTheCompiler = 'The package "%s" wants to use the compiler:%s%s%s'
     +'This is not the default compiler configured in the IDE. Opening a package with a custom '
     +'compiler can run arbitrary programs.%sDo you want to trust and use this compiler?';
-  lisTrustCompilerThisTime = 'Trust this time';
+  lisTrustCompilerThisTime = 'Trust until project closes';
   lisTrustCompilerAlways = 'Trust always';
   lisDoNotTrustCompiler = 'Do not trust';
   lisUseDefaultCompiler = 'Use default compiler';
   lisTrustedCompilers = 'Trusted compilers';
-  lisDeleteSelectedTrustedCompilers = 'Delete selected';
   lisTrustedCommands = 'Trusted commands';
+  lisAddPathToTrustedExe = 'Add path to trusted executable';
+  lisPathAlreadyExists = 'The path already exists.';
   lisTheProjectWantsToUseTheCompilerBuild = 'The project "%s" wants to use the compiler:%s%s%s'
     +'This is not the default compiler configured in the IDE. Building with a custom '
     +'compiler can run arbitrary programs.%sDo you want to trust and use this compiler?';
@@ -2764,6 +2788,7 @@ resourcestring
   lisFPCResources = 'FPC resources (.res)';
   lisDelphiCompatibleResources = 'Delphi compatible resources. Recommended.';
   lisStorePathDelimitersAndAs = 'Store path delimiters \ and / as';
+  lisSQLHighlighterDialect = 'Override dialect for SQL highlighter';
   lisDoNotChange = 'Do not change';
   lisChangeToUnix = 'Change to Unix /';
   lisChangeToWindows = 'Change to Windows \';
@@ -2802,7 +2827,7 @@ resourcestring
   dlgRedirStdNotSupported = 'Current debugger does not support redirection.';
   dlgConsoleGroup = 'Console';
   dlgConsoleModeOs = 'OS console';
-  dlgConsoleModeIde = 'Internal IDE consoles';
+  dlgConsoleModeIde = 'Internal IDE console';
   dlgConsoleUseIdeDefault = '-- Use IDE default console --';
   dlgConsoleIdeWindow = 'IDE internal window';
   dlgConsoleUnknown = 'Unknown console "%s"';
@@ -2931,12 +2956,13 @@ resourcestring
   uemBookmarkNUnSet = 'Bookmark &%s';
   uemBookmarkNSet   = 'Bookmark &%s: %s';
   lisChangeEncoding = 'Change Encoding';
-  lisChangeFile = 'Change file';
-  lisEncodingOfFileOnDiskIsNewEncodingIs = 'Encoding of file "%s"%son disk is %s. New encoding is %s.';
-  lisReopenWithAnotherEncoding = 'Reopen with another encoding';
+  lisEncodingOfFileOnDiskIsNewEncodingIs = 'Encoding of file "%s"'
+    +'%son disk is %s. New encoding is %s.';
+  lisSaveWithNewEncoding = 'Save with new encoding';
+  lisReopenWithNewEncoding = 'Reopen with new encoding';
   lisAbandonChanges = 'Abandon changes?';
-  lisAllYourModificationsToWillBeLostAndTheFileReopened = 'All your modifications '
-    +'to "%s"%swill be lost and the file reopened.';
+  lisAllYourModificationsToWillBeLostAndTheFileReopened = 'All your modifications to "%s"'
+    +'%swill be lost and the file reopened.';
   lisOpenLfm = 'Open %s';
   lisUtf8WithBOM = 'UTF-8 with BOM';
   uemToggleBookmark = '&Toggle Bookmark';
@@ -4564,6 +4590,8 @@ resourcestring
     +'po file. For this you must enable I18N for this package, provide a po '
     +'output directory and leave this option unchecked.';
   lisPkgMangUseUnit = 'Use unit';
+  lisPkgMangVirtualUnit = 'Virtual unit';
+  lisPkgMangVirtualUnitHint = 'Package has only a unit''s name. The unit itself is found elsewhere.';
   lisPckEditMinimumVersion = 'Minimum Version:';
   lisPckEditMaximumVersion = 'Maximum Version:';
   lisPckEditApplyChanges = 'Apply changes';
@@ -6206,6 +6234,42 @@ resourcestring
   lisWhenOpeningASymlinkFileOpenTheTargetFileTheSymlink = 'When opening a symlink file, open the '
     +'target file, the symlink file, or ask';
   lisWhenOpeningSymlink = 'When opening a Symlink';
+  dlgFoldSqlSelect = 'Select';
+  dlgFoldSqlSubSelect = 'Sub-Select';
+  dlgFoldSqlUpdateSelect = 'Update-Select';
+  dlgFoldSqlInsertSelect = 'Insert-Select';
+  dlgFoldSqlFrom = 'From';
+  dlgFoldSqlJoin = 'Join';
+  dlgFoldSqlJoinOn = 'Join-On';
+  dlgFoldSqlWhere = 'Where';
+  dlgFoldSqlGroup = 'Group';
+  dlgFoldSqlHaving = 'Having';
+  dlgFoldSqlOrder = 'Order';
+  dlgFoldSqlLimit = 'Limit';
+  dlgFoldSqlInto = 'Into';
+  dlgFoldSqlSet = 'Set';
+  dlgFoldSqlValues = 'Values';
+  dlgFoldSqlCreateTable = 'Create Table';
+  dlgFoldSqlAlterTable = 'Alter Table';
+  dlgFoldSqlDropTable = 'Drop Table';
+  dlgFoldSqlCreateDb = 'Create Database';
+  dlgFoldSqlDropDb = 'Drop Database';
+  dlgFoldSqlCreateProcedure = 'Create Procedure';
+  dlgFoldSqlBegin = 'Begin';
+  dlgFoldSqlUpdate = 'Update';
+  dlgFoldSqlInsert = 'Insert';
+  dlgFoldSqlDelete = 'Delete';
+  optEdCompleteBackspaceBehaviour = 'Backspace behaviour';
+  optEdCompleteOnlyDeletePreviousChar = 'Only delete previous char';
+  optEdCompleteCancelIfCompletionWasJust = 'Cancel, if completion was just opened';
+  optEdCompleteCancelIfCompletionWasJust2 = 'Cancel, if completion was just opened, and caret at '
+    +'start';
+  optEdCompleteCancelIfCaretAtStart = 'Cancel, if caret at start';
+  optEdCompleteCancelIfCaretAtStartSingl = 'Cancel, if caret at start (single press, not on '
+    +'repeat key)';
+  optEdCompleteCancelIfJustOpenedOrCaret = 'Cancel, if just opened, or caret at start (not on '
+    +'repeat key)';
+  optEdCompleteCancelIfOpenedByDot = 'Cancel, if opened by dot';
 
 implementation
 

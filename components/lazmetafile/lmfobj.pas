@@ -75,16 +75,28 @@ type
   private
     fText: string;
   public
-    constructor Create(x,y:integer; const AText:string);overload;
-    procedure Action(fImage:TlmfImage;ACanvas:TCanvas);override;
+    constructor Create(x, y: integer; const AText: string); overload;
+    procedure Action(fImage: TlmfImage; ACanvas: TCanvas); override;
   published
-    property Text:string read fText write fText;
+    property Text: string read fText write fText;
   end;
 
   TlmfTextInRect = class(TlmfText)
   private
     fRect: TRect;
     fStyle: TTextStyle;
+    function GetAlignment: TAlignment;
+    function GetClipping: Boolean;
+    function GetLayout: TTextLayout;
+    function GetOpaque: Boolean;
+    function GetSingleLine: Boolean;
+    function GetWordBreak: Boolean;
+    procedure SetAlignment(AValue: TAlignment);
+    procedure SetClipping(AValue: Boolean);
+    procedure SetLayout(AValue: TTextLayout);
+    procedure SetOpaque(AValue: Boolean);
+    procedure SetSingleLine(AValue: Boolean);
+    procedure SetWordBreak(AValue: Boolean);
     procedure ReadTextStyle(Reader: TReader);
     procedure WriteTextStyle(Writer: TWriter);
   protected
@@ -93,11 +105,18 @@ type
     constructor Create(const ARect: TRect; x, y: Integer; const AText: String;
       const AStyle: TTextStyle); overload;
     procedure Action(fImage: TlmfImage; ACanvas: TCanvas); override;
+    property TextStyle: TTextStyle read fStyle write fStyle;
+  published
     property Left: Integer read fRect.Left write fRect.Left;
     property Top: Integer read fRect.Top write fRect.Top;
     property Right: Integer read fRect.Right write fRect.Right;
     property Bottom: Integer read fRect.Bottom write fRect.Bottom;
-    property TextStyle: TTextStyle read fStyle write fStyle;
+    property Alignment: TAlignment read GetAlignment write SetAlignment default taLeftJustify;
+    property Clipping: Boolean read GetClipping write SetClipping default false;
+    property Layout: TTextLayout read GetLayout write SetLayout default tlTop;
+    property Opaque: Boolean read GetOpaque write SetOpaque default false;
+    property SingleLine: Boolean read GetSingleLine write SetSingleLine default false;
+    property WordBreak: Boolean read GetWordBreak write SetWordBreak default false;
   end;
 
   TlmfTextColor = class(TlmfObject)
@@ -404,7 +423,7 @@ begin
     ACanvas.TextOut(fImage.ScaleX(fPos.X),fImage.ScaleY(fPos.Y),fText);
   end;
 }
-  ACanvas.TextOut(fImage.ScaleX(fPos.X),fImage.ScaleY(fPos.Y),fText);
+  ACanvas.TextOut(fImage.ScaleX(fPos.X), fImage.ScaleY(fPos.Y),fText);
 end;
 
 
@@ -428,7 +447,10 @@ begin
     fImage.ScaleX(fRect.Right),
     fImage.ScaleY(fRect.bottom)
   );
-  ACanvas.TextRect(R, R.Left, R.Top, fText, fStyle);
+  if fImage.YAxisDown then
+    ACanvas.TextRect(R, R.Left, R.Top, fText, fStyle)
+  else
+    ACanvas.TextRect(R, R.Left, R.Bottom, fText, fStyle);
 end;
 
 procedure TlmfTextInRect.DefineProperties(Filer: TFiler);
@@ -445,6 +467,66 @@ end;
 procedure TlmfTextInRect.WriteTextStyle(Writer: TWriter);
 begin
   Writer.Write(fStyle, SizeOf(fStyle));
+end;
+
+function TlmfTextInRect.GetAlignment: TAlignment;
+begin
+  Result := fStyle.Alignment;
+end;
+
+function TlmfTextInRect.GetClipping: Boolean;
+begin
+  Result := fStyle.Clipping;
+end;
+
+function TlmfTextInRect.GetLayout: TTextLayout;
+begin
+  Result := fStyle.Layout;
+end;
+
+function TlmfTextInRect.GetOpaque: Boolean;
+begin
+  Result := fStyle.Opaque;
+end;
+
+function TlmfTextInRect.GetSingleLine: Boolean;
+begin
+  Result := fStyle.SingleLine;
+end;
+
+function TlmfTextInRect.GetWordBreak: Boolean;
+begin
+  Result := fStyle.WordBreak;
+end;
+
+procedure TlmfTextInRect.SetAlignment(AValue: TAlignment);
+begin
+  fStyle.Alignment := AValue;
+end;
+
+procedure TlmfTextInRect.SetClipping(AValue: Boolean);
+begin
+  fStyle.Clipping := AValue;
+end;
+
+procedure TlmfTextInRect.SetLayout(AValue: TTextLayout);
+begin
+  fStyle.Layout := AValue;
+end;
+
+procedure TlmfTextInRect.SetOpaque(AValue: Boolean);
+begin
+  fStyle.Opaque := AValue;
+end;
+
+procedure TlmfTextInRect.SetSingleLine(AValue: Boolean);
+begin
+  fStyle.SingleLine := AValue;
+end;
+
+procedure TlmfTextInRect.SetWordBreak(AValue: Boolean);
+begin
+  fStyle.WordBreak := AValue;
 end;
 
 
@@ -606,8 +688,15 @@ begin
 
   xL := fImage.ScaleX(Left);
   xR := fImage.ScaleX(Right);
-  yT := fImage.ScaleY(Top);
-  yB := fImage.ScaleY(Bottom);
+  if fImage.YAxisDown then
+  begin
+    yT := fImage.ScaleY(Top);
+    yB := fImage.ScaleY(Bottom);
+  end else
+  begin
+    yT := fImage.ScaleY(Bottom);
+    yB := fImage.ScaleY(Top);
+  end;
   if fDirection = gdVertical then
   begin
     n := yB - yT;
@@ -663,11 +752,21 @@ begin
 end;
 
 procedure TlmfArc.Action(fImage: TlmfImage; ACanvas: TCanvas);
+var
+  ptStart, ptEnd: TPoint;
 begin
+  if fImage.YAxisDown then begin
+    ptStart := Point(fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y));
+    ptEnd := Point(fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y));
+  end else
+  begin
+    ptStart := Point(fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y));
+    ptEnd := Point(fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y));
+  end;
   ACanvas.Arc(
     fImage.ScaleX(fClip.Left), fImage.ScaleY(fClip.Top), fImage.ScaleX(fClip.Right), fImage.ScaleY(fClip.Bottom),
-    fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y),
-    fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y)
+    ptStart.X, ptStart.Y,
+    ptEnd.X, ptEnd.Y
   );
 end;
 
@@ -675,11 +774,22 @@ end;
 { TlmfChord }
 
 procedure TlmfChord.Action(fImage: TlmfImage; ACanvas: TCanvas);
+var
+  ptStart, ptEnd: TPoint;
 begin
+  if fImage.YAxisDown then begin
+    ptStart := Point(fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y));
+    ptEnd := Point(fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y));
+  end else
+  begin
+    ptStart := Point(fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y));
+    ptEnd := Point(fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y));
+  end;
+
   ACanvas.Chord(
     fImage.ScaleX(fClip.Left), fImage.ScaleY(fClip.Top), fImage.ScaleX(fClip.Right), fImage.ScaleY(fClip.Bottom),
-    fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y),
-    fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y)
+    ptStart.X, ptStart.Y,
+    ptEnd.X, ptEnd.Y
   );
 end;
 
@@ -687,11 +797,21 @@ end;
 { TlmfPie }
 
 procedure TlmfPie.Action(fImage: TlmfImage; ACanvas: TCanvas);
+var
+  ptStart, ptEnd: TPoint;
 begin
+  if fImage.YAxisDown then begin
+    ptStart := Point(fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y));
+    ptEnd := Point(fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y));
+  end else
+  begin
+    ptStart := Point(fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y));
+    ptEnd := Point(fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y));
+  end;
   ACanvas.Pie(
     fImage.ScaleX(fClip.Left), fImage.ScaleY(fClip.Top), fImage.ScaleX(fClip.Right), fImage.ScaleY(fClip.Bottom),
-    fImage.ScaleX(fStartPt.X), fImage.ScaleY(fStartPt.Y),
-    fImage.ScaleX(fEndPt.X), fImage.ScaleY(fEndPt.Y)
+    ptStart.X, ptStart.Y,
+    ptEnd.X, ptEnd.Y
   );
 end;
 
@@ -808,7 +928,7 @@ constructor TlmfPicture.Create(AnOwner:TComponent);
 begin
   inherited Create(AnOwner);
   fPicture := TPicture.Create;
-  fPixelsPerInch := 96;  // will updated when image is read
+  fPixelsPerInch := 96;  // needs to be updated when image is read
 end;
 
 destructor TlmfPicture.Destroy;

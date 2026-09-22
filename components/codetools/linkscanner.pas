@@ -240,7 +240,6 @@ type
     cmsLock,               { `lock` block: wraps a statement in Enter/try/finally/LeaveCriticalSection }
     cmsAsyncAwait,         { `async` spawns work on a worker thread returning a `future of T`; `await` joins it }
 
-    // not yet in FPC, supported by pas2js:
     cmsExternalClass,      { pas2js: allow  class external [pkgname] name [symbol] }
     cmsIgnoreAttributes,   { pas2js: ignore attributes }
     cmsOmitRTTI,           { pas2js: treat class section 'published' as 'public' and typeinfo does not work on symbols declared with this switch }
@@ -4663,8 +4662,10 @@ begin
       {$ENDIF}
       if (LinkCount>0) and (FLinks[FLinkCount-1].Kind=slkSkipStart) then begin
         // remove unneeded SkipStart
+        // undo the '{'#3 inserted by AddSkipComment(true): the skip start link
+        // CleanedPos points AT the '{', so roll back one char further
         dec(FLinkCount);
-        CleanedLen:=FLinks[FLinkCount].CleanedPos;
+        CleanedLen:=FLinks[FLinkCount].CleanedPos-1;
         exit;
       end;
     end;
@@ -4757,7 +4758,7 @@ procedure TLinkScanner.SkipTillEndifElse(SkippingUntil: TLSSkippingDirective);
     end;
     if (lvl and 1=1) then begin
       if (p^ in [#10,#13]) then begin
-        // delphi 12 multiline string literal
+        // delphi multiline string literal
         while p^<>#0 do begin
           if (p^='''') and (p[1]='''') then begin
             i:=2;
@@ -5224,6 +5225,8 @@ var
 begin
   if (CleanStartPos<1) or (CleanStartPos>CleanEndPos)
   or (CleanEndPos>CleanedLen+1) or (UniqueSortedCodeList=nil) then exit;
+  if CleanStartPos>CleanedLen then
+    CleanStartPos:=CleanedLen; // e.g. inserting behind the last parsed char
   LinkIndex:=LinkIndexAtCleanPos(CleanStartPos);
   if LinkIndex<0 then exit;
   ACode:=FLinks[LinkIndex].Code;

@@ -323,9 +323,13 @@ type
     function GetLocalizedDescription: string; virtual;
     procedure Release;
     procedure Reference;
-    function InitDescriptor: TModalResult; // called while old project is still there, you can start a dialog to ask for settings
-    function InitProject(AProject: TLazProject): TModalResult; virtual; // called after old project was closed and new was created, you must now setup global flags and compiler options
-    function CreateStartFiles({%H-}AProject: TLazProject): TModalResult; virtual; // called after all global settings are done, you can now create and open files
+    // called while old project is still there, you can start a dialog to ask for settings
+    function InitDescriptor: TModalResult;
+    // called after old project was closed and new was created,
+    // you must now setup global flags and compiler options
+    function InitProject(AProject: TLazProject): TModalResult; virtual;
+    // called after all global settings are done, you can now create and open files
+    function CreateStartFiles({%H-}AProject: TLazProject): TModalResult; virtual;
   public
     property Name: string read FName write SetName;
     property VisibleInNewDialog: boolean read FVisibleInNewDialog
@@ -363,17 +367,17 @@ type
 
 const
   (* Which console serves, once rpcmIdeConsole says it is not the OS. Held as a
-     string, not an enum, because terminal providers are to be registered at run
-     time and identified by an id; the built-in window is merely the first of
-     them.
+     string, not an enum, because console windows are registered at run time
+     and identified by an id; the built-in window is merely one of them, and
+     has no privileged spelling here.
 
      An empty string means "follow the IDE-wide default" rather than any
      particular console, the same sentinel role '' plays for
      TProjectDebugLink.DebuggerBackend. Keeping it matters: without it every
      project saved by this version would record an explicit choice and would go
-     on ignoring the IDE-wide setting once that setting exists. *)
-  RunParamsConsoleIdDefault   = '';
-  RunParamsConsoleIdIdeWindow = 'IDEConsole';
+     on ignoring the IDE-wide setting. It is the only reserved value; anything
+     else is a plug-in id. *)
+  RunParamsConsoleIdDefault = '';
 
 type
 
@@ -665,7 +669,7 @@ type
     function GetTitle: string; virtual; abstract; // Title with macros resolved
     function GetDefaultTitle: string; // extract name from lpi file name
     function GetTitleOrName: string; // GetTitle, if this is '' then GetDefaultTitle
-    function UnitInfoWithFilename(const AFilename: string;
+    function UnitWithFilename(const AFilename: string;
         SearchFlags: TProjectFileSearchFlags): TLazProjectFile; virtual; abstract;
   public
     property ActiveBuildModeID: string read GetActiveBuildModeID

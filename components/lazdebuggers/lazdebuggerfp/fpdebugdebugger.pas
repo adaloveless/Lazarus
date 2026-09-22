@@ -610,8 +610,6 @@ type
     procedure ThreadLogExpression;
     procedure ThreadLogCallStack;
   protected
-    procedure DoLogExpression(const AnExpression: String); override;
-    procedure DoLogCallStack(const Limit: Integer); override;
     procedure DoStateChange(const AOldState: TDBGState); override;
     procedure DoPropertiesChanged(AChanged: TDbgBpChangeIndicators); override;
     procedure DoChanged; override;
@@ -620,6 +618,8 @@ type
     property  Validity: TValidState write SetValid;
   public
     destructor Destroy; override;
+    procedure DoLogExpression(const AnExpression: String); override;
+    procedure DoLogCallStack(const Limit: Integer); override;
   end;
 
   { TFPBreakpoints }
@@ -4001,7 +4001,7 @@ begin
     exit;
 
   PasExpr := nil;
-  FExceptionStepper.FState := ExceptionState;
+  st :=  FExceptionStepper.FState;
   if AnAtException then
     FExceptionStepper.FState := esStoppedAtRaise;
   try
@@ -4251,8 +4251,6 @@ procedure TFpDebugDebugger.FDbgControllerHitBreakpointEvent(
 var
   ABreakPoint: TDBGBreakPoint;
   ALocationAddr: TDBGLocationRec;
-  Context: TFpDbgSymbolScope;
-  PasExpr: TFpPascalExpression;
   Opts: TFpInt3DebugBreakOptions;
   NeedInternalPause, IsDBrk: Boolean;
   b: Integer;
@@ -4917,7 +4915,12 @@ end;
 
 procedure TFpDebugDebugger.DoAddBreakFuncLib;
 begin
-  FCacheBreakpoint := FDbgController.CurrentProcess.AddBreak(FCacheFileName, FCacheBoolean, FCacheLib, True);
+  (* Link tables only: these are the debugger's own breakpoints on RTL and
+     kernel entry points, by linker name. A user routine can carry the same
+     source level name, and must not capture them.
+     NOTE: the direct path in AddBreak() does not ask for ignore-case, so the
+     two routes to the same call differ. Kept as it was. *)
+  FCacheBreakpoint := FDbgController.CurrentProcess.AddBreak(FCacheFileName, FCacheBoolean, FCacheLib, [psfLinkTableSym, psfIgnoreCase]);
 end;
 
 procedure TFpDebugDebugger.DoAddBreakLocation;
@@ -4972,7 +4975,8 @@ function TFpDebugDebugger.AddBreak(const AFuncName: String; ALib: TDbgLibrary;
 begin
   // Shortcut, if in debug-thread / do not use Self.F*
   if ThreadID = FWorkerThreadId then
-    exit(FDbgController.CurrentProcess.AddBreak(AFuncName, AnEnabled, ALib));
+    // Link tables only - see DoAddBreakFuncLib
+    exit(FDbgController.CurrentProcess.AddBreak(AFuncName, AnEnabled, ALib, [psfLinkTableSym]));
 
   FCacheFileName:=AFuncName;
   FCacheLib:=ALib;
@@ -5429,15 +5433,10 @@ begin
     {$IF ( (defined(CPU386) or defined(CPUI386) or defined(CPUX86_64) or defined(CPUX64)) ) }
     Result := [dfEvalFunctionCalls, dfThreadSuspension];
       {$IFDEF linux}
-      Result := Result + [dfAttachToExecStarter];
+      Result := Result + [dfAttachToExecStarter, dfStdInOutCaptureDefault];
       {$ENDIF}
       {$IFDEF windows}
-      Result := Result + [dfConsoleWinPos];
-      (* Claimed on Windows only for now. The Linux side reaches the debuggee
-         through a pty rather than pipes and has not been exercised against
-         diomCaptureInternal, so widening this is a testing question rather than
-         a design one. *)
-      Result := Result + [dfStdInOutCapture];
+      Result := Result + [dfConsoleWinPos, dfStdInOutCapture];
       {$ENDIF}
       if DBG_PROCESS_HAS_REDIRECT then
         Result := Result + [dfStdInOutRedirect];

@@ -1472,7 +1472,8 @@ function TCodeBuffer.Revert: boolean;
 begin
   if not IsVirtual then begin
     Result:=inherited LoadFromFile(Filename);
-    if Result then MakeFileDateValid;
+    if Result then
+      MakeFileDateValid;
   end else
     Result:=false;
 end;

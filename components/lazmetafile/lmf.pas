@@ -23,41 +23,53 @@ type
   TlmfImage = class;
   TlmfList = class;
 
-  // abstract reader/writer classes
+  // abstract reader class
   TlmfReader = class
   public
     procedure ReadFromStream(AStream: TStream; AImage: TlmfImage); virtual; abstract;
   end;
 
+  // abstract writer class
   TlmfWriter = class
   public
     procedure WriteToStream(AStream: TStream; AImage: TlmfImage); virtual; abstract;
   end;
 
+  TlmfMapMode = (mmLogUnitsPerInch,
+    { 1..8 }mmText, mmLoMetric, mmHiMetric, mmLoEnglish, mmHiEnglish,
+    mmTwips, mmIsotropic, mmAnisotropic);
+
+
   { TlmfImage }
 
   TlmfImage = class(TGraphic)
   private
-    fLogOrgX, fLogOrgY, fLogWidth, fLogHeight: integer;  // logical units
-    fScrOrgX, fScrOrgY: Integer;  // pixels on output device
+    fLogOrgX, fLogOrgY, fLogWidth, fLogHeight: integer;  // logical units used by metafile
+    fDevOrgX, fDevOrgY, fDevWidth, fDevHeight: Integer;  // pixels on output device
     kx, ky: double;
     fList: TlmfList;
     fCrs: TCriticalSection;
     fEnhanced: Boolean;
+    fMapMode: TlmfMapMode;
+    fPixelsPerInch: Integer;
+    fYAxisDown: Boolean;
   private
     procedure SetLogOrgX(AValue: Integer);
     procedure SetLogOrgY(AValue: Integer);
     function GetLogUnitsPerInch: Integer;
     procedure SetLogUnitsPerInch(AValue: Integer);
+    procedure SetMapMode(AValue: TlmfMapMode);
+    procedure SetPixelsPerInch(AValue: Integer);
   protected
-    procedure AssignTo(Dest:TPersistent);override;
-    function GetWidth:integer;override;
-    procedure SetWidth(AVal:integer);override;
-    function GetHeight:integer;override;
-    procedure SetHeight(AVal:integer);override;
-    function GetEmpty:boolean;override;
+    procedure AssignTo(Dest: TPersistent);override;
+    function GetWidth: integer; override;
+    procedure SetWidth(AValue: integer); override;
+    function GetHeight: integer; override;
+    procedure SetHeight(AValue: integer); override;
+    function GetEmpty: boolean; override;
     function GetTransparent: Boolean; override;
     procedure SetTransparent(Value: Boolean); override;
+    procedure CalcScaling(const Rect: TRect);
       //procedure Erase;override;
   public
     constructor Create; override;
@@ -78,12 +90,15 @@ type
     procedure LoadFromLMFStream(AStream: TStream; IsEnhanced: Boolean);
     procedure LoadFromStream(Stream: TStream); override;
 
-    property Enhanced: Boolean read FEnhanced write FEnhanced;  // Write WMF or EMF stream
+    property Enhanced: Boolean read FEnhanced write fEnhanced;  // Write WMF or EMF stream
     property List: TlmfList read fList;
 
     property LogOriginX: Integer read FLogOrgX write SetLogOrgX;
     property LogOriginY: Integer read FLogOrgY write SetLogOrgY;
     property LogUnitsPerInch: Integer read GetLogUnitsPerInch write SetLogUnitsPerInch;
+    property MapMode: TlmfMapMode read FMapMode write SetMapMode default mmAnisotropic;
+    property PixelsPerInch: Integer read FPixelsPerInch write SetPixelsPerInch default 96;
+    property YAxisDown: Boolean read FYAxisDown;
   end;
 
   TlmfList = class(TComponent)
@@ -170,11 +185,28 @@ implementation
 uses
   lmfObj, lmfWMFWrite, lmfWMFRead;
 
+function Sign(x: Integer): Integer;
+begin
+  if x > 0 then Result := +1 else if x < 0 then Result := -1 else Result := 0;
+end;
+
+function FlipRect(ARect: TRect): TRect;
+begin
+  Result.Left := ARect.Left;
+  Result.Right := ARect.Right;
+  Result.Top := ARect.Bottom;
+  Result.Bottom := ARect.Top;
+end;
+
+
+{ TlmfImage }
+
 constructor TlmfImage.Create;
 begin
   inherited Create;
-  fCrs:=syncobjs.TCriticalSection.Create;
-  fList:=TlmfList.Create(nil);
+  fCrs := syncobjs.TCriticalSection.Create;
+  fList := TlmfList.Create(nil);
+  fPixelsPerInch := 96;
 end;
 
 destructor TlmfImage.Destroy;
@@ -201,6 +233,10 @@ begin
       TlmfImage(Dest).fLogWidth := fLogWidth;
       TlmfImage(Dest).fLogHeight := fLogHeight;
       TlmfImage(Dest).LogUnitsPerInch := LogUnitsPerInch;
+      TlmfImage(Dest).fDevOrgX := fDevOrgX;
+      TlmfImage(Dest).fDevOrgY := fDevOrgY;
+      TlmfImage(Dest).fDevWidth := fDevWidth;
+      TlmfImage(Dest).fDevHeight := fDevHeight;
     finally
       mf.Free;
     end;
@@ -223,6 +259,21 @@ end;
 procedure TlmfImage.SetLogUnitsPerInch(AValue: Integer);
 begin
   fList.LogUnitsPerInch := AValue;
+  Self.Modified := true;
+end;
+
+procedure TlmfImage.SetMapMode(AValue: TlmfMapMode);
+begin
+  if fMapMode = AValue then exit;
+  fMapMode := AValue;
+  Self.Modified := true;
+end;
+
+procedure TlmfImage.SetPixelsPerInch(AValue: Integer);
+begin
+  if fPixelsPerInch = AValue then exit;
+  fPixelsPerInch := AValue;
+  Self.Modified := true;
 end;
 
 function TlmfImage.GetWidth: integer;
@@ -231,10 +282,10 @@ begin
 end;
 
 { Sets the width of the metafile image in logical units. }
-procedure TlmfImage.SetWidth(AVal: integer);
+procedure TlmfImage.SetWidth(AValue: integer);
 begin
-  if (AVal = fLogWidth) then exit;
-  fLogWidth := AVal;
+  if (AValue = fLogWidth) then exit;
+  fLogWidth := AValue;
   fList.fWidth := fLogWidth;
   Self.Modified := true;
 end;
@@ -242,6 +293,14 @@ end;
 function TlmfImage.GetHeight:integer;
 begin
   Result:=fList.fHeight;
+end;
+
+procedure TlmfImage.SetHeight(AValue: integer);
+begin
+  if (AValue = fLogHeight) then exit;
+  fLogHeight := AValue;
+  fList.fHeight := fLogHeight;
+  Modified := true;
 end;
 
 // x coordinate of the the image origin in logical units
@@ -275,14 +334,14 @@ end;
 // X is in logical coordinates
 function TlmfImage.ScaleX(X: Integer):integer;
 begin
-  Result := fScrOrgX + trunc((X - FLogOrgX) * kx);
+  Result := fDevOrgX + trunc((X - FLogOrgX) * kx);
   //if Result>Width then Result:=width;
 end;
 
 // Y is in logical coordinates
 function TlmfImage.ScaleY(Y: Integer):integer;
 begin
-  Result := fScrOrgY + trunc((Y - FLogOrgY) * ky);
+  Result := fDevOrgY + trunc((Y - FLogOrgY) * ky);
   //if Result>height then Result:=height;
 end;
 
@@ -298,17 +357,106 @@ begin
   Modified := true;
 end;
 
-procedure TlmfImage.SetHeight(AVal:integer);
-begin
-  if (AVal = fLogHeight) then exit;
-  fLogHeight := AVal;
-  fList.fHeight := fLogHeight;
-  Modified := true;
-end;
-
 function TlmfImage.GetEmpty:boolean;
 begin
   Result:=Assigned(fList) and (fList.ComponentCount>0);
+end;
+
+procedure TlmfImage.CalcScaling(const Rect: TRect);
+var
+  devAspectRatio, logAspectRatio: Double;
+  w, h: Integer;
+begin
+  fDevOrgX := Rect.Left;
+  fDevWidth := Rect.Right - Rect.Left;
+  fDevHeight := abs(Rect.Bottom - Rect.Top);
+  case fMapMode of
+    mmIsotropic:
+      // Logical units are mapped to arbitrary units with equally scaled axes.
+      // The orientation of the axes may be specified by the application (fLogHeight < 0 --> y up)
+      begin
+        if fDevWidth = 0 then w := Rect.Right - Rect.Left else w := fDevWidth;
+        if fDevHeight = 0 then h := Rect.Bottom - Rect.Top else h := fDevHeight;
+        devAspectRatio := h / w;
+        logAspectRatio := abs(fLogHeight / fLogWidth);
+        if devAspectRatio > logAspectRatio then
+        begin
+          kx := w / fLogWidth;
+          ky := kx;
+        end else
+        begin
+          ky := h / fLogHeight;
+          kx := abs(ky);
+        end;
+        fDevOrgY := Rect.Top;
+      end;
+    mmHiEnglish:
+      // Each logical unit is mapped to 0.001 inch.
+      // Positive x is to the right; positive y is up.
+      begin
+        kx := PixelsPerInch / 1000.0;
+        ky := -Sign(fLogHeight) * kx;
+        fDevOrgY := Rect.Bottom;
+      end;
+    mmHiMetric:
+      // Each logical unit is mapped to 0.01 millimeter.
+      // Positive x is to the right; positive y is up.
+      begin
+        kx := PixelsPerInch / 2540.0;
+        ky := -Sign(fLogHeight) * kx;
+        fDevOrgY := Rect.Bottom;
+      end;
+    mmLoEnglish:
+      // Each logical unit is mapped to 0.01 inch.
+      // Positive x is to the right; positive y is up.
+      begin
+        kx := PixelsPerInch / 100.0;
+        ky := -Sign(fLogHeight) * kx;
+        fDevOrgY := Rect.Bottom;
+      end;
+    mmLoMetric:
+      // Each logical unit is mapped to 0.1 millimeter.
+      // Positive x is to the right; positive y is up.
+      begin
+        kx := PixelsPerInch / 254.0;
+        ky := -Sign(fLogHeight) * kx;
+        fDevOrgY := Rect.Bottom;
+      end;
+    mmText:
+      // Each logical unit is mapped to one device pixel.
+      // Positive x is to the right; positive y is down.
+      begin
+        kx := 1.0;
+        ky := +Sign(fLogHeight);
+        fDevOrgY := Rect.Top;
+      end;
+    mmTwips:
+      // Each logical unit is mapped to one twentieth of a printer's point
+      // (1/1440 inch, also called a twip).
+      // Positive x is to the right; positive y is up.
+      begin
+        kx := PixelsPerInch / 1440;
+        ky := -Sign(fLogHeight) * kx;
+        fDevOrgY := Rect.Bottom;
+      end;
+    mmLogUnitsPerInch:
+      // NOTE: Not a Windows MapMode!
+      // Each logical units is mapped to the size of the LogUnitsPerInch
+      // specification. Positive y is down unless when fLogHeight is negative
+      begin
+        kx := PixelsPerInch / LogUnitsPerInch;
+        ky := Sign(fLogHeight) * kx;
+        fDevOrgY := Rect.Top;
+      end;
+    else
+      // Anisotropic:
+      // Logical units are mapped to arbitrary units with arbitrarily scaled axes.
+      kx := fDevWidth / fLogWidth;
+      ky := fDevHeight / fLogHeight;
+      fDevOrgY := Rect.Top;
+  end;
+
+  FYAxisDown := ky > 0;
 end;
 
 procedure TlmfImage.Draw(ACanvas: TCanvas; const Rect: TRect);
@@ -320,10 +468,7 @@ begin
   fCrs.Acquire;
   try
     bkMode := 1;  // Transparent
-    fScrOrgX := Rect.Left;
-    fScrOrgY := Rect.Top;
-    kx := (Rect.Right-Rect.Left) / fLogWidth;
-    ky := (Rect.Bottom-Rect.Top) / fLogHeight;
+    CalcScaling(Rect);
     ACanvas.MoveTo(ScaleX(Rect.Left), ScaleY(Rect.Top));
     for i:=0 to fList.ComponentCount-1 do
     begin
@@ -338,8 +483,8 @@ begin
       item.Action(Self, ACanvas);
     end;
   finally
-    kx:=1;
-    ky:=1;
+    kx := 1;
+    ky := 1;
     fCrs.Release;
   end;
 end;

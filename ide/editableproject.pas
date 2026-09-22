@@ -18,7 +18,7 @@ uses
   // IdeConfig
   ProjectBuildMode, IdeXmlConfigProcs, RecentListProcs, IdeConfStrConsts,
   // IDEIntf
-  EditorSyntaxHighlighterDef, SrcEditorIntf, IDEOptEditorIntf,
+  EditorSyntaxHighlighterDef, SrcEditorIntf, IDEOptEditorIntf, SynHighlighterSQL,
   // IdeProject
   Project, ProjectDefs, IdeBookmark, RunParamOptions, IdeProjectStrConsts;
 
@@ -141,6 +141,7 @@ type
     constructor Create(ACodeBuffer: TCodeBuffer); override;
     destructor Destroy; override;
     procedure Clear; override;
+    procedure ClearModifieds; override;
     function HasOpenEditors: boolean; override;
     // At any time, any TEditableUnitInfo has at least one EditorInfo
     function EditorInfoCount: Integer;
@@ -165,8 +166,6 @@ type
     property EditableProject: TEditableProject read GetEditableProject;
   end;
 
-  TArrayOfTEditableUnitInfo = array of TEditableUnitInfo;
-
   { TEditableProject }
 
   TEditableProject = class(TProject)
@@ -177,6 +176,8 @@ type
     FBookmarks: TProjectBookmarkList;
     FHistoryLists: THistoryLists;
     FJumpHistory: TProjectJumpHistory;
+    FOverrideGlobalSqlDialect: Boolean;
+    FSQLDialect: TSQLDialect;
     function GetAllEditorsInfo(Index: Integer): TUnitEditorInfo;
     function GetFirstUnitWithEditorIndex: TEditableUnitInfo;
     function GetMainUnitInfo: TEditableUnitInfo;
@@ -225,6 +226,9 @@ type
     property JumpHistory: TProjectJumpHistory read FJumpHistory write FJumpHistory;
     property MainUnitInfo: TEditableUnitInfo read GetMainUnitInfo;
     property Units[Index: integer]: TEditableUnitInfo read GetUnits;
+  published
+    property SQLDialect: TSQLDialect read FSQLDialect write FSQLDialect default sqlStandard;
+    property OverrideGlobalSqlDialect: Boolean read FOverrideGlobalSqlDialect write FOverrideGlobalSqlDialect default False;
   end;
 
 
@@ -628,6 +632,18 @@ begin
   FEditorInfoList.ClearEachInfo;
 end;
 
+procedure TEditableUnitInfo.ClearModifieds;
+var
+  SE: TSourceEditorInterface;
+begin
+  inherited ClearModifieds;
+  if EditorInfoCount > 0 then begin
+    SE := EditorInfo[0].FEditorComponent;
+    if Assigned(SE) then
+      SE.Modified:=false;
+  end;
+end;
+
 function TEditableUnitInfo.GetEditorInfo(Index: Integer): TUnitEditorInfo;
 begin
   Result := FEditorInfoList[Index];
@@ -851,6 +867,9 @@ begin
   FActiveWindowIndexAtStart := -1;
   FJumpHistory.Clear;
   FBookmarks.Clear;
+
+  FSQLDialect := sqlStandard;
+  FOverrideGlobalSqlDialect := False;
   inherited Clear;
 end;
 

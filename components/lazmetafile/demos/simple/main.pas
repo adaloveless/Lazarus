@@ -16,16 +16,19 @@ type
   TMainForm = class(TForm)
     Button1: TButton;
     Button2: TButton;
+    ComboBox1: TComboBox;
     Label1: TLabel;
-    PaintBox1: TPaintBox;
+    PaintBox: TPaintBox;
     Panel1: TPanel;
     procedure Button1Click(Sender: TObject);
     procedure Button2Click(Sender: TObject);
+    procedure ComboBox1Change(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
-    procedure PaintBox1Paint(Sender: TObject);
+    procedure PaintBoxPaint(Sender: TObject);
   private
     FLmfImg: TLmfImage;
+    procedure ImageChanged(Sender: TObject);
 
   public
 
@@ -53,15 +56,17 @@ begin
   Height := 410 + Panel1.Height;
 
   FLmfImg := TlmfImage.Create;
-  FLmfImg.LogUnitsPerInch := Screen.PixelsPerInch * 10;  // Logical units are assumed to be 1/10 pixel
+  //FLmfImg.LogUnitsPerInch := Screen.PixelsPerInch * 10;  // Logical units are assumed to be 1/10 pixel
   FLmfImg.Width := 600*10;
   FLmfImg.Height := 400*10;
+  FLmfImg.OnChange := @ImageChanged;
 
   LmfCanvas := TlmfCanvas.Create(FLmfImg);
   try
     // Rectangle
     LmfCanvas.Brush.Color := clSkyBlue;
     LmfCanvas.Rectangle(0, 0, FlmfImg.Width, FLmfImg.Height);
+//    LmfCanvas.Rectangle(0, 0, 1000, 1000);
 
     // Line
     LmfCanvas.Pen.Width := 1*10;
@@ -127,9 +132,9 @@ begin
     //Lmfcanvas.Rectangle(300*10, 5*10, 300*10 + 48*10, 5*10 + 48*10);
     bmp := TBitmap.Create;
     try
-//      bmp.LoadFromFile('../../../../images/LazarusForm.bmp');
+//      bmp.LoadFromFile('../../../../images/general_purpose/Help_02_48.bmp');
       bmp.LoadFromFile('Help_02_48.bmp');
-    //bmp.Transparent := true;
+//      bmp.Transparent := true;
 //      LmfCanvas.Draw(3000, 50, bmp);
       LmfCanvas.StretchDraw(Rect(300*10, 5*10, 300*10+48*10, 50+48*10), bmp);
     finally
@@ -160,7 +165,7 @@ begin
 
     // Arc
     P1 := Point(250*10, 260*10);  // Point on x axis
-    P2 := Point(150*10, 0);    // Point on y axis
+    P2 := Point(150*10, 0);       // Point on y axis
     LmfCanvas.Pen.Color := clRed;
     LmfCanvas.Pen.Width := 3*10;
     LmfCanvas.Arc(50*10, 210*10, 250*10, 310*10, P1.X, P1.Y, P2.X, P2.Y);
@@ -364,19 +369,31 @@ begin
   Label1.Caption := IntToStr(FLmfImg.LogUnitsPerInch);
 end;
 
+procedure TMainForm.ComboBox1Change(Sender: TObject);
+begin
+  FLmfImg.MapMode := TlmfMapMode(Combobox1.ItemIndex);
+//  PaintBox.Invalidate;
+end;
+
 procedure TMainForm.FormDestroy(Sender: TObject);
 begin
   FLmfImg.Free;
 end;
 
-procedure TMainForm.PaintBox1Paint(Sender: TObject);
+procedure TMainForm.ImageChanged(Sender: TObject);
+begin
+  PaintBox.Invalidate;
+end;
+
+procedure TMainForm.PaintBoxPaint(Sender: TObject);
 var
   R: TRect;
 begin
   if Assigned(FLmfImg) then
   begin
-    R := Rect( 5, 5, Paintbox1.ClientWidth - 5, Paintbox1.ClientHeight - 5);
-    Paintbox1.Canvas.StretchDraw(R, FLmfImg);
+    //PaintBox.Canvas.Draw(0, 0, FLmfImg);
+    R := Rect( 5, 5, PaintBox.ClientWidth - 5, PaintBox.ClientHeight - 5);
+    PaintBox.Canvas.StretchDraw(R, FLmfImg);
   end;
 end;
 

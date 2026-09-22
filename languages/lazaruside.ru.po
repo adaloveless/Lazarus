@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: lazaruside\n"
 "POT-Creation-Date: \n"
-"PO-Revision-Date: 2026-08-24 22:19+0300\n"
+"PO-Revision-Date: 2026-09-20 22:41+0300\n"
 "Last-Translator: Maxim Ganetsky <maxkill@mail.ru>\n"
 "Language-Team: \n"
 "Language: ru\n"
@@ -771,6 +771,15 @@ msgstr "Связанный отладочный рабочий стол для \
 msgid "If you select the desktop, the associated debug desktop will be selected as well."
 msgstr "При выборе рабочего стола также будет выбран связанный с ним отладочный рабочий стол."
 
+#: lazarusidestrconsts.dlgassociateddesigndesktop
+#, object-pascal-format
+msgid "Associated design desktop for \"%s\""
+msgstr "Связанный рабочий стол редактирования форм для \"%s\""
+
+#: lazarusidestrconsts.dlgassociateddesigndesktophint
+msgid "If you select the desktop, the associated design desktop will be selected as well."
+msgstr "При выборе рабочего стола также будет выбран связанный с ним рабочий стол редактирования форм."
+
 #: lazarusidestrconsts.dlgautocreateforms
 msgid "Auto-create forms:"
 msgstr "Автосоздаваемые формы:"
@@ -1058,6 +1067,10 @@ msgstr "Форма может требовать пакета для корре�
 msgid "Choose code template file (*.dci)"
 msgstr "Выберите файл шаблонов кода (*.dci)"
 
+#: lazarusidestrconsts.dlgclass
+msgid "Class:"
+msgstr "Класс:"
+
 #: lazarusidestrconsts.dlgclosebuttonsnotebook
 msgid "Show close buttons in notebook"
 msgstr "Показывать кнопки закрытия вкладок"
@@ -1342,8 +1355,8 @@ msgid "IDE internal window"
 msgstr "Внутреннее окно IDE"
 
 #: lazarusidestrconsts.dlgconsolemodeide
-msgid "Internal IDE consoles"
-msgstr "Внутренние консоли IDE"
+msgid "Internal IDE console"
+msgstr "Внутренняя консоль IDE"
 
 #: lazarusidestrconsts.dlgconsolemodeos
 msgid "OS console"
@@ -1544,6 +1557,10 @@ msgstr "Удалить выбранный рабочий стол"
 #: lazarusidestrconsts.dlgdeltemplate
 msgid "Delete template "
 msgstr "Удалить шаблон "
+
+#: lazarusidestrconsts.dlgdesigndesktop
+msgid "design"
+msgstr "редактирование форм"
 
 #: lazarusidestrconsts.dlgdesktopbuttons
 msgid "Buttons - "
@@ -1838,6 +1855,7 @@ msgid "Backup"
 msgstr "Резервные копии"
 
 #: lazarusidestrconsts.dlgenvfiles
+msgctxt "lazarusidestrconsts.dlgenvfiles"
 msgid "Files"
 msgstr "Файлы"
 
@@ -2211,6 +2229,113 @@ msgstr "While/Do"
 msgid "With/Do"
 msgstr "With/Do"
 
+#: lazarusidestrconsts.dlgfoldsqlaltertable
+msgid "Alter Table"
+msgstr "Alter Table"
+
+#: lazarusidestrconsts.dlgfoldsqlbegin
+msgid "Begin"
+msgstr "Begin"
+
+#: lazarusidestrconsts.dlgfoldsqlcreatedb
+msgid "Create Database"
+msgstr "Create Database"
+
+#: lazarusidestrconsts.dlgfoldsqlcreateprocedure
+msgid "Create Procedure"
+msgstr "Create Procedure"
+
+#: lazarusidestrconsts.dlgfoldsqlcreatetable
+msgid "Create Table"
+msgstr "Create Table"
+
+#: lazarusidestrconsts.dlgfoldsqldelete
+msgctxt "lazarusidestrconsts.dlgfoldsqldelete"
+msgid "Delete"
+msgstr "Delete"
+
+#: lazarusidestrconsts.dlgfoldsqldropdb
+msgid "Drop Database"
+msgstr "Drop Database"
+
+#: lazarusidestrconsts.dlgfoldsqldroptable
+msgid "Drop Table"
+msgstr "Drop Table"
+
+#: lazarusidestrconsts.dlgfoldsqlfrom
+msgid "From"
+msgstr "From"
+
+#: lazarusidestrconsts.dlgfoldsqlgroup
+msgctxt "lazarusidestrconsts.dlgfoldsqlgroup"
+msgid "Group"
+msgstr "Group"
+
+#: lazarusidestrconsts.dlgfoldsqlhaving
+msgid "Having"
+msgstr "Having"
+
+#: lazarusidestrconsts.dlgfoldsqlinsert
+msgctxt "lazarusidestrconsts.dlgfoldsqlinsert"
+msgid "Insert"
+msgstr "Insert"
+
+#: lazarusidestrconsts.dlgfoldsqlinsertselect
+msgid "Insert-Select"
+msgstr "Insert-Select"
+
+#: lazarusidestrconsts.dlgfoldsqlinto
+msgid "Into"
+msgstr "Into"
+
+#: lazarusidestrconsts.dlgfoldsqljoin
+msgid "Join"
+msgstr "Join"
+
+#: lazarusidestrconsts.dlgfoldsqljoinon
+msgid "Join-On"
+msgstr "Join-On"
+
+#: lazarusidestrconsts.dlgfoldsqllimit
+msgid "Limit"
+msgstr "Limit"
+
+#: lazarusidestrconsts.dlgfoldsqlorder
+msgctxt "lazarusidestrconsts.dlgfoldsqlorder"
+msgid "Order"
+msgstr "Order"
+
+#: lazarusidestrconsts.dlgfoldsqlselect
+msgctxt "lazarusidestrconsts.dlgfoldsqlselect"
+msgid "Select"
+msgstr "Select"
+
+#: lazarusidestrconsts.dlgfoldsqlset
+msgid "Set"
+msgstr "Set"
+
+#: lazarusidestrconsts.dlgfoldsqlsubselect
+msgid "Sub-Select"
+msgstr "Вложенный Select"
+
+#: lazarusidestrconsts.dlgfoldsqlupdate
+msgctxt "lazarusidestrconsts.dlgfoldsqlupdate"
+msgid "Update"
+msgstr "Update"
+
+#: lazarusidestrconsts.dlgfoldsqlupdateselect
+msgid "Update-Select"
+msgstr "Update-Select"
+
+#: lazarusidestrconsts.dlgfoldsqlvalues
+msgctxt "lazarusidestrconsts.dlgfoldsqlvalues"
+msgid "Values"
+msgstr "Values"
+
+#: lazarusidestrconsts.dlgfoldsqlwhere
+msgid "Where"
+msgstr "Where"
+
 #: lazarusidestrconsts.dlgfoldxmlcdata
 msgid "CData"
 msgstr "Секция CDATA"
@@ -2434,6 +2559,16 @@ msgstr "Не показывать IDE во время исполнения пр�
 msgid "Hide tab in single page windows"
 msgstr "Скрывать заголовок одиночной вкладки"
 
+#: lazarusidestrconsts.dlghighlightbothsidesofcursorleft
+msgctxt "lazarusidestrconsts.dlghighlightbothsidesofcursorleft"
+msgid "On both sides (left first)"
+msgstr "С обеих сторон (сначала слева)"
+
+#: lazarusidestrconsts.dlghighlightbothsidesofcursorright
+msgctxt "lazarusidestrconsts.dlghighlightbothsidesofcursorright"
+msgid "On both sides (right first)"
+msgstr "С обеих сторон (сначала справа)"
+
 #: lazarusidestrconsts.dlghighlightcolor
 msgid "Highlight Color"
 msgstr "Выделение"
@@ -2443,11 +2578,11 @@ msgid "Highlight Font Color"
 msgstr "Шрифт выделенного"
 
 #: lazarusidestrconsts.dlghighlightleftofcursor
-msgid "Left Of Caret"
+msgid "Left of Caret"
 msgstr "Слева от курсора"
 
 #: lazarusidestrconsts.dlghighlightrightofcursor
-msgid "Right Of Caret"
+msgid "Right of Caret"
 msgstr "Справа от курсора"
 
 #: lazarusidestrconsts.dlghintsparametersendernotused
@@ -2582,10 +2717,10 @@ msgstr "Директива $IFDEF подключаемого условно ак
 #: lazarusidestrconsts.dlgimportdesktopexists
 msgid ""
 "A desktop with the same name already exists.\n"
-"Please confirm the desktop name:"
+"Please confirm or change the desktop name:"
 msgstr ""
 "Рабочий стол с таким именем уже имеется.\n"
-"Подтвердите это имя:"
+"Подтвердите либо измените это имя:"
 
 #: lazarusidestrconsts.dlgincludecodetemplatestoidentcompl
 msgid "Include code templates"
@@ -2973,17 +3108,13 @@ msgstr "Максимум счетчика"
 msgid "Max line length:"
 msgstr "max длина строки:"
 
-#: lazarusidestrconsts.dlgmaxrecentfiles
-msgid "Max recent files"
-msgstr "Максимальное количество недавних файлов"
+#: lazarusidestrconsts.dlgmaxrecentcount
+msgid "Max count of recent items"
+msgstr "Максимальное количество недавних элементов"
 
 #: lazarusidestrconsts.dlgmaxrecenthint
 msgid "Value 0 means unlimited."
 msgstr "Значение \"0\" соответствует неограниченному количеству."
-
-#: lazarusidestrconsts.dlgmaxrecentprojs
-msgid "Max recent project files"
-msgstr "Максимальное количество недавних проектов"
 
 #: lazarusidestrconsts.dlgmixmethodsandproperties
 msgid "Mix methods and properties"
@@ -3409,6 +3540,10 @@ msgstr "Вкладки редакторов"
 msgid "Naming"
 msgstr "Именование"
 
+#: lazarusidestrconsts.dlgnewdebuggerbackend
+msgid "New debugger backend"
+msgstr "Новый механизм отладки"
+
 #: lazarusidestrconsts.dlgnewdesktop
 msgid "New desktop ..."
 msgstr "Новый рабочий стол ..."
@@ -3757,6 +3892,10 @@ msgstr "Показывать курсор в неактивном редакто
 msgid "Caret in unfocused editor does not blink"
 msgstr "Не мигать курсором в неактивном редакторе"
 
+#: lazarusidestrconsts.dlgpleasechoosethedebuggerbackend
+msgid "Please choose the debugger backend to add."
+msgstr "Выберите механизм отладки для добавления."
+
 #: lazarusidestrconsts.dlgpoansiutf8
 msgid "ANSI codepage is UTF-8 (Windows 10 1903+)"
 msgstr "Кодовая страница ANSI в режиме UTF-8 (Windows 10 1903+)"
@@ -3951,6 +4090,35 @@ msgstr "Выравнивать по сетке"
 #, object-pascal-format
 msgid "Really delete desktop \"%s\"?"
 msgstr "Вы действительно хотите удалить рабочий стол \"%s\"?"
+
+#: lazarusidestrconsts.dlgrecent
+msgid "Recent"
+msgstr "Недавние"
+
+#: lazarusidestrconsts.dlgrecentfilescaption
+msgctxt "lazarusidestrconsts.dlgrecentfilescaption"
+msgid "Files"
+msgstr "Файлы"
+
+#: lazarusidestrconsts.dlgrecentfilesheader
+msgid "Recent Files:"
+msgstr "Недавние файлы:"
+
+#: lazarusidestrconsts.dlgrecentpackagescaption
+msgid "Packages"
+msgstr "Пакеты"
+
+#: lazarusidestrconsts.dlgrecentpackagesheader
+msgid "Recent Packages:"
+msgstr "Недавние пакеты:"
+
+#: lazarusidestrconsts.dlgrecentprojectscaption
+msgid "Projects"
+msgstr "Проекты"
+
+#: lazarusidestrconsts.dlgrecentprojectsheader
+msgid "Recent Projects:"
+msgstr "Недавние проекты:"
 
 #: lazarusidestrconsts.dlgredirappend
 msgid "To file (append)"
@@ -4327,6 +4495,10 @@ msgstr "Показывать подсказки"
 msgid "Showing Windows"
 msgstr "Отображение окон"
 
+#: lazarusidestrconsts.dlgshowinopencoolbarbutton
+msgid "Show in \"Open\" drop-down toolbar button"
+msgstr "Показывать в раскрывающемся списке кнопки \"Открыть\""
+
 #: lazarusidestrconsts.dlgshowlinenumbers
 msgctxt "lazarusidestrconsts.dlgshowlinenumbers"
 msgid "Show line numbers"
@@ -4396,6 +4568,10 @@ msgstr "Пробел"
 #: lazarusidestrconsts.dlgspbhints
 msgid "Hints for main speed buttons (open, save, ...)"
 msgstr "Подсказки командных кнопок (открыть, сохранить и т.д.)"
+
+#: lazarusidestrconsts.dlgsqlexthighlightgroup
+msgid "Extended SQL Highlight Options"
+msgstr "Расширенные параметры подсветки SQL"
 
 #: lazarusidestrconsts.dlgsrcedcolorlabelinthesourceareonlyco
 msgid "Label in the source are only colored if the colon \":\" is placed immediately after the label."
@@ -4517,6 +4693,14 @@ msgstr "Режим отладочного"
 msgctxt "lazarusidestrconsts.dlgtoggledebugdesktopbtnhint"
 msgid "Toggle as debug desktop"
 msgstr "Переключить режим отладочного рабочего стола"
+
+#: lazarusidestrconsts.dlgtoggledesigndesktopbtncaption
+msgid "Toggle as design desktop"
+msgstr "Режим редактирования форм"
+
+#: lazarusidestrconsts.dlgtoggledesigndesktopbtnhint
+msgid "Activate this desktop while the form designer is shown (Toggle Form/Unit)"
+msgstr "Переключаться на этот рабочий стол при отображении редактора форм (Вид -> Переключить форму/модуль)"
 
 #: lazarusidestrconsts.dlgtopinfohint
 msgid "Current Class/Proc Hint"
@@ -4845,10 +5029,6 @@ msgstr "Параметр: Выровнять по линиям позицион�
 #: lazarusidestrconsts.fdmzorder
 msgid "Z-order"
 msgstr "Z-порядок"
-
-#: lazarusidestrconsts.gldhighlightbothsidesofcursor
-msgid "On Both Sides"
-msgstr "С обеих сторон"
 
 #: lazarusidestrconsts.initdlgdebugchangepath
 msgid "Change path"
@@ -5380,6 +5560,10 @@ msgstr "Добавить пакет к проекту"
 msgid "Add parameter brackets"
 msgstr "Добавлять скобки для параметров"
 
+#: lazarusidestrconsts.lisaddpathtotrustedexe
+msgid "Add path to trusted executable"
+msgstr "Добавить путь к доверенному исполнимому файлу"
+
 #: lazarusidestrconsts.lisaddthefollowingfiles
 msgid "Add the following files:"
 msgstr "Добавить следующие файлы:"
@@ -5499,7 +5683,7 @@ msgstr "Все файлы .pas, .pp, .p, .inc, найденные в катал�
 #: lazarusidestrconsts.lisallyourmodificationstowillbelostandthefilereopened
 #, object-pascal-format
 msgid "All your modifications to \"%s\"%swill be lost and the file reopened."
-msgstr "Все изменения в \"%s\"%sбудут утеряны и файл откроется повторно."
+msgstr "Все изменения в \"%s\"%sбудут утеряны и файл откроется заново."
 
 #: lazarusidestrconsts.lisalpha
 msgid "Alpha"
@@ -6317,6 +6501,7 @@ msgid "Other"
 msgstr "Другое"
 
 #: lazarusidestrconsts.lisceoupdate
+msgctxt "lazarusidestrconsts.lisceoupdate"
 msgid "Update"
 msgstr "Обновление"
 
@@ -6491,10 +6676,6 @@ msgstr "Изменена координата %s компонента %s с \"%d
 #: lazarusidestrconsts.lischangeencoding
 msgid "Change Encoding"
 msgstr "Смена кодировки"
-
-#: lazarusidestrconsts.lischangefile
-msgid "Change file"
-msgstr "Изменить файл"
 
 #: lazarusidestrconsts.lischangemethodvisibilityto
 #, object-pascal-format
@@ -8741,11 +8922,6 @@ msgstr "Удалить старый файл \"%s\"?"
 msgid "Delete selected macro?"
 msgstr "Удалить выделенный макрос?"
 
-#: lazarusidestrconsts.lisdeleteselectedtrustedcompilers
-msgctxt "lazarusidestrconsts.lisdeleteselectedtrustedcompilers"
-msgid "Delete selected"
-msgstr "Удалить выбранные"
-
 #: lazarusidestrconsts.lisdeletethisaddition
 msgid "Delete this addition"
 msgstr "Удалить дополнение"
@@ -10306,6 +10482,7 @@ msgstr ""
 "Копия Стандартной Общественной Лицензии GNU доступна в Интернете по адресу <http://www.gnu.org/copyleft/gpl.html>. Вы также можете получить экземпляр в Free Software Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1335, USA."
 
 #: lazarusidestrconsts.lisgroup
+msgctxt "lazarusidestrconsts.lisgroup"
 msgid "Group"
 msgstr "Группа"
 
@@ -13101,6 +13278,7 @@ msgid "&Search"
 msgstr "П&оиск"
 
 #: lazarusidestrconsts.lismenuselect
+msgctxt "lazarusidestrconsts.lismenuselect"
 msgid "Select"
 msgstr "Выделить"
 
@@ -13749,7 +13927,7 @@ msgstr "Создать"
 
 #: lazarusidestrconsts.lisnewclass
 msgid "New Class"
-msgstr "Новый Класс"
+msgstr "Новый класс"
 
 #: lazarusidestrconsts.lisnewconsoleapplication
 msgid "New console application"
@@ -14428,6 +14606,10 @@ msgstr "Вставить из буфера обмена."
 #: lazarusidestrconsts.lispastelcolors
 msgid "Pastel Colors"
 msgstr "Пастельные цвета"
+
+#: lazarusidestrconsts.lispathalreadyexists
+msgid "The path already exists."
+msgstr "Путь уже имеется."
 
 #: lazarusidestrconsts.lispatheditbrowse
 msgctxt "lazarusidestrconsts.lispatheditbrowse"
@@ -15389,6 +15571,14 @@ msgstr "Несохранённый пакет"
 msgid "Use unit"
 msgstr "Использовать модуль"
 
+#: lazarusidestrconsts.lispkgmangvirtualunit
+msgid "Virtual unit"
+msgstr "Виртуальный модуль"
+
+#: lazarusidestrconsts.lispkgmangvirtualunithint
+msgid "Package has only a unit's name. The unit itself is found elsewhere."
+msgstr "В пакете имеется только имя модуля. Сам он расположен в ином месте."
+
 #: lazarusidestrconsts.lispkgmangwarningthefilebelongstothecurrentproject
 #, object-pascal-format
 msgid "Warning: The file \"%s\"%sbelongs to the current project."
@@ -16157,11 +16347,11 @@ msgstr "Конфликт при переименовании"
 
 #: lazarusidestrconsts.lisreopenproject
 msgid "Reopen project"
-msgstr "Переоткрыть проект"
+msgstr "Открыть проект заново"
 
-#: lazarusidestrconsts.lisreopenwithanotherencoding
-msgid "Reopen with another encoding"
-msgstr "Открыть с другой кодировкой"
+#: lazarusidestrconsts.lisreopenwithnewencoding
+msgid "Reopen with new encoding"
+msgstr "Заново открыть в новой кодировке"
 
 #: lazarusidestrconsts.lisrepeat
 msgctxt "lazarusidestrconsts.lisrepeat"
@@ -16531,6 +16721,10 @@ msgstr "Сохранить показанные сообщения в файл .
 #: lazarusidestrconsts.lissavespace
 msgid "Save "
 msgstr "Сохранить "
+
+#: lazarusidestrconsts.lissavewithnewencoding
+msgid "Save with new encoding"
+msgstr "Сохранить в новой кодировке"
 
 #: lazarusidestrconsts.lissavingfileasloosescharactersatlinecolumn
 #, object-pascal-format
@@ -17039,6 +17233,14 @@ msgstr "Пути к исходному коду"
 #: lazarusidestrconsts.lisspaceequally
 msgid "Space equally"
 msgstr "Равномерно"
+
+#: lazarusidestrconsts.lissqlhighlighterdialect
+msgid "Override dialect for SQL highlighter"
+msgstr "Перекрыть диалект средства подсветки SQL"
+
+#: lazarusidestrconsts.lissqlhighlightopts
+msgid "SQL highlight"
+msgstr "Подсветка SQL"
 
 #: lazarusidestrconsts.lisssearching
 msgid "Searching"
@@ -17976,8 +18178,8 @@ msgid "Trust project compiler?"
 msgstr "Доверять компилятору проекта?"
 
 #: lazarusidestrconsts.listrustcompilerthistime
-msgid "Trust this time"
-msgstr "Доверять в этот раз"
+msgid "Trust until project closes"
+msgstr "Доверять до закрытия проекта"
 
 #: lazarusidestrconsts.listrustedcommands
 msgid "Trusted commands"
@@ -18740,6 +18942,7 @@ msgid "Value: "
 msgstr "Значение: "
 
 #: lazarusidestrconsts.lisvalues
+msgctxt "lazarusidestrconsts.lisvalues"
 msgid "Values"
 msgstr "Значения"
 
@@ -19113,6 +19316,38 @@ msgstr "Использовать цвет текущей строки (боко�
 #: lazarusidestrconsts.optdispgutterusecurrentlinenumbercolor
 msgid "Use current line number color (gutter: number)"
 msgstr "Использовать цвет номера текущей строки (боковое поле: номер)"
+
+#: lazarusidestrconsts.optedcompletebackspacebehaviour
+msgid "Backspace behaviour"
+msgstr "Поведение при нажатии забоя"
+
+#: lazarusidestrconsts.optedcompletecancelifcaretatstart
+msgid "Cancel, if caret at start"
+msgstr "Отменить, если курсор в начале"
+
+#: lazarusidestrconsts.optedcompletecancelifcaretatstartsingl
+msgid "Cancel, if caret at start (single press, not on repeat key)"
+msgstr "Отменить, если курсор в начале (нажатие без удержания)"
+
+#: lazarusidestrconsts.optedcompletecancelifcompletionwasjust
+msgid "Cancel, if completion was just opened"
+msgstr "Отменить, если окно только что открыто"
+
+#: lazarusidestrconsts.optedcompletecancelifcompletionwasjust2
+msgid "Cancel, if completion was just opened, and caret at start"
+msgstr "Отменить, если окно только что открыто и курсор в начале"
+
+#: lazarusidestrconsts.optedcompletecancelifjustopenedorcaret
+msgid "Cancel, if just opened, or caret at start (not on repeat key)"
+msgstr "Отменить, если окно только что открыто либо курсор в начале (нажатие без удержания)"
+
+#: lazarusidestrconsts.optedcompletecancelifopenedbydot
+msgid "Cancel, if opened by dot"
+msgstr "Отменить, если окно открыто нажатием точки"
+
+#: lazarusidestrconsts.optedcompleteonlydeletepreviouschar
+msgid "Only delete previous char"
+msgstr "Только удалить предыдущий символ"
 
 #: lazarusidestrconsts.podaddpackageunittousessection
 msgid "Add package unit to uses section"

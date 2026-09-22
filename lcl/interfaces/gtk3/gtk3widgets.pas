@@ -1388,6 +1388,9 @@ var
   AForm: TCustomForm;
   AFocusedWidget: PGtkWidget;
   AFocusedLCL: TGtk3Widget;
+  AEventWidget: PGtkWidget;
+  ATargetWidget: TGtk3Widget;
+  AMsgActivate: TLMActivate;
 begin
   Result := gtk_false;
   if (Data = nil) or (TGtk3Widget(Data).LCLObject = nil) then
@@ -1475,6 +1478,42 @@ begin
     end;
   GDK_BUTTON_PRESS:
     begin
+      // issue #42545
+      if Gtk3WidgetSet.IsWayland and (wtWindow in TGtk3Widget(Data).WidgetType) and
+        not (wtHintWindow in TGtk3Widget(Data).WidgetType) and
+        (TGtk3Widget(Data).LCLObject is TCustomForm) and
+        Gtk3IsGtkWindow(TGtk3Widget(Data).Widget) and
+        (PGtkWindow(TGtk3Widget(Data).Widget)^.get_window_type = GTK_WINDOW_POPUP) and
+        PGtkWindow(TGtk3Widget(Data).Widget)^.get_accept_focus and
+        (Gtk3WidgetSet.MsgActivationLevel = 0) then
+      begin
+        AEventWidget := gtk_get_event_widget(event);
+        AForm := TCustomForm(TGtk3Widget(Data).LCLObject);
+        if Assigned(AEventWidget) and
+          (AEventWidget^.get_toplevel <> TGtk3Widget(Data).Widget) and
+          not (fsModal in AForm.FormState) and
+          AForm.Active and AForm.HandleAllocated then
+        begin
+          ATargetWidget := TGtk3Widget(HwndFromGtkWidget(AEventWidget^.get_toplevel));
+          Gtk3WidgetSet.MsgActivationLevel := Gtk3WidgetSet.MsgActivationLevel + 1;
+          try
+            AForm.Perform(CM_DEACTIVATE, 0, 0);
+            if AForm.HandleAllocated and AForm.Active then
+            begin
+              FillChar(AMsgActivate{%H-}, SizeOf(AMsgActivate), 0);
+              AMsgActivate.Msg := LM_ACTIVATE;
+              AMsgActivate.Active := WA_INACTIVE;
+              if Assigned(ATargetWidget) and Assigned(ATargetWidget.LCLObject) then
+                AMsgActivate.ActiveWindow := HWND(ATargetWidget.LCLObject.Handle);
+              TGtk3Widget(Data).DeliverMessage(AMsgActivate);
+            end;
+          finally
+            Gtk3WidgetSet.MsgActivationLevel := Gtk3WidgetSet.MsgActivationLevel - 1;
+          end;
+          exit(gtk_true);
+        end;
+      end;
+
       // set focus before gtk does that, so we have same behaviour as other ws
       if TGtk3Widget(Data).GetFocusableByMouse and
         not TGtk3Widget(Data).LCLObject.Focused and
@@ -2336,7 +2375,8 @@ begin
   begin
     if Sender^.get_toplevel^.is_toplevel then
     begin
-      if not PGtkWindow(Sender^.get_toplevel)^.is_active then
+      if not PGtkWindow(Sender^.get_toplevel)^.is_active and
+        Sender^.get_mapped and Sender^.get_toplevel^.get_mapped then
         Exit;
       if PGtkWindow(Sender^.get_toplevel)^.get_focus = Sender then
         Exit;
@@ -2779,6 +2819,13 @@ begin
     Gtk3WidgetSet.FGtk3KeyStates[VK_MENU] := False;
     Gtk3WidgetSet.FGtk3KeyStates[VK_LMENU] := False;
     Gtk3WidgetSet.FGtk3KeyStates[VK_RMENU] := False;
+  end;
+  if not (ACharCode in [VK_LWIN, VK_RWIN]) and
+     not (GDK_SUPER_MASK in AEvent.state) and not (GDK_MOD4_MASK in AEvent.state) and
+     not (GDK_META_MASK in AEvent.state) and not (GDK_HYPER_MASK in AEvent.state) then
+  begin
+    Gtk3WidgetSet.FGtk3KeyStates[VK_LWIN] := False;
+    Gtk3WidgetSet.FGtk3KeyStates[VK_RWIN] := False;
   end;
 
   if (KeyValue >= GDK_KEY_exclam) and (KeyValue <= GDK_KEY_parenleft) and
@@ -3348,6 +3395,29 @@ begin
   end;
 end;
 
+procedure Gtk3SetBgCssProvider(ATarget: PGtkWidget; const ACss: String; APriority: guint);
+const
+  LCL_BG_CSS = 'lcl-bg-css';
+var
+  AOld, ANew: PGtkCssProvider;
+begin
+  if ATarget = nil then
+    exit;
+  AOld := PGtkCssProvider(g_object_get_data(PGObject(ATarget), LCL_BG_CSS));
+  if Assigned(AOld) then
+  begin
+    gtk_style_context_remove_provider(gtk_widget_get_style_context(ATarget), PGtkStyleProvider(AOld));
+    g_object_unref(gpointer(AOld));
+    g_object_set_data(PGObject(ATarget), LCL_BG_CSS, nil);
+  end;
+  if ACss = '' then
+    exit;
+  ANew := gtk_css_provider_new;
+  gtk_css_provider_load_from_data(ANew, PChar(ACss), -1, nil);
+  gtk_style_context_add_provider(gtk_widget_get_style_context(ATarget), PGtkStyleProvider(ANew), APriority);
+  g_object_set_data(PGObject(ATarget), LCL_BG_CSS, ANew);
+end;
+
 procedure TGtk3Widget.SetColor(AValue: TColor);
 var
   AColor: TGdkRGBA;
@@ -3369,19 +3439,14 @@ begin
   if [wtEntry, wtSpinEdit] * WidgetType <> [] then
   begin
     if AValue = clDefault then
-      CSSData := 'entry { background-color: initial; background-image: none; }'
+      CSSData := ''
     else
     begin
       RGBA := ColorToRGB(AValue);
       CSSData := Format('entry { background-color: #%.2x%.2x%.2x; background-image: none; }',
                  [Red(RGBA), Green(RGBA), Blue(RGBA)]);
     end;
-    Provider := gtk_css_provider_new();
-    gtk_css_provider_load_from_data(Provider, PChar(CSSData), -1, nil);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(FWidget),
-                                   PGtkStyleProvider(Provider),
-                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    g_object_unref(Provider);
+    Gtk3SetBgCssProvider(FWidget, CSSData, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   end else
   if wtMemo in WidgetType then
   begin
@@ -3417,52 +3482,32 @@ begin
   end else
   if (wtComboBox in WidgetType) then
   begin
-    if PGtkComboBox(FWidget)^.has_entry then
+    ATargetWidget := PGtkComboBox(FWidget)^.get_child;
+    if AValue = clDefault then
+      CSSData := ''
+    else
     begin
-      ATargetWidget := PGtkComboBox(FWidget)^.get_child;
-      if AValue = clDefault then
-        CSSData := 'entry { background-color: initial; background-image: none; }'
-      else
-      begin
-        RGBA := ColorToRGB(AValue);
+      RGBA := ColorToRGB(AValue);
+      if PGtkComboBox(FWidget)^.has_entry then
         CSSData := Format('entry { background-color: #%.2x%.2x%.2x; background-image: none; }',
-                   [Red(RGBA), Green(RGBA), Blue(RGBA)]);
-      end;
-    end else
-    begin
-      ATargetWidget := PGtkComboBox(FWidget)^.get_child;
-      if AValue = clDefault then
-        CSSData := 'combobox button.combo cellview { background-color: initial; background-image: none; }'
+                   [Red(RGBA), Green(RGBA), Blue(RGBA)])
       else
-      begin
-        RGBA := ColorToRGB(AValue);
         CSSData := Format('combobox button.combo cellview { background-color: #%.2x%.2x%.2x; background-image: none; }',
                    [Red(RGBA), Green(RGBA), Blue(RGBA)]);
-      end;
     end;
-    Provider := gtk_css_provider_new();
-    gtk_css_provider_load_from_data(Provider, PChar(CSSData), -1, nil);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(ATargetWidget),
-                                   PGtkStyleProvider(Provider),
-                                   GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    g_object_unref(Provider);
+    Gtk3SetBgCssProvider(ATargetWidget, CSSData, GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
   end else
   if wtTrackBar in WidgetType then
   begin
     if AValue = clDefault then
-      CSSData := 'trough { background: initial; }'
+      CSSData := ''
     else
     begin
       RGBA := ColorToRGB(AValue);
       CSSData := Format('trough { background: #%.2x%.2x%.2x; }',
         [Red(RGBA), Green(RGBA), Blue(RGBA)]);
     end;
-    Provider := gtk_css_provider_new();
-    gtk_css_provider_load_from_data(Provider, PChar(CSSData), -1, nil);
-    gtk_style_context_add_provider(gtk_widget_get_style_context(FWidget),
-                                   PGtkStyleProvider(Provider),
-                                   GTK_STYLE_PROVIDER_PRIORITY_USER);
-    g_object_unref(Provider);
+    Gtk3SetBgCssProvider(FWidget, CSSData, GTK_STYLE_PROVIDER_PRIORITY_USER);
   end else
   if Self is TGtk3CheckBox then
   begin
@@ -10226,6 +10271,10 @@ begin
     g_list_free(AChildren);
   end;
 
+  //issue #42555
+  g_signal_handlers_disconnect_matched(PGObject(OldWidget), [G_SIGNAL_MATCH_DATA], 0, 0, nil, nil, Self);
+  Gtk3ClearLCLWidgetData(PGObject(OldWidget));
+
   g_object_ref(PGObject(OldWidget));
   try
     if Assigned(AParent) then
@@ -15079,6 +15128,7 @@ var
   msk: TGdkWindowState;
   MenuH: gint;
   AMainForm: Boolean;
+  AContentW, AContentH: gint;
 begin
   Result := False;
   FillChar(Msg{%H-}, SizeOf(Msg), #0);
@@ -15152,8 +15202,18 @@ begin
      (not (TGtk3Window(AData).LCLObject is TCustomForm) or
       (TCustomForm(TGtk3Window(AData).LCLObject).FormStyle <> fsMDIChild)) then
     MenuH := TGtk3Window(AData).GetMenuBarHeight;
-  Msg.Width := Word(AWidget^.window^.get_width);
-  Msg.Height := Word(Max(0, AWidget^.window^.get_height - MenuH));
+  if Gtk3WidgetSet.IsWayland and Gtk3IsGtkWindow(AWidget) then
+  begin
+    AContentW := 0;
+    AContentH := 0;
+    PGtkWindow(AWidget)^.get_size(@AContentW, @AContentH);
+    Msg.Width := Word(AContentW);
+    Msg.Height := Word(Max(0, AContentH - MenuH));
+  end else
+  begin
+    Msg.Width := Word(AWidget^.window^.get_width);
+    Msg.Height := Word(Max(0, AWidget^.window^.get_height - MenuH));
+  end;
   {$IFDEF GTK3DEBUGWINDOWSTATE}
   DebugLn('GetWindowState SizeType=',dbgs(Msg.SizeType),' realized ',dbgs(AWidget^.get_realized));
   {$ENDIF}
@@ -15226,8 +15286,12 @@ var
         (OldShadowH <> TGtk3Window(ACtl).FResizeState.ShadowH)) and
        Assigned(ACtl.LCLObject) and (ACtl.LCLObject is TCustomForm) then
     begin
-      with TCustomForm(ACtl.LCLObject).Constraints do
-        if (MinWidth > 0) or (MaxWidth > 0) or (MinHeight > 0) or (MaxHeight > 0) then
+      with TCustomForm(ACtl.LCLObject) do
+        //issue #42460
+        if (Constraints.MinWidth > 0) or (Constraints.MaxWidth > 0) or
+           (Constraints.MinHeight > 0) or (Constraints.MaxHeight > 0) or
+           (Gtk3WidgetSet.IsWayland and
+            (BorderStyle in [bsDialog, bsSingle, bsToolWindow])) then
         begin
           {$IFDEF GTK3DEBUGSIZE}
           writeln(Format('[%d] WindowSizeAllocate %s shadow changed %dx%d -> %dx%d, refire constraint hints',
@@ -15569,6 +15633,13 @@ var
 begin
   if Gtk3IsGtkWindow(aWidget) then
   begin
+    if Gtk3WidgetSet.IsWayland and
+      (TGtk3Window(aData).GetWindowState * [GDK_WINDOW_STATE_MAXIMIZED,
+        GDK_WINDOW_STATE_FULLSCREEN, GDK_WINDOW_STATE_TILED] <> []) then
+    begin
+      Result := gtk_false;
+      exit;
+    end;
     MoveMsg.Result := 0;
     MoveMsg.Msg := LM_MOVE;
     MoveMsg.MoveType := Move_SourceIsInterface;
@@ -16331,6 +16402,7 @@ var
   x, y: gint;
   WSAInterval: Int64;
   MenuH: gint;
+  AShadowW, AShadowH: gint;
 begin
   AForm := TCustomForm(LCLObject);
   BeginUpdate;
@@ -16345,6 +16417,15 @@ begin
   ARect.width := AWidth;
   ARect.Height := AHeight;
   AIsWayland := Gtk3WidgetSet.IsWayland;
+  AShadowW := FResizeState.ShadowW;
+  AShadowH := FResizeState.ShadowH;
+  if AIsWayland and Gtk3IsGtkWindow(fWidget) and
+    (GetWindowState * [GDK_WINDOW_STATE_MAXIMIZED, GDK_WINDOW_STATE_FULLSCREEN,
+      GDK_WINDOW_STATE_TILED] <> []) then
+  begin
+    AShadowW := 0;
+    AShadowH := 0;
+  end;
   try
     Widget^.get_allocation(@Alloc);
     {$IF DEFINED(GTK3DEBUGFORMS) OR DEFINED(GTK3DEBUGSIZE)}
@@ -16377,8 +16458,8 @@ begin
       begin
         if AIsWayland and Gtk3IsGtkWindow(fWidget) then
         begin
-          ARect.width := ARect.width + FResizeState.ShadowW;
-          ARect.height := ARect.height + FResizeState.ShadowH;
+          ARect.width := ARect.width + AShadowW;
+          ARect.height := ARect.height + AShadowH;
         end;
         Widget^.size_allocate(@ARect);
       end;
@@ -16389,25 +16470,25 @@ begin
       with Geometry do
       begin
         if not AFixedWidthHeight and (AForm.Constraints.MinWidth > 0) then
-          min_width := AForm.Constraints.MinWidth + FResizeState.ShadowW
+          min_width := AForm.Constraints.MinWidth + AShadowW
         else if AFixedWidthHeight then
           min_width := AForm.Width
         else
           min_width := 1;
         if not AFixedWidthHeight and (AForm.Constraints.MaxWidth > 0) then
-          max_width := AForm.Constraints.MaxWidth + FResizeState.ShadowW
+          max_width := AForm.Constraints.MaxWidth + AShadowW
         else if AFixedWidthHeight then
           max_width := AForm.Width
         else
           max_width := 32767;
         if not AFixedWidthHeight and (AForm.Constraints.MinHeight > 0) then
-          min_height := AForm.Constraints.MinHeight + FResizeState.ShadowH + MenuH
+          min_height := AForm.Constraints.MinHeight + AShadowH + MenuH
         else if AFixedWidthHeight then
           min_height := AForm.Height + MenuH
         else
           min_height := 1;
         if not AFixedWidthHeight and (AForm.Constraints.MaxHeight > 0) then
-          max_height := AForm.Constraints.MaxHeight + FResizeState.ShadowH + MenuH
+          max_height := AForm.Constraints.MaxHeight + AShadowH + MenuH
         else if AFixedWidthHeight then
           max_height := AForm.Height + MenuH
         else

@@ -521,6 +521,8 @@ begin
   if (Parent = nil) and (ParentWindow = 0) and
      (FormStyle <> fsMDIForm) or (csDesigning in ComponentState) then
     SetActive(Message.Active <> WA_INACTIVE);
+  if (Message.Active <> WA_INACTIVE) and FFirstActivatePending then
+    Activate;
   if Message.Active = WA_INACTIVE then
   begin
     if Assigned(Application) then
@@ -615,8 +617,12 @@ end;
 procedure TCustomForm.Activate;
 begin
   if FIsFirstOnActivate and (WindowState in [wsMaximized, wsFullScreen]) then
+  begin
+    FFirstActivatePending := True;
     Exit;
+  end;
   FIsFirstOnActivate := False;
+  FFirstActivatePending := False;
   if Assigned(FOnActivate) then FOnActivate(Self);
 end;
 
@@ -2020,6 +2026,7 @@ begin
   FDelayedOnResize := False;
   FIsFirstOnShow := True;
   FIsFirstOnActivate := True;
+  FFirstActivatePending := False;
   GlobalNameSpace.BeginWrite;
   try
     CreateNew(AOwner, 1); // this calls BeginFormUpdate, which is ended in AfterConstruction
@@ -2238,7 +2245,7 @@ begin
     // Query children forms whether we can close
     if not Check(Self) then exit(False);
     for I := 0 to MDIChildCount - 1 do
-      if not MDIChildren[I].CloseQuery then Exit(False);
+      if Assigned(MDIChildren[I]) and not MDIChildren[I].CloseQuery then Exit(False);
   end;
   Result := True;
   if Assigned(FOnCloseQuery) then
