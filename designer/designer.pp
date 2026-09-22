@@ -2258,6 +2258,7 @@ end;
 
 procedure TDesigner.MouseDownOnControl(Sender: TControl; var TheMessage: TLMMouse);
 var
+  OI: TObjectInspectorDlg;
   NewSelection: TPersistentSelectionList;
   CompIndex:integer;
   SelectedCompClass: TRegisteredComponent;
@@ -2389,17 +2390,18 @@ begin
             Selection.AssignPersistent(MouseDownComponent);
             // Propagate single-click selection to Structure pane tree view so the
             // clicked object is highlighted in the hierarchy (task #346, c583).
-            if Assigned(FormEditingHook) then
-              with FormEditingHook.GetCurrentObjectInspector do
-                if Assigned(ComponentTree) then begin
-                  NewSelection:=TPersistentSelectionList.Create;
-                  try
-                    NewSelection.Add(MouseDownComponent);
-                    ComponentTree.Selection := NewSelection;
-                  finally
-                    NewSelection.Free;
-                  end;
+            if Assigned(FormEditingHook) then begin
+              OI := FormEditingHook.GetCurrentObjectInspector;
+              if Assigned(OI) and Assigned(OI.ComponentTree) then begin
+                NewSelection:=TPersistentSelectionList.Create;
+                try
+                  NewSelection.Add(MouseDownComponent);
+                  OI.ComponentTree.Selection := NewSelection;
+                finally
+                  NewSelection.Free;
                 end;
+              end;
+            end;
           end else
             // sync with the interface
             Selection.UpdateBounds;
