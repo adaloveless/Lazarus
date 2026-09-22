@@ -49,7 +49,6 @@ uses
   // IDEIntf
   IDEDialogs, PropEdits, PropEditUtils, ComponentEditors, MenuIntf,
   IDEImagesIntf, FormEditingIntf, IDECommands, LazIDEIntf,
-  ComponentTreeView,
   ObjectInspector, IdeIntfStrConsts,
   // IDE
   LazarusIDEStrConsts, EnvGuiOptions, EditorOptions, SourceEditor,
@@ -1628,8 +1627,6 @@ var
   Control: TControl;
   Parent: TWinControl;
   OI: TObjectInspectorDlg;
-  NewSelection: TPersistentSelectionList;
-  i: Integer;
 begin
   if Selection.Count <> 1 then Exit;
   if not Selection[0].IsTControl then Exit;
@@ -1657,18 +1654,8 @@ begin
 
   Modified;
   OI := FormEditingHook.GetCurrentObjectInspector;
-  if Assigned(OI) then begin
+  if Assigned(OI) then
     OI.ComponentTree.BuildComponentNodes(True);
-    // Also highlight the selected component in Structure pane (task #346, c583).
-    NewSelection:=TPersistentSelectionList.Create;
-    try
-      for i:=0 to Selection.Count-1 do
-        NewSelection.Add(Selection[i].Persistent);
-      OI.ComponentTree.Selection := NewSelection;
-    finally
-      NewSelection.Free;
-    end;
-  end;
 end;
 
 procedure TDesigner.NotifyComponentAdded(AComponent: TComponent);
@@ -2258,8 +2245,6 @@ end;
 
 procedure TDesigner.MouseDownOnControl(Sender: TControl; var TheMessage: TLMMouse);
 var
-  OI: TObjectInspectorDlg;
-  NewSelection: TPersistentSelectionList;
   CompIndex:integer;
   SelectedCompClass: TRegisteredComponent;
   ParentForm: TCustomForm;
@@ -2388,20 +2373,6 @@ begin
           if (CompIndex<0) then begin
             // select only this component
             Selection.AssignPersistent(MouseDownComponent);
-            // Propagate single-click selection to Structure pane tree view so the
-            // clicked object is highlighted in the hierarchy (task #346, c583).
-            if Assigned(FormEditingHook) then begin
-              OI := FormEditingHook.GetCurrentObjectInspector;
-              if Assigned(OI) and Assigned(OI.ComponentTree) then begin
-                NewSelection:=TPersistentSelectionList.Create;
-                try
-                  NewSelection.Add(MouseDownComponent);
-                  OI.ComponentTree.Selection := NewSelection;
-                finally
-                  NewSelection.Free;
-                end;
-              end;
-            end;
           end else
             // sync with the interface
             Selection.UpdateBounds;
