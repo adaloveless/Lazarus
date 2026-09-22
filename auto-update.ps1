@@ -60,6 +60,8 @@ function Log-ErrDetail { param($msg) Write-Host "[ERROR] $msg" -ForegroundColor 
 function Log-Header { param($msg) Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
 $script:LazarusUpdated = $false
+$script:LazarusMergeFailed = $false   # c730: the origin merge was attempted and FAILED -- the tree is stale
+$script:LazarusOffMain = $false       # c730: the checkout is not on main and could not be switched
 $script:VPUpdated = $false
 $script:CheckFailed = $false   # a Check-* helper could not read or refresh a repository; "up to date" is then not a verdict (c675)
 $script:UpstreamUpdated = $false
@@ -883,6 +885,75 @@ function Test-RepoOnMain {
     return $br.Trim()
 }
 
+# --- main only, ENFORCED (Lars, c730 2026-09-22; GOD's AGENTS.md section 1) ------------------
+# GOD's Windows box sat on bruno/latest-txt-vp-wiring, 117 (later 222) commits behind
+# origin/main, for days: every run of this script "merged" origin/main into that branch, hit
+# conflicts (this script is the usual one), aborted the merge -- and then rebuilt the IDE from
+# the stale tree anyway, printing [OK] lazarus.exe rebuilt under an [ERROR] nobody read. Agents
+# "fixed" the docked layout on the wrong branch again and again; GOD lost days. Two rules fall
+# out of that and both live here:
+#   1. The Lazarus checkout is put on main BEFORE anything pulls. The stray branch is left in
+#      place with all its commits (nothing is deleted); the human merges or drops it by hand.
+#   2. A failed origin merge is a FAILED UPDATE. Nothing is rebuilt from a tree that did not
+#      take origin/main -- not even under -ForceRebuild -- and the run exits 1 saying so.
+function Ensure-LazarusOnMain {
+    $br = Test-RepoOnMain -WorkDir $LazarusDir
+    if ($null -eq $br) {
+        Log-Warn "Lazarus: cannot read the current branch of $LazarusDir (not a repository, or git failed) -- leaving it alone."
+        return
+    }
+    if ($br -eq "main") { return }
+
+    Log-Err "Lazarus checkout $LazarusDir is on '$br', not main. AGENTS.md section 1: everything lives on main, no feature branches."
+    $stray = Get-UnpushedCommitCount -WorkDir $LazarusDir
+    if ("$stray" -eq "UNKNOWN") {
+        Log-Warn "  '$br' may carry commits origin/main does not have (git could not count them). The branch is LEFT IN PLACE -- nothing on it is deleted."
+    } elseif ([int]$stray -gt 0) {
+        Log-Warn "  '$br' carries $stray commit(s) that origin/main does not. The branch is LEFT IN PLACE -- nothing on it is deleted. Merge or drop it by hand: git -C `"$LazarusDir`" log --oneline origin/main..$br"
+    } else {
+        Log-Info "  '$br' carries nothing origin/main does not have; it is left in place."
+    }
+
+    $hasMain = Invoke-Git -WorkDir $LazarusDir -GitArgs @("rev-parse", "--verify", "--quiet", "refs/heads/main")
+    if ($hasMain.ExitCode -eq 0) {
+        $co = Invoke-Git -WorkDir $LazarusDir -GitArgs @("checkout", "main")
+    } else {
+        $co = Invoke-Git -WorkDir $LazarusDir -GitArgs @("checkout", "-b", "main", "origin/main")
+    }
+    if ($co.ExitCode -ne 0) {
+        $script:LazarusOffMain = $true
+        Log-Err "Could not switch $LazarusDir to main: $($co.Error)"
+        Log-ErrDetail "  Nothing will be pulled or rebuilt on '$br'. Fix by hand: commit or stash local changes (or run without -KeepLocal), then: git -C `"$LazarusDir`" checkout main"
+        return
+    }
+    $now = Test-RepoOnMain -WorkDir $LazarusDir
+    if ($now -ne "main") {
+        $script:LazarusOffMain = $true
+        Log-Err "Switched, but $LazarusDir now reads '$now' instead of main -- refusing to continue on it."
+        return
+    }
+    Log-Ok "Lazarus checkout switched to main (was '$br'); the stray branch is untouched."
+
+    # Check-LazarusOrigin counted HEAD..origin/main on the OLD branch. Re-measure on main so the
+    # origin pull below actually runs when main is behind.
+    $behind = Get-GitCount -WorkDir $LazarusDir -Range "HEAD..origin/main"
+    if ("$behind" -ne "UNKNOWN" -and [int]$behind -gt 0) {
+        Log-Warn "Lazarus main is $behind commit(s) behind origin/main -- pulling."
+        $script:LazarusUpdated = $true
+    }
+}
+
+function Test-UpdateBlocked {
+    # The reason the IDE must NOT be rebuilt this run, or $null when it may be.
+    if ($script:LazarusMergeFailed) {
+        return "origin/main could not be merged into $LazarusDir (see '[ERROR] Merge from origin failed' above). The source is STALE: an IDE built from it would silently lack every commit on origin/main."
+    }
+    if ($script:LazarusOffMain) {
+        return "$LazarusDir is not on main and could not be switched (see above). Nothing was pulled; an IDE built from it would be built from the wrong branch."
+    }
+    return $null
+}
+
 function Pull-VP {
     if (-not $script:VPUpdated) { return }
 
@@ -949,6 +1020,12 @@ function Check-LazarusOrigin {
         Log-Warn "Lazarus origin: git fetch origin failed (exit $($fetch.ExitCode)): $($fetch.Error)"
         Log-Warn "Lazarus origin: comparing against the LAST fetched origin/main -- an 'up to date' below is not a fresh reading"
         $script:CheckFailed = $true
+    }
+
+    # c730 -- say it in -Check too: a real run switches the checkout to main before pulling.
+    $onBranch = Test-RepoOnMain -WorkDir $LazarusDir
+    if ($onBranch -and $onBranch -ne "main") {
+        Log-Warn "Lazarus checkout $LazarusDir is on branch '$onBranch', not main (AGENTS.md section 1). A real run switches it to main before pulling; the branch itself is left in place."
     }
 
     $behind = Get-GitCount -WorkDir $LazarusDir -Range "HEAD..origin/main"
@@ -1054,10 +1131,13 @@ function Pull-LazarusOrigin {
         Log-Info "Merging origin/main ($localCommits local commit(s) ahead)..."
         $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge origin/main", "origin/main")
         if ($result.ExitCode -ne 0) {
-            Log-Err "Merge from origin failed: $($result.Error)"
+            # git reports a conflict on STDOUT ("CONFLICT (content): ... Automatic merge failed"), so quote both streams.
+            Log-Err "Merge from origin failed: $($result.Error) $($result.Output)"
             Log-Warn "Aborting the conflicted merge so the working tree stays clean (never rebuild a tree with conflict markers)."
             Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "--abort") | Out-Null
+            $script:LazarusMergeFailed = $true
             Log-Err "Resolve conflicts manually, then re-run."
+            Log-ErrDetail "The IDE will NOT be rebuilt from this tree: it did not take origin/main, so it is stale (c730)."
         } else {
             Log-Ok "Merge from origin complete"
         }
@@ -2169,6 +2249,12 @@ function Print-Summary {
     Report-RepoOutcome -Label "VibePascal" -Available $script:VPUpdated -Before $script:VPHeadBefore -After $vpNow -Detail $applyHint
     Report-RepoOutcome -Label "Lazarus upstream" -Available $script:UpstreamUpdated -Before $script:LazarusHeadBefore -After $lazMid -Detail $applyHint -State $upstreamState
     Report-RepoOutcome -Label "Lazarus" -Available $script:LazarusUpdated -Before $originBefore -After $lazNow -Detail $applyHint
+    if ($script:LazarusMergeFailed) {
+        Write-Host "  [X] Lazarus : MERGE FAILED -- origin/main could not be merged into $LazarusDir; the source is STALE and the IDE was NOT rebuilt. Fix the merge (git -C `"$LazarusDir`" merge origin/main), then re-run." -ForegroundColor Red
+    }
+    if ($script:LazarusOffMain) {
+        Write-Host "  [X] Lazarus : NOT ON main and could not be switched; nothing was pulled or rebuilt. Fix: git -C `"$LazarusDir`" checkout main, then re-run." -ForegroundColor Red
+    }
 
     if ($script:LocalBuildProductsRestored) {
         Write-Host "  [+] Local build products rebuilt" -ForegroundColor Green
@@ -3129,6 +3215,7 @@ if (-not $UpstreamOnly) {
         Extract-VPBinaries
     }
 }
+Ensure-LazarusOnMain   # c730: main only -- BEFORE the upstream merge and the origin pull, which both move HEAD
 Pull-LazarusUpstream
 $script:LazarusHeadAfterUpstream = Get-HeadStamp -WorkDir $LazarusDir   # c719: splits the upstream merge from the origin pull, which move the same HEAD
 Pull-LazarusOrigin
@@ -3245,6 +3332,21 @@ $unmergedFiles = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("ls-files", "--un
 if ($unmergedFiles) {
     Log-Err "Working tree in $LazarusDir has unresolved merge conflicts -- refusing to rebuild (would compile conflict markers)."
     Log-Err "Resolve them, or run 'git merge --abort' / 'git reset --hard origin/main' in $LazarusDir, then re-run the updater."
+    Print-Summary
+    exit 1
+}
+
+# UPDATE FAILED gate (c730): a run whose origin merge failed, or whose checkout could not be
+# put on main, rebuilds NOTHING -- -ForceRebuild included. GOD's AGENTS.md section 1 records
+# what the old behaviour cost: an IDE rebuilt from stale source with an [OK] line under it.
+$blocked = Test-UpdateBlocked
+if ($blocked) {
+    Write-Host ""
+    Log-Err       "########################################################################"
+    Log-ErrDetail "#            UPDATE FAILED -- THE IDE WAS NOT REBUILT                  #"
+    Log-ErrDetail "########################################################################"
+    Log-ErrDetail $blocked
+    Log-ErrDetail "Fix the checkout, then re-run auto-update.bat. Do not debug the IDE you have: it is the OLD one."
     Print-Summary
     exit 1
 }
