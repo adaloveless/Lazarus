@@ -1628,6 +1628,8 @@ var
   Control: TControl;
   Parent: TWinControl;
   OI: TObjectInspectorDlg;
+  NewSelection: TPersistentSelectionList;
+  i: Integer;
 begin
   if Selection.Count <> 1 then Exit;
   if not Selection[0].IsTControl then Exit;
@@ -2256,6 +2258,7 @@ end;
 
 procedure TDesigner.MouseDownOnControl(Sender: TControl; var TheMessage: TLMMouse);
 var
+  NewSelection: TPersistentSelectionList;
   CompIndex:integer;
   SelectedCompClass: TRegisteredComponent;
   ParentForm: TCustomForm;
