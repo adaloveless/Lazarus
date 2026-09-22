@@ -1450,6 +1450,7 @@ var
   ConfigFile: string;
   SkipAllTests: Boolean;
   i: Integer;
+  LazDirCandidates: TSDFileInfoList;
 begin
   {$IFDEF DebugSearchFPCSrcThread}
   ShowSetupDialog:=true;
@@ -1458,9 +1459,41 @@ begin
   SkipAllTests := GetSkipCheck(skcSetup);
 
   // check lazarus directory
-  if (not ShowSetupDialog)
-  and (not SkipAllTests)
-  and (not GetSkipCheck(skcLazDir))
+  if SkipAllTests or GetSkipCheck(skcLazDir) then
+  begin
+    // The interactive check is skipped (--skip-checks=LazarusDir/Setup/All on the
+    // command line or in lazarus.cfg). On a fresh configuration the Lazarus
+    // directory is still empty, so it resolves to the current directory, no base
+    // package .lpk can be found, and StartIDE dies with an access violation before
+    // the main window exists (measured 2026-09-22 on lazdev/gtk2 and by Miles on
+    // real Windows). Skipping the dialog must not skip the detection: when the
+    // configured value is not a Lazarus directory at all (empty, missing, or an
+    // existing directory without lcl/ide/packager -- sddqIncomplete, which is what
+    // the current directory reads as), search the candidates the setup dialog
+    // would offer and take the first compatible one. A configured directory of
+    // the wrong version is left alone: that is a choice, not an absence.
+    if (EnvironmentOptions.LazarusDirectory='')
+    or (CheckLazarusDirectoryQuality(EnvironmentOptions.GetParsedLazarusDirectory,Note)
+        in [sddqInvalid,sddqIncomplete]) then
+    begin
+      LazDirCandidates:=SearchLazarusDirectoryCandidates(true);
+      try
+        if (LazDirCandidates<>nil) and (LazDirCandidates.BestDir<>nil)
+        and (LazDirCandidates.BestDir.Quality=sddqCompatible) then
+        begin
+          debugln(['Hint: (lazarus) [TMainIDE.SetupInteractive] Lazarus directory check skipped and "',
+            EnvironmentOptions.GetParsedLazarusDirectory,'" is not a Lazarus directory: using "',
+            LazDirCandidates.BestDir.Filename,'"']);
+          EnvironmentOptions.LazarusDirectory:=LazDirCandidates.BestDir.Filename;
+        end else
+          debugln(['Warning: (lazarus) [TMainIDE.SetupInteractive] Lazarus directory check skipped, "',
+            EnvironmentOptions.GetParsedLazarusDirectory,'" is not a Lazarus directory and no candidate fits']);
+      finally
+        LazDirCandidates.Free;
+      end;
+    end;
+  end
+  else if (not ShowSetupDialog)
   and (CheckLazarusDirectoryQuality(EnvironmentOptions.GetParsedLazarusDirectory,Note)<>sddqCompatible)
   then begin
     debugln(['Warning: (lazarus) incompatible Lazarus directory: ',EnvironmentOptions.GetParsedLazarusDirectory]);
