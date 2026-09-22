@@ -57,7 +57,7 @@ uses
   // Package registration
   LazarusPackageIntf,
   // IdeConfig
-  EnvironmentOpts, LazConf, TransferMacros, IDEProcs, DialogProcs, SearchPathProcs,
+  EnvironmentOpts, LazConf, IDECmdLine, TransferMacros, IDEProcs, DialogProcs, SearchPathProcs,
   ParsedCompilerOpts, CompilerOptions, FppkgHelper, IdeConfStrConsts, IDETranslations,
   // IdePackager
   IdePackagerStrConsts, PackageLinks, PackageDefs, PkgSysBasePkgs;
@@ -6750,6 +6750,13 @@ begin
   if Dependency.LoadPackageResult<>lprSuccess then begin
     // a valid lpk file of the installed package can not be found
     IsBasePkg:=IsCompiledInBasePackage(Dependency.PackageName);
+    // Name the package in the log: the dialog below can be suppressed (Quiet,
+    // --skip-checks=MissingPackageFile) and an unattended run has no other way
+    // to learn which installed package lost its .lpk.
+    debugln(['Warning: (lazarus) [TLazPackageGraph.OpenInstalledDependency] installed package "',
+      Dependency.PackageName,'" has no valid .lpk (LoadPackageResult=',
+      dbgs(ord(Dependency.LoadPackageResult)),', LazarusDir="',
+      EnvironmentOptions.GetParsedLazarusDirectory,'")']);
     // -> create a broken package
     BrokenPackage:=NewPackageClass.CreateAndClear;
     with BrokenPackage do begin
@@ -6784,7 +6791,12 @@ begin
     end;
     AddPackage(BrokenPackage);
     //DebugLn('TLazPackageGraph.OpenInstalledDependency ',BrokenPackage.IDAsString,' ',dbgs(ord(BrokenPackage.AutoInstall)));
-    if (not Quiet) and DirPathExistsCached(LazPackageLinks.GetGlobalLinkDirectory)
+    // --skip-checks=MissingPackageFile (or All): the key has been declared in
+    // IDECmdLine since the skip table was written but was never honoured, so an
+    // unattended run (auto-update, a test harness) still got this modal box for
+    // every installed package whose .lpk is not linked from a fresh config.
+    if (not Quiet) and (not GetSkipCheck(skcMissingPackageFile))
+    and DirPathExistsCached(LazPackageLinks.GetGlobalLinkDirectory)
     then begin
       // tell the user
       CurResult:=LazQuestionWorker(lisPkgSysPackageFileNotFound,
