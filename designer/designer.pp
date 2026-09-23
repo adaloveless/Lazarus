@@ -1085,8 +1085,9 @@ begin
     Exit;
   end;
 
-  if Selection.OnlyInvisiblePersistentsSelected then
-    Exit;
+  // No early exit for "invisible" selections (components registered with RegisterNoIcon,
+  // e.g. the controls living inside a PasZD host, or menu items): they still have a
+  // GetParentComponent, and the loop below already skips everything without a parent.
 
   if Selection.LookupRootSelected then
   begin
