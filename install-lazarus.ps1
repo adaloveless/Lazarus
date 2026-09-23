@@ -152,7 +152,7 @@ if ($resolverExit -ne 0) {
 $tag          = (Get-Content $metaFile)[0]
 $tarballName  = (Get-Content $metaFile)[1]
 $tarballUrl   = (Get-Content $metaFile)[2]
-$expectedSha  = (Get-Content $metaFile)[3]
+$apiSha       = (Get-Content $metaFile)[3]
 $shaUrl       = (Get-Content $metaFile)[4]
 
 Write-Info "Latest release: $tag"
@@ -183,15 +183,31 @@ $tarballPath = Join-Path $tmp $tarballName
 Write-Info "Downloading $tarballName..."
 Download-File $tarballUrl $tarballPath
 
-# --- determine expected digest (GitHub API per-asset digest preferred; SHA256SUMS asset fallback) ---
-if (-not $expectedSha -and $shaUrl) {
+# --- determine expected digest (SHA256SUMS asset preferred; GitHub API per-asset digest fallback) ---
+# The SHA256SUMS file wins whenever the release has one, as in install-lazarus.sh.
+# This script used to prefer the API digest, and that is the one that goes stale.
+# Measured 2026-09-23, after the r27 Apple Silicon tarball was replaced at 08:34:26Z:
+# 17 minutes later GET /releases and /releases/tags/<tag> still listed the DELETED
+# asset and its digest, while the by-name download URLs already served the new
+# tarball and the new SHA256SUMS. install-lazarus.sh verified that download. This
+# script, replayed against the same kind of listing for win64, stopped on
+# "SHA256 mismatch" without ever fetching the SUMS file -- after every asset
+# replacement, for as long as GitHub serves the old listing.
+if ($shaUrl) {
     $shaName = Split-Path -Leaf $shaUrl
     $shaPath = Join-Path $tmp $shaName
     Write-Info "Downloading $shaName..."
     Download-File $shaUrl $shaPath
-    $expectedSha = (Select-String -Path $shaPath -Pattern "([a-f0-9]{64})\s+$([regex]::Escape($tarballName))").Matches.Groups[1].Value
-}
-if (-not $expectedSha) {
+    $shaLine = Select-String -Path $shaPath -Pattern ('^([a-f0-9]{64})\s+\*?' + [regex]::Escape($tarballName) + '\s*$') | Select-Object -First 1
+    if (-not $shaLine) {
+        Write-ErrorX "Tarball name not found in $shaName. Nothing was installed."
+        exit 1
+    }
+    $expectedSha = $shaLine.Matches[0].Groups[1].Value
+} elseif ($apiSha) {
+    Write-Info "No SHA256SUMS asset on this release; using the GitHub API digest."
+    $expectedSha = $apiSha
+} else {
     Write-ErrorX "No SHA256 digest available for $tarballName"
     exit 1
 }
