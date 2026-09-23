@@ -10,6 +10,8 @@ object IDEExceptionDlg: TIDEExceptionDlg
   Caption = 'IDEExceptionDlg'
   ClientHeight = 113
   ClientWidth = 612
+  KeyPreview = True
+  OnKeyDown = FormKeyDown
   Position = poScreenCenter
   LCLVersion = '2.1.0.0'
   object btnBreak: TBitBtn
@@ -79,5 +81,22 @@ object IDEExceptionDlg: TIDEExceptionDlg
     Constraints.MinWidth = 75
     ModalResult = 2
     TabOrder = 2
+  end
+  object btnCopy: TBitBtn
+    AnchorSideTop.Control = lblMessage
+    AnchorSideTop.Side = asrBottom
+    AnchorSideRight.Control = btnBreak
+    Left = 351
+    Height = 25
+    Top = 82
+    Width = 75
+    Anchors = [akTop, akRight]
+    AutoSize = True
+    BorderSpacing.Around = 6
+    Caption = 'btnCopy'
+    Constraints.MinHeight = 25
+    Constraints.MinWidth = 75
+    OnClick = btnCopyClick
+    TabOrder = 3
   end
 end
