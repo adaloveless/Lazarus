@@ -2292,6 +2292,54 @@ strip_stale_host_arch_artifacts() {
         -prune -print0 2>/dev/null)
 }
 
+prune_staged_ignored_leftovers() {
+    # package_release cp -r's ten source dirs with no filter, so any gitignored file
+    # another build left in the clone ships. r27 caught one by hand: the x86_64-linux
+    # re-roll carried the ide/revision.inc that the 07:27Z Mac IDE build had written,
+    # and a user's `lazbuild --build-ide` keeps an existing revision.inc (idebuilder
+    # CheckRevisionInc), so the About box would have named that other build.
+    #
+    # Why not stage from `git ls-files`: build outputs are gitignored and are the
+    # product. Listed 2026-09-23, all five shipped r27 tarballs: every gitignored file
+    # under these ten dirs sits under a units/ or lib/ dir (.ppu .o .compiled .rsj
+    # .res .lfm), except ide/revision.inc in the two darwin legs, which their own
+    # IDE build writes (RevisionStr = the release tag). So files under units/ and
+    # lib/ are left to strip_stale_host_arch_artifacts, and a gitignored file
+    # anywhere else ships only if THIS target's build wrote it, i.e. it is newer
+    # than the marker build_platform sets right after `make clean`.
+    local staging=$1
+    local target=$2
+    local marker=$3
+    local rel=""
+    local kept=0
+    local pruned=0
+
+    if ! git -C "$LAZARUS_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "WARNING: $LAZARUS_DIR is not a git work tree, so gitignored leftovers cannot be" >&2
+        echo "         told from sources; $target staging is NOT pruned." >&2
+        return 0
+    fi
+    # No marker means nothing can prove a file came from this build: prune them all.
+    [ -n "$marker" ] && [ -f "$marker" ] || marker=""
+
+    while IFS= read -r -d '' rel; do
+        case "/$rel" in
+            */units/*|*/lib/*) continue ;;
+        esac
+        [ -e "$staging/$rel" ] || [ -L "$staging/$rel" ] || continue
+        if [ -n "$marker" ] && [ "$LAZARUS_DIR/$rel" -nt "$marker" ]; then
+            kept=$((kept + 1))
+            continue
+        fi
+        rm -f "$staging/$rel"
+        echo "  pruned gitignored leftover (not written by this $target build): $rel"
+        pruned=$((pruned + 1))
+    done < <(git -C "$LAZARUS_DIR" ls-files -z --others --ignored --exclude-standard -- \
+        components lcl packager ide ideintf debugger converter designer tools images)
+
+    echo "Staging $target: pruned $pruned gitignored leftover(s) outside units/ and lib/; kept $kept written by this build."
+}
+
 create_darwin_app_bundle() {
     local target=$1
     local cpu_target=$(echo "$target" | cut -d- -f1)
@@ -2755,6 +2803,8 @@ package_release() {
     cp -r "$LAZARUS_DIR/designer" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/images" "$staging/" 2>/dev/null || true
+
+    prune_staged_ignored_leftovers "$staging" "$target" "${BUILD_START_MARKER:-}"
 
     # Ship the auto-update helper scripts at tarball root so users can refresh
     # and rebuild the IDE from the source tree this tarball delivers. The copies
@@ -3363,6 +3413,12 @@ build_platform() {
         return 1
     fi
 
+    # Every file this target's build writes from here on is newer than this marker.
+    # package_release uses it to tell this build's own byproducts from leftovers of
+    # other builds in the same clone (prune_staged_ignored_leftovers).
+    [ -n "${BUILD_START_MARKER:-}" ] && rm -f "$BUILD_START_MARKER"
+    BUILD_START_MARKER=$(mktemp)
+
     build_lazbuild "$target" "$cfg"
 
     # Darwin: build IDE and .app bundle
@@ -3452,6 +3508,8 @@ build_platform() {
     fi
 
     package_release "$target"
+    rm -f "$BUILD_START_MARKER"
+    BUILD_START_MARKER=""
 
     # Must come AFTER package_release: the tarball is cut from $LAZARUS_DIR/lazbuild, so the
     # target binary has to still be there when packaging runs. By the time package_release
