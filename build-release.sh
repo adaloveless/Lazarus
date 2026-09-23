@@ -3388,6 +3388,94 @@ build_platform() {
     restore_host_lazbuild "$target" || HOST_LAZBUILD_BROKEN=1
 }
 
+# --- No cfg may put ANOTHER Lazarus checkout on the unit path (Lars, c736 2026-09-23;
+# Bruno's r27 letter) ------------------------------------------------------------------
+# The six $*_CFG files above are Otto's, in the SHARED VibePascal checkout, and both
+# darwin cfgs are UNTRACKED there (see the macho note near resolve_exec_compiler). Each
+# darwin cfg carried 38 lines of the form -Fu/home/jason/src/lazarus/components/fpdebug;
+# the other four carry none (measured 2026-09-23). Otto stripped the darwin pair at 05:57Z
+# that morning; this guard stays because nothing tracks those files, so a regenerated cfg
+# can bring the lines back with no diff to notice. Those lines name the SHARED Lazarus
+# checkout by absolute path, so a roll from a scratch clone -- the courtesy protocol,
+# never build in the tree 30 agents share -- put the shared tree on the unit path of
+# every darwin compile. Bruno's r27 x86_64-darwin attempt (2026-09-23 04:35-04:46Z)
+# compiled 414 objects out of /home/jason/src/lazarus while LAZARUS_DIR was his clone,
+# and died only because laz.vtgraphics.pas got recompiled outside its package's cocoa
+# include path. A unit set that happened to compile would have shipped a Mac tarball
+# whose source is not the tagged commit, and nothing would have said so. With the lines
+# removed from his rig copy both Macs built clean (0 compile-log lines, 0 objects naming
+# src/lazarus).
+#
+# So a roll hands the compiler a cfg that cannot see a Lazarus tree other than the one
+# it builds: any -F<x>/<path> line whose path resolves inside a DIFFERENT Lazarus
+# checkout (a directory holding ide/lazarus.pp and lcl/lclbase.lpk, compared by
+# realpath, because /home/jason/src/lazarus is itself a symlink into /mnt/data) is left
+# out of a sanitized copy under $BUILD_STATE_DIR, the drop is printed with its count,
+# and the $*_CFG variable is repointed at the copy. A cfg with nothing foreign in it is
+# NOT copied and its variable is NOT touched, and lines naming our OWN tree are kept, so
+# a roll from the shared checkout itself -- where those 38 lines name LAZARUS_DIR --
+# runs exactly as it did before.
+
+# lazarus_root_of_path <absolute-path>
+# Echo the realpath of the Lazarus checkout that contains <path>, or nothing. A path
+# that does not exist (yet) is judged by its deepest existing ancestor; a glob or cfg
+# macro ends the literal part.
+lazarus_root_of_path() {
+    local p=${1%%[*\$]*}
+    while [ -n "$p" ] && [ ! -e "$p" ]; do
+        p=${p%/*}
+    done
+    [ -n "$p" ] || return 0
+    p=$(readlink -f "$p" 2>/dev/null) || return 0
+    [ -d "$p" ] || p=${p%/*}
+    while [ -n "$p" ]; do
+        if [ -f "$p/ide/lazarus.pp" ] && [ -f "$p/lcl/lclbase.lpk" ]; then
+            echo "$p"
+            return 0
+        fi
+        p=${p%/*}
+    done
+    return 0
+}
+
+# sanitize_cfg_for_lazarus_dir <NAME-of-a-$*_CFG-variable>
+sanitize_cfg_for_lazarus_dir() {
+    local var=$1
+    local cfg=${!var}
+    [ -f "$cfg" ] || return 0
+    local own outdir tmp out line root
+    local dropped=0 roots=""
+    own=$(readlink -f "$LAZARUS_DIR")
+    outdir="$BUILD_STATE_DIR/cfg/$(printf '%s' "$own" | md5sum | cut -c1-12)"
+    mkdir -p "$outdir"
+    tmp=$(mktemp "$outdir/.$(basename "$cfg").XXXXXX")
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            -F?/*)
+                root=$(lazarus_root_of_path "${line:3}")
+                if [ -n "$root" ] && [ "$root" != "$own" ]; then
+                    dropped=$((dropped + 1))
+                    case " $roots " in
+                        *" $root "*) ;;
+                        *) roots="$roots $root" ;;
+                    esac
+                    continue
+                fi
+                ;;
+        esac
+        printf '%s\n' "$line" >> "$tmp"
+    done < "$cfg"
+    if [ "$dropped" -eq 0 ]; then
+        rm -f "$tmp"
+        return 0
+    fi
+    out="$outdir/$(basename "$cfg")"
+    mv -f "$tmp" "$out"
+    echo "[cfg] $(basename "$cfg"): dropped $dropped -F line(s) naming another Lazarus checkout:$roots"
+    echo "[cfg]   this roll builds from $own -- the compiler gets $out"
+    printf -v "$var" '%s' "$out"
+}
+
 TARGET="${1:-all}"
 mkdir -p "$RELEASE_DIR"
 
@@ -3404,6 +3492,16 @@ echo "Lazarus Release Builder (VibePascal)"
 echo "Compiler: $VP_COMPILER"
 echo "Version: $LAZARUS_VERSION"
 echo ""
+
+# Before any target reads its cfg (see sanitize_cfg_for_lazarus_dir). Not for usage().
+case "$TARGET" in
+    linux|win64|pi64|pi32|osx64|osxarm|all)
+        for cfg_var in LINUX_CFG WIN64_CFG AARCH64_LINUX_CFG ARM_LINUX_CFG \
+                       DARWIN_X86_64_CFG DARWIN_AARCH64_CFG; do
+            sanitize_cfg_for_lazarus_dir "$cfg_var"
+        done
+        ;;
+esac
 
 case "$TARGET" in
     linux)
