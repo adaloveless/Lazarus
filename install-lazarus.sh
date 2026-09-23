@@ -352,18 +352,58 @@ mkdir -p "$PREFIX/etc"
 ln -sf ../fpc.cfg "$PREFIX/etc/fpc.cfg"
 log_ok "Linked $PREFIX/etc/fpc.cfg -> $CFG (the path the compiler searches)"
 
+# --- pick the compiler this host can actually run ---
+# Measured 2026-09-23 on r27: the aarch64-linux tarball carries TWO compilers,
+# compiler/ppca64 (native ARM aarch64) and compiler/ppcrossaarch64 (an x86-64-hosted
+# cross compiler, `file -b`: "ELF 64-bit LSB executable, x86-64"). The old rule took
+# ppcrossaarch64 whenever it existed, so an install on an aarch64 host (uname -m shimmed
+# to aarch64, the aarch64 lazbuild run under qemu) wired lazbuild and the IDE to a binary
+# that CPU cannot execute -- and the smoke test hardcoded compiler/ppcx64, which that
+# tarball does not ship, so the run ended "Compiler smoke test failed", rc 1, after
+# extracting. Choose by what RUNS here and what it TARGETS: the native compiler first,
+# the cross compiler only when the native one cannot run on this host. `-iTP` prints the
+# target CPU, and because it is an execution it fails on a binary this CPU cannot run.
+COMPILER=""
+pick_compiler() {
+    local target_cpu cand got
+    local -a cands
+    case "$LAZ_ARCH" in
+        x86_64-linux)  target_cpu="x86_64";  cands=(ppcx64) ;;
+        aarch64-linux) target_cpu="aarch64"; cands=(ppca64 ppcrossaarch64) ;;
+        arm-linux)     target_cpu="arm";     cands=(ppcarm ppcrossarm) ;;
+        *)             target_cpu="";        cands=(ppcx64) ;;
+    esac
+    for cand in "${cands[@]}"; do
+        [[ -f "$PREFIX/compiler/$cand" ]] || continue
+        if ! got="$("$PREFIX/compiler/$cand" -iTP 2>/dev/null)"; then
+            log_warn "Skipping compiler/$cand: it does not run on this host ($HOST_ARCH)"
+            continue
+        fi
+        if [[ -n "$target_cpu" && "$got" != "$target_cpu" ]]; then
+            log_warn "Skipping compiler/$cand: it targets '$got', not '$target_cpu'"
+            continue
+        fi
+        COMPILER="$PREFIX/compiler/$cand"
+        return 0
+    done
+    return 1
+}
+if ! pick_compiler; then
+    log_err "No compiler in $PREFIX/compiler runs on this host ($HOST_ARCH) and targets $LAZ_ARCH."
+    for f in "$PREFIX"/compiler/ppc*; do
+        [[ -f "$f" ]] && log_err "  $(basename "$f"): $(file -b "$f" 2>/dev/null || echo 'type unknown')"
+    done
+    exit 1
+fi
+log_ok "Compiler: $COMPILER ($("$COMPILER" -iV) for $("$COMPILER" -iTP))"
+
 # --- configure lazbuild environmentoptions.xml ---
 configure_lazbuild() {
     local env_dir="$HOME/.lazarus"
     local env_file="$env_dir/environmentoptions.xml"
     mkdir -p "$env_dir"
 
-    local compiler="$PREFIX/compiler/ppcx64"
-    if [[ "$LAZ_ARCH" == aarch64-linux ]]; then
-        [[ -f "$PREFIX/compiler/ppcrossaarch64" ]] && compiler="$PREFIX/compiler/ppcrossaarch64"
-    elif [[ "$LAZ_ARCH" == arm-linux ]]; then
-        [[ -f "$PREFIX/compiler/ppcrossarm" ]] && compiler="$PREFIX/compiler/ppcrossarm"
-    fi
+    local compiler="$COMPILER"
 
     if [[ -f "$env_file" ]]; then
         log_info "Patching existing $env_file"
@@ -408,7 +448,7 @@ begin
   Writeln('lazarus-installer-smoke-ok');
 end.
 EOF
-    if "$PREFIX/compiler/ppcx64" -n "@$CFG" "$smoke_src" -o"$TMP_WORK/smoke_hello" >/dev/null 2>&1; then
+    if "$COMPILER" -n "@$CFG" "$smoke_src" -o"$TMP_WORK/smoke_hello" >/dev/null 2>&1; then
         if "$TMP_WORK/smoke_hello" | grep -q "lazarus-installer-smoke-ok"; then
             log_ok "Compiler smoke test passed"
         else
@@ -422,7 +462,7 @@ EOF
 
     # BARE, the way lazbuild and the IDE call it: the -n @$CFG run above proves the
     # cfg's contents, not that the compiler finds it.
-    if (cd "$TMP_WORK" && "$PREFIX/compiler/ppcx64" smoke_hello.pas -osmoke_hello_bare > smoke_bare.log 2>&1); then
+    if (cd "$TMP_WORK" && "$COMPILER" smoke_hello.pas -osmoke_hello_bare > smoke_bare.log 2>&1); then
         log_ok "Compiler finds its fpc.cfg when run bare (as lazbuild runs it)"
     else
         log_err "Run bare, the compiler does not pick up $PREFIX/etc/fpc.cfg, so lazbuild cannot build anything."
