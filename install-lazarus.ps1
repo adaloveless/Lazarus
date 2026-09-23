@@ -10,6 +10,11 @@
 #   $env:LAZARUS_PREFIX  - install directory (default: C:\lazarus if writable, else %LOCALAPPDATA%\lazarus)
 #   $env:LAZARUS_BIN_DIR - directory for lazbuild.cmd wrapper (default: %USERPROFILE%\bin)
 #   $env:GITHUB_TOKEN    - optional PAT for api.github.com rate-limit relief
+#   $env:LAZARUS_RELEASES_API - releases API base (default: this repo on api.github.com).
+#                          A file:// URL works: a directory holding a `releases` JSON
+#                          whose assets point at local files installs a tarball through
+#                          the same resolve / download / digest path before it is
+#                          published. install-lazarus.sh takes the same variable.
 
 [CmdletBinding()]
 param(
@@ -26,6 +31,7 @@ $ProgressPreference = "SilentlyContinue"
 $RepoOwner = "adaloveless"
 $RepoName = "Lazarus"
 $ApiBase = "https://api.github.com/repos/${RepoOwner}/${RepoName}"
+if ($env:LAZARUS_RELEASES_API) { $ApiBase = $env:LAZARUS_RELEASES_API }
 
 function Write-Info  { param([string]$m) Write-Host -ForegroundColor Cyan    "[INFO] $m" }
 function Write-Ok    { param([string]$m) Write-Host -ForegroundColor Green   "[OK]   $m" }
