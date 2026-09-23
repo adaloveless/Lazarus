@@ -829,6 +829,80 @@ copy_native_linux_compiler_to_staging() {
     return 0
 }
 
+stage_fpc_sources() {
+    # Bundle the VibePascal rtl/ + packages/ SOURCES as fpcsrc/ in a Linux tarball.
+    # $1 staging
+    #
+    # WHY (Lars, c736-c738 2026-09-23): the Linux tarballs ship lazbuild, compiled units and
+    # the IDE sources, and the IDE is built on the user's box. Measured end to end on r27
+    # x86_64-linux (install-lazarus.sh -> lazbuild --build-ide= -> first launch): the IDE's
+    # first launch stopped on the "Configure Lazarus IDE" wizard with FPC sources the ONLY
+    # red item ("directory rtl not found"), and getting past it took a second modal saying
+    # code browsing and completion "will be very limited". Nothing in the tarball was an FPC
+    # source tree. CheckFPCSrcDirQuality (ide/packages/ideconfig/initialsetupproc.pas) wants
+    # rtl/ + packages/ + rtl/linux/system.pp; with FPCSourceDirectory pointed at VP
+    # rtl+packages the same IDE opened straight to its main window. install-lazarus.sh points
+    # FPCSourceDirectory here whenever fpcsrc/rtl/linux/system.pp exists.
+    #
+    # Copied from $VP_DIR -- the SAME tree units/rtl and units/packages were just copied from,
+    # so the sources match the units that ship. A filtered copy, not `git archive`: a roll's
+    # VP_DIR need not be a git checkout (Bruno's roll dir is a plain copy). The filter was
+    # measured against `git ls-files rtl packages` on a VP checkout: no tracked file lives
+    # under units/, units_bs/ or bin/, and the only tracked .o/.a are three palmos/m68k
+    # objects. .res is NOT filtered -- 45 tracked .res files are sources.
+    # Costs about 48.6 MB gzipped per tarball (VP 90633664ca rtl+packages, measured c737).
+    local staging=$1
+    local dest="$1/fpcsrc" d origin n top
+    rm -rf "$dest"
+    for d in rtl packages; do
+        if [ ! -d "$VP_DIR/$d" ]; then
+            echo "WARNING: $VP_DIR/$d does not exist -- NO FPC sources bundled in $(basename "$staging")."
+            return 1
+        fi
+    done
+    mkdir -p "$dest"
+    ( set -o pipefail
+      cd "$VP_DIR" &&
+      find rtl packages \
+          -type d \( -name units -o -name units_bs -o -name bin \) -prune -o \
+          -type f ! \( -name '*.ppu' -o -name '*.o' -o -name '*.a' -o -name '*.so' \
+                       -o -name '*.rsj' -o -name '*.rst' -o -name '*.or' -o -name '*.fpm' \
+                       -o -name '*.compiled' -o -name 'fpcmade.*' -o -name fpmake \
+                       -o -name ppas.sh -o -name 'link*.res' \) -print0 |
+      tar --null -T - -cf - ) | tar -xf - -C "$dest"
+    local copy_rc="${PIPESTATUS[0]}/${PIPESTATUS[1]}"
+    if [ "$copy_rc" != "0/0" ]; then
+        echo "WARNING: copying FPC sources from $VP_DIR failed (rc $copy_rc) -- NO FPC sources bundled."
+        rm -rf "$dest"
+        return 1
+    fi
+    if [ ! -f "$dest/rtl/linux/system.pp" ]; then
+        echo "WARNING: $VP_DIR has no rtl/linux/system.pp -- NO FPC sources bundled."
+        rm -rf "$dest"
+        return 1
+    fi
+
+    # Which VP commit? Only a checkout whose OWN top level is $VP_DIR can say: `git -C` walks
+    # up, and a plain copy sitting inside some other repository would report that one's HEAD.
+    origin="commit UNKNOWN -- $VP_DIR is not a git checkout"
+    top=$(git -C "$VP_DIR" rev-parse --show-toplevel 2>/dev/null) || top=""
+    if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$(cd "$VP_DIR" && pwd -P)" ]; then
+        origin="git $(git -C "$VP_DIR" rev-parse HEAD) ($(git -C "$VP_DIR" rev-parse --abbrev-ref HEAD)),"
+        origin="$origin $(git -C "$VP_DIR" status --porcelain -- rtl packages | wc -l) changed path(s) under rtl/ packages/"
+    fi
+    n=$(find "$dest" -type f | wc -l)
+    {
+        echo "VibePascal rtl/ and packages/ SOURCES, for the IDE's code tools (Tools > Options >"
+        echo "Environment > FPC source directory). The compiler does not read them: the units it"
+        echo "links against are the ones in units/."
+        echo "vp_dir:    $VP_DIR"
+        echo "vp_origin: $origin"
+        echo "files:     $n"
+    } > "$dest/VP_SOURCE.txt"
+    echo "Bundled FPC sources as fpcsrc/: $n files from $VP_DIR ($origin)."
+    return 0
+}
+
 build_darwin_fpcres() {
     local target=$1
     local dest=$2
@@ -2713,6 +2787,13 @@ package_release() {
     strip_stale_host_arch_artifacts "$staging" "$target"
 
     restore_staged_mtimes "$staging"
+
+    # After restore_staged_mtimes on purpose: tar keeps the VP mtimes, and that loop would
+    # otherwise stat ~15,000 fpcsrc files against a Lazarus path that never exists.
+    # Non-fatal here; release-verify-staging.sh refuses a Linux tarball without them.
+    if [[ "$target" == *-linux ]]; then
+        stage_fpc_sources "$staging" || true
+    fi
 
     if [[ "$target" == *-darwin ]]; then
         materialize_darwin_lhelp_app "$staging/components/chmhelp/lhelp"

@@ -11,12 +11,17 @@
 #   LAZARUS_PREFIX   - install directory (default: /opt/lazarus if writable, else ~/.local/lazarus)
 #   LAZARUS_BIN_DIR  - directory for lazbuild symlink (default: ~/.local/bin)
 #   GITHUB_TOKEN     - optional PAT for api.github.com rate-limit relief
+#   LAZARUS_RELEASES_API - releases API base (default: this repo on api.github.com).
+#                      A file:// URL works: a directory holding a `releases` JSON
+#                      whose assets point at local files installs a tarball through
+#                      the same resolve / download / digest path before it is
+#                      published.
 
 set -euo pipefail
 
 REPO_OWNER="adaloveless"
 REPO_NAME="Lazarus"
-GITHUB_API="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
+GITHUB_API="${LAZARUS_RELEASES_API:-https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -414,10 +419,26 @@ configure_lazbuild() {
 
     local compiler="$COMPILER"
 
+    # FPC sources for the IDE's code tools. build-release.sh stages VibePascal rtl/ +
+    # packages/ as fpcsrc/ in every Linux tarball from c738 on (stage_fpc_sources), and
+    # release-verify-staging.sh refuses one without them. Pointing FPCSourceDirectory at
+    # $PREFIX, which is not an FPC source tree, made the IDE's first launch stop on the
+    # "Configure Lazarus IDE" wizard with FPC sources red ("directory rtl not found") --
+    # measured on r27 x86_64-linux. The IDE's test is rtl/ + packages/ +
+    # rtl/linux/system.pp; the last file stands for all. Older tarballs keep the old value.
+    local fpcsrc="$PREFIX"
+    if [[ -f "$PREFIX/fpcsrc/rtl/linux/system.pp" ]]; then
+        fpcsrc="$PREFIX/fpcsrc"
+        log_ok "FPC sources: $fpcsrc"
+    else
+        log_warn "This tarball carries no FPC sources (fpcsrc/): the IDE's first launch will ask for"
+        log_warn "  them. Ignore works, but code completion into RTL units will be limited."
+    fi
+
     if [[ -f "$env_file" ]]; then
         log_info "Patching existing $env_file"
         sed -i "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$compiler\"|" "$env_file"
-        sed -i "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$PREFIX\"|" "$env_file"
+        sed -i "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$fpcsrc\"|" "$env_file"
         sed -i "s|LazarusDirectory Value=\"[^\"]*\"|LazarusDirectory Value=\"$PREFIX\"|" "$env_file"
     else
         local template="$PREFIX/tools/install/linux/environmentoptions.xml"
@@ -425,7 +446,7 @@ configure_lazbuild() {
             log_info "Creating $env_file from template"
             cp "$template" "$env_file"
             sed -i "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$compiler\"|" "$env_file"
-            sed -i "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$PREFIX\"|" "$env_file"
+            sed -i "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$fpcsrc\"|" "$env_file"
             sed -i "s|LazarusDirectory Value=\"[^\"]*\"|LazarusDirectory Value=\"$PREFIX\"|" "$env_file"
         else
             log_warn "No environmentoptions.xml template; lazbuild may need manual compiler config"
@@ -485,3 +506,19 @@ fi
 
 log_ok "Lazarus installed successfully at $PREFIX"
 log_info "Add $BIN_DIR to your PATH if it is not already."
+# The tarball ships lazbuild and the IDE's SOURCES, not an IDE binary, and until c738
+# nothing here said so: a user was left with a lazbuild and no way to learn the next step.
+# The widgetset follows auto-update.sh's rebuild_ide (GTK2, else Qt5). A bare --build-ide=
+# links this tree's default widgetset, gtk3 (LazVersion.BuildLCLWidgetType), which needs
+# libgtk-3-dev -- measured 2026-09-23 on a box with only the GTK2 development files:
+# "cannot find -lgtk-3", rc 2, no IDE.
+ide_ws="gtk2"
+ide_ws_needs="the GTK2 development files (libgtk2.0-dev)"
+if command -v pkg-config >/dev/null 2>&1 && ! pkg-config --exists gtk+-2.0 2>/dev/null \
+        && pkg-config --exists Qt5Pas 2>/dev/null; then
+    ide_ws="qt5"
+    ide_ws_needs="libqt5pas-dev"
+fi
+log_info "The IDE itself is built on this machine, once. It needs $ide_ws_needs:"
+log_info "  $BIN_DIR/lazbuild --build-ide= --ws=$ide_ws"
+log_info "then start it with:  $PREFIX/lazarus"
