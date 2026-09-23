@@ -104,7 +104,13 @@ for cmd in curl tar python3; do
 done
 
 # --- fetch latest release metadata ---
-TMP_WORK="$(mktemp -d /tmp/lazarus-install-XXXXXX)"
+# Scratch space for the download. Honour $TMPDIR the way mktemp(1) and every other
+# Unix tool does: the tarball is 200-300 MB and a tmpfs /tmp can be much smaller.
+# Measured 2026-09-23 on lazdev (2 GB tmpfs /tmp shared by ~30 agents, 44 MB free):
+# the hardcoded /tmp path made the r27 download die with nothing but
+# "curl: (23) Failure writing output to destination", which names neither the disk
+# nor the way out, and there was no way to point the script anywhere else.
+TMP_WORK="$(mktemp -d "${TMPDIR:-/tmp}/lazarus-install-XXXXXX")"
 trap 'rm -rf "$TMP_WORK"' EXIT
 
 API_HEADERS=()
@@ -259,7 +265,16 @@ if [[ -n "$SHA_URL" ]]; then
 fi
 
 log_info "Downloading $TARBALL_NAME..."
-download "$TARBALL_URL" "$TMP_WORK/$TARBALL_NAME"
+download_rc=0
+download "$TARBALL_URL" "$TMP_WORK/$TARBALL_NAME" || download_rc=$?
+if [[ $download_rc -ne 0 ]]; then
+    log_err "Download of $TARBALL_NAME failed (curl exit $download_rc). Nothing was installed."
+    if [[ $download_rc -eq 23 ]]; then
+        log_err "  curl 23 = it could not WRITE the file. $TMP_WORK has $(df -Pk "$TMP_WORK" 2>/dev/null | awk 'NR==2 {printf "%d MB", $4/1024}') free; the tarball is 200-300 MB."
+        log_err "  Point TMPDIR at a disk with room and run it again, e.g.  mkdir -p \$HOME/tmp && TMPDIR=\$HOME/tmp $0 [your options]"
+    fi
+    exit 1
+fi
 
 # --- verify digest ---
 # Two checksum sources, same verifier. The SHA256SUMS asset is preferred where
