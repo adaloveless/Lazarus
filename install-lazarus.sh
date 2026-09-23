@@ -341,6 +341,17 @@ log_info "Generating $CFG..."
 } > "$CFG"
 log_ok "Wrote $CFG"
 
+# The compiler never reads $CFG on its own. Measured 2026-09-23 on r27 (scratch HOME,
+# bare `compiler/ppcx64 -vt`): it searches ~/.fpc.cfg, then <compiler dir>/../etc/fpc.cfg
+# -- $PREFIX/etc/fpc.cfg -- then /etc/fpc.cfg. lazbuild and the IDE run it bare, so on a
+# fresh install `lazbuild --build-ide=` died at once with "The system.ppu for this target
+# was not found in the FPC binary directories" (lazdev read the system FPC 3.2.2
+# /etc/fpc.cfg; a box without one reads nothing), while the smoke test below, which
+# passes -n @$CFG explicitly, reported the toolchain healthy. Put it where it is looked for.
+mkdir -p "$PREFIX/etc"
+ln -sf ../fpc.cfg "$PREFIX/etc/fpc.cfg"
+log_ok "Linked $PREFIX/etc/fpc.cfg -> $CFG (the path the compiler searches)"
+
 # --- configure lazbuild environmentoptions.xml ---
 configure_lazbuild() {
     local env_dir="$HOME/.lazarus"
@@ -406,6 +417,19 @@ EOF
         fi
     else
         log_err "Compiler smoke test failed"
+        exit 1
+    fi
+
+    # BARE, the way lazbuild and the IDE call it: the -n @$CFG run above proves the
+    # cfg's contents, not that the compiler finds it.
+    if (cd "$TMP_WORK" && "$PREFIX/compiler/ppcx64" smoke_hello.pas -osmoke_hello_bare > smoke_bare.log 2>&1); then
+        log_ok "Compiler finds its fpc.cfg when run bare (as lazbuild runs it)"
+    else
+        log_err "Run bare, the compiler does not pick up $PREFIX/etc/fpc.cfg, so lazbuild cannot build anything."
+        if [[ -f "$HOME/.fpc.cfg" ]]; then
+            log_err "  $HOME/.fpc.cfg exists and is read FIRST -- move it aside, or add the line:  #INCLUDE $CFG"
+        fi
+        log_err "  compiler said: $(grep -m1 -E 'Fatal|Error' "$TMP_WORK/smoke_bare.log" || true)"
         exit 1
     fi
 fi
