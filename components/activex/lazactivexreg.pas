@@ -30,6 +30,17 @@ unit lazactivexreg;
   Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1335, USA.
 }
 
+{$IFNDEF MSWINDOWS}
+// Nothing to register off Windows (no ActiveX); Register stays so LazActiveX.pas links.
+interface
+procedure Register;
+implementation
+procedure Register;
+begin
+end;
+end.
+{$ENDIF}
+
 interface
 
 uses

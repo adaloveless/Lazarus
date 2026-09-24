@@ -32,6 +32,14 @@ unit activexcontainer;
   Inc., 51 Franklin Street - Fifth Floor, Boston, MA 02110-1335, USA.
 }
 
+{$IFNDEF MSWINDOWS}
+// ActiveX/OLE is Windows-only. Elsewhere this unit is empty so that packages which
+// require LazActiveX (and only use it under MSWINDOWS) still build on every platform.
+interface
+implementation
+end.
+{$ENDIF}
+
 interface
 
 uses
