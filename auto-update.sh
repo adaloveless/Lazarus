@@ -121,13 +121,14 @@ usage() {
     echo "  --upstream-only  Only sync upstream Lazarus (skip VibePascal)"
     echo "  --setup          Configure Lazarus IDE to use VibePascal compiler"
     echo "  --fix-lpi        Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
-    echo "  --build-ide      Also rebuild the full Lazarus IDE (requires GTK2 or Qt5)"
+    echo "  --build-ide      Rebuild the full Lazarus IDE + commonx packages (the default)"
+    echo "  --no-ide         Skip the IDE build (lazbuild only; commonx NOT installed)"
     echo "  --force-rebuild  Force rebuild even if no updates are available"
     echo "  --doctor         Run diagnostics (no state changes); exit 1 if problems found"
     echo "  --no-configure   Do NOT touch ~/.lazarus/environmentoptions.xml (use for scratch/rig runs)"
     echo "  --help           Show this help"
     echo ""
-    echo "Default: pull updates and rebuild lazbuild if anything changed."
+    echo "Default: pull updates, then rebuild lazbuild and the IDE with commonx installed."
     exit 0
 }
 
@@ -137,7 +138,9 @@ BUILD_RELEASE=0
 UPSTREAM_ONLY=0
 SETUP_ONLY=0
 FIX_LPI=0
-BUILD_IDE=0
+# The IDE build is the only step that installs commonx (PackageCommonX_LCL), which is the
+# point of running this -- so it is the default, not an opt-in.
+BUILD_IDE=1
 FORCE_REBUILD=0
 SELF_UPDATED=0
 DOCTOR=0
@@ -152,6 +155,7 @@ while [[ $# -gt 0 ]]; do
         --setup)       SETUP_ONLY=1; shift ;;
         --fix-lpi)     FIX_LPI=1; shift ;;
         --build-ide)   BUILD_IDE=1; shift ;;
+        --no-ide)      BUILD_IDE=0; shift ;;
         --force-rebuild) FORCE_REBUILD=1; shift ;;
         --self-updated) SELF_UPDATED=1; shift ;;
         --doctor)      DOCTOR=1; shift ;;
@@ -370,7 +374,7 @@ relaunch_if_updated() {
         [ "$UPSTREAM_ONLY" -eq 1 ] && args+=("--upstream-only")
         [ "$SETUP_ONLY" -eq 1 ] && args+=("--setup")
         [ "$FIX_LPI" -eq 1 ] && args+=("--fix-lpi")
-        [ "$BUILD_IDE" -eq 1 ] && args+=("--build-ide")
+        [ "$BUILD_IDE" -eq 1 ] && args+=("--build-ide") || args+=("--no-ide")
         [ "$FORCE_REBUILD" -eq 1 ] && args+=("--force-rebuild")
         [ "$DOCTOR" -eq 1 ] && args+=("--doctor")
         [ "$NO_CONFIGURE" -eq 1 ] && args+=("--no-configure")
