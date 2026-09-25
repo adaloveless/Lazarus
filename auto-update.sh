@@ -2255,10 +2255,16 @@ fi
 # darwin: lazbuild and the IDE compile against $DARWIN_CFG. A box that has never had one
 # (every Mac before this change) must build the VibePascal RTL + packages once to get it, even
 # when nothing was pulled -- otherwise VP_OPT stays empty and the build mixes unit sets again.
-if [ "$LAZ_OS_TARGET" = "darwin" ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ] && [ ! -f "$DARWIN_CFG" ]; then
-    log_warn "No $DARWIN_CFG yet -- building the VibePascal RTL and packages to generate it"
-    VP_REBUILD=1
-    ANY_UPDATED=1
+if [ "$LAZ_OS_TARGET" = "darwin" ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ]; then
+    # Missing cfg, or the units it points at are gone (an interrupted or failed rebuild clears
+    # them): either way lazbuild would be building against nothing.
+    if [ ! -f "$DARWIN_CFG" ] || [ ! -f "$VP_DIR/packages/rtl-objpas/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET/variants.ppu" ]; then
+        log_warn "VibePascal RTL/packages for $LAZ_CPU_TARGET-$LAZ_OS_TARGET are missing -- building them"
+        VP_REBUILD=1
+        ANY_UPDATED=1
+    elif [ "$FORCE_REBUILD" -eq 1 ]; then
+        VP_REBUILD=1
+    fi
 fi
 
 if [ "$ANY_UPDATED" -eq 1 ]; then
