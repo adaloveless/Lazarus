@@ -1280,6 +1280,36 @@ feature_attempt_is_new() {
     [ -f "$f" ] && last=$(cat "$f" 2>/dev/null)
     [ "$(get_lazarus_source_stamp)" != "$last" ]
 }
+# Pull commonx with the other trees, every run. It used to be svn-updated only INSIDE
+# rebuild_ide, which runs only when git moved -- so a new commonx revision on its own never
+# reached the IDE. Sets COMMONX_UPDATED=1 when the working-copy revision changed.
+COMMONX_UPDATED=0
+pull_commonx() {
+    local cx_root rev_before rev_after svn_rc=0 svn_out
+    log_header "Updating commonx (SVN)"
+    if ! cx_root=$(get_commonx_root); then
+        log_warn "No commonx checkout found (set COMMONX_DIR) -- the IDE will be built without PackageCommonX_LCL"
+        return 0
+    fi
+    if ! command -v svn >/dev/null 2>&1; then
+        log_warn "svn not found on PATH -- cannot update $cx_root"
+        return 0
+    fi
+    rev_before=$(svn info "$cx_root" 2>/dev/null | sed -n 's/^Revision:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+    svn_out=$(svn update "$cx_root" 2>&1) || svn_rc=$?
+    if [ "$svn_rc" -ne 0 ]; then
+        log_warn "svn update of $cx_root FAILED (exit $svn_rc): $(printf '%s' "$svn_out" | grep -v '^$' | tail -n 2 | tr '\n' ' ')"
+        return 0
+    fi
+    rev_after=$(svn info "$cx_root" 2>/dev/null | sed -n 's/^Revision:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
+    if [ -n "$rev_before" ] && [ "$rev_before" != "$rev_after" ]; then
+        COMMONX_UPDATED=1
+        log_ok "commonx updated: r$rev_before -> r$rev_after ($cx_root)"
+    else
+        log_ok "commonx: up to date (r${rev_after:-?}, $cx_root)"
+    fi
+}
+
 get_commonx_install_stamp() {
     local laz_head="" cx_rev="" cx_root=""
     laz_head=$(git -C "$LAZARUS_DIR" rev-parse HEAD 2>/dev/null || printf '')
@@ -2075,8 +2105,22 @@ pull_lazarus_origin
 
 relaunch_if_updated "$SCRIPT_PRE_HASH"
 
+if [ "$UPSTREAM_ONLY" -eq 0 ]; then
+    pull_commonx
+fi
+
 ANY_UPDATED=0
 if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ] || [ "$UPSTREAM_UPDATED" -eq 1 ]; then
+    ANY_UPDATED=1
+fi
+if [ "$COMMONX_UPDATED" -eq 1 ] && [ "$BUILD_IDE" -eq 1 ]; then
+    log_info "commonx changed -- rebuilding the IDE to pick it up"
+    ANY_UPDATED=1
+fi
+# No IDE (or no lazbuild) on disk: the self-heal checks below need a binary to inspect, so
+# they return "can't tell" and nothing ever built one. Build it.
+if [ "$NO_BUILD" -eq 0 ] && { [ ! -f "$LAZARUS_DIR/lazbuild" ] || { [ "$BUILD_IDE" -eq 1 ] && [ ! -f "$LAZARUS_DIR/lazarus" ]; }; }; then
+    log_warn "No lazbuild/lazarus binary in $LAZARUS_DIR -- building"
     ANY_UPDATED=1
 fi
 
