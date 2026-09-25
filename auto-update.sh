@@ -3,10 +3,69 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LAZARUS_DIR="$SCRIPT_DIR"
-VP_DIR="/home/jason/src/vibepascal"
-VP_COMPILER="$VP_DIR/compiler/ppcx64"
-LINUX_CFG="$VP_DIR/vibepascal-linux-x86_64.cfg"
-WIN64_CFG="$VP_DIR/vibepascal-win64-x86_64.cfg"
+# --- Host platform (this script runs on Linux AND macOS) -------------------
+# Everything below used to be hardcoded to one Linux box, so the script exited 1
+# on any other host before doing any work.
+HOST_OS="$(uname -s)"
+HOST_ARCH="$(uname -m)"
+case "$HOST_OS" in
+    Darwin) LAZ_OS_TARGET="darwin"; LAZ_WS="cocoa" ;;
+    *)      LAZ_OS_TARGET="linux";  LAZ_WS="" ;;
+esac
+case "$HOST_ARCH" in
+    arm64|aarch64) LAZ_CPU_TARGET="aarch64"; PPC_NAME="ppca64" ;;
+    x86_64|amd64)  LAZ_CPU_TARGET="x86_64";  PPC_NAME="ppcx64" ;;
+    *)             LAZ_CPU_TARGET="$HOST_ARCH"; PPC_NAME="ppcx64" ;;
+esac
+
+# VibePascal checkout: $VP_DIR wins, else beside the Lazarus tree, else the usual spots.
+# Mirrors get_commonx_root so every caller resolves the SAME tree.
+find_vp_dir() {
+    local cand
+    for cand in "$VP_DIR" "$(dirname "$LAZARUS_DIR")/vibepascal" "$HOME/src/vibepascal" "$HOME/vibepascal"; do
+        if [ -n "$cand" ] && [ -d "$cand" ]; then printf '%s' "$cand"; return 0; fi
+    done
+    return 1
+}
+VP_DIR="$(find_vp_dir || echo "$HOME/src/vibepascal")"
+
+# Compiler: $VP_COMPILER wins. Else the one built in the VibePascal tree. A host that has
+# never built the compiler there (a Mac bootstrapped from a release tarball) still has a
+# working native compiler in the bootstrap bundle -- use the newest one rather than exiting.
+if [ -z "${VP_COMPILER:-}" ]; then
+    if [ -x "$VP_DIR/compiler/$PPC_NAME" ]; then
+        VP_COMPILER="$VP_DIR/compiler/$PPC_NAME"
+    else
+        VP_COMPILER="$(ls -1d "$HOME"/lazarus-bootstrap/*/compiler/"$PPC_NAME" 2>/dev/null | tail -1)"
+        [ -z "$VP_COMPILER" ] && VP_COMPILER="$(command -v "$PPC_NAME" 2>/dev/null || echo "$VP_DIR/compiler/$PPC_NAME")"
+    fi
+fi
+
+LINUX_CFG="${LINUX_CFG:-$VP_DIR/vibepascal-linux-x86_64.cfg}"
+WIN64_CFG="${WIN64_CFG:-$VP_DIR/vibepascal-win64-x86_64.cfg}"
+
+# Build options. On Linux the site cfg is passed explicitly with the default config
+# suppressed (-n). On macOS there is NO site cfg: the compiler's own ~/.fpc.cfg carries the
+# unit paths, the resource linker (-FR fpcres) and the SDK, so -n must NOT be used or
+# nothing resolves. -Sc is required because the IDE sources use C-style operators and the
+# direct-compile IDE path does not pass it; UserNotifications is weak-linked for Cocoa.
+if [ "$LAZ_OS_TARGET" = "darwin" ]; then
+    VP_OPT=""
+    LAZ_EXTRA_OPT="-Sci -k-weak_framework -kUserNotifications"
+    LAZ_MAKE_TARGET_OPTS="CPU_TARGET=$LAZ_CPU_TARGET OS_TARGET=$LAZ_OS_TARGET LCL_PLATFORM=$LAZ_WS"
+else
+    VP_OPT="-n"
+    [ -f "$LINUX_CFG" ] && VP_OPT="-n @$LINUX_CFG"
+    LAZ_EXTRA_OPT=""
+    LAZ_MAKE_TARGET_OPTS=""
+fi
+
+# --- portable shims (GNU coreutils vs BSD/macOS) ---------------------------
+md5_of()      { if command -v md5sum >/dev/null 2>&1; then md5sum "$1" | cut -d" " -f1; else md5 -q "$1"; fi; }
+mtime_of()    { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+mtime_human() { stat -c "%y" "$1" 2>/dev/null | cut -d. -f1 || stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$1" 2>/dev/null; }
+sed_inplace() { local e="$1"; shift; if sed --version >/dev/null 2>&1; then sed -i "$e" "$@"; else sed -i "" "$e" "$@"; fi; }
+abspath_of()  { readlink -f "$1" 2>/dev/null || python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$1" 2>/dev/null; }
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -435,11 +494,10 @@ rebuild_vp_compiler() {
         return 1
     fi
     if [ -x "$src" ]; then
-        old_md5=$(md5sum "$src" | cut -d' ' -f1)
-        old_mtime=$(stat -c %Y "$src" 2>/dev/null || echo 0)
+        old_md5=$(md5_of "$src")
+        old_mtime=$(mtime_of "$src")
     fi
-    opt="-n"
-    [ -f "$LINUX_CFG" ] && opt="-n @$LINUX_CFG"
+    opt="$VP_OPT"
     logf="$LAZARUS_DIR/.vpcompiler/compiler-rebuild.log"
     # Build from CLEAN. A unit of the compiler's OWN sources left on its search path by an
     # earlier build crashes the bootstrap with "PPU DESTROY DURING LOAD ... in module CGUTILS /
@@ -465,8 +523,8 @@ rebuild_vp_compiler() {
         log_err "make reported success but produced no $src -- see $logf"
         return 1
     fi
-    new_md5=$(md5sum "$src" | cut -d' ' -f1)
-    new_mtime=$(stat -c %Y "$src" 2>/dev/null || echo 0)
+    new_md5=$(md5_of "$src")
+    new_mtime=$(mtime_of "$src")
     if [ "$new_mtime" -le "$old_mtime" ]; then
         VP_COMPILER_REBUILD_FAILED=1
         log_err "make reported success but $src was not relinked (mtime unchanged) -- see $logf"
@@ -619,15 +677,15 @@ rebuild_vp_packages() {
         # the bin tarball + the unit tarball, then ppcx64 -n -Fuunits/x86_64-linux), which is
         # the use Otto proposed it for -- an operator choice, not automatic script behaviour.
         log_info "Compiler was rebuilt -- rebuilding the VibePascal RTL and packages from clean..."
-        make -C "$VP_DIR" rtl_clean packages_clean PP="$VP_COMPILER" OPT="-n @$LINUX_CFG" >/dev/null 2>&1 || true
+        make -C "$VP_DIR" rtl_clean packages_clean PP="$VP_COMPILER" OPT="$VP_OPT" >/dev/null 2>&1 || true
     fi
     if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ ! -d "$rtl_units" ]; then
         log_info "Building VibePascal RTL..."
-        make -C "$VP_DIR" rtl PP="$VP_COMPILER" OPT="-n @$LINUX_CFG" 2>&1 | tail -3
+        make -C "$VP_DIR" rtl PP="$VP_COMPILER" OPT="$VP_OPT" 2>&1 | tail -3
     fi
 
     log_info "Building VibePascal packages..."
-    make -C "$VP_DIR" packages PP="$VP_COMPILER" OPT="-n @$LINUX_CFG" 2>&1 | grep -cE "Compiling" | xargs -I{} echo "  Compiled {} units"
+    make -C "$VP_DIR" packages PP="$VP_COMPILER" OPT="$VP_OPT" 2>&1 | grep -cE "Compiling" | xargs -I{} echo "  Compiled {} units"
     log_ok "VibePascal packages rebuilt"
 }
 
@@ -644,7 +702,8 @@ rebuild_lazbuild() {
     make -C "$LAZARUS_DIR" lazbuild \
         PP="$VP_COMPILER" \
         FPCDIR="$VP_DIR" \
-        OPT="-n @$LINUX_CFG" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+        $LAZ_MAKE_TARGET_OPTS \
+        OPT="$VP_OPT $LAZ_EXTRA_OPT" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
     local build_exit=${PIPESTATUS[0]}
 
     if [ "$build_exit" -ne 0 ]; then
@@ -972,8 +1031,8 @@ configure_environment() {
                 "$env_file"
             log_ok "Updated $env_file via xmlstarlet"
         else
-            sed -i "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$VP_COMPILER\"|" "$env_file"
-            sed -i "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$VP_DIR\"|" "$env_file"
+            sed_inplace "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$VP_COMPILER\"|" "$env_file"
+            sed_inplace "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$VP_DIR\"|" "$env_file"
             log_ok "Updated $env_file via sed"
         fi
     else
@@ -981,9 +1040,9 @@ configure_environment() {
         local template="$LAZARUS_DIR/tools/install/linux/environmentoptions.xml"
         if [ -f "$template" ]; then
             cp "$template" "$env_file"
-            sed -i "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$VP_COMPILER\"|" "$env_file"
-            sed -i "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$VP_DIR\"|" "$env_file"
-            sed -i "s|LazarusDirectory Value=\"[^\"]*\"|LazarusDirectory Value=\"$LAZARUS_DIR\"|" "$env_file"
+            sed_inplace "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$VP_COMPILER\"|" "$env_file"
+            sed_inplace "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$VP_DIR\"|" "$env_file"
+            sed_inplace "s|LazarusDirectory Value=\"[^\"]*\"|LazarusDirectory Value=\"$LAZARUS_DIR\"|" "$env_file"
             log_ok "Created $env_file from template"
         else
             log_err "Template not found at $template"
@@ -1261,7 +1320,7 @@ resolve_vp_compiler() {
             # Populating bin/ with symlinks is the obvious way to do it, so this is
             # a live trap, not a theoretical one. Found by Otto (FPCDeveloper),
             # who measured it before shipping the real copies.
-            reject="it is a symlink to $(readlink -f "$installed" 2>/dev/null || echo 'another directory'), and FPC follows it -- that directory, not bin/, is what lands on the unit search path"
+            reject="it is a symlink to $(abspath_of "$installed" || echo 'another directory'), and FPC follows it -- that directory, not bin/, is what lands on the unit search path"
         elif [ ! -f "$installed" ]; then
             reject="it is not a regular file"
         elif [ -n "$(find "$VP_DIR/bin" -maxdepth 1 -name '*.pas' -print -quit 2>/dev/null)" ]; then
@@ -1385,8 +1444,10 @@ rebuild_ide() {
         return 1
     fi
 
-    local ws=""
-    if pkg-config --exists gtk+-2.0 2>/dev/null; then
+    local ws="$LAZ_WS"
+    if [ -n "$ws" ]; then
+        : # platform has a fixed widgetset (cocoa on macOS)
+    elif pkg-config --exists gtk+-2.0 2>/dev/null; then
         ws="gtk2"
     elif pkg-config --exists Qt5Pas 2>/dev/null; then
         ws="qt5"
@@ -1512,7 +1573,7 @@ rebuild_ide() {
     # lazdev 2026-09-16 with the r25 linux cfg: exit 2 without, exit 0 with). Idempotent when
     # the cfg has it too.
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
-        --compiler="$VP_COMPILER" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | grep -E "Linking|lines compiled|Fatal|Error"
+        --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | grep -E "Linking|lines compiled|Fatal|Error"
     local build_exit=${PIPESTATUS[0]}
     if [ "$build_exit" -ne 0 ]; then
         COMMONX_FIRST_ERROR=$(grep -m1 -E "(Error|Fatal):" "$cx_build_log" 2>/dev/null)
@@ -1570,7 +1631,7 @@ rebuild_ide() {
         local fallback_args=""
         if [ -n "$kept_lpks" ]; then fallback_args="--add-package $kept_lpks"; fi
         "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
-            --compiler="$VP_COMPILER" --ws="$ws" $fallback_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+            --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $fallback_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
         build_exit=${PIPESTATUS[0]}
         if [ "$build_exit" -eq 0 ]; then
             log_warn "IDE built WITHOUT commonx LCL packages -- TTouchButton is MISSING from the palette (see cause above)."
@@ -1746,7 +1807,10 @@ invoke_doctor() {
         problems=$((problems + 1))
     fi
 
+    # macOS has no site cfg in the VibePascal tree: the compiler reads ~/.fpc.cfg (which is
+    # where FPC looks with no PPC_CONFIG_PATH set -- a GUI-launched IDE inherits no env).
     local vp_cfg="$VP_DIR/bin/fpc.cfg"
+    [ ! -f "$vp_cfg" ] && [ "$LAZ_OS_TARGET" = "darwin" ] && [ -f "$HOME/.fpc.cfg" ] && vp_cfg="$HOME/.fpc.cfg"
     if [ -f "$vp_cfg" ]; then
         local cfg_paths
         cfg_paths=$(grep -c '^-Fu' "$vp_cfg" 2>/dev/null || echo 0)
@@ -1765,7 +1829,7 @@ invoke_doctor() {
     local lazarus_bin="$LAZARUS_DIR/lazarus"
     if [ -x "$lazarus_bin" ]; then
         local mtime
-        mtime=$(stat -c '%y' "$lazarus_bin" 2>/dev/null | cut -d. -f1)
+        mtime=$(mtime_human "$lazarus_bin")
         [ -z "$mtime" ] && mtime=$(stat -f '%Sm' "$lazarus_bin" 2>/dev/null)
         log_ok "lazarus binary: $lazarus_bin ($mtime)"
     else
@@ -1843,7 +1907,7 @@ fix_lpi_files() {
         else
             if grep -q 'UnitOutputDirectory' "$lpi"; then
                 if ! grep -q 'UnitOutputDirectory Value="lib"' "$lpi"; then
-                    sed -i 's|UnitOutputDirectory Value="[^"]*"|UnitOutputDirectory Value="lib"|g' "$lpi"
+                    sed_inplace 's|UnitOutputDirectory Value="[^"]*"|UnitOutputDirectory Value="lib"|g' "$lpi"
                     log_info "$(basename "$lpi"): fixed UnitOutputDirectory -> lib"
                     fix_count=$((fix_count + 1))
                 fi
