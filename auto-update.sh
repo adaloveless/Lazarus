@@ -718,6 +718,14 @@ rebuild_vp_packages() {
         # it ("Can't find unit StreamEx used by chmls").
         make -C "$VP_DIR" packages_clean PP="$VP_COMPILER" OPT="$vp_make_opt" >/dev/null 2>&1 || true
         make -C "$VP_DIR" rtl_clean PP="$VP_COMPILER" OPT="$vp_make_opt" >/dev/null 2>&1 || true
+        # packages_clean has to BUILD fpmake first, with the NEW compiler against the OLD RTL --
+        # which fails, silently, and cleans nothing (measured: the rebuild then compiled 2 units
+        # and died "Can't find unit StreamEx used by chmls"). Remove the outputs directly so a
+        # new compiler can never inherit units made by the old one.
+        local tgt="$LAZ_CPU_TARGET-$LAZ_OS_TARGET"
+        rm -rf "$VP_DIR"/packages/*/units/"$tgt" "$VP_DIR"/packages/*/bin/"$tgt" \
+               "$VP_DIR/packages/fpmkunit/units_bs" "$VP_DIR/packages/fpmake" "$VP_DIR/packages/fpmake.o" \
+               "$VP_DIR/rtl/units/$tgt" 2>/dev/null || true
     fi
     if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ ! -d "$rtl_units" ]; then
         log_info "Building VibePascal RTL..."
