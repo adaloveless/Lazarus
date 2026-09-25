@@ -780,7 +780,10 @@ rebuild_lazbuild() {
         PP="$VP_COMPILER" \
         FPCDIR="$VP_DIR" \
         $LAZ_MAKE_TARGET_OPTS \
-        OPT="$VP_OPT $LAZ_EXTRA_OPT" 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+        OPT="$VP_OPT $LAZ_EXTRA_OPT" 2>&1 | { grep -E "Linking|lines compiled|Fatal|Error" || true; }
+    # The grep is wrapped in `|| true`: an up-to-date build prints nothing it matches, grep exits
+    # 1, and under set -e that killed the script after a SUCCESSFUL build. PIPESTATUS[0] is
+    # still the build's own exit code.
     local build_exit=${PIPESTATUS[0]}
 
     if [ "$build_exit" -ne 0 ]; then
@@ -1712,7 +1715,7 @@ rebuild_ide() {
     # lazdev 2026-09-16 with the r25 linux cfg: exit 2 without, exit 0 with). Idempotent when
     # the cfg has it too.
     "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
-        --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | grep -E "Linking|lines compiled|Fatal|Error"
+        --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | { grep -E "Linking|lines compiled|Fatal|Error" || true; }
     local build_exit=${PIPESTATUS[0]}
     if [ "$build_exit" -ne 0 ]; then
         COMMONX_FIRST_ERROR=$(grep -m1 -E "(Error|Fatal):" "$cx_build_log" 2>/dev/null)
@@ -1774,7 +1777,7 @@ rebuild_ide() {
         # on the identical error. Same purge auto-update.ps1 does (Remove-PackageFromAutoInstall).
         remove_package_from_autoinstall "$HOME/.lazarus" "PackageCommonX_LCL"
         "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
-            --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $fallback_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
+            --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $fallback_args 2>&1 | { grep -E "Linking|lines compiled|Fatal|Error" || true; }
         build_exit=${PIPESTATUS[0]}
         if [ "$build_exit" -eq 0 ]; then
             log_warn "IDE built WITHOUT commonx LCL packages -- TTouchButton is MISSING from the palette (see cause above)."
