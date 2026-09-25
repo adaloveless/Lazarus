@@ -367,6 +367,9 @@ relaunch_if_updated() {
         [ "$FORCE_REBUILD" -eq 1 ] && args+=("--force-rebuild")
         [ "$DOCTOR" -eq 1 ] && args+=("--doctor")
         [ "$NO_CONFIGURE" -eq 1 ] && args+=("--no-configure")
+        # Hand the pre-pull HEADs to the new copy. Without them it sees both trees "up to date"
+        # (the pull already happened), reports "Nothing to do", and never builds what was pulled.
+        export AU_LAZARUS_HEAD_BEFORE="$LAZARUS_HEAD_BEFORE" AU_VP_HEAD_BEFORE="$VP_HEAD_BEFORE"
         exec "$script_path" "${args[@]}"
     fi
 }
@@ -868,20 +871,8 @@ vp_dist_version() {
 }
 
 report_repo_outcome() {
-    local label="$1" available="$2" before="$3" after="$4" dir="$5" detail="$6" state="${7:-checked}"
+    local label="$1" available="$2" before="$3" after="$4" dir="$5" detail="$6"
     local when
-    # c722 -- LABEL, never suppress. A line that vanishes is indistinguishable from a check
-    # that silently did not run, so an unchecked comparison says so in the same slot the real
-    # verdict would have occupied -- and prints NO sha, because the only sha available here is
-    # the origin head and that is exactly what gets misread as an upstream verdict.
-    if [ "$state" = "not-configured" ]; then
-        echo -e "  ${YELLOW}?${NC} $label: NOT CHECKED -- no 'upstream' remote in $dir, so this run never compared against fpc/Lazarus. That is not 'no changes'. Add it with: git remote add upstream https://github.com/fpc/Lazarus.git"
-        return 0
-    fi
-    if [ "$state" = "unknown" ]; then
-        echo -e "  ${YELLOW}?${NC} $label: UNKNOWN -- the 'upstream' remote is configured but upstream/main could not be read in $dir, so nothing was compared. That is not 'no changes' -- see the [ERROR] line above."
-        return 0
-    fi
     if [ -z "$before" ] || [ -z "$after" ]; then
         echo -e "  ${YELLOW}?${NC} $label: HEAD could not be read, so this run's outcome is UNKNOWN -- not 'no changes'"
         return 0
@@ -2033,6 +2024,12 @@ SCRIPT_PRE_HASH=$(sha256sum "$LAZARUS_DIR/auto-update.sh" 2>/dev/null | cut -d' 
 #     git fetch upstream && git merge upstream/main
 LAZARUS_HEAD_BEFORE=$(head_sha "$LAZARUS_DIR" || true)
 VP_HEAD_BEFORE=$(head_sha "$VP_DIR" || true)
+# Relaunched after a self-update: the pull already happened in the previous copy, so the HEADs
+# from before THAT pull are the real "before".
+if [ "$SELF_UPDATED" -eq 1 ]; then
+    [ -n "${AU_LAZARUS_HEAD_BEFORE:-}" ] && LAZARUS_HEAD_BEFORE="$AU_LAZARUS_HEAD_BEFORE"
+    [ -n "${AU_VP_HEAD_BEFORE:-}" ] && VP_HEAD_BEFORE="$AU_VP_HEAD_BEFORE"
+fi
 VP_VERSION_BEFORE=$(vp_dist_version || true)   # c720 -- same instant as the HEADs above, before anything pulls
 
 check_vp_updates
@@ -2052,6 +2049,10 @@ relaunch_if_updated "$SCRIPT_PRE_HASH"
 
 pull_commonx
 
+if [ "$SELF_UPDATED" -eq 1 ]; then
+    [ -n "$LAZARUS_HEAD_BEFORE" ] && [ "$LAZARUS_HEAD_BEFORE" != "$(head_sha "$LAZARUS_DIR" || true)" ] && LAZARUS_UPDATED=1
+    [ -n "$VP_HEAD_BEFORE" ] && [ "$VP_HEAD_BEFORE" != "$(head_sha "$VP_DIR" || true)" ] && VP_UPDATED=1
+fi
 ANY_UPDATED=0
 if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ]; then
     ANY_UPDATED=1
