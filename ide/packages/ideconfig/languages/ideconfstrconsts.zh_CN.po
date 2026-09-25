@@ -445,6 +445,11 @@ msgstr "LCL &控件类型"
 msgid "Make Executable"
 msgstr "生成可执行的"
 
+#: ideconfstrconsts.lismakeexeisnotgnumake
+#, object-pascal-format
+msgid "The make executable %s identifies itself as \"%s\", so it is not GNU make. Building the IDE requires GNU make; Embarcadero and Borland make cannot be used."
+msgstr ""
+
 #: ideconfstrconsts.lismakenotfound
 msgid "Make not found"
 msgstr "Make未找到"

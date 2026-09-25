@@ -1310,6 +1310,33 @@ pull_commonx() {
     fi
 }
 
+# Port of auto-update.ps1 Remove-PackageFromAutoInstall: drop one package from
+# StaticAutoInstallPackages (miscellaneousoptions.xml) and from staticpackages.inc.
+remove_package_from_autoinstall() {
+    local pcp="$1" pkg="$2" misc="$1/miscellaneousoptions.xml" inc="$1/staticpackages.inc"
+    if [ -f "$misc" ] && grep -q "Value=\"$pkg\"" "$misc"; then
+        if python3 - "$misc" "$pkg" <<'PYEOF'
+import sys, xml.etree.ElementTree as ET
+path, pkg = sys.argv[1], sys.argv[2]
+tree = ET.parse(path)
+for lst in tree.getroot().iter("StaticAutoInstallPackages"):
+    items = [c for c in list(lst) if c.tag.startswith("Item")]
+    kept = [c.get("Value") for c in items if c.get("Value") != pkg]
+    for c in items: lst.remove(c)
+    for n, v in enumerate(kept, 1): ET.SubElement(lst, "Item%d" % n, Value=v)
+    lst.set("Count", str(len(kept)))
+tree.write(path, encoding="UTF-8", xml_declaration=True)
+PYEOF
+        then log_info "Purged $pkg from StaticAutoInstallPackages ($misc)"
+        else log_warn "Could not rewrite $misc to drop $pkg"
+        fi
+    fi
+    if [ -f "$inc" ] && grep -qx "[[:space:]]*$pkg,\{0,1\}[[:space:]]*" "$inc"; then
+        grep -vx "[[:space:]]*$pkg,\{0,1\}[[:space:]]*" "$inc" > "$inc.tmp" && mv -f "$inc.tmp" "$inc" \
+            && log_info "Purged $pkg from $inc"
+    fi
+}
+
 get_commonx_install_stamp() {
     local laz_head="" cx_rev="" cx_root=""
     laz_head=$(git -C "$LAZARUS_DIR" rev-parse HEAD 2>/dev/null || printf '')
@@ -1742,6 +1769,10 @@ rebuild_ide() {
         kept_lpks="${kept_lpks# }"
         local fallback_args=""
         if [ -n "$kept_lpks" ]; then fallback_args="--add-package $kept_lpks"; fi
+        # Dropping --add-package is not enough: attempt 1 already wrote PackageCommonX_LCL into
+        # the IDE's auto-install list, so the "without commonx" retry linked it anyway and died
+        # on the identical error. Same purge auto-update.ps1 does (Remove-PackageFromAutoInstall).
+        remove_package_from_autoinstall "$HOME/.lazarus" "PackageCommonX_LCL"
         "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
             --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $fallback_args 2>&1 | grep -E "Linking|lines compiled|Fatal|Error"
         build_exit=${PIPESTATUS[0]}
