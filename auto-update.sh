@@ -92,19 +92,11 @@ VP_UPDATED=0
 # apart from VP_UPDATED, which the summary reads as "a pull happened" -- setting that here made
 # it report "new commit(s) are available ... the pull did NOT land" on a tree that was current.
 VP_REBUILD=0
-UPSTREAM_UPDATED=0
-# c722 -- is an 'upstream' remote configured at all, and could it be read? Reported by Miles
-# (MonitoringSystemsDeveloper) from MVMJ26, which has no such remote. NOT CHECKED and UNKNOWN
-# are both distinct from "no changes": a line that quietly reports the ORIGIN head as though
-# it were the upstream verdict is factually true and reliably misread (c675).
-UPSTREAM_CONFIGURED=0
-UPSTREAM_UNKNOWN=0
 # c719 -- HEAD as it stood BEFORE this run pulled anything, so print_summary can report what
 # HAPPENED instead of what was AVAILABLE. Empty means git could not be read, which is UNKNOWN
 # and never "no changes". Mirror of auto-update.ps1.
 LAZARUS_HEAD_BEFORE=""
 VP_HEAD_BEFORE=""
-LAZARUS_HEAD_AFTER_UPSTREAM=""   # taken between the upstream merge and the origin pull, which move the same HEAD
 # c720 -- the VibePascal version as the dist named it BEFORE this run pulled anything, so
 # print_summary can say "v53 -> v59" instead of leaving a pre-pull reading as the last word.
 VP_VERSION_BEFORE=""
@@ -118,7 +110,6 @@ usage() {
     echo "  --check         Check for updates only (no pull, no build)"
     echo "  --no-build      Pull updates but skip rebuild"
     echo "  --release        Also rebuild release tarballs after updating"
-    echo "  --upstream-only  Only sync upstream Lazarus (skip VibePascal)"
     echo "  --setup          Configure Lazarus IDE to use VibePascal compiler"
     echo "  --fix-lpi        Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
     echo "  --build-ide      Rebuild the full Lazarus IDE + commonx packages (the default)"
@@ -128,14 +119,16 @@ usage() {
     echo "  --no-configure   Do NOT touch ~/.lazarus/environmentoptions.xml (use for scratch/rig runs)"
     echo "  --help           Show this help"
     echo ""
-    echo "Default: pull updates, then rebuild lazbuild and the IDE with commonx installed."
+    echo "Default: pull updates from origin, then rebuild lazbuild and the IDE with commonx installed."
+    echo ""
+    echo "Upstream (fpc/Lazarus) is NEVER merged automatically. Merge it by hand"
+    echo "when you deliberately want upstream features: git merge upstream/main"
     exit 0
 }
 
 CHECK_ONLY=0
 NO_BUILD=0
 BUILD_RELEASE=0
-UPSTREAM_ONLY=0
 SETUP_ONLY=0
 FIX_LPI=0
 # The IDE build is the only step that installs commonx (PackageCommonX_LCL), which is the
@@ -151,7 +144,6 @@ while [[ $# -gt 0 ]]; do
         --check)       CHECK_ONLY=1; shift ;;
         --no-build)    NO_BUILD=1; shift ;;
         --release)     BUILD_RELEASE=1; shift ;;
-        --upstream-only) UPSTREAM_ONLY=1; shift ;;
         --setup)       SETUP_ONLY=1; shift ;;
         --fix-lpi)     FIX_LPI=1; shift ;;
         --build-ide)   BUILD_IDE=1; shift ;;
@@ -331,9 +323,7 @@ wipe_local_changes() {
         log_warn "$LAZARUS_DIR is not a git checkout; skipping the Lazarus wipe (the VibePascal wipe below is independent and still runs)."
     fi
 
-    if [ "$UPSTREAM_ONLY" -eq 1 ]; then
-        log_info "Skipping the VibePascal wipe (--upstream-only)."
-    elif is_git_checkout "$VP_DIR"; then
+    if is_git_checkout "$VP_DIR"; then
         # rc 2 (no checkout) and rc 1 (somebody else's branch) need DIFFERENT words: they
         # collapsed under `if ! ...` and printed "is on branch ''" with an empty name, which
         # names no cause and no cure (Otto, 2026-09-18). `if ! cmd` resets $? to 0 inside the
@@ -343,7 +333,7 @@ wipe_local_changes() {
         if [ "$vp_guard_rc" = "2" ]; then
             log_warn "SKIPPING the VibePascal wipe: $VP_DIR is not a git working tree at all, so there is nothing here to reset. If VibePascal lives somewhere else on this box, point VP_DIR at it; a worktree or a submodule root counts."
         elif [ "$vp_guard_rc" != "0" ]; then
-            log_warn "SKIPPING the VibePascal wipe: $VP_DIR is on branch '$(vp_checkout_branch || true)', not main. 'reset --hard HEAD' there would discard somebody else's uncommitted work with NO rescue tag and no way back. Put that checkout back on main yourself, or run with --upstream-only."
+            log_warn "SKIPPING the VibePascal wipe: $VP_DIR is on branch '$(vp_checkout_branch || true)', not main. 'reset --hard HEAD' there would discard somebody else's uncommitted work with NO rescue tag and no way back. Put that checkout back on main yourself."
         else
         git -C "$VP_DIR" reset --hard HEAD 2>&1 | tail -1
         # darwin also keeps packages/*/units: the generated $DARWIN_CFG points at them, and a
@@ -371,7 +361,6 @@ relaunch_if_updated() {
         [ "$CHECK_ONLY" -eq 1 ] && args+=("--check")
         [ "$NO_BUILD" -eq 1 ] && args+=("--no-build")
         [ "$BUILD_RELEASE" -eq 1 ] && args+=("--release")
-        [ "$UPSTREAM_ONLY" -eq 1 ] && args+=("--upstream-only")
         [ "$SETUP_ONLY" -eq 1 ] && args+=("--setup")
         [ "$FIX_LPI" -eq 1 ] && args+=("--fix-lpi")
         [ "$BUILD_IDE" -eq 1 ] && args+=("--build-ide") || args+=("--no-ide")
@@ -584,43 +573,6 @@ rebuild_vp_compiler() {
     return 0
 }
 
-check_lazarus_upstream() {
-    log_header "Checking Lazarus upstream (fpc/Lazarus)"
-
-    # c722 -- three outcomes, not two. The `|| echo "0"` this function used to lean on turned
-    # BOTH failure shapes into the number zero, and zero then printed as "upstream in sync":
-    # a box with no 'upstream' remote, and a box that has one but whose upstream/main cannot
-    # be resolved, were both told they were up to date with a tree nothing had looked at.
-    # A count that could not be taken is UNKNOWN, never "in sync" (c675).
-    if [ "$UPSTREAM_CONFIGURED" -eq 0 ]; then
-        log_warn "Lazarus: no 'upstream' remote in $LAZARUS_DIR -- upstream (fpc/Lazarus) NOT CHECKED this run, which is not the same as 'in sync'"
-        return 0
-    fi
-
-    local behind local_commits
-    if ! behind=$(git -C "$LAZARUS_DIR" rev-list --count HEAD..upstream/main 2>/dev/null); then
-        UPSTREAM_UNKNOWN=1
-        log_err "Lazarus: cannot count HEAD..upstream/main in $LAZARUS_DIR (upstream/main missing -- fetch failed, or the remote has no main branch) -- verdict UNKNOWN, not 'in sync'"
-        return 0
-    fi
-
-    local_commits=$(git -C "$LAZARUS_DIR" rev-list --count upstream/main..HEAD 2>/dev/null || echo "0")
-
-    if [ "$behind" -gt 0 ]; then
-        log_warn "Lazarus: $behind new upstream commit(s)"
-        echo ""
-        git -C "$LAZARUS_DIR" log --oneline HEAD..upstream/main
-        echo ""
-        UPSTREAM_UPDATED=1
-    else
-        log_ok "Lazarus: upstream in sync"
-    fi
-
-    if [ "$local_commits" -gt 0 ]; then
-        log_info "Lazarus: $local_commits local commit(s) ahead of upstream"
-    fi
-}
-
 check_lazarus_origin() {
     log_header "Checking Lazarus origin (adaloveless/Lazarus)"
 
@@ -639,30 +591,10 @@ check_lazarus_origin() {
     fi
 }
 
-pull_lazarus_upstream() {
-    if [ "$UPSTREAM_UPDATED" -eq 0 ]; then return; fi
-
-    log_header "Merging Lazarus upstream"
-
-    local local_commits=$(git -C "$LAZARUS_DIR" rev-list --count upstream/main..HEAD 2>/dev/null || echo "0")
-
-    if [ "$local_commits" -eq 0 ]; then
-        git -C "$LAZARUS_DIR" merge --ff-only upstream/main 2>&1
-        log_ok "Fast-forward merge from upstream"
-    else
-        log_info "Merging upstream into local branch ($local_commits local commit(s) preserved)..."
-        git -C "$LAZARUS_DIR" merge --no-edit upstream/main 2>&1
-        log_ok "Merge from upstream complete"
-    fi
-
-    log_info "Pushing to origin..."
-    git -C "$LAZARUS_DIR" push origin main 2>&1
-    log_ok "Pushed to adaloveless/Lazarus"
-    LAZARUS_UPDATED=1
-}
-
 pull_lazarus_origin() {
-    if [ "$LAZARUS_UPDATED" -eq 1 ] && [ "$UPSTREAM_UPDATED" -eq 0 ]; then
+    # NOTE: upstream (fpc/Lazarus) is deliberately NEVER merged here. Upstream sync is a
+    # manual, deliberate act by the fork owner: git fetch upstream && git merge upstream/main.
+    if [ "$LAZARUS_UPDATED" -eq 1 ]; then
         # If ff-only pull fails (local branch diverged from origin/main), reset to origin/main.
         log_header "Pulling Lazarus origin changes"
         if ! git -C "$LAZARUS_DIR" pull --ff-only origin main 2>&1; then
@@ -975,11 +907,11 @@ print_summary() {
     # "changes" keeps its original meaning -- was there anything TO do -- so the
     # "Everything is up to date" line below behaves exactly as it did. Only the three
     # outcome lines change: they now report the repository rather than the flag (c719).
-    if [ "$VP_UPDATED" -eq 1 ] || [ "$UPSTREAM_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ]; then
+    if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ]; then
         changes=1
     fi
 
-    local apply_hint laz_now vp_now laz_mid origin_before
+    local apply_hint laz_now vp_now origin_before
     if [ "$CHECK_ONLY" -eq 1 ]; then
         apply_hint="--check reports only; it never pulls. Run ./auto-update.sh to apply them."
     else
@@ -987,22 +919,9 @@ print_summary() {
     fi
     laz_now=$(head_sha "$LAZARUS_DIR" || true)
     vp_now=$(head_sha "$VP_DIR" || true)
-    # On the --check path the mid stamp is empty (neither pull ran) and both Lazarus lines
-    # correctly compare against the run's starting HEAD.
-    laz_mid="$LAZARUS_HEAD_AFTER_UPSTREAM"
-    origin_before="$LAZARUS_HEAD_AFTER_UPSTREAM"
-    [ -n "$laz_mid" ] || laz_mid="$laz_now"
-    [ -n "$origin_before" ] || origin_before="$LAZARUS_HEAD_BEFORE"
-
-    local upstream_state="checked"
-    if [ "$UPSTREAM_CONFIGURED" -eq 0 ]; then
-        upstream_state="not-configured"
-    elif [ "$UPSTREAM_UNKNOWN" -eq 1 ]; then
-        upstream_state="unknown"
-    fi
+    origin_before="$LAZARUS_HEAD_BEFORE"
 
     report_repo_outcome "VibePascal" "$VP_UPDATED" "$VP_HEAD_BEFORE" "$vp_now" "$VP_DIR" "$apply_hint"
-    report_repo_outcome "Lazarus upstream" "$UPSTREAM_UPDATED" "$LAZARUS_HEAD_BEFORE" "$laz_mid" "$LAZARUS_DIR" "$apply_hint" "$upstream_state"
     report_repo_outcome "Lazarus" "$LAZARUS_UPDATED" "$origin_before" "$laz_now" "$LAZARUS_DIR" "$apply_hint"
 
     if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
@@ -1012,15 +931,11 @@ print_summary() {
         echo -e "  ${RED}✗${NC} VibePascal compiler rebuild FAILED -- the previous compiler is still in use (log: $LAZARUS_DIR/.vpcompiler/compiler-rebuild.log)"
     fi
 
-    # c722 -- the closing verdict must agree with the three lines above it. An upstream that
-    # could not be read is not "up to date", and on a box with no upstream remote the honest
-    # claim is bounded by what was actually checked.
-    if [ "$UPSTREAM_UNKNOWN" -eq 1 ]; then
+    # The closing verdict must agree with the lines above it: an unreadable repo is
+    # UNKNOWN, never "up to date" (c675, c722).
+    if [ -z "$laz_now" ] || [ -z "$vp_now" ]; then
         echo ""
-        log_err "Verdict UNKNOWN: upstream Lazarus could not be read this run (see the [ERROR] line above). This is NOT 'up to date'."
-    elif [ "$changes" -eq 0 ] && [ "$UPSTREAM_CONFIGURED" -eq 0 ]; then
-        echo ""
-        log_ok "Everything that was checked is up to date. Nothing to do. (Upstream fpc/Lazarus was NOT among them -- see the line above.)"
+        log_err "Verdict UNKNOWN: a repository HEAD could not be read this run (see the lines above). This is NOT 'up to date'."
     elif [ "$changes" -eq 0 ]; then
         echo ""
         log_ok "Everything is up to date. Nothing to do."
@@ -2110,32 +2025,17 @@ echo ""
 SCRIPT_PRE_HASH=$(sha256sum "$LAZARUS_DIR/auto-update.sh" 2>/dev/null | cut -d' ' -f1)
 
 # c722 -- MEASURED ON A SCRATCH CLONE WITH NO 'upstream' REMOTE, which is MVMJ26's shape:
-# this fetch used to run unguarded, and `set -e` plus `2>/dev/null` turned a missing remote
-# into the END of the run -- rc 128 immediately after the banner above, with no summary, no
-# error text and nothing checked. Miles reported the .ps1's misleading summary line; the bash
-# half never reached its summary at all. Probe the remote, say so out loud, keep going.
-UPSTREAM_CONFIGURED=0
-if git -C "$LAZARUS_DIR" remote get-url upstream >/dev/null 2>&1; then
-    UPSTREAM_CONFIGURED=1
-    if ! git -C "$LAZARUS_DIR" fetch upstream 2>/dev/null; then
-        log_warn "Lazarus: 'git fetch upstream' failed -- the upstream comparison below uses whatever upstream/main this clone already had, if any"
-    fi
-else
-    log_warn "No 'upstream' remote configured in $LAZARUS_DIR -- upstream Lazarus (fpc/Lazarus) will NOT be checked this run"
-    log_info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
-fi
-
 # c719 -- take HEAD BEFORE anything can move it. Nothing above this point pulls: the fetch
 # moves remote-tracking refs only, and wipe_local_changes (reset --hard HEAD) runs later and
 # does not move HEAD either.
+# NOTE: upstream (fpc/Lazarus) is deliberately never fetched, checked or merged here.
+# Upstream sync is a MANUAL, deliberate act by the fork owner:
+#     git fetch upstream && git merge upstream/main
 LAZARUS_HEAD_BEFORE=$(head_sha "$LAZARUS_DIR" || true)
 VP_HEAD_BEFORE=$(head_sha "$VP_DIR" || true)
 VP_VERSION_BEFORE=$(vp_dist_version || true)   # c720 -- same instant as the HEADs above, before anything pulls
 
-if [ "$UPSTREAM_ONLY" -eq 0 ]; then
-    check_vp_updates
-fi
-check_lazarus_upstream
+check_vp_updates
 check_lazarus_origin
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
@@ -2145,21 +2045,15 @@ fi
 
 wipe_local_changes
 
-if [ "$UPSTREAM_ONLY" -eq 0 ]; then
-    pull_vp
-fi
-pull_lazarus_upstream
-LAZARUS_HEAD_AFTER_UPSTREAM=$(head_sha "$LAZARUS_DIR" || true)   # c719: splits the upstream merge from the origin pull, which move the same HEAD
+pull_vp
 pull_lazarus_origin
 
 relaunch_if_updated "$SCRIPT_PRE_HASH"
 
-if [ "$UPSTREAM_ONLY" -eq 0 ]; then
-    pull_commonx
-fi
+pull_commonx
 
 ANY_UPDATED=0
-if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ] || [ "$UPSTREAM_UPDATED" -eq 1 ]; then
+if [ "$VP_UPDATED" -eq 1 ] || [ "$LAZARUS_UPDATED" -eq 1 ]; then
     ANY_UPDATED=1
 fi
 if [ "$COMMONX_UPDATED" -eq 1 ] && [ "$BUILD_IDE" -eq 1 ]; then
@@ -2250,7 +2144,7 @@ fi
 
 # c682 -- a box that pulled a compiler change with an OLDER updater (which never rebuilt the
 # compiler) is steady-state now: nothing new to pull, so nothing above would ever fix it.
-if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ] && is_git_checkout "$VP_DIR"; then
+if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && is_git_checkout "$VP_DIR"; then
     stale_reason=""
     if stale_reason=$(vp_compiler_is_stale); then
         log_warn "VibePascal compiler binary is behind its sources ($stale_reason) -- rebuilding it"
@@ -2262,7 +2156,7 @@ fi
 # darwin: lazbuild and the IDE compile against $DARWIN_CFG. A box that has never had one
 # (every Mac before this change) must build the VibePascal RTL + packages once to get it, even
 # when nothing was pulled -- otherwise VP_OPT stays empty and the build mixes unit sets again.
-if [ "$LAZ_OS_TARGET" = "darwin" ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ]; then
+if [ "$LAZ_OS_TARGET" = "darwin" ] && [ "$NO_BUILD" -eq 0 ]; then
     # Missing cfg, or the units it points at are gone (an interrupted or failed rebuild clears
     # them): either way lazbuild would be building against nothing.
     vp_marker="$VP_DIR/packages/rtl-objpas/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET/variants.ppu"
