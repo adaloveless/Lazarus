@@ -88,6 +88,10 @@ NC='\033[0m'
 
 LAZARUS_UPDATED=0
 VP_UPDATED=0
+# Rebuild VibePascal without having pulled anything (stale binary, missing darwin cfg). Kept
+# apart from VP_UPDATED, which the summary reads as "a pull happened" -- setting that here made
+# it report "new commit(s) are available ... the pull did NOT land" on a tree that was current.
+VP_REBUILD=0
 UPSTREAM_UPDATED=0
 # c722 -- is an 'upstream' remote configured at all, and could it be read? Reported by Miles
 # (MonitoringSystemsDeveloper) from MVMJ26, which has no such remote. NOT CHECKED and UNKNOWN
@@ -2150,7 +2154,7 @@ if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0
     stale_reason=""
     if stale_reason=$(vp_compiler_is_stale); then
         log_warn "VibePascal compiler binary is behind its sources ($stale_reason) -- rebuilding it"
-        VP_UPDATED=1
+        VP_REBUILD=1
         ANY_UPDATED=1
     fi
 fi
@@ -2160,7 +2164,7 @@ fi
 # when nothing was pulled -- otherwise VP_OPT stays empty and the build mixes unit sets again.
 if [ "$LAZ_OS_TARGET" = "darwin" ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ] && [ ! -f "$DARWIN_CFG" ]; then
     log_warn "No $DARWIN_CFG yet -- building the VibePascal RTL and packages to generate it"
-    VP_UPDATED=1
+    VP_REBUILD=1
     ANY_UPDATED=1
 fi
 
@@ -2168,7 +2172,7 @@ if [ "$ANY_UPDATED" -eq 1 ]; then
     if [ "$NO_BUILD" -eq 1 ]; then
         log_info "Skipping rebuild (--no-build)"
     else
-        if [ "$VP_UPDATED" -eq 1 ]; then
+        if [ "$VP_UPDATED" -eq 1 ] || [ "$VP_REBUILD" -eq 1 ]; then
             rebuild_vp_compiler || true
             rebuild_vp_packages
         fi
