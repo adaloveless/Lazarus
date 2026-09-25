@@ -692,7 +692,10 @@ rebuild_vp_packages() {
     # darwin ~/.fpc.cfg) never applies to them: only what OPT carries does.
     local vp_make_opt="$VP_OPT $DARWIN_SDK_OPT"
     local pkgs_incomplete=0
-    [ -f "$VP_DIR/packages/rtl-objpas/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET/variants.ppu" ] || pkgs_incomplete=1
+    local marker="$VP_DIR/packages/rtl-objpas/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET/variants.ppu"
+    # Missing, or older than the compiler (made by a previous compiler: the units load, then
+    # every consumer dies "Can't find unit Variants used by DB").
+    if [ ! -f "$marker" ] || [ "$VP_DIR/compiler/$PPC_NAME" -nt "$marker" ]; then pkgs_incomplete=1; fi
     if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ "$pkgs_incomplete" -eq 1 ]; then
         # A half-built package tree (a failed or interrupted run) is cleaned the same way: fpmake
         # skips whatever units it finds, whichever compiler made them.
@@ -2262,7 +2265,8 @@ fi
 if [ "$LAZ_OS_TARGET" = "darwin" ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ]; then
     # Missing cfg, or the units it points at are gone (an interrupted or failed rebuild clears
     # them): either way lazbuild would be building against nothing.
-    if [ ! -f "$DARWIN_CFG" ] || [ ! -f "$VP_DIR/packages/rtl-objpas/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET/variants.ppu" ]; then
+    vp_marker="$VP_DIR/packages/rtl-objpas/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET/variants.ppu"
+    if [ ! -f "$DARWIN_CFG" ] || [ ! -f "$vp_marker" ] || [ "$VP_DIR/compiler/$PPC_NAME" -nt "$vp_marker" ]; then
         log_warn "VibePascal RTL/packages for $LAZ_CPU_TARGET-$LAZ_OS_TARGET are missing -- building them"
         VP_REBUILD=1
         ANY_UPDATED=1
