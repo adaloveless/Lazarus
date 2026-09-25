@@ -105,7 +105,7 @@ Mac/Opus session of 2026-09-25):
   run auto-update.sh (it rebuilds the compiler). Do NOT touch the commonx source.
   commonx SME: Knox.
 
-## 6. Designer zoom (docked form editor): cocoa DONE, win32 DRAFT
+## 6. Designer zoom (docked form editor): cocoa and win32
 
 The zoom bar under the docked Form page (and Ctrl/Cmd + wheel, Ctrl/Cmd + +/-/0,
 Fit) scales the VIEW of the designed form only. The form and its controls keep
@@ -126,7 +126,7 @@ How it hangs together:
 - cocoa (DONE, verified in the real IDE 2026-09-25, 2d7fc4eda5): native NSView
   bounds scaling in lcl/interfaces/cocoa/cocoalclintf.inc. Clicks, drags,
   graphic controls, Fit and Cmd+wheel measured correct; .lfm untouched.
-- win32 (DRAFT, compiles for x86_64-win64, NEVER RUN): win32 cannot scale
+- win32 (native regression and IDE interaction tested 2026-09-25): win32 cannot scale
   child windows, so the scale is a window property (`Win32SetContentScale`,
   lcl/interfaces/win32/win32proc.pp) applied at the widgetset boundary:
   native bounds = LCL bounds * parent scale (PrepareCreateWindow,
@@ -137,6 +137,25 @@ How it hangs together:
   divided back in GetWindowSize, GetWindowRelativePosition, GetClientBounds,
   ScreenToClient, mouse messages (UnscaleMousePos) and the overlay's
   WM_NCHITTEST. `ScaledWindowCount = 0` (nothing zoomed) short-circuits it all.
+
+Windows follow-up fixes (2026-09-25): applying a scale is a view-only transaction;
+native move/size callbacks must not update LCL bounds or trigger designer layout.
+Compare scales at the window property's fixed-point precision. Preserve odd
+logical bounds/client sizes when native pixel rounding matches them. The designer
+also calls `LCLIntf.SetWindowPos` after `RealizeBounds`: that path must scale too,
+or each drag at 50% doubles the saved dimensions. Skip native form tracking limits
+on the scaled view; logical constraints have already been applied by the LCL.
+Dark native painters must use the scaled window font. Combo font changes during
+zoom must not rewrite logical height/ItemHeight. Destroying windows releases the
+scale/font properties and counters.
+
+Regression: build `lcl/tests/testwin32designerzoom.lpi` with `lazbuild --ws=win32`
+and run `lcl/tests/lib/x86_64-win64/testwin32designerzoom.exe`. It uses real HWNDs,
+checks serialized form properties through repeated 10%-400% zoom (including
+fractional scales and invalidated client caches), native geometry, nested controls,
+the designer's direct SetWindowPos path, coordinate conversion, and destruction.
+Real IDE checks also covered dark rendering, a 40px drag at 50% (80 logical units,
+grid-snapped), native/graphic control selection and dragging, resize, Fit and reset.
 
 Windows test checklist (do these in order, on `main`, after auto-update.bat):
 1. IDE at 100% behaves exactly as before (no zoom touched). Any difference

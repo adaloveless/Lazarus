@@ -2085,6 +2085,11 @@ begin
   NotifyUserInput := False;
 
   WindowInfo := GetWin32WindowInfo(Window);
+  // A content-scale change moves native windows only. Forward to the native
+  // control, but never feed these intermediate pixel sizes into LCL layout.
+  if Win32ChangingContentScale(Window) and
+    (Msg in [WM_MOVE, WM_SIZE, WM_WINDOWPOSCHANGING, WM_WINDOWPOSCHANGED]) then
+    Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
   if WindowInfo^.isChildEdit then
   begin
     if DoChildEdit(Result) then Exit;

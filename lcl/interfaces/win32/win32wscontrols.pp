@@ -138,9 +138,6 @@ var
   // WindowPosChanging hack - see comment in TWin32WSWinControl.SetBounds
   LockWindowPosChanging: Boolean = False;
   LockWindowPosChangingXY: TPoint;
-  // designer zoom: TWin32WSCustomForm.SetBounds passes an already native
-  // (scaled client + unscaled border) size; only the position gets scaled
-  Win32SetBoundsNativeSize: Boolean = False;
 
 implementation
 
@@ -481,7 +478,9 @@ begin
   begin
     IntfLeft := Win32ScaleInt(IntfLeft, Scale);
     IntfTop := Win32ScaleInt(IntfTop, Scale);
-    if not Win32SetBoundsNativeSize then
+    // Forms pass a native client + border size. Use the actual control type:
+    // a global flag also affected other controls resized by synchronous messages.
+    if not (AWinControl is TCustomForm) then
     begin
       IntfWidth := Win32ScaleInt(IntfWidth, Scale);
       IntfHeight := Win32ScaleInt(IntfHeight, Scale);

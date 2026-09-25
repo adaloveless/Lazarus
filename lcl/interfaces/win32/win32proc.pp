@@ -140,10 +140,17 @@ function Win32ContentScale(Window: HWND): Double;
 function Win32EffectiveScale(Window: HWND): Double;
 function Win32ParentScale(Window: HWND): Double;
 procedure Win32SetContentScale(Window: HWND; const AScale: Double);
+function Win32NormalizeContentScale(const AScale: Double): Double;
+function Win32ChangingContentScale(Window: HWND): Boolean;
+function Win32UnscaleBound(AValue, ALogicalValue: Integer; const AScale: Double): Integer;
 function Win32ScaleInt(AValue: Integer; const AScale: Double): Integer; inline;
 function Win32UnscaleInt(AValue: Integer; const AScale: Double): Integer; inline;
 procedure Win32ApplyDCScale(DC: HDC; const AScale: Double);
 function Win32ScaledFontFor(Window: HWND; AFont: HFONT; const AScale: Double; out AOldScaled: HFONT): HFONT;
+
+var
+  // Nonzero only while applying a view transform to this native subtree.
+  Win32ContentScaleRoot: HWND = 0;
 
 type 
   PStayOnTopWindowsInfo = ^TStayOnTopWindowsInfo;
@@ -664,6 +671,7 @@ var
   IntfWidth, IntfHeight: integer;
 begin
   Result := False;
+  if Win32ChangingContentScale(Sender.Handle) then Exit;
   LCLIntf.GetWindowSize(Sender.Handle, IntfWidth{%H-}, IntfHeight{%H-});
   if (Sender.Width = IntfWidth) and (Sender.Height = IntfHeight) and (not Sender.ClientRectNeedsInterfaceUpdate) then
     Exit;
@@ -856,7 +864,11 @@ end;
 function DisposeWindowInfo(Window: HWND): boolean;
 var
   WindowInfo: PWin32WindowInfo;
+  OldFont: HFONT;
 begin
+  Win32SetContentScale(Window, 1.0);
+  Win32ScaledFontFor(Window, 0, 1.0, OldFont);
+  if OldFont <> 0 then Windows.DeleteObject(OldFont);
   WindowInfo := PWin32WindowInfo(Windows.GetProp(Window, PTChar(PtrUInt(WindowInfoAtom))));
   Result := Windows.RemoveProp(Window, PTChar(PtrUInt(WindowInfoAtom))) <> 0;
   if Result then
@@ -1793,6 +1805,27 @@ begin
     Result := v / ContentScaleOne;
 end;
 
+function Win32NormalizeContentScale(const AScale: Double): Double;
+begin
+  Result := Round(AScale * ContentScaleOne) / ContentScaleOne;
+end;
+
+function Win32ChangingContentScale(Window: HWND): Boolean;
+begin
+  Result := (Win32ContentScaleRoot <> 0) and
+    ((Window = Win32ContentScaleRoot) or Windows.IsChild(Win32ContentScaleRoot, Window));
+end;
+
+function Win32UnscaleBound(AValue, ALogicalValue: Integer; const AScale: Double): Integer;
+begin
+  // Native pixel rounding is lossy. Do not round-trip an unchanged LCL bound
+  // through pixels (e.g. 101 -> 50 -> 100 at 50% zoom).
+  if AValue = Win32ScaleInt(ALogicalValue, AScale) then
+    Result := ALogicalValue
+  else
+    Result := Win32UnscaleInt(AValue, AScale);
+end;
+
 function Win32EffectiveScale(Window: HWND): Double;
 begin
   // screen pixels per client unit of Window: its own scale and its parents'
@@ -1821,7 +1854,7 @@ var
 begin
   if Window = 0 then Exit;
   Had := Windows.GetPropW(Window, ContentScaleProp) <> 0;
-  if (AScale <= 0) or (Abs(AScale - 1.0) < 1e-4) then
+  if (AScale <= 0) or (AScale = 1.0) then
   begin
     if Had then
     begin
@@ -1830,8 +1863,7 @@ begin
     end;
   end else
   begin
-    Windows.SetPropW(Window, ContentScaleProp, Windows.HANDLE(PtrUInt(Round(AScale * ContentScaleOne))));
-    if not Had then
+    if Windows.SetPropW(Window, ContentScaleProp, Windows.HANDLE(PtrUInt(Round(AScale * ContentScaleOne)))) and not Had then
       Inc(ScaledWindowCount);
   end;
 end;

@@ -372,7 +372,14 @@ begin
   WinControl := Info^.WinControl;
   case Msg of
     WM_WINDOWPOSCHANGING:
+    begin
       CallWindowPosChanging;
+      // LCL bounds have already passed the logical constraints. DefWindowProc
+      // would enforce normal caption/track sizes on this view in native pixels
+      // (e.g. clamp a 60px-wide view to 120px at 10% zoom).
+      // https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-windowposchanging
+      if Win32ParentScale(Window) <> 1.0 then Exit(0);
+    end;
     WM_GETMINMAXINFO:
       begin
         SetMinMaxInfo(WinControl, PMINMAXINFO(LParam)^);
@@ -692,12 +699,7 @@ begin
     end;
 
     // rect adjusted, pass to inherited to do real work
-    Win32SetBoundsNativeSize := Scale <> 1.0;
-    try
-      TWin32WSWinControl.SetBounds(AWinControl, L, T, W, H);
-    finally
-      Win32SetBoundsNativeSize := False;
-    end;
+    TWin32WSWinControl.SetBounds(AWinControl, L, T, W, H);
     if (Attempt=High(Attempt)) // last one, no need to call GetClientRect
     or not GetClientRect(AWinControl, CurRect) // not available
     or ((CurRect.Width=AWidth) and (CurRect.Height=AHeight)) then // or correct size -> break

@@ -760,6 +760,17 @@ begin
   Result:= HSVToColor(H, S, V);
 end;
 
+function DarkControlFont(Window: HWND; Control: TWinControl): HFONT;
+begin
+  // These painters use a native (unmapped) DC. The LCL font stays at design
+  // size; WM_SETFONT carries the widgetset's scaled copy for designer zoom.
+  Result := 0;
+  if Win32ParentScale(Window) <> 1.0 then
+    Result := HFONT(SendMessage(Window, WM_GETFONT, 0, 0));
+  if Result = 0 then
+    Result := Control.Font.Reference.Handle;
+end;
+
 procedure DrawDarkPushButtonWindow(Window: HWND; DC: HDC);
 var
   Info: PWin32WindowInfo;
@@ -862,7 +873,7 @@ begin
   if Assigned(Control) then
   begin
     Text := UTF8ToUTF16(Control.Caption);
-    FontHandle := Control.Font.Reference.Handle;
+    FontHandle := DarkControlFont(Window, Control);
   end
   else
   begin
@@ -1223,7 +1234,7 @@ begin
   if Control <> nil then
   begin
     Text := UTF8ToUTF16(Control.Caption);
-    FontHandle := Control.Font.Reference.Handle;
+    FontHandle := DarkControlFont(Window, Control);
   end
   else
   begin
@@ -1630,7 +1641,7 @@ begin
   if Control <> nil then
   begin
     Text := UTF8ToUTF16(Control.Caption);
-    FontHandle := Control.Font.Reference.Handle;
+    FontHandle := DarkControlFont(Window, Control);
   end
   else
   begin

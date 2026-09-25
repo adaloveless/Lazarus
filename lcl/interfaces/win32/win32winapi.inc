@@ -1753,6 +1753,7 @@ function TWin32WidgetSet.GetClientBounds(Handle: HWND; var Rect: TRect): Boolean
 var
   ARect: TRect;
   Scale: Double;
+  Control: TWinControl;
 begin
   Result := Boolean(Windows.GetClientRect(Handle, @Rect));
   if not Result then exit;
@@ -1760,8 +1761,18 @@ begin
   Scale := Win32EffectiveScale(Handle);
   if Scale <> 1.0 then
   begin
-    Rect.Right := Win32UnscaleInt(Rect.Right, Scale);
-    Rect.Bottom := Win32UnscaleInt(Rect.Bottom, Scale);
+    Control := GetWin32WindowInfo(Handle)^.WinControl;
+    if (Control <> nil) and (Win32ContentScale(Handle) = 1.0) then
+    begin
+      // Preserve odd logical client dimensions when the native pixel extent
+      // matches them. Otherwise saving a form at 50% writes 2400 for 2401.
+      Rect.Right := Win32UnscaleBound(Rect.Right, Control.Width, Scale);
+      Rect.Bottom := Win32UnscaleBound(Rect.Bottom, Control.Height, Scale);
+    end else
+    begin
+      Rect.Right := Win32UnscaleInt(Rect.Right, Scale);
+      Rect.Bottom := Win32UnscaleInt(Rect.Bottom, Scale);
+    end;
   end;
   if not GetLCLClientBoundsOffset(Handle, ARect) then exit;
   Inc(Rect.Left, ARect.Left);
@@ -2457,10 +2468,20 @@ begin
       if not Windows.ScreenToClient(ParentHandle, @LeftTop) then Exit;
       // designer zoom: native position -> the parent's unscaled units
       Scale := Win32EffectiveScale(ParentHandle);
+      lclControl := GetWin32WindowInfo(Handle)^.WinControl;
       if Scale <> 1.0 then
       begin
-        LeftTop.X := Win32UnscaleInt(LeftTop.X, Scale);
-        LeftTop.Y := Win32UnscaleInt(LeftTop.Y, Scale);
+        if lclControl <> nil then
+        begin
+          R := Rect(0, 0, 0, 0);
+          GetLCLClientBoundsOffset(ParentHandle, R);
+          LeftTop.X := Win32UnscaleBound(LeftTop.X, lclControl.Left + R.Left, Scale);
+          LeftTop.Y := Win32UnscaleBound(LeftTop.Y, lclControl.Top + R.Top, Scale);
+        end else
+        begin
+          LeftTop.X := Win32UnscaleInt(LeftTop.X, Scale);
+          LeftTop.Y := Win32UnscaleInt(LeftTop.Y, Scale);
+        end;
       end;
       lclControl := GetWin32WindowInfo(Handle)^.WinControl;
       //Is this an MDIChild?
@@ -2582,13 +2603,20 @@ begin
   // designer zoom: native size -> the parent's unscaled units. A form's
   // border is native (TWin32WSCustomForm.SetBounds scales only the client).
   Scale := Win32ParentScale(Handle);
-  if Scale <> 1.0 then
+  if (Scale <> 1.0) or Win32ChangingContentScale(Handle) then
   begin
     Border := TSize.Create(0, 0);
-    if GetWin32WindowInfo(Handle)^.WinControl is TCustomForm then
+    if WindowInfo^.WinControl is TCustomForm then
       AdjustFormClientToWindowSize(Handle, Border);
-    Width := Win32UnscaleInt(Width - Border.cx, Scale) + Border.cx;
-    Height := Win32UnscaleInt(Height - Border.cy, Scale) + Border.cy;
+    if WindowInfo^.WinControl <> nil then
+    begin
+      Width := Win32UnscaleBound(Width - Border.cx, WindowInfo^.WinControl.Width, Scale);
+      Height := Win32UnscaleBound(Height - Border.cy, WindowInfo^.WinControl.Height, Scale);
+    end else
+    begin
+      Width := Win32UnscaleInt(Width - Border.cx, Scale);
+      Height := Win32UnscaleInt(Height - Border.cy, Scale);
+    end;
   end;
 end;
 
@@ -3636,7 +3664,32 @@ end;
 function TWin32WidgetSet.SetWindowPos(HWnd: HWND; HWndInsertAfter: HWND; X, Y, CX, CY: Integer; UFlags: UINT): Boolean;
 var
   Style, ExStyle: PtrInt;
+  Scale: Double;
+  Control: TWinControl;
+  NativeSize: TSize;
 begin
+  // The designer and alignment code call this API after RealizeBounds.
+  // It takes LCL units too: forwarding them as pixels undoes SetBounds and
+  // the resulting WM_SIZE doubles the saved size at 50% on every drag.
+  Scale := Win32ParentScale(HWnd);
+  if Scale <> 1.0 then
+  begin
+    Control := GetWin32WindowInfo(HWnd)^.WinControl;
+    if (UFlags and SWP_NOMOVE) = 0 then
+    begin
+      if Control <> nil then LCLBoundsToWin32Bounds(Control, X, Y);
+      X := Win32ScaleInt(X, Scale);
+      Y := Win32ScaleInt(Y, Scale);
+    end;
+    if (UFlags and SWP_NOSIZE) = 0 then
+    begin
+      NativeSize := TSize.Create(Win32ScaleInt(CX, Scale), Win32ScaleInt(CY, Scale));
+      if Control is TCustomForm then AdjustFormClientToWindowSize(HWnd, NativeSize);
+      CX := NativeSize.cx;
+      CY := NativeSize.cy;
+    end;
+    Exit(Boolean(Windows.SetWindowPos(HWnd, HWndInsertAfter, X, Y, CX, CY, UFlags)));
+  end;
   Style := GetWindowLong(HWnd, GWL_STYLE);
   ExStyle := GetWindowLong(HWnd, GWL_EXSTYLE);
   if (Style and WS_BORDER) <> 0 then

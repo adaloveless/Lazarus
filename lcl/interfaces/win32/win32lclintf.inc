@@ -711,6 +711,7 @@ function TWin32WidgetSet.SetWindowContentScale(Handle: HWND; const AScale: Doubl
   var
     i: Integer;
     C: TWinControl;
+    R: TRect;
   begin
     for i := 0 to AParent.ControlCount - 1 do
       if AParent.Controls[i] is TWinControl then
@@ -720,19 +721,37 @@ function TWin32WidgetSet.SetWindowContentScale(Handle: HWND; const AScale: Doubl
         TWSWinControlClass(C.WidgetSetClass).SetBounds(C, C.Left, C.Top, C.Width, C.Height);
         TWSWinControlClass(C.WidgetSetClass).SetFont(C, C.Font);
         Relayout(C);
+        // WM_SIZE is suppressed during this view-only transaction. Keep the
+        // designer overlay in native pixels without notifying the LCL layout.
+        if GetWin32WindowInfo(C.Handle)^.Overlay <> 0 then
+        begin
+          Windows.GetClientRect(C.Handle, R);
+          Windows.SetWindowPos(GetWin32WindowInfo(C.Handle)^.Overlay, HWND_TOP,
+            0, 0, R.Right, R.Bottom, SWP_NOACTIVATE);
+        end;
       end;
   end;
 
 var
   Owner: TWinControl;
+  Scale: Double;
+  PreviousRoot: HWND;
 begin
-  Result := (Handle <> 0) and (AScale > 0);
+  Result := Windows.IsWindow(Handle) and (AScale >= 1 / 65536) and (AScale <= 32767);
   if not Result then Exit;
-  if Abs(Win32ContentScale(Handle) - AScale) < 1e-6 then Exit;
-  Win32SetContentScale(Handle, AScale);
+  Scale := Win32NormalizeContentScale(AScale);
+  if Win32ContentScale(Handle) = Scale then Exit;
   Owner := GetWin32WindowInfo(Handle)^.WinControl;
-  if Owner <> nil then
-    Relayout(Owner);
+  if Owner = nil then Exit(False);
+  PreviousRoot := Win32ContentScaleRoot;
+  Win32ContentScaleRoot := Handle;
+  try
+    Win32SetContentScale(Handle, Scale);
+    Result := Win32ContentScale(Handle) = Scale;
+    if Result then Relayout(Owner);
+  finally
+    Win32ContentScaleRoot := PreviousRoot;
+  end;
   Windows.RedrawWindow(Handle, nil, 0, RDW_INVALIDATE or RDW_ERASE or RDW_ALLCHILDREN or RDW_FRAME);
 end;
 
