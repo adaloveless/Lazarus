@@ -341,7 +341,7 @@ wipe_local_changes() {
         # lazbuild with an RTL and no packages ("Can't find unit db used by fcllaz").
         vp_keep_pkgs=()
         [ "$LAZ_OS_TARGET" = "darwin" ] && vp_keep_pkgs=(-e '/packages/*/units')
-        git -C "$VP_DIR" clean -fdx -e "/compiler/$PPC_NAME" -e /bin -e /rtl/units -e '/vibepascal-*.cfg' "${vp_keep_pkgs[@]}" 2>&1 | tail -1
+        git -C "$VP_DIR" clean -fdx -e "/compiler/$PPC_NAME" -e /bin -e /rtl/units -e '/vibepascal-*.cfg' -e /etc "${vp_keep_pkgs[@]}" 2>&1 | tail -1
         log_ok "VibePascal working tree reset + cleaned ($VP_DIR, kept compiler/$PPC_NAME, bin/, rtl/units, vibepascal-*.cfg -- the bootstrap inputs)"
         fi
     else
@@ -688,12 +688,29 @@ rebuild_vp_packages() {
     fi
     log_ok "VibePascal packages rebuilt"
     write_darwin_cfg
+    ensure_vp_site_cfg
 }
 
 # darwin has no hand-made site cfg in $VP_DIR (Linux has vibepascal-linux-x86_64.cfg), so build
 # one from the units that are actually in the tree: the RTL, every package's units/<target>,
 # the SDK, fpcres, and -Sc. Everything below it then runs with -n @cfg, exactly as on Linux,
 # and ~/.fpc.cfg (the bootstrap bundle's unit set) can no longer leak into the build.
+# On LINUX the compiler auto-loads $VP_DIR/etc/fpc.cfg (its config search includes
+# <exepath>/../etc/fpc.cfg) -- that is how lazbuild and a GUI-launched IDE find system.ppu
+# without any -n @cfg on the command line. The VibePascal wipe removed that untracked file
+# (measured lazdev 2026-09-25: every wipe broke the next IDE build with "The system.ppu for
+# this target was not found"), so keep it in the wipe and reinstall it here when missing.
+ensure_vp_site_cfg() {
+    [ "$LAZ_OS_TARGET" = "linux" ] || return 0
+    [ -f "$LINUX_CFG" ] || return 0
+    mkdir -p "$VP_DIR/etc"
+    if [ ! -f "$VP_DIR/etc/fpc.cfg" ] || ! cmp -s "$VP_DIR/etc/fpc.cfg" "$LINUX_CFG"; then
+        cp -f "$LINUX_CFG" "$VP_DIR/etc/fpc.cfg" 2>/dev/null \
+            && log_info "Installed $VP_DIR/etc/fpc.cfg from $LINUX_CFG (the compiler auto-loads it from <exepath>/../etc/)"
+    fi
+    return 0
+}
+
 write_darwin_cfg() {
     [ "$LAZ_OS_TARGET" = "darwin" ] || return 0
     local tgt="$LAZ_CPU_TARGET-$LAZ_OS_TARGET" d fpcres tmp
@@ -2004,6 +2021,7 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
 fi
 
 wipe_local_changes
+ensure_vp_site_cfg
 
 pull_vp
 pull_lazarus_origin
