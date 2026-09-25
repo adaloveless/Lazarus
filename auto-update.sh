@@ -1211,19 +1211,22 @@ COMMONX_UPDATED=0
 pull_commonx() {
     local cx_root rev_before rev_after svn_rc=0 svn_out
     log_header "Updating commonx (SVN)"
+    # commonx is CORE: an IDE without PackageCommonX_LCL is not a successful build, so every
+    # way of not getting it stops the run here, with the reason.
     if ! cx_root=$(get_commonx_root); then
-        log_warn "No commonx checkout found (set COMMONX_DIR) -- the IDE will be built without PackageCommonX_LCL"
-        return 0
+        log_err "No commonx checkout found. Looked in: \$COMMONX_DIR, $(dirname "$LAZARUS_DIR")/commonx, ~/src/commonx, ~/source/Pascal/FPC/commonx."
+        log_err "  Check it out (svn checkout <commonx url> ~/source/Pascal/FPC/commonx) or set COMMONX_DIR, then re-run."
+        exit 1
     fi
     if ! command -v svn >/dev/null 2>&1; then
-        log_warn "svn not found on PATH -- cannot update $cx_root"
-        return 0
+        log_err "svn not found on PATH -- cannot update commonx at $cx_root. Install subversion and re-run."
+        exit 1
     fi
     rev_before=$(svn info "$cx_root" 2>/dev/null | sed -n 's/^Revision:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
     svn_out=$(svn update "$cx_root" 2>&1) || svn_rc=$?
     if [ "$svn_rc" -ne 0 ]; then
-        log_warn "svn update of $cx_root FAILED (exit $svn_rc): $(printf '%s' "$svn_out" | grep -v '^$' | tail -n 2 | tr '\n' ' ')"
-        return 0
+        log_err "svn update of $cx_root FAILED (exit $svn_rc): $(printf '%s' "$svn_out" | grep -v '^$' | tail -n 2 | tr '\n' ' ')"
+        exit 1
     fi
     rev_after=$(svn info "$cx_root" 2>/dev/null | sed -n 's/^Revision:[[:space:]]*\([0-9][0-9]*\).*/\1/p')
     if [ -n "$rev_before" ] && [ "$rev_before" != "$rev_after" ]; then
@@ -1231,33 +1234,6 @@ pull_commonx() {
         log_ok "commonx updated: r$rev_before -> r$rev_after ($cx_root)"
     else
         log_ok "commonx: up to date (r${rev_after:-?}, $cx_root)"
-    fi
-}
-
-# Port of auto-update.ps1 Remove-PackageFromAutoInstall: drop one package from
-# StaticAutoInstallPackages (miscellaneousoptions.xml) and from staticpackages.inc.
-remove_package_from_autoinstall() {
-    local pcp="$1" pkg="$2" misc="$1/miscellaneousoptions.xml" inc="$1/staticpackages.inc"
-    if [ -f "$misc" ] && grep -q "Value=\"$pkg\"" "$misc"; then
-        if python3 - "$misc" "$pkg" <<'PYEOF'
-import sys, xml.etree.ElementTree as ET
-path, pkg = sys.argv[1], sys.argv[2]
-tree = ET.parse(path)
-for lst in tree.getroot().iter("StaticAutoInstallPackages"):
-    items = [c for c in list(lst) if c.tag.startswith("Item")]
-    kept = [c.get("Value") for c in items if c.get("Value") != pkg]
-    for c in items: lst.remove(c)
-    for n, v in enumerate(kept, 1): ET.SubElement(lst, "Item%d" % n, Value=v)
-    lst.set("Count", str(len(kept)))
-tree.write(path, encoding="UTF-8", xml_declaration=True)
-PYEOF
-        then log_info "Purged $pkg from StaticAutoInstallPackages ($misc)"
-        else log_warn "Could not rewrite $misc to drop $pkg"
-        fi
-    fi
-    if [ -f "$inc" ] && grep -qx "[[:space:]]*$pkg,\{0,1\}[[:space:]]*" "$inc"; then
-        grep -vx "[[:space:]]*$pkg,\{0,1\}[[:space:]]*" "$inc" > "$inc.tmp" && mv -f "$inc.tmp" "$inc" \
-            && log_info "Purged $pkg from $inc"
     fi
 }
 
@@ -1608,10 +1584,12 @@ rebuild_ide() {
             # c636: clean BEFORE the attempt that includes commonx (see the function comment).
             clean_stale_package_artifacts "$commonx_lpk"
         else
-            log_warn "PackageCommonX_LCL.lpk not found under $commonx_root -- TTouchButton will be MISSING from the palette"
+            log_err "PackageCommonX_LCL.lpk not found under $commonx_root -- refusing to build an IDE without commonx"
+            return 1
         fi
     else
-        log_info "commonx tree not found -- skipping commonx LCL packages (set COMMONX_DIR to override)"
+        log_err "commonx tree not found (set COMMONX_DIR) -- refusing to build an IDE without commonx"
+        return 1
     fi
 
     # ONE switch, then every collected path (see contract note above).
@@ -1625,7 +1603,8 @@ rebuild_ide() {
     # the line that never made it back to us. grep still gates what is shown live; tee does not
     # change the displayed output, and PIPESTATUS[0] still reports lazbuild, not tee/grep.
     local cx_build_log
-    cx_build_log=$(mktemp 2>/dev/null || echo "$LAZARUS_DIR/.lazbuild_attempt1.log")
+    mkdir -p "$LAZARUS_DIR/.vpcompiler"
+    cx_build_log="$LAZARUS_DIR/.vpcompiler/ide-build.log"   # kept: the error below points at it
     COMMONX_FIRST_ERROR=""
     COMMONX_PPU_HINT=""
     # --build-ide=-Sci: lazbuild compiles ide/lazarus.pp with the compiler DIRECTLY and passes
@@ -1645,7 +1624,6 @@ rebuild_ide() {
         # "Error:" nor "Fatal:" -- so the c635 capture printed the symptom without the subject.
         COMMONX_PPU_HINT=$(grep -m1 -E "PPU DESTROY DURING LOAD" "$cx_build_log" 2>/dev/null || true)
     fi
-    rm -f "$cx_build_log" 2>/dev/null || true
 
     # GOD mrxp2wpx (2026-07-23): parity with auto-update.ps1 -- an OPTIONAL THIRD-PARTY
     # package must NEVER be able to take the whole IDE down. Keep this retry regardless of
@@ -1680,29 +1658,13 @@ rebuild_ide() {
     # loading a stale ppu (PPU DESTROY DURING LOAD ... in module TYPEX / error 1026 / exit 217).
     # So typex.pas mode-portability was never what was breaking GOD's build, and it is NOT a
     # blocker for the palette. It stays a real but SEPARATE question owned by Knox as commonx SME.
-    if [ "$build_exit" -ne 0 ] && [ -n "$commonx_lpk_path" ]; then
-        log_warn "IDE build failed with commonx included; retrying WITHOUT commonx so the IDE still builds."
-        log_warn "  The updater ran 'svn update' on the commonx tree before this build; if commonx still fails here, a stale checkout is NOT the cause."
-        log_warn "  The first 'Error:' line printed above is the cause. If it names a commonx unit with error 3069, the svn update did not take effect (see the svn messages from earlier in this run)."
-        log_warn "  Consequence: commonx components (incl. TTouchButton / TBetterWebBrowser) will NOT be on the designer palette until that is fixed."
-        local kept_lpks=""
-        local p
-        for p in $add_pkg_lpks; do
-            if [ "$p" != "$commonx_lpk_path" ]; then kept_lpks="$kept_lpks $p"; fi
-        done
-        kept_lpks="${kept_lpks# }"
-        local fallback_args=""
-        if [ -n "$kept_lpks" ]; then fallback_args="--add-package $kept_lpks"; fi
-        # Dropping --add-package is not enough: attempt 1 already wrote PackageCommonX_LCL into
-        # the IDE's auto-install list, so the "without commonx" retry linked it anyway and died
-        # on the identical error. Same purge auto-update.ps1 does (Remove-PackageFromAutoInstall).
-        remove_package_from_autoinstall "$HOME/.lazarus" "PackageCommonX_LCL"
-        "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
-            --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $fallback_args 2>&1 | { grep -E "Linking|lines compiled|Fatal|Error" || true; }
-        build_exit=${PIPESTATUS[0]}
-        if [ "$build_exit" -eq 0 ]; then
-            log_warn "IDE built WITHOUT commonx LCL packages -- TTouchButton is MISSING from the palette (see cause above)."
-        fi
+    # No fallback. commonx is core: an IDE built without it is a failed build, so there is no
+    # "retry WITHOUT commonx" any more -- the run stops here with the first compiler error.
+    if [ "$build_exit" -ne 0 ]; then
+        log_err "IDE build with commonx FAILED (exit $build_exit). No IDE was installed without it."
+        log_err "  First compiler error: $(grep -m1 -E 'Fatal:|Error:' "$cx_build_log" 2>/dev/null || echo '(none captured)')"
+        log_err "  Full log: $cx_build_log"
+        return 1
     fi
 
     if [ "$build_exit" -ne 0 ]; then
@@ -1774,8 +1736,7 @@ rebuild_ide() {
         log_err "commonx components NOT installed: $cx_missing"
         log_err "  Forms using them will fail to open in the designer with:"
         log_err "    Unable to find the component class \"TBetterWebBrowser\" ... it is needed by unit <your form>.pas"
-        log_err "  The first 'Error:' line printed above is the cause -- it names the commonx unit that"
-        log_err "  failed to compile under the IDE build mode, which is why the retry dropped the package."
+        log_err "  The IDE linked but the commonx classes are not in it -- see the build output above."
         if [ -n "$COMMONX_FIRST_ERROR" ]; then
             log_err "  FIRST COMPILER ERROR from the attempt that included commonx (THIS IS THE CAUSE):"
             log_err "    $COMMONX_FIRST_ERROR"
@@ -1790,11 +1751,13 @@ rebuild_ide() {
             log_err "  (no compiler error captured this run -- commonx may have been skipped before the"
             log_err "   build rather than failing during it)"
         fi
-        mkdir -p "$(dirname "$(commonx_stamp_path)")" 2>/dev/null
-        get_commonx_install_stamp > "$(commonx_stamp_path)" 2>/dev/null || true
+        return 1
     elif [ "$cx_rc" -eq 0 ]; then
         log_ok "commonx components installed ($COMMONX_COMPONENTS on the 'Digital Tundra' palette)"
         rm -f "$(commonx_stamp_path)" 2>/dev/null || true
+    else
+        log_err "Cannot verify the commonx components (no IDE binary or no commonx tree) -- treating as NOT installed"
+        return 1
     fi
 }
 
@@ -2087,18 +2050,10 @@ if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$BUILD_IDE" -eq 1 ]; 
     cx_missing=""; cx_rc=0
     cx_missing=$(test_commonx_components_installed) || cx_rc=$?
     if [ "$cx_rc" -eq 1 ]; then
-        log_warn "IDE is missing GOD's commonx components: $cx_missing"
-        current_stamp=$(get_commonx_install_stamp)
-        last_stamp=""
-        [ -f "$(commonx_stamp_path)" ] && last_stamp=$(cat "$(commonx_stamp_path)" 2>/dev/null)
-        if [ "$current_stamp" != "$last_stamp" ]; then
-            log_info "Forcing IDE rebuild to reinstall PackageCommonX_LCL (source changed since the last attempt)"
-            ANY_UPDATED=1
-        else
-            log_err "PackageCommonX_LCL still not installed, and nothing has changed since the last attempt -- not rebuilding again."
-            log_err "  Forms using TBetterWebBrowser / TTouchButton will not load in the designer."
-            log_err "  Fix: run  ./auto-update.sh --force-rebuild  and read the FIRST 'Error:' line of the build output."
-        fi
+        # commonx is core, so an IDE without it is always rebuilt -- no "nothing changed since
+        # the last attempt" guard. If the build keeps failing, the run keeps failing, loudly.
+        log_warn "IDE is missing the commonx components ($cx_missing) -- rebuilding it"
+        ANY_UPDATED=1
     fi
 fi
 
