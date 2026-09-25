@@ -76,3 +76,25 @@ Since 9b044e4527 the docked IDE is the default on every platform: `AnchorDocking
 - With nothing new upstream it skips the IDE rebuild unless you pass `-ForceRebuild`.
 - Read its log for `[ERROR] Merge from origin failed`. That line means the IDE you just
   got is stale. Fix the merge; do not debug the IDE.
+
+## 5. commonx compile mode: `-Mdelphiunicode` IS STANDARD -- NEVER change it
+
+`PackageCommonX_LCL.lpk` compiles with `CustomOptions="-Mdelphiunicode -dLCL"`, and its
+units (`stringx.pas`, `stringx.ansi.pas`, `systemx.pas`, `typex.pas`, `DelphiDefs.inc`, ...)
+are written for that dialect. This was settled measured, twice (svn r6011/r6014, and the
+Mac/Opus session of 2026-09-25):
+
+- DO NOT remove, "modernize", or replace `-Mdelphiunicode` with `-Mdelphi` or `-Munleashed`.
+  `-Mdelphi` (String=AnsiString) fails error 3069 on `var string` args; `-Munleashed` dies
+  at `typex.pas` ("( expected but [ found") and on generics without specialization. Both
+  measured. The package's NON-MEMBER transitive units inherit the PACKAGE's -M flag, which
+  is why mode bugs surface far from the lpk.
+- `stringx.ansi.pas` (and `ios.stringx.iosansi.pas`) are REQUIRED units, not cruft. Do not
+  delete them or "fix" errors by removing the dotted/variant units. 4 hours were lost on the
+  Mac (2026-09-25) to agents treating them as broken; they were not.
+- If the IDE build fails with "PPU Source: stringx.ansi.pas not found" / "Can't find unit
+  stringx.ansi used by systemx": that is a BUILD-ORDERING artifact, not a source defect.
+  The IDE build compiles package units from `commonx/lcl/` whose transitive deps live in the
+  commonx ROOT, and the second context cannot see the root. Fix: build the package
+  standalone once (`lazbuild PackageCommonX_LCL.lpk`) so all ppus land in
+  `commonx/lcl/lib/<target>/`, then build the IDE. commonx SME: Knox.
