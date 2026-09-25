@@ -87,6 +87,15 @@ type
 
 var
   GTKAPIWidget_Type: GType = 0;
+  Gtk2ContentScaleRoot: TWinControl = nil;
+
+function Gtk2EffectiveScale(AControl: TControl): Double;
+function Gtk2HandleEffectiveScale(AHandle: HWND): Double;
+function Gtk2ChangingContentScale(AControl: TControl): Boolean;
+procedure Gtk2ApplyDCScale(DC: HDC; const AScale: Double);
+procedure Gtk2UnscalePoint(AControl: TControl; var P: TPoint);
+procedure Gtk2SetScaledWidgetFont(AWidget: PGtkWidget; AFont: TFont;
+  const AScale: Double);
 
 // GTKCallback.inc headers
 procedure EventTrace(const {%H-}TheMessage: string; {%H-}data: pointer);
@@ -1040,4 +1049,3 @@ finalization
   DoneGTKProc;
 
 end.
-

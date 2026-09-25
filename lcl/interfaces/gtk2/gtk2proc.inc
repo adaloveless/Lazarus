@@ -6657,6 +6657,14 @@ var
   MainWidget: PGtkWidget;
   FixedWidget: PGtkWidget;
 
+  function LogicalValue(ANative, ACurrent: Integer; const AScale: Double): Integer;
+  begin
+    if ANative = Round(ACurrent * AScale) then
+      Result := ACurrent
+    else
+      Result := Round(ANative / AScale);
+  end;
+
   procedure UpdateLCLPos;
   begin
     LCLLeft:=LCLControl.Left;
@@ -6671,6 +6679,7 @@ var
     LCLWidth:=LCLControl.Width;
     LCLHeight:=LCLControl.Height;
     WidthHeightChanged:=(LCLWidth<>GtkWidth) or (LCLHeight<>GtkHeight);
+    if Gtk2EffectiveScale(LCLControl) <> 1.0 then Exit;
     if LCLControl.ClientRectNeedsInterfaceUpdate then begin
       WidthHeightChanged:=true;
       //DebugLn(['UpdateLCLSize InvalidateClientRectCache ',DbgSName(LCLControl)]);
@@ -6740,6 +6749,18 @@ begin
     else
       MainWidget^.Allocation.Height:=GtkHeight;
     //DebugLn(['SendSizeNotificationToLCL ',DbgSName(LCLControl),' gtk=',GtkLeft,',',GtkTop,',',GtkWidth,'x',GtkHeight,' Allocation=',MainWidget^.Allocation.Width,'x',MainWidget^.Allocation.Height]);
+  end;
+
+  if LCLControl.Parent <> nil then
+  begin
+    GtkLeft := LogicalValue(GtkLeft, LCLControl.Left,
+      Gtk2EffectiveScale(LCLControl.Parent));
+    GtkTop := LogicalValue(GtkTop, LCLControl.Top,
+      Gtk2EffectiveScale(LCLControl.Parent));
+    GtkWidth := LogicalValue(GtkWidth, LCLControl.Width,
+      Gtk2EffectiveScale(LCLControl));
+    GtkHeight := LogicalValue(GtkHeight, LCLControl.Height,
+      Gtk2EffectiveScale(LCLControl));
   end;
 
   if GtkWidth<0 then GtkWidth:=0;
@@ -6949,6 +6970,81 @@ begin
   {$ENDIF}
 end;
 
+function Gtk2EffectiveScale(AControl: TControl): Double;
+var
+  Info: PWidgetInfo;
+begin
+  Result := 1.0;
+  while AControl <> nil do
+  begin
+    if (AControl is TWinControl) and TWinControl(AControl).HandleAllocated then
+    begin
+      Info := GetWidgetInfo(PGtkWidget(TWinControl(AControl).Handle));
+      if (Info <> nil) and (Info^.ContentScale > 0) then
+        Result := Result * Info^.ContentScale;
+    end;
+    AControl := AControl.Parent;
+  end;
+end;
+
+function Gtk2HandleEffectiveScale(AHandle: HWND): Double;
+var
+  Obj: TObject;
+begin
+  Result := 1.0;
+  if AHandle = 0 then Exit;
+  Obj := GetLCLObject(PGtkWidget(AHandle));
+  if Obj is TControl then
+    Result := Gtk2EffectiveScale(TControl(Obj));
+end;
+
+function Gtk2ChangingContentScale(AControl: TControl): Boolean;
+begin
+  Result := (Gtk2ContentScaleRoot <> nil) and
+    ((AControl = Gtk2ContentScaleRoot) or Gtk2ContentScaleRoot.IsParentOf(AControl));
+end;
+
+procedure Gtk2ApplyDCScale(DC: HDC; const AScale: Double);
+const
+  ScaleOne = 65536;
+var
+  DevCtx: TGtkDeviceContext;
+begin
+  if (DC = 0) or SameValue(AScale, 1.0, 1 / ScaleOne) then Exit;
+  DevCtx := TGtkDeviceContext(DC);
+  DevCtx.MapMode := MM_ANISOTROPIC;
+  DevCtx.WindowExt := Point(ScaleOne, ScaleOne);
+  DevCtx.ViewPortExt := Point(Round(ScaleOne * AScale), Round(ScaleOne * AScale));
+end;
+
+procedure Gtk2UnscalePoint(AControl: TControl; var P: TPoint);
+var
+  Scale: Double;
+begin
+  Scale := Gtk2EffectiveScale(AControl);
+  if Scale = 1.0 then Exit;
+  P.X := Round(P.X / Scale);
+  P.Y := Round(P.Y / Scale);
+end;
+
+procedure Gtk2SetScaledWidgetFont(AWidget: PGtkWidget; AFont: TFont;
+  const AScale: Double);
+var
+  FontDesc: PPangoFontDescription;
+  Layout: PPangoLayout;
+begin
+  Layout := PGdiObject(AFont.Reference.Handle)^.GDIFontObject;
+  FontDesc := pango_layout_get_font_description(Layout);
+  if (FontDesc = nil) and (AWidget^.style <> nil) then
+    FontDesc := AWidget^.style^.font_desc;
+  if FontDesc = nil then Exit;
+  FontDesc := pango_font_description_copy(FontDesc);
+  pango_font_description_set_size(FontDesc,
+    Max(1, Round(pango_font_description_get_size(FontDesc) * AScale)));
+  gtk_widget_modify_font(AWidget, FontDesc);
+  pango_font_description_free(FontDesc);
+end;
+
 procedure ResizeHandle(LCLControl: TWinControl);
 var
   Widget: PGtkWidget;
@@ -7018,6 +7114,12 @@ begin
   LCLLeft := LCLControl.Left;
   LCLTop := LCLControl.Top;
 
+  if LCLControl.Parent <> nil then
+  begin
+    LCLLeft := Round(LCLLeft * Gtk2EffectiveScale(LCLControl.Parent));
+    LCLTop := Round(LCLTop * Gtk2EffectiveScale(LCLControl.Parent));
+  end;
+
   // move widget on the fixed widget of parent control
   if ((LCLControl.Parent <> nil) and (LCLControl.Parent.HandleAllocated)) or
      ((LCLControl.Parent = nil) and (LCLControl.ParentWindow <> 0)) then
@@ -7048,6 +7150,11 @@ begin
   LCLHeight := LCLControl.Height;
   if LCLHeight <= 0 then
     LCLHeight := 1;
+  if LCLControl.Parent <> nil then
+  begin
+    LCLWidth := Max(1, Round(LCLWidth * Gtk2EffectiveScale(LCLControl)));
+    LCLHeight := Max(1, Round(LCLHeight * Gtk2EffectiveScale(LCLControl)));
+  end;
   if (LCLWidth > MaxSize) or (LCLHeight > MaxSize) then
   begin
     WriteBigWarning;

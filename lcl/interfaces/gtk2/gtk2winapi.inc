@@ -234,7 +234,14 @@ end;
 function TGtk2WidgetSet.ClientToScreen(Handle : HWND; var P : TPoint) : Boolean;
 var
   Position: TPoint;
+  Scale: Double;
 Begin
+  Scale := Gtk2HandleEffectiveScale(Handle);
+  if Scale <> 1.0 then
+  begin
+    P.X := Round(P.X * Scale);
+    P.Y := Round(P.Y * Scale);
+  end;
   if Handle = 0
   then begin
     Position.X := 0;
@@ -4424,6 +4431,7 @@ var
   CurGDKWindow: PGdkWindow;
   ClientOrigin: TPoint;
   ClientWindow, MainWindow: PGdkWindow;
+  Info: PWidgetInfo;
 begin
   Result := False;
   if Handle = 0 then Exit;
@@ -4475,6 +4483,22 @@ begin
     with Widget^.Allocation do
       ARect := Rect(0,0,Width,Height);
   end;
+  if Gtk2HandleEffectiveScale(Handle) <> 1.0 then
+  begin
+    ARect.Left := Round(ARect.Left / Gtk2HandleEffectiveScale(Handle));
+    ARect.Top := Round(ARect.Top / Gtk2HandleEffectiveScale(Handle));
+    Info := GetWidgetInfo(PGtkWidget(Handle));
+    if (Info <> nil) and (Info^.UnscaledClientWidth > 0) then
+    begin
+      ARect.Right := ARect.Left + Info^.UnscaledClientWidth;
+      ARect.Bottom := ARect.Top + Info^.UnscaledClientHeight;
+    end
+    else
+    begin
+      ARect.Right := Round(ARect.Right / Gtk2HandleEffectiveScale(Handle));
+      ARect.Bottom := Round(ARect.Bottom / Gtk2HandleEffectiveScale(Handle));
+    end;
+  end;
   Result:=true;
 end;
 
@@ -4489,10 +4513,26 @@ end;
   child controls are visible.
  ------------------------------------------------------------------------------}
 function TGtk2WidgetSet.GetClientRect(handle : HWND; var ARect : TRect) : Boolean;
+var
+  Info: PWidgetInfo;
 begin
   Result := false;
   if Handle = 0 then Exit;
   ARect := GetWidgetClientRect({%H-}PGtkWidget(Handle));
+  if Gtk2HandleEffectiveScale(Handle) <> 1.0 then
+  begin
+    Info := GetWidgetInfo(PGtkWidget(Handle));
+    if (Info <> nil) and (Info^.UnscaledClientWidth > 0) then
+    begin
+      ARect.Right := Info^.UnscaledClientWidth;
+      ARect.Bottom := Info^.UnscaledClientHeight;
+    end
+    else
+    begin
+      ARect.Right := Round(ARect.Right / Gtk2HandleEffectiveScale(Handle));
+      ARect.Bottom := Round(ARect.Bottom / Gtk2HandleEffectiveScale(Handle));
+    end;
+  end;
   Result := True;
 end;
 
@@ -4756,6 +4796,7 @@ end;
 function TGtk2WidgetSet.GetDC(hWnd: HWND): HDC;
 begin
   Result:=CreateDCForWidget({%H-}PGtkWidget(hWnd),nil,false);
+  Gtk2ApplyDCScale(Result, Gtk2HandleEffectiveScale(hWnd));
 end;
 
 {------------------------------------------------------------------------------
@@ -4932,6 +4973,7 @@ function TGtk2WidgetSet.GetDesignerDC(WindowHandle: HWND): HDC;
 begin
   //DebugLn('TGtk2WidgetSet.GetDesignerDC A');
   Result:=CreateDCForWidget({%H-}PGtkWidget(WindowHandle),nil,true);
+  Gtk2ApplyDCScale(Result, Gtk2HandleEffectiveScale(WindowHandle));
 end;
 
 {------------------------------------------------------------------------------
@@ -6399,12 +6441,27 @@ function TGtk2WidgetSet.GetWindowRelativePosition(Handle : hwnd;
   var Left, Top: integer): boolean;
 var
   aWidget: PGtkWidget;
+  Owner: TObject;
+  Scale: Double;
 begin
   aWidget := {%H-}PGtkWidget(Handle);
   if GtkWidgetIsA(aWidget, GTK_TYPE_WIDGET) then
   begin
     Result := true;
     GetWidgetRelativePosition(aWidget, Left, Top);
+    Scale := Gtk2HandleEffectiveScale(Handle);
+    Owner := GetLCLObject(aWidget);
+    if Scale <> 1.0 then
+    begin
+      if (Owner is TControl) and (Left = Round(TControl(Owner).Left * Scale)) then
+        Left := TControl(Owner).Left
+      else
+        Left := Round(Left / Scale);
+      if (Owner is TControl) and (Top = Round(TControl(Owner).Top * Scale)) then
+        Top := TControl(Owner).Top
+      else
+        Top := Round(Top / Scale);
+    end;
   end else
     Result := false;
 end;
@@ -6418,11 +6475,27 @@ end;
  ------------------------------------------------------------------------------}
 function TGtk2WidgetSet.GetWindowSize(Handle : hwnd;
   var Width, Height: integer): boolean;
+var
+  Owner: TObject;
+  Scale: Double;
 begin
   if GtkWidgetIsA({%H-}PGtkWidget(Handle),GTK_TYPE_WIDGET) then begin
     Result:=true;
     Width:=Max(0,{%H-}PGtkWidget(Handle)^.Allocation.Width);
     Height:=Max(0,{%H-}PGtkWidget(Handle)^.Allocation.Height);
+    Scale := Gtk2HandleEffectiveScale(Handle);
+    Owner := GetLCLObject(PGtkWidget(Handle));
+    if Scale <> 1.0 then
+    begin
+      if (Owner is TControl) and (Width = Round(TControl(Owner).Width * Scale)) then
+        Width := TControl(Owner).Width
+      else
+        Width := Round(Width / Scale);
+      if (Owner is TControl) and (Height = Round(TControl(Owner).Height * Scale)) then
+        Height := TControl(Owner).Height
+      else
+        Height := Round(Height / Scale);
+    end;
     //DebugLn(['TGtk2WidgetSet.GetWindowSize ',DbgSName(GetLCLOwnerObject(Handle)),' Allocation=',Width,'x',Height]);
   end else
     Result:=false;
@@ -7737,6 +7810,11 @@ Begin
   //DebugLn('[TGtk2WidgetSet.ScreenToClient] ',x,',',y,' P=',P.X,',',P.Y);
   dec(P.X, X);
   dec(P.Y, Y);
+  if Gtk2HandleEffectiveScale(Handle) <> 1.0 then
+  begin
+    P.X := Round(P.X / Gtk2HandleEffectiveScale(Handle));
+    P.Y := Round(P.Y / Gtk2HandleEffectiveScale(Handle));
+  end;
   Result := -1;
 end;
 
@@ -9410,9 +9488,28 @@ var
   Widget: PGTKWidget;
   FixedWidget: PGtkWidget;
   Allocation: TGTKAllocation;
+  Owner: TObject;
+  Scale: Double;
 begin
   Result:=false;
   Widget:={%H-}PGtkWidget(hWnd);
+  Owner := GetLCLObject(Widget);
+  Scale := 1.0;
+  if (Owner is TControl) and (TControl(Owner).Parent <> nil) then
+    Scale := Gtk2EffectiveScale(TControl(Owner));
+  if Scale <> 1.0 then
+  begin
+    if (SWP_NOMOVE and uFlags) = 0 then
+    begin
+      X := Round(X * Scale);
+      Y := Round(Y * Scale);
+    end;
+    if (SWP_NOSIZE and uFlags) = 0 then
+    begin
+      cx := Max(1, Round(cx * Scale));
+      cy := Max(1, Round(cy * Scale));
+    end;
+  end;
   {DebugLn('[TGtk2WidgetSet.SetWindowPos] ',GetWidgetDebugReport(Widget),
     ' Top=',hWndInsertAfter=HWND_TOP,
     ' SWP_NOZORDER=',(SWP_NOZORDER and uFlags)<>0,
@@ -10100,6 +10197,3 @@ end;
   {$UNDEF ASSERT_IS_ON}
   {$C-}
 {$EndIf}
-
-
-

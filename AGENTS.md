@@ -190,3 +190,12 @@ Windows test checklist (do these in order, on `main`, after auto-update.bat):
    caption offset (GetLCLClientBoundsOffset is native px), scroll bar
    positions inside scaled scroll boxes, WS classes that override SetFont
    without calling the base (they keep the unscaled font).
+
+Linux GTK2 (2026-09-25): designer zoom is implemented at the widgetset boundary.
+GTK allocations and native fonts use the effective ancestor scale; LCL paint and
+designer DCs use GTK2's existing anisotropic mapping. Geometry queries, client
+rectangles, mouse messages and screen/client conversion map back to logical LCL
+units, and GTK size notifications preserve odd logical bounds when native pixel
+rounding matches them. Build and run `lcl/tests/testgtk2designerzoom.lpi` with
+`--ws=gtk2`; it checks real GTK widgets, fractional zoom, unchanged streaming,
+coordinate conversion and the designer's direct SetWindowPos edit path.

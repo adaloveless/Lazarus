@@ -495,6 +495,9 @@ type
     FormWindowState: TGdkEventWindowState; // used only by forms to stop infinite loops eg. issue #16505
     FirstPaint: boolean; // for accurate frame - forms only
     WndParent: HWnd;
+    ContentScale: Double;             // designer view scale; 0 means 1.0
+    UnscaledClientWidth: Integer;
+    UnscaledClientHeight: Integer;
   end;
 
   //TODO: remove
