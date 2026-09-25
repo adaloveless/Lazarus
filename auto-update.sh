@@ -1058,7 +1058,12 @@ configure_environment() {
 # Get-CommonXRoot in auto-update.ps1.
 get_commonx_root() {
     local cand
-    for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx"; do
+    # AGENTS.md documents the working copy as C:\Source\Pascal\FPC\commonx on Windows; the
+    # Unix mirror of that layout was missing here, so a Mac checkout at
+    # ~/source/Pascal/FPC/commonx was invisible -- get_commonx_root returned 2 and the whole
+    # commonx step (svn update + --add-package) was silently skipped on that host.
+    for cand in "$COMMONX_DIR" "$(dirname "$LAZARUS_DIR")/commonx" "$HOME/src/commonx" \
+                "$HOME/source/Pascal/FPC/commonx" "$HOME/Source/Pascal/FPC/commonx"; do
         if [ -n "$cand" ] && [ -d "$cand" ]; then printf '%s' "$cand"; return 0; fi
     done
     return 1
