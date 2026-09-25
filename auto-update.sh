@@ -2100,7 +2100,13 @@ fi
 
 # c682 -- a box that pulled a compiler change with an OLDER updater (which never rebuilt the
 # compiler) is steady-state now: nothing new to pull, so nothing above would ever fix it.
-if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && is_git_checkout "$VP_DIR"; then
+# NOT gated on ANY_UPDATED==0: a missing-binary run already set ANY_UPDATED=1, and skipping
+# the stale check there shipped a compiler binary older than its own sources (measured on
+# lazdev 2026-09-25: bin/ppcx64 dated Sep 22 while HEAD carried the namespace-unitsym fix).
+if [ "$NO_BUILD" -eq 0 ] && [ "$FORCE_REBUILD" -eq 1 ] && is_git_checkout "$VP_DIR"; then
+    log_warn "Force rebuild -- rebuilding the VibePascal compiler and packages from clean"
+    VP_REBUILD=1
+elif [ "$NO_BUILD" -eq 0 ] && is_git_checkout "$VP_DIR"; then
     stale_reason=""
     if stale_reason=$(vp_compiler_is_stale); then
         log_warn "VibePascal compiler binary is behind its sources ($stale_reason) -- rebuilding it"
@@ -2109,19 +2115,17 @@ if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && is_git_checkout "$VP_DIR
     fi
 fi
 
-# darwin: lazbuild and the IDE compile against $DARWIN_CFG. A box that has never had one
-# (every Mac before this change) must build the VibePascal RTL + packages once to get it, even
-# when nothing was pulled -- otherwise VP_OPT stays empty and the build mixes unit sets again.
-if [ "$LAZ_OS_TARGET" = "darwin" ] && [ "$NO_BUILD" -eq 0 ]; then
-    # Missing cfg, or the units it points at are gone (an interrupted or failed rebuild clears
-    # them): either way lazbuild would be building against nothing.
+# RTL/packages missing or older than the compiler: lazbuild would build against nothing
+# ("Can't find unit db used by fcllaz"). The linux wipe removes packages/*/units, so this
+# must fire on BOTH targets -- it was darwin-only, and a wiped linux box never healed.
+if [ "$NO_BUILD" -eq 0 ] && [ "$VP_REBUILD" -eq 0 ] && [ -d "$VP_DIR/rtl" ]; then
     vp_marker="$VP_DIR/packages/rtl-objpas/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET/variants.ppu"
-    if [ ! -f "$DARWIN_CFG" ] || [ ! -f "$vp_marker" ] || [ "$VP_DIR/compiler/$PPC_NAME" -nt "$vp_marker" ]; then
-        log_warn "VibePascal RTL/packages for $LAZ_CPU_TARGET-$LAZ_OS_TARGET are missing -- building them"
+    # darwin also needs its generated site cfg; without it the build mixes unit sets.
+    if { [ "$LAZ_OS_TARGET" = "darwin" ] && [ ! -f "$DARWIN_CFG" ]; } \
+       || [ ! -f "$vp_marker" ] || [ "$VP_DIR/compiler/$PPC_NAME" -nt "$vp_marker" ]; then
+        log_warn "VibePascal RTL/packages for $LAZ_CPU_TARGET-$LAZ_OS_TARGET are missing/stale -- building them"
         VP_REBUILD=1
         ANY_UPDATED=1
-    elif [ "$FORCE_REBUILD" -eq 1 ]; then
-        VP_REBUILD=1
     fi
 fi
 
