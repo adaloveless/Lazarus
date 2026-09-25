@@ -677,6 +677,16 @@ rebuild_vp_packages() {
     log_info "Building VibePascal packages..."
     local pk_log="$LAZARUS_DIR/.vpcompiler/packages-build.log"
     mkdir -p "$LAZARUS_DIR/.vpcompiler"
+    # The packages' `ide` target compiles the compiler's own units and needs the GENERATED
+    # msgtxt.inc (compiler/msg/, built by `make msg` from error?.msg). The wipe removes it as
+    # untracked, and when the compiler binary is already current nothing regenerates it --
+    # measured lazdev 2026-09-25: "verbose.pas(39,4) Fatal: Cannot open include file
+    # msgtxt.inc". Regenerate whenever the compiler tree has none.
+    if [ ! -f "$VP_DIR/compiler/msg/msgtxt.inc" ]; then
+        log_info "Regenerating compiler/msg/msgtxt.inc (generated file the wipe removes)..."
+        make -C "$VP_DIR/compiler" msg PP="$VP_COMPILER" OPT="$vp_make_opt" >/dev/null 2>&1 || true
+        [ -f "$VP_DIR/compiler/msg/msgtxt.inc" ] || log_warn "msgtxt.inc still missing -- the packages build may fail with 'Cannot open include file msgtxt.inc'"
+    fi
     local pk_exit=0
     make -C "$VP_DIR" packages PP="$VP_COMPILER" OPT="$vp_make_opt" > "$pk_log" 2>&1 || pk_exit=$?
     echo "  Compiled $(grep -cE "Compiling" "$pk_log") units"
