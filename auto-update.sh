@@ -691,7 +691,11 @@ rebuild_vp_packages() {
     # The VibePascal makefiles run the compiler with -n themselves, so the site cfg (and on
     # darwin ~/.fpc.cfg) never applies to them: only what OPT carries does.
     local vp_make_opt="$VP_OPT $DARWIN_SDK_OPT"
-    if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
+    local pkgs_incomplete=0
+    [ -f "$VP_DIR/packages/rtl-objpas/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET/variants.ppu" ] || pkgs_incomplete=1
+    if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ "$pkgs_incomplete" -eq 1 ]; then
+        # A half-built package tree (a failed or interrupted run) is cleaned the same way: fpmake
+        # skips whatever units it finds, whichever compiler made them.
         # c682: every unit on disk was made by a different compiler than the one about to
         # consume it. Rebuild the RTL and the packages from clean instead of trusting
         # timestamps (GOD's own verification of 55e687f581 was exactly this: RTL + 147 packages).
@@ -727,7 +731,7 @@ rebuild_vp_packages() {
                "$VP_DIR/packages/fpmkunit/units_bs" "$VP_DIR/packages/fpmake" "$VP_DIR/packages/fpmake.o" \
                "$VP_DIR/rtl/units/$tgt" 2>/dev/null || true
     fi
-    if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ ! -d "$rtl_units" ]; then
+    if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ ! -f "$rtl_units/system.ppu" ]; then
         log_info "Building VibePascal RTL..."
         make -C "$VP_DIR" rtl PP="$VP_COMPILER" OPT="$vp_make_opt" 2>&1 | tail -3
     fi
