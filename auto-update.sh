@@ -42,6 +42,7 @@ if [ -z "${VP_COMPILER:-}" ]; then
 fi
 
 LINUX_CFG="${LINUX_CFG:-$VP_DIR/vibepascal-linux-x86_64.cfg}"
+DARWIN_CFG="${DARWIN_CFG:-$VP_DIR/vibepascal-darwin-$LAZ_CPU_TARGET.cfg}"
 WIN64_CFG="${WIN64_CFG:-$VP_DIR/vibepascal-win64-x86_64.cfg}"
 
 # Build options. On Linux the site cfg is passed explicitly with the default config
@@ -49,8 +50,20 @@ WIN64_CFG="${WIN64_CFG:-$VP_DIR/vibepascal-win64-x86_64.cfg}"
 # unit paths, the resource linker (-FR fpcres) and the SDK, so -n must NOT be used or
 # nothing resolves. -Sc is required because the IDE sources use C-style operators and the
 # direct-compile IDE path does not pass it; UserNotifications is weak-linked for Cocoa.
+#
+# That was only half right. ~/.fpc.cfg points at the BOOTSTRAP bundle's package units, while
+# FPCDIR=$VP_DIR puts the VibePascal tree's own RTL on the path -- two unit sets built
+# separately, so lazbuild died "Recompiling Variants, checksum changed for .../math.ppu" /
+# "Can't find unit Variants used by DB". So darwin now does what Linux does: build the RTL and
+# packages in $VP_DIR, generate a site cfg from them (write_darwin_cfg), and pass it with -n.
+# Until that cfg exists VP_OPT stays empty; DARWIN_SDK_OPT is what -n takes away and the
+# VibePascal makefiles need to link (without it fpmake dies "ld: library 'c' not found").
+DARWIN_SDK_OPT=""
 if [ "$LAZ_OS_TARGET" = "darwin" ]; then
+    DARWIN_SDK="$(xcrun --show-sdk-path 2>/dev/null || echo /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk)"
+    DARWIN_SDK_OPT="-XR$DARWIN_SDK -Fl$DARWIN_SDK/usr/lib"
     VP_OPT=""
+    [ -f "$DARWIN_CFG" ] && VP_OPT="-n @$DARWIN_CFG"
     LAZ_EXTRA_OPT="-Sci -k-weak_framework -kUserNotifications"
     LAZ_MAKE_TARGET_OPTS="CPU_TARGET=$LAZ_CPU_TARGET OS_TARGET=$LAZ_OS_TARGET LCL_PLATFORM=$LAZ_WS"
 else
@@ -322,8 +335,13 @@ wipe_local_changes() {
             log_warn "SKIPPING the VibePascal wipe: $VP_DIR is on branch '$(vp_checkout_branch || true)', not main. 'reset --hard HEAD' there would discard somebody else's uncommitted work with NO rescue tag and no way back. Put that checkout back on main yourself, or run with --upstream-only."
         else
         git -C "$VP_DIR" reset --hard HEAD 2>&1 | tail -1
-        git -C "$VP_DIR" clean -fdx -e /compiler/ppcx64 -e /bin -e /rtl/units -e '/vibepascal-*.cfg' 2>&1 | tail -1
-        log_ok "VibePascal working tree reset + cleaned ($VP_DIR, kept compiler/ppcx64, bin/, rtl/units, vibepascal-*.cfg -- the bootstrap inputs)"
+        # darwin also keeps packages/*/units: the generated $DARWIN_CFG points at them, and a
+        # steady-state run (nothing pulled) does not rebuild packages, so wiping them here left
+        # lazbuild with an RTL and no packages ("Can't find unit db used by fcllaz").
+        vp_keep_pkgs=()
+        [ "$LAZ_OS_TARGET" = "darwin" ] && vp_keep_pkgs=(-e '/packages/*/units')
+        git -C "$VP_DIR" clean -fdx -e "/compiler/$PPC_NAME" -e /bin -e /rtl/units -e '/vibepascal-*.cfg' "${vp_keep_pkgs[@]}" 2>&1 | tail -1
+        log_ok "VibePascal working tree reset + cleaned ($VP_DIR, kept compiler/$PPC_NAME, bin/, rtl/units, vibepascal-*.cfg -- the bootstrap inputs)"
         fi
     else
         log_warn "$VP_DIR is not a git checkout; skipping the VibePascal wipe."
@@ -441,7 +459,7 @@ VP_COMPILER_REBUILD_FAILED=0
 
 vp_compiler_is_stale() {
     # rc 0 = the compiler binary must be rebuilt (reason on stdout); rc 1 = it is current.
-    local src="$VP_DIR/compiler/ppcx64" n newer
+    local src="$VP_DIR/compiler/$PPC_NAME" n newer
     [ -d "$VP_DIR/compiler" ] || return 1
     if [ ! -x "$src" ]; then
         echo "no compiler binary at $src"
@@ -465,7 +483,7 @@ vp_compiler_is_stale() {
 rebuild_vp_compiler() {
     # Returns 0 when the binary is current or was rebuilt; 1 when a rebuild was needed and
     # FAILED (the previous binary stays in use -- loudly, and again in the summary).
-    local src="$VP_DIR/compiler/ppcx64" reason boot_src boot_dir boot opt logf
+    local src="$VP_DIR/compiler/$PPC_NAME" reason boot_src boot_dir boot opt logf
     local old_md5="" old_mtime=0 new_md5 new_mtime
     log_header "VibePascal compiler"
     if ! reason=$(vp_compiler_is_stale); then
@@ -478,16 +496,19 @@ rebuild_vp_compiler() {
     # the new ppcx64 over the old one, so the bootstrap cannot be that file, and FPC puts the
     # running binary's own directory on the unit path (see resolve_vp_compiler).
     boot_src="$src"
-    [ -x "$boot_src" ] || boot_src="$VP_DIR/bin/ppcx64"
-    [ -x "$boot_src" ] || boot_src="$LAZARUS_DIR/.vpcompiler/ppcx64"
+    [ -x "$boot_src" ] || boot_src="$VP_DIR/bin/$PPC_NAME"
+    [ -x "$boot_src" ] || boot_src="$LAZARUS_DIR/.vpcompiler/$PPC_NAME"
+    # A Mac bootstrapped from a release tarball has never built compiler/ -- its only
+    # compiler is the one in the bundle (which is also what VP_COMPILER resolved to).
+    [ -x "$boot_src" ] || boot_src="$(ls -1d "$HOME"/lazarus-bootstrap/*/compiler/"$PPC_NAME" 2>/dev/null | tail -1)"
     if [ ! -x "$boot_src" ]; then
         VP_COMPILER_REBUILD_FAILED=1
-        log_err "No VibePascal compiler to bootstrap from (looked for compiler/ppcx64, bin/ppcx64 under $VP_DIR and $LAZARUS_DIR/.vpcompiler/ppcx64)."
+        log_err "No VibePascal compiler to bootstrap from (looked for compiler/$PPC_NAME, bin/$PPC_NAME under $VP_DIR, $LAZARUS_DIR/.vpcompiler/$PPC_NAME and ~/lazarus-bootstrap/*/compiler/$PPC_NAME)."
         log_err "  Install any VibePascal compiler binary at $src and re-run."
         return 1
     fi
     boot_dir="$LAZARUS_DIR/.vpcompiler/bootstrap"
-    boot="$boot_dir/ppcx64"
+    boot="$boot_dir/$PPC_NAME"
     if ! mkdir -p "$boot_dir" || ! cp -f "$boot_src" "$boot" || ! chmod +x "$boot"; then
         VP_COMPILER_REBUILD_FAILED=1
         log_err "Cannot stage a bootstrap copy of $boot_src at $boot."
@@ -506,7 +527,7 @@ rebuild_vp_compiler() {
     # which is why the bootstrap copy above is taken first and restored below on failure.
     log_info "Cleaning the compiler's previous build outputs (make -C compiler clean)"
     make -C "$VP_DIR/compiler" clean FPC="$boot" OPT="$opt" >/dev/null 2>&1 || true
-    rm -rf "$VP_DIR/compiler/x86_64/units" 2>/dev/null || true
+    rm -rf "$VP_DIR/compiler/$LAZ_CPU_TARGET/units" "$VP_DIR/compiler/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET" 2>/dev/null || true
     log_info "Rebuilding the compiler from source: make -C $VP_DIR/compiler all FPC=$boot (bootstrap $("$boot" -iV 2>/dev/null) $("$boot" -iD 2>/dev/null)); log: $logf"
     if ! make -C "$VP_DIR/compiler" all FPC="$boot" OPT="$opt" > "$logf" 2>&1; then
         VP_COMPILER_REBUILD_FAILED=1
@@ -536,13 +557,13 @@ rebuild_vp_compiler() {
     else
         log_ok "Compiler rebuilt: $src (${old_md5:-none} -> $new_md5, $("$src" -iV 2>/dev/null) $("$src" -iD 2>/dev/null))"
     fi
-    # bin/ppcx64 (Otto's dist/linux-bin-layout.sh layout) is now a stale copy; refresh it only
+    # bin/$PPC_NAME (Otto's dist/linux-bin-layout.sh layout) is now a stale copy; refresh it only
     # where it already exists as a real file, so a symlinked or absent bin/ is left alone.
-    if [ -f "$VP_DIR/bin/ppcx64" ] && [ ! -L "$VP_DIR/bin/ppcx64" ]; then
-        if cp -f "$src" "$VP_DIR/bin/ppcx64" 2>/dev/null; then
-            log_info "Refreshed $VP_DIR/bin/ppcx64 from the rebuilt compiler"
+    if [ -f "$VP_DIR/bin/$PPC_NAME" ] && [ ! -L "$VP_DIR/bin/$PPC_NAME" ]; then
+        if cp -f "$src" "$VP_DIR/bin/$PPC_NAME" 2>/dev/null; then
+            log_info "Refreshed $VP_DIR/bin/$PPC_NAME from the rebuilt compiler"
         else
-            log_warn "Could not refresh $VP_DIR/bin/ppcx64 -- it is stale and will be ignored in favour of a private copy"
+            log_warn "Could not refresh $VP_DIR/bin/$PPC_NAME -- it is stale and will be ignored in favour of a private copy"
         fi
     fi
     # Re-resolve: whatever resolve_vp_compiler picked at startup was the OLD binary.
@@ -647,7 +668,7 @@ pull_lazarus_origin() {
 }
 
 rebuild_vp_packages() {
-    log_header "Rebuilding VibePascal packages (x86_64-linux)"
+    log_header "Rebuilding VibePascal packages ($LAZ_CPU_TARGET-$LAZ_OS_TARGET)"
 
     if [ ! -f "$VP_COMPILER" ]; then
         log_err "VibePascal compiler not found at $VP_COMPILER"
@@ -655,7 +676,10 @@ rebuild_vp_packages() {
         return 1
     fi
 
-    local rtl_units="$VP_DIR/rtl/units/x86_64-linux"
+    local rtl_units="$VP_DIR/rtl/units/$LAZ_CPU_TARGET-$LAZ_OS_TARGET"
+    # The VibePascal makefiles run the compiler with -n themselves, so the site cfg (and on
+    # darwin ~/.fpc.cfg) never applies to them: only what OPT carries does.
+    local vp_make_opt="$VP_OPT $DARWIN_SDK_OPT"
     if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
         # c682: every unit on disk was made by a different compiler than the one about to
         # consume it. Rebuild the RTL and the packages from clean instead of trusting
@@ -677,16 +701,53 @@ rebuild_vp_packages() {
         # the bin tarball + the unit tarball, then ppcx64 -n -Fuunits/x86_64-linux), which is
         # the use Otto proposed it for -- an operator choice, not automatic script behaviour.
         log_info "Compiler was rebuilt -- rebuilding the VibePascal RTL and packages from clean..."
-        make -C "$VP_DIR" rtl_clean packages_clean PP="$VP_COMPILER" OPT="$VP_OPT" >/dev/null 2>&1 || true
+        make -C "$VP_DIR" rtl_clean packages_clean PP="$VP_COMPILER" OPT="$vp_make_opt" >/dev/null 2>&1 || true
     fi
     if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ ! -d "$rtl_units" ]; then
         log_info "Building VibePascal RTL..."
-        make -C "$VP_DIR" rtl PP="$VP_COMPILER" OPT="$VP_OPT" 2>&1 | tail -3
+        make -C "$VP_DIR" rtl PP="$VP_COMPILER" OPT="$vp_make_opt" 2>&1 | tail -3
     fi
 
     log_info "Building VibePascal packages..."
-    make -C "$VP_DIR" packages PP="$VP_COMPILER" OPT="$VP_OPT" 2>&1 | grep -cE "Compiling" | xargs -I{} echo "  Compiled {} units"
+    local pk_log="$LAZARUS_DIR/.vpcompiler/packages-build.log"
+    mkdir -p "$LAZARUS_DIR/.vpcompiler"
+    local pk_exit=0
+    make -C "$VP_DIR" packages PP="$VP_COMPILER" OPT="$vp_make_opt" > "$pk_log" 2>&1 || pk_exit=$?
+    echo "  Compiled $(grep -cE "Compiling" "$pk_log") units"
+    if [ "$pk_exit" -ne 0 ]; then
+        log_err "VibePascal packages build FAILED (exit $pk_exit)"
+        log_err "  First error: $(grep -m1 -E 'Error:|Fatal:|\*\*\*|^ld: ' "$pk_log" 2>/dev/null || echo '(none captured)')"
+        log_err "  Full log: $pk_log"
+        return 1
+    fi
     log_ok "VibePascal packages rebuilt"
+    write_darwin_cfg
+}
+
+# darwin has no hand-made site cfg in $VP_DIR (Linux has vibepascal-linux-x86_64.cfg), so build
+# one from the units that are actually in the tree: the RTL, every package's units/<target>,
+# the SDK, fpcres, and -Sc. Everything below it then runs with -n @cfg, exactly as on Linux,
+# and ~/.fpc.cfg (the bootstrap bundle's unit set) can no longer leak into the build.
+write_darwin_cfg() {
+    [ "$LAZ_OS_TARGET" = "darwin" ] || return 0
+    local tgt="$LAZ_CPU_TARGET-$LAZ_OS_TARGET" d fpcres tmp
+    [ -d "$VP_DIR/rtl/units/$tgt" ] || { log_warn "No $VP_DIR/rtl/units/$tgt -- not writing $DARWIN_CFG"; return 0; }
+    fpcres="$(command -v fpcres 2>/dev/null || true)"
+    [ -n "$fpcres" ] || fpcres="$(ls -1d "$HOME"/lazarus-bootstrap/*/bin/fpcres 2>/dev/null | tail -1)"
+    tmp="$DARWIN_CFG.tmp"
+    {
+        echo "# Generated by $LAZARUS_DIR/auto-update.sh -- do not edit; rewritten after every package build."
+        echo "-Fu$VP_DIR/rtl/units/$tgt"
+        for d in "$VP_DIR"/packages/*/units/"$tgt"; do
+            [ -d "$d" ] && echo "-Fu$d"
+        done
+        echo "-Sc"
+        [ -n "$fpcres" ] && echo "-FR$fpcres"
+        echo "-XR$DARWIN_SDK"
+        echo "-Fl$DARWIN_SDK/usr/lib"
+    } > "$tmp" && mv -f "$tmp" "$DARWIN_CFG"
+    VP_OPT="-n @$DARWIN_CFG"
+    log_ok "Wrote $DARWIN_CFG ($(grep -c '^-Fu' "$DARWIN_CFG") unit paths)"
 }
 
 rebuild_lazbuild() {
@@ -697,7 +758,7 @@ rebuild_lazbuild() {
         pre_mtime=$(stat -c %Y "$LAZARUS_DIR/lazbuild" 2>/dev/null || stat -f %m "$LAZARUS_DIR/lazbuild" 2>/dev/null)
     fi
 
-    make -C "$LAZARUS_DIR" clean 2>&1 | tail -1
+    make -C "$LAZARUS_DIR" clean PP="$VP_COMPILER" FPCDIR="$VP_DIR" $LAZ_MAKE_TARGET_OPTS 2>&1 | tail -1
 
     make -C "$LAZARUS_DIR" lazbuild \
         PP="$VP_COMPILER" \
@@ -911,7 +972,7 @@ print_summary() {
     report_repo_outcome "Lazarus" "$LAZARUS_UPDATED" "$origin_before" "$laz_now" "$LAZARUS_DIR" "$apply_hint"
 
     if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
-        echo -e "  ${GREEN}✓${NC} VibePascal compiler rebuilt from source ($VP_DIR/compiler/ppcx64)"
+        echo -e "  ${GREEN}✓${NC} VibePascal compiler rebuilt from source ($VP_DIR/compiler/$PPC_NAME)"
     fi
     if [ "$VP_COMPILER_REBUILD_FAILED" -eq 1 ]; then
         echo -e "  ${RED}✗${NC} VibePascal compiler rebuild FAILED -- the previous compiler is still in use (log: $LAZARUS_DIR/.vpcompiler/compiler-rebuild.log)"
@@ -1815,6 +1876,7 @@ invoke_doctor() {
     # macOS has no site cfg in the VibePascal tree: the compiler reads ~/.fpc.cfg (which is
     # where FPC looks with no PPC_CONFIG_PATH set -- a GUI-launched IDE inherits no env).
     local vp_cfg="$VP_DIR/bin/fpc.cfg"
+    [ ! -f "$vp_cfg" ] && [ "$LAZ_OS_TARGET" = "darwin" ] && [ -f "$DARWIN_CFG" ] && vp_cfg="$DARWIN_CFG"
     [ ! -f "$vp_cfg" ] && [ "$LAZ_OS_TARGET" = "darwin" ] && [ -f "$HOME/.fpc.cfg" ] && vp_cfg="$HOME/.fpc.cfg"
     if [ -f "$vp_cfg" ]; then
         local cfg_paths
@@ -2086,6 +2148,15 @@ if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0
         VP_UPDATED=1
         ANY_UPDATED=1
     fi
+fi
+
+# darwin: lazbuild and the IDE compile against $DARWIN_CFG. A box that has never had one
+# (every Mac before this change) must build the VibePascal RTL + packages once to get it, even
+# when nothing was pulled -- otherwise VP_OPT stays empty and the build mixes unit sets again.
+if [ "$LAZ_OS_TARGET" = "darwin" ] && [ "$NO_BUILD" -eq 0 ] && [ "$UPSTREAM_ONLY" -eq 0 ] && [ ! -f "$DARWIN_CFG" ]; then
+    log_warn "No $DARWIN_CFG yet -- building the VibePascal RTL and packages to generate it"
+    VP_UPDATED=1
+    ANY_UPDATED=1
 fi
 
 if [ "$ANY_UPDATED" -eq 1 ]; then
