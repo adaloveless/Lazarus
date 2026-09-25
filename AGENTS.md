@@ -92,9 +92,15 @@ Mac/Opus session of 2026-09-25):
 - `stringx.ansi.pas` (and `ios.stringx.iosansi.pas`) are REQUIRED units, not cruft. Do not
   delete them or "fix" errors by removing the dotted/variant units. 4 hours were lost on the
   Mac (2026-09-25) to agents treating them as broken; they were not.
-- If the IDE build fails with "PPU Source: stringx.ansi.pas not found" / "Can't find unit
-  stringx.ansi used by systemx": that is a BUILD-ORDERING artifact, not a source defect.
-  The IDE build compiles package units from `commonx/lcl/` whose transitive deps live in the
-  commonx ROOT, and the second context cannot see the root. Fix: build the package
-  standalone once (`lazbuild PackageCommonX_LCL.lpk`) so all ppus land in
-  `commonx/lcl/lib/<target>/`, then build the IDE. commonx SME: Knox.
+- If the IDE build fails with "PPU corruption detected in unit STRINGX.ANSI (symid=75),
+  scheduling recompile" / "Can't find unit stringx.ansi used by systemx": that was a
+  VibePascal COMPILER bug, fixed in vibepascal 5c51ef12b3 -- not a source defect and not
+  build ordering (building the package standalone first was measured and does NOT help).
+  The dotted unit stringx.ansi uses a unit named like its namespace (stringx), so the
+  compiler puts a hidden "$hiddenstringx" unitsym in its implementation symtable. The
+  interface namespacesym was dereferenced before that symtable loaded, the slot was nil,
+  and the compiler declared a good .ppu corrupt, deleted it, and could not rebuild it
+  without commonx source on the IDE path. App builds never showed it because they have
+  the source and recompiled silently. If it ever comes back, the compiler is stale:
+  run auto-update.sh (it rebuilds the compiler). Do NOT touch the commonx source.
+  commonx SME: Knox.
