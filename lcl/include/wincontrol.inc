@@ -4107,6 +4107,8 @@ end;
 function TWinControl.GetClientOrigin: TPoint;
 var
   AControl: TWinControl;
+  Delta: TPoint;
+  Scale: Double;
 begin
   Result.X := 0;
   Result.Y := 0;
@@ -4117,8 +4119,15 @@ begin
     // adjust the result by all bounds, that are not yet sent to the interface
     AControl := Self;
     repeat
-      inc(Result.X, AControl.Left - AControl.FBoundsRealized.Left);
-      inc(Result.Y, AControl.Top - AControl.FBoundsRealized.Top);
+      Delta.X := AControl.Left - AControl.FBoundsRealized.Left;
+      Delta.Y := AControl.Top - AControl.FBoundsRealized.Top;
+      if (Delta.X <> 0) or (Delta.Y <> 0) then
+      begin
+        // the delta is in the parent's client units (see ControlClientScale)
+        Scale := ControlClientScale(AControl.Parent);
+        inc(Result.X, Round(Delta.X * Scale));
+        inc(Result.Y, Round(Delta.Y * Scale));
+      end;
       AControl := AControl.Parent;
     until AControl = nil;
   end else

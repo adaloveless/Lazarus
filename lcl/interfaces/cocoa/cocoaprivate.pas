@@ -347,7 +347,9 @@ begin
   //if view.superview.isKindOfClass_(TCocoaTabPageView) then
     //Result := TCocoaTabPageView(view.superview).tabview.contentRect.size.height
   //else
-    Result := view.superview.frame.size.height;
+    // bounds, not frame: they differ when the superview is content-scaled
+    // (SetWindowContentScale); the child's frame lives in bounds units
+    Result := view.superview.bounds.size.height;
   {$IFDEF COCOA_SUPERVIEW_HEIGHT}
   WriteLn(Format('GetNSViewSuperViewHeight Result=%f', [Result]));
   {$ENDIF}

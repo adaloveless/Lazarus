@@ -43,7 +43,10 @@ type
     FContainer: TDesignForms;
     FHiding: Boolean;
     FOnAdjustPageNeeded: TNotifyEvent;
+    FOnDesignMouseWheel: TMouseWheelEvent;
     FWndMethod: TWndMethod;
+    FZoom: Double;
+    FZoomFit: Boolean;
     class var FNewForm: TCustomForm;
     procedure FixF12_ActiveEditor;
     procedure FormChangeBounds(Sender: TObject);
@@ -55,6 +58,12 @@ type
   public
     property Hiding: Boolean read FHiding write FHiding;
     property OnAdjustPageNeeded: TNotifyEvent read FOnAdjustPageNeeded write FOnAdjustPageNeeded;
+    // mouse wheel over the designed form (zoom and scroll, see TResizer)
+    property OnDesignMouseWheel: TMouseWheelEvent read FOnDesignMouseWheel write FOnDesignMouseWheel;
+    // designer zoom: 1 = 100%; the form's bounds are never changed by it
+    property Zoom: Double read FZoom write FZoom;
+    // zoom follows the page size so the whole form stays visible
+    property ZoomFit: Boolean read FZoomFit write FZoomFit;
   end;
 
   { TDesignForms }
@@ -114,8 +123,22 @@ end;
 procedure TDesignForm.WndMethod(var Msg: TLMessage);
 var
   Timer: TLMTimer;
+  Wheel: TLMMouseEvent absolute Msg;
+  Handled: Boolean;
 begin
   case Msg.msg of
+    LM_MOUSEWHEEL:
+      if Assigned(FOnDesignMouseWheel) then
+      begin
+        Handled := False;
+        FOnDesignMouseWheel(Form, Wheel.State, Wheel.WheelDelta,
+          Point(Wheel.X, Wheel.Y), Handled);
+        if Handled then
+        begin
+          Msg.Result := 1;
+          Exit;
+        end;
+      end;
     LM_TIMER:
       begin
         Timer := TLMTimer(Msg);
@@ -163,6 +186,7 @@ end;
 constructor TDesignForm.Create(AForm: TCustomForm);
 begin
   inherited Create(AForm);
+  FZoom := 1.0;
   AForm.AddHandlerOnChangeBounds(@FormChangeBounds);
   FWndMethod := Form.WindowProc;
   Form.WindowProc := @WndMethod;

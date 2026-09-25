@@ -1671,15 +1671,44 @@ begin
 end;
 
 {------------------------------------------------------------------------------
+  ControlClientScale
+
+  Screen pixels per client pixel of AControl. 1, unless an ancestor's content
+  is scaled with LCLIntf.SetWindowContentScale (the zoomed IDE form designer):
+  then a client distance d covers d*scale screen pixels, and every conversion
+  between client and screen coordinates below maps through the scale.
+------------------------------------------------------------------------------}
+function ControlClientScale(AControl: TControl): Double;
+begin
+  while (AControl <> nil)
+  and not ((AControl is TWinControl) and TWinControl(AControl).HandleAllocated) do
+    AControl := AControl.Parent;
+  if AControl = nil then
+    Result := 1.0
+  else
+    Result := GetWindowEffectiveScale(TWinControl(AControl).Handle);
+end;
+
+{------------------------------------------------------------------------------
        TControl.GetClientOrigin
 ------------------------------------------------------------------------------}
 function TControl.GetClientOrigin: TPoint;
+var
+  Scale: Double;
 begin
   if Parent = nil then
     raise EInvalidOperation.CreateFmt(sParentRequired, [Name+':'+ClassName]);
   Result := Parent.ClientOrigin;
-  Inc(Result.X, FLeft);
-  Inc(Result.Y, FTop);
+  Scale := ControlClientScale(Parent);
+  if Scale = 1.0 then
+  begin
+    Inc(Result.X, FLeft);
+    Inc(Result.Y, FTop);
+  end else
+  begin
+    Inc(Result.X, Round(FLeft * Scale));
+    Inc(Result.Y, Round(FTop * Scale));
+  end;
 end;
 
 {------------------------------------------------------------------------------
@@ -1688,10 +1717,17 @@ end;
 function TControl.ScreenToClient(const APoint: TPoint): TPoint;
 var
   P : TPoint;
+  Scale: Double;
 begin
   P := ClientOrigin;
   Result.X := APoint.X - P.X;
   Result.Y := APoint.Y - P.Y;
+  Scale := ControlClientScale(Self);
+  if Scale <> 1.0 then
+  begin
+    Result.X := Round(Result.X / Scale);
+    Result.Y := Round(Result.Y / Scale);
+  end;
 end;
 
 {------------------------------------------------------------------------------
@@ -1700,10 +1736,19 @@ end;
 function TControl.ClientToScreen(const APoint: TPoint): TPoint;
 var
   P : TPoint;
+  Scale: Double;
 begin
   P := ClientOrigin;
-  Result.X := APoint.X + P.X;
-  Result.Y := APoint.Y + P.Y;
+  Scale := ControlClientScale(Self);
+  if Scale = 1.0 then
+  begin
+    Result.X := APoint.X + P.X;
+    Result.Y := APoint.Y + P.Y;
+  end else
+  begin
+    Result.X := P.X + Round(APoint.X * Scale);
+    Result.Y := P.Y + Round(APoint.Y * Scale);
+  end;
 end;
 
 function TControl.ClientToScreen(const ARect: TRect): TRect;
@@ -1721,10 +1766,17 @@ end;
 function TControl.ScreenToControl(const APoint: TPoint): TPoint;
 var
   P : TPoint;
+  Scale: Double;
 begin
   P := ControlOrigin;
   Result.X := APoint.X - P.X;
   Result.Y := APoint.Y - P.Y;
+  Scale := ControlClientScale(Parent);
+  if Scale <> 1.0 then
+  begin
+    Result.X := Round(Result.X / Scale);
+    Result.Y := Round(Result.Y / Scale);
+  end;
 end;
 
 {------------------------------------------------------------------------------
@@ -1733,10 +1785,19 @@ end;
 function TControl.ControlToScreen(const APoint: TPoint): TPoint;
 var
   P : TPoint;
+  Scale: Double;
 begin
   P := ControlOrigin;
-  Result.X := APoint.X + P.X;
-  Result.Y := APoint.Y + P.Y;
+  Scale := ControlClientScale(Parent);
+  if Scale = 1.0 then
+  begin
+    Result.X := APoint.X + P.X;
+    Result.Y := APoint.Y + P.Y;
+  end else
+  begin
+    Result.X := P.X + Round(APoint.X * Scale);
+    Result.Y := P.Y + Round(APoint.Y * Scale);
+  end;
 end;
 
 function TControl.ClientToParent(const Point: TPoint; AParent: TWinControl): TPoint;
@@ -2266,10 +2327,14 @@ end;
 function TControl.GetControlOrigin: TPoint;
 var
   ParentsClientOrigin: TPoint;
+  Scale: Double;
 begin
   Result:=Point(Left,Top);
   if Parent<>nil then begin
     ParentsClientOrigin:=Parent.ClientOrigin;
+    Scale:=ControlClientScale(Parent);
+    if Scale<>1.0 then
+      Result:=Point(Round(Left*Scale),Round(Top*Scale));
     inc(Result.X,ParentsClientOrigin.X);
     inc(Result.Y,ParentsClientOrigin.Y);
   end;

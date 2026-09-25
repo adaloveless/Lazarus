@@ -228,3 +228,35 @@ msgstr "Kontrollerin BorderSpacing.Around özelliklerini otomatik olarak değiş
 msgid "Warning"
 msgstr "Uyarı"
 
+#: dockedstrconsts.szoomcaption
+msgid "Zoom:"
+msgstr ""
+
+#: dockedstrconsts.szoomcombohint
+msgid "Designer zoom. Only the view is scaled: the form's Left/Top/Width/Height and all control bounds stay unchanged."
+msgstr ""
+
+#: dockedstrconsts.szoomfit
+msgid "Fit"
+msgstr ""
+
+#: dockedstrconsts.szoomfithint
+msgid "Zoom out so the whole form fits (keeps fitting while the page or form is resized)"
+msgstr ""
+
+#: dockedstrconsts.szoominhint
+msgid "Zoom in (Ctrl/Cmd + mouse wheel, Ctrl/Cmd + \"+\")"
+msgstr ""
+
+#: dockedstrconsts.szoomouthint
+msgid "Zoom out (Ctrl/Cmd + mouse wheel, Ctrl/Cmd + \"-\")"
+msgstr ""
+
+#: dockedstrconsts.szoomresethint
+msgid "Actual size (Ctrl/Cmd + 0)"
+msgstr ""
+
+#: dockedstrconsts.szoomunsupported
+msgid "Designer zoom is not supported by this widgetset yet"
+msgstr ""
+

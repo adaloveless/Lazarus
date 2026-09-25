@@ -3688,6 +3688,8 @@ end;
 {$I dragdock.inc}
 {$I controlsproc.inc}
 
+function ControlClientScale(AControl: TControl): Double; forward; // control.inc
+
 // components
 {$I sizeconstraints.inc}
 {$I dragmanager.inc}

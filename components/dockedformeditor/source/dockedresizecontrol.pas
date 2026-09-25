@@ -40,7 +40,9 @@ type
     FOldBounds: TRect;
     FOldFakeMenuNeeded: Boolean;
     FOldMousePos: TPoint;
+    FOnDesignerKeyDown: TKeyEvent;
     FOnResized: TNotifyEvent;
+    FAppliedZoom: Double;
     FResizeContainer: TResizeContainer;
     FResizing: Boolean;
 
@@ -76,6 +78,7 @@ type
     procedure DesignerSetFocus;
     procedure OnModified;
     function  IsFocused: Boolean;
+    function  Zoom: Double;
   public
     property AnchorContainer: TWinControl read GetAnchorContainer;
     property DesignForm: TDesignForm read FDesignForm write SetDesignForm;
@@ -83,6 +86,8 @@ type
     property FormClient: TWinControl read GetFormClient;
     property FormContainer: TResizeFormContainer read GetFormContainer;
     property NewFormSize: TPoint read FNewFormSize;
+    // keys typed while the designer has the focus, before the designer gets them
+    property OnDesignerKeyDown: TKeyEvent read FOnDesignerKeyDown write FOnDesignerKeyDown;
     property OnResized: TNotifyEvent read FOnResized write FOnResized;
     property Resizing: Boolean read FResizing;
     property SizerGripSize: Integer read GetSizerGripSize;
@@ -95,19 +100,37 @@ implementation
 procedure TResizeControl.AdjustFormContainer;
 var
   LLeft, LTop, LWidth, LHeight: Integer;
+  LZoom: Double;
 begin
-  LLeft   := - FDesignForm.Form.Left        // real form left - aka Form1.Left in OI
-             - FDesignForm.ClientOffset.X;  // offset of frame of form to client rect
-  LTop    := - FDesignForm.Form.Top
-             - FDesignForm.ClientOffset.Y;
-  LWidth  :=   FDesignForm.Form.Width
+  // The container holds the form at its real Left/Top, in unscaled units; it
+  // is shifted so the form's client area lands in FormClient's top left.
+  // Zoomed, the container's frame is scaled and its content is drawn scaled
+  // by the widgetset, so the form keeps its real bounds.
+  LZoom := Zoom;
+  LLeft   := - Round((FDesignForm.Form.Left       // real form left - aka Form1.Left in OI
+             + FDesignForm.ClientOffset.X) * LZoom); // offset of frame of form to client rect
+  LTop    := - Round((FDesignForm.Form.Top
+             + FDesignForm.ClientOffset.Y) * LZoom);
+  LWidth  :=   Round((FDesignForm.Form.Width
              + Abs(FDesignForm.Form.Left)
-             + FDesignForm.ClientOffset.X;
-  LHeight :=   FDesignForm.Form.Height
+             + FDesignForm.ClientOffset.X) * LZoom);
+  LHeight :=   Round((FDesignForm.Form.Height
              + FakeMenu.Height
              + Abs(FDesignForm.Form.Top)
-             + FDesignForm.ClientOffset.Y;
+             + FDesignForm.ClientOffset.Y) * LZoom);
   FormContainer.SetBounds(LLeft, LTop, LWidth, LHeight);
+  // after SetBounds: the scale is kept relative to the container's frame
+  if FormContainer.HandleAllocated and ((LZoom <> 1.0) or (FAppliedZoom <> 1.0)) then
+  begin
+    if SetWindowContentScale(FormContainer.Handle, LZoom) then
+      FAppliedZoom := LZoom
+    else
+    begin
+      // widgetset cannot scale; TResizer.SetZoom sees the reset and gives up
+      FDesignForm.Zoom := 1.0;
+      FAppliedZoom := 1.0;
+    end;
+  end;
   RefreshAnchorDesigner;
 end;
 
@@ -186,6 +209,11 @@ var
   LWndProc: TWndMethod;
   LMsg: TLMKeyUp;
 begin
+  if Assigned(FOnDesignerKeyDown) then
+  begin
+    FOnDesignerKeyDown(Self, Key, Shift);
+    if Key = 0 then Exit;
+  end;
   case Key of
     VK_ESCAPE:
       if Assigned(DesignForm) and Assigned(DesignForm.AnchorDesigner) and AnchorContainer.Visible then
@@ -384,6 +412,7 @@ begin
   FFakeFocusControl.OnExit := @FakeExitEnter;
 
   CreateBarBitmaps;
+  FAppliedZoom := 1.0;
 
   FormClient.OnChangeBounds := @ClientChangeBounds;
   AnchorContainer.OnChangeBounds := @ClientChangeBounds;
@@ -404,8 +433,8 @@ var
 begin
   if FDesignForm = nil then Exit;
   TryBoundDesignForm;
-  LWidth := FDesignForm.Width + 2 * SizerGripSize;
-  LHeight := FDesignForm.Height + 2 * SizerGripSize + FakeMenu.Height;
+  LWidth := Round(FDesignForm.Width * Zoom) + 2 * SizerGripSize;
+  LHeight := Round(FDesignForm.Height * Zoom) + 2 * SizerGripSize + FakeMenu.Height;
   {$IFDEF DEBUGDOCKEDFORMEDITOR} DebugLn('TResizeControl.AdjustBounds: New ResizeControl Width:', DbgS(Width), ' Height: ', DbgS(Height)); {$ENDIF}
   FResizeContainer.SetBounds(-ScrollOffset.x, -ScrollOffset.y, LWidth, LHeight);
   AdjustFormContainer;
@@ -419,8 +448,17 @@ begin
   TryBoundDesignForm;
   if FormClient.Visible then
   begin
-    FNewFormSize.X := FormClient.Width;
-    FNewFormSize.Y := FormClient.Height;
+    // FormClient shows the form zoomed; the form's own size is unscaled.
+    // Unless FormClient really changed, keep the form's size: unzooming the
+    // rounded zoomed size would change the form by a pixel.
+    if FormClient.Width = Round(FDesignForm.Width * Zoom) then
+      FNewFormSize.X := FDesignForm.Width
+    else
+      FNewFormSize.X := Round(FormClient.Width / Zoom);
+    if FormClient.Height = Round(FDesignForm.Height * Zoom) then
+      FNewFormSize.Y := FDesignForm.Height
+    else
+      FNewFormSize.Y := Round(FormClient.Height / Zoom);
   end else if AnchorContainer.Visible then
   begin
     FNewFormSize.X := AnchorContainer.Width;
@@ -443,6 +481,15 @@ end;
 function TResizeControl.IsFocused: Boolean;
 begin
   Result := FFakeFocusControl.Focused;
+end;
+
+function TResizeControl.Zoom: Double;
+begin
+  // the anchor editor shares this control and is never zoomed
+  if Assigned(FDesignForm) and FormClient.Visible and (FDesignForm.Zoom > 0) then
+    Result := FDesignForm.Zoom
+  else
+    Result := 1.0;
 end;
 
 end.

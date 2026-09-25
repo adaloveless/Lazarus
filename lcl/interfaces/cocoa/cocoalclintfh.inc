@@ -30,6 +30,7 @@ function GetControlConstraints(Constraints: TObject): boolean; override;
 function GetDesignerDC(WindowHandle: HWND): HDC; override;
 function GetLCLOwnerObject(Handle: HWnd): TObject; override;
 }
+function GetWindowEffectiveScale(Handle: HWND): Double; override;
 function InvalidateFrame(aHandle : HWND; ARect : pRect; bErase : Boolean; BorderWidth: integer) : Boolean; override;
 function IsDesignerDC(WindowHandle: HWND; DC: HDC): Boolean; override;
 {
@@ -52,4 +53,5 @@ function RawImage_FromDevice(out ARawImage: TRawImage; ADC: HDC; const ARect: TR
 {function ReleaseDesignerDC(Window: HWND; DC: HDC): Integer; override;}
 
 procedure SetCanvasScaleFactor(DC: HDC; const AScaleFactor: double); override;
+function SetWindowContentScale(Handle: HWND; const AScale: Double): Boolean; override;
 
