@@ -114,6 +114,7 @@ usage() {
     echo "  --fix-lpi        Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
     echo "  --build-ide      Rebuild the full Lazarus IDE + commonx packages (the default)"
     echo "  --no-ide         Skip the IDE build (lazbuild only; commonx NOT installed)"
+    echo "  --no-launch      Do not start the IDE after a successful run"
     echo "  --force-rebuild  Force rebuild even if no updates are available"
     echo "  --doctor         Run diagnostics (no state changes); exit 1 if problems found"
     echo "  --no-configure   Do NOT touch ~/.lazarus/environmentoptions.xml (use for scratch/rig runs)"
@@ -134,6 +135,8 @@ FIX_LPI=0
 # The IDE build is the only step that installs commonx (PackageCommonX_LCL), which is the
 # point of running this -- so it is the default, not an opt-in.
 BUILD_IDE=1
+NO_LAUNCH=0
+IDE_REBUILT=0
 FORCE_REBUILD=0
 SELF_UPDATED=0
 DOCTOR=0
@@ -148,6 +151,7 @@ while [[ $# -gt 0 ]]; do
         --fix-lpi)     FIX_LPI=1; shift ;;
         --build-ide)   BUILD_IDE=1; shift ;;
         --no-ide)      BUILD_IDE=0; shift ;;
+        --no-launch)   NO_LAUNCH=1; shift ;;
         --force-rebuild) FORCE_REBUILD=1; shift ;;
         --self-updated) SELF_UPDATED=1; shift ;;
         --doctor)      DOCTOR=1; shift ;;
@@ -367,6 +371,7 @@ relaunch_if_updated() {
         [ "$FORCE_REBUILD" -eq 1 ] && args+=("--force-rebuild")
         [ "$DOCTOR" -eq 1 ] && args+=("--doctor")
         [ "$NO_CONFIGURE" -eq 1 ] && args+=("--no-configure")
+        [ "$NO_LAUNCH" -eq 1 ] && args+=("--no-launch")
         # Hand the pre-pull HEADs to the new copy. Without them it sees both trees "up to date"
         # (the pull already happened), reports "Nothing to do", and never builds what was pulled.
         export AU_LAZARUS_HEAD_BEFORE="$LAZARUS_HEAD_BEFORE" AU_VP_HEAD_BEFORE="$VP_HEAD_BEFORE"
@@ -2168,7 +2173,8 @@ if [ "$ANY_UPDATED" -eq 1 ]; then
         rebuild_lazbuild
         configure_environment
         if [ "$BUILD_IDE" -eq 1 ]; then
-            rebuild_ide
+            rebuild_ide          # set -e: a failed IDE build ends the run here
+            IDE_REBUILT=1
         fi
         if [ "$BUILD_RELEASE" -eq 1 ]; then
             log_header "Building release tarballs"
@@ -2178,3 +2184,45 @@ if [ "$ANY_UPDATED" -eq 1 ]; then
 fi
 
 print_summary
+
+# Start the IDE, like auto-update.bat does (-NoLaunch there, --no-launch here). Reaching this
+# line means the run succeeded (set -e). A running IDE that was just rebuilt is quit first --
+# normally, so it still asks about unsaved files -- or the user keeps using the old binary.
+launch_ide() {
+    [ "$NO_LAUNCH" -eq 1 ] && return 0
+    [ -f "$LAZARUS_DIR/lazarus" ] || { log_warn "No IDE binary at $LAZARUS_DIR/lazarus -- not launching"; return 0; }
+    local pids i
+    pids=$(pgrep -f "^$LAZARUS_DIR/(lazarus|startlazarus)( |$)" 2>/dev/null || true)
+    if [ -n "$pids" ] && [ "$IDE_REBUILT" -eq 0 ]; then
+        log_ok "IDE already running (pid $(echo $pids | tr '\n' ' ')) and was not rebuilt -- leaving it"
+        return 0
+    fi
+    log_header "Launching IDE"
+    if [ -n "$pids" ]; then
+        log_info "Quitting the running IDE (pid $(echo $pids | tr '\n' ' ')) so the new build starts"
+        if [ "$LAZ_OS_TARGET" = "darwin" ]; then
+            osascript -e 'tell application "lazarus" to quit' >/dev/null 2>&1 || kill -TERM $pids 2>/dev/null || true
+        else
+            kill -TERM $pids 2>/dev/null || true
+        fi
+        for i in $(seq 1 30); do
+            pgrep -f "^$LAZARUS_DIR/(lazarus|startlazarus)( |$)" >/dev/null 2>&1 || break
+            sleep 1
+        done
+        if pgrep -f "^$LAZARUS_DIR/(lazarus|startlazarus)( |$)" >/dev/null 2>&1; then
+            log_warn "The old IDE is still running (unsaved files?) -- close it and start $LAZARUS_DIR/lazarus yourself"
+            return 0
+        fi
+    fi
+    if [ "$LAZ_OS_TARGET" = "darwin" ]; then
+        open "$LAZARUS_DIR/lazarus.app" && log_ok "IDE launched ($LAZARUS_DIR/lazarus.app)"
+    elif [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        local exe="$LAZARUS_DIR/startlazarus"
+        [ -x "$exe" ] || exe="$LAZARUS_DIR/lazarus"
+        ( cd "$LAZARUS_DIR" && nohup "$exe" >/dev/null 2>&1 & ) && log_ok "IDE launched ($exe)"
+    else
+        log_info "No display (DISPLAY/WAYLAND_DISPLAY unset, e.g. over ssh) -- not launching the IDE"
+    fi
+    return 0
+}
+launch_ide
