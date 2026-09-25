@@ -318,8 +318,11 @@ wipe_local_changes() {
         # pristine-test-env intent (GOD mp8g1me3), while deleting them makes a rebuild
         # impossible by construction. Everything else is still wiped.
         git -C "$LAZARUS_DIR" reset --hard HEAD 2>&1 | tail -1
-        git -C "$LAZARUS_DIR" clean -fdx -e /.vpcompiler 2>&1 | tail -1
-        log_ok "Lazarus working tree reset + cleaned ($LAZARUS_DIR, kept .vpcompiler/ -- the bootstrap copy)"
+        # Also keep the binaries this script BUILT. They are gitignored, so -x deleted them, and a
+        # steady-state run (nothing pulled) never rebuilds -- so every such run left the box with
+        # no lazbuild and no IDE while the summary said "up to date".
+        git -C "$LAZARUS_DIR" clean -fdx -e /.vpcompiler -e /lazbuild -e /lazarus -e /startlazarus 2>&1 | tail -1
+        log_ok "Lazarus working tree reset + cleaned ($LAZARUS_DIR, kept .vpcompiler/ -- the bootstrap copy -- and the built lazbuild/lazarus/startlazarus)"
     else
         log_warn "$LAZARUS_DIR is not a git checkout; skipping the Lazarus wipe (the VibePascal wipe below is independent and still runs)."
     fi
