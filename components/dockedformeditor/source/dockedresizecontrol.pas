@@ -106,18 +106,20 @@ begin
   // is shifted so the form's client area lands in FormClient's top left.
   // Zoomed, the container's frame is scaled and its content is drawn scaled
   // by the widgetset, so the form keeps its real bounds.
+  // ClientOffset (the form's frame, win32 only) is native pixels: the
+  // widgetset scales the form's client, not its frame.
   LZoom := Zoom;
-  LLeft   := - Round((FDesignForm.Form.Left       // real form left - aka Form1.Left in OI
-             + FDesignForm.ClientOffset.X) * LZoom); // offset of frame of form to client rect
-  LTop    := - Round((FDesignForm.Form.Top
-             + FDesignForm.ClientOffset.Y) * LZoom);
+  LLeft   := - Round(FDesignForm.Form.Left * LZoom) // real form left - aka Form1.Left in OI
+             - FDesignForm.ClientOffset.X;          // offset of frame of form to client rect
+  LTop    := - Round(FDesignForm.Form.Top * LZoom)
+             - FDesignForm.ClientOffset.Y;
   LWidth  :=   Round((FDesignForm.Form.Width
-             + Abs(FDesignForm.Form.Left)
-             + FDesignForm.ClientOffset.X) * LZoom);
+             + Abs(FDesignForm.Form.Left)) * LZoom)
+             + FDesignForm.ClientOffset.X;
   LHeight :=   Round((FDesignForm.Form.Height
+             + Abs(FDesignForm.Form.Top)) * LZoom)
              + FakeMenu.Height
-             + Abs(FDesignForm.Form.Top)
-             + FDesignForm.ClientOffset.Y) * LZoom);
+             + FDesignForm.ClientOffset.Y;
   FormContainer.SetBounds(LLeft, LTop, LWidth, LHeight);
   // after SetBounds: the scale is kept relative to the container's frame
   if FormContainer.HandleAllocated and ((LZoom <> 1.0) or (FAppliedZoom <> 1.0)) then

@@ -645,7 +645,9 @@ var
   lSize: Windows.SIZE;
   L, T, W, H: Integer;
   Attempt: 0..1; // 2 attempts
+  Scale: Double;
 begin
+  Scale := Win32ParentScale(AForm.Handle);
   // Problem:
   //   When setting the ClientRect, the main menu may change height (the menu lines may change).
   //   After the first attempt to set bounds, they can be wrong because the number of the lines changed and
@@ -659,6 +661,9 @@ begin
     // the LCL defines the size of a form without border, win32 with.
     // -> adjust size according to BorderStyle
     lSize := TSize.Create(AWidth, AHeight);
+    // designer zoom: scale the client size only, the native border stays
+    if Scale <> 1.0 then
+      lSize := TSize.Create(Win32ScaleInt(AWidth, Scale), Win32ScaleInt(AHeight, Scale));
 
     AdjustFormClientToWindowSize(AForm, lSize);
     L := ALeft;
@@ -687,7 +692,12 @@ begin
     end;
 
     // rect adjusted, pass to inherited to do real work
-    TWin32WSWinControl.SetBounds(AWinControl, L, T, W, H);
+    Win32SetBoundsNativeSize := Scale <> 1.0;
+    try
+      TWin32WSWinControl.SetBounds(AWinControl, L, T, W, H);
+    finally
+      Win32SetBoundsNativeSize := False;
+    end;
     if (Attempt=High(Attempt)) // last one, no need to call GetClientRect
     or not GetClientRect(AWinControl, CurRect) // not available
     or ((CurRect.Width=AWidth) and (CurRect.Height=AHeight)) then // or correct size -> break

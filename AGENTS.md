@@ -104,3 +104,54 @@ Mac/Opus session of 2026-09-25):
   the source and recompiled silently. If it ever comes back, the compiler is stale:
   run auto-update.sh (it rebuilds the compiler). Do NOT touch the commonx source.
   commonx SME: Knox.
+
+## 6. Designer zoom (docked form editor): cocoa DONE, win32 DRAFT
+
+The zoom bar under the docked Form page (and Ctrl/Cmd + wheel, Ctrl/Cmd + +/-/0,
+Fit) scales the VIEW of the designed form only. The form and its controls keep
+their real Left/Top/Width/Height; the Object Inspector and the .lfm never see
+zoomed values. Never "fix" zoom by changing control bounds.
+
+How it hangs together:
+- LCL hook `LCLIntf.SetWindowContentScale(Handle, Scale)` /
+  `GetWindowEffectiveScale(Handle)` (lcl/include/lclintf*.inc). Base widgetset:
+  unsupported (returns False for Scale <> 1, scale 1) -> the zoom bar disables
+  itself. `TControl.ClientOrigin/ScreenToClient/ClientToScreen` map through the
+  effective scale (lcl/include/control.inc, `ControlClientScale`); at scale 1
+  they run the old integer code.
+- Docked editor: `TResizer` (zoom bar, SetZoom, Fit), `TResizeControl.AdjustFormContainer`
+  (container = zoomed frame, then SetWindowContentScale on FormContainer),
+  `TDesignForm.Zoom/ZoomFit`. Designer: `FormClientPosFromScreen` in
+  designer/designerprocs.pas, grabber/marker size in controlselection.pp.
+- cocoa (DONE, verified in the real IDE 2026-09-25, 2d7fc4eda5): native NSView
+  bounds scaling in lcl/interfaces/cocoa/cocoalclintf.inc. Clicks, drags,
+  graphic controls, Fit and Cmd+wheel measured correct; .lfm untouched.
+- win32 (DRAFT, compiles for x86_64-win64, NEVER RUN): win32 cannot scale
+  child windows, so the scale is a window property (`Win32SetContentScale`,
+  lcl/interfaces/win32/win32proc.pp) applied at the widgetset boundary:
+  native bounds = LCL bounds * parent scale (PrepareCreateWindow,
+  TWin32WSWinControl.SetBounds; forms: client scaled, border native in
+  TWin32WSCustomForm.SetBounds + GetWindowSize), scaled HFONT for native
+  controls (TWin32WSWinControl.SetFont), MM_ANISOTROPIC mapping on LCL paint
+  DCs (SendPaintMessage), GetDC and the designer overlay DC (GetDesignerDC);
+  divided back in GetWindowSize, GetWindowRelativePosition, GetClientBounds,
+  ScreenToClient, mouse messages (UnscaleMousePos) and the overlay's
+  WM_NCHITTEST. `ScaledWindowCount = 0` (nothing zoomed) short-circuits it all.
+
+Windows test checklist (do these in order, on `main`, after auto-update.bat):
+1. IDE at 100% behaves exactly as before (no zoom touched). Any difference
+   here is a regression of the draft: bisect the win32 hunks of the commit.
+2. Open a form bigger than the page, zoom 50%: controls, captions (scaled
+   fonts), TLabel/TShape/TSpeedButton (DC mapping) all drawn at half size and
+   in the right place; no red/garbage container area.
+3. Click-select a windowed control, a graphic control, a control inside a
+   panel; drag one: at 50% a 40 px mouse drag must move it 80 (grid-snapped).
+   Resize via grabbers. Check the .lfm/OI values are real, not halved.
+4. Fit, Ctrl+wheel around the cursor, Ctrl + +/-/0, back to 100%: form
+   Width/Height unchanged, nothing left scaled.
+5. MetaDarkStyle: themed parts drawn through DrawThemeBackground/Text into a
+   mapped DC may ignore the mapping -> watch for 100%-size artwork inside a
+   zoomed form (uwin32widgetsetdark.pas hooks). Known gaps to expect: group box
+   caption offset (GetLCLClientBoundsOffset is native px), scroll bar
+   positions inside scaled scroll boxes, WS classes that override SetFont
+   without calling the base (they keep the unscaled font).

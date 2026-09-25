@@ -678,6 +678,62 @@ begin
   // bring overlay window to front
   Windows.SetWindowPos(OverlayWindow, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE or SWP_NOMOVE);
   Result := Windows.GetDC(OverlayWindow);
+  // designer zoom: grabbers are drawn in the form's unscaled units
+  Win32ApplyDCScale(Result, Win32EffectiveScale(WindowHandle));
+end;
+
+{------------------------------------------------------------------------------
+  Method:  GetWindowEffectiveScale
+  Returns: screen pixels per client unit of Handle (designer zoom), see
+           Win32EffectiveScale in win32proc.pp
+ ------------------------------------------------------------------------------}
+function TWin32WidgetSet.GetWindowEffectiveScale(Handle: HWND): Double;
+begin
+  Result := Win32EffectiveScale(Handle);
+end;
+
+{------------------------------------------------------------------------------
+  Method:  SetWindowContentScale
+  Params:  Handle - the window whose children are drawn scaled
+           AScale - the scale
+  Returns: True
+
+  DRAFT (designer zoom on win32). Win32 cannot scale child windows, so the
+  scale is kept as a window property (Win32SetContentScale) and applied at
+  the widgetset boundary for every descendant: bounds, fonts, paint DCs,
+  and back for sizes, client rects and mouse coordinates. Setting it re-sends
+  bounds and fonts of all LCL descendants; a repeated call with the same scale
+  does nothing (the docked designer calls this on every scroll).
+ ------------------------------------------------------------------------------}
+function TWin32WidgetSet.SetWindowContentScale(Handle: HWND; const AScale: Double): Boolean;
+
+  procedure Relayout(AParent: TWinControl);
+  var
+    i: Integer;
+    C: TWinControl;
+  begin
+    for i := 0 to AParent.ControlCount - 1 do
+      if AParent.Controls[i] is TWinControl then
+      begin
+        C := TWinControl(AParent.Controls[i]);
+        if not C.HandleAllocated then Continue;
+        TWSWinControlClass(C.WidgetSetClass).SetBounds(C, C.Left, C.Top, C.Width, C.Height);
+        TWSWinControlClass(C.WidgetSetClass).SetFont(C, C.Font);
+        Relayout(C);
+      end;
+  end;
+
+var
+  Owner: TWinControl;
+begin
+  Result := (Handle <> 0) and (AScale > 0);
+  if not Result then Exit;
+  if Abs(Win32ContentScale(Handle) - AScale) < 1e-6 then Exit;
+  Win32SetContentScale(Handle, AScale);
+  Owner := GetWin32WindowInfo(Handle)^.WinControl;
+  if Owner <> nil then
+    Relayout(Owner);
+  Windows.RedrawWindow(Handle, nil, 0, RDW_INVALIDATE or RDW_ERASE or RDW_ALLCHILDREN or RDW_FRAME);
 end;
 
 function TWin32WidgetSet.IsDesignerDC(WindowHandle: HWND; DC: HDC): Boolean;

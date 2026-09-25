@@ -322,7 +322,19 @@ end;
 function TWin32WidgetSet.ClientToScreen(Handle: HWND; var P: TPoint): Boolean;
 var
   ORect: TRect;
+  Scale: Double;
 begin
+  // designer zoom: P is in the unscaled client units of Handle
+  Scale := Win32EffectiveScale(Handle);
+  if Scale <> 1.0 then
+  begin
+    Result := GetLCLClientBoundsOffset(Handle, ORect);
+    if not Result then exit;
+    P.X := Win32ScaleInt(P.X + ORect.Left, Scale);
+    P.Y := Win32ScaleInt(P.Y + ORect.Top, Scale);
+    Result := Boolean(Windows.ClientToScreen(Handle, @P));
+    exit;
+  end;
   Result := Boolean(Windows.ClientToScreen(Handle, @P));
   if not Result then exit;
   Result := GetLCLClientBoundsOffset(Handle, ORect);
@@ -1740,9 +1752,17 @@ end;
 function TWin32WidgetSet.GetClientBounds(Handle: HWND; var Rect: TRect): Boolean;
 var
   ARect: TRect;
+  Scale: Double;
 begin
   Result := Boolean(Windows.GetClientRect(Handle, @Rect));
   if not Result then exit;
+  // designer zoom: the client area in the unscaled client units of Handle
+  Scale := Win32EffectiveScale(Handle);
+  if Scale <> 1.0 then
+  begin
+    Rect.Right := Win32UnscaleInt(Rect.Right, Scale);
+    Rect.Bottom := Win32UnscaleInt(Rect.Bottom, Scale);
+  end;
   if not GetLCLClientBoundsOffset(Handle, ARect) then exit;
   Inc(Rect.Left, ARect.Left);
   Inc(Rect.Top, ARect.Top);
@@ -1887,6 +1907,9 @@ begin
   Result := Windows.GetDC(HWnd);
   if (Result <> 0) and (HWnd <> 0) and GetLCLClientBoundsOffset(HWnd, ORect) then
     MoveWindowOrgEx(Result, ORect.Left, ORect.Top);
+  // designer zoom: the LCL paints in unscaled units
+  if (Result <> 0) and (HWnd <> 0) then
+    Win32ApplyDCScale(Result, Win32EffectiveScale(HWnd));
 end;
 
 {------------------------------------------------------------------------------
@@ -2414,6 +2437,7 @@ var
   WindowPlacement: TWINDOWPLACEMENT;
   ParentHandle: THandle;
   lclControl, lclParent: TWinControl;
+  Scale: Double;
 begin
   Result := False;
 
@@ -2431,6 +2455,13 @@ begin
     if ParentHandle <> 0 then
     begin
       if not Windows.ScreenToClient(ParentHandle, @LeftTop) then Exit;
+      // designer zoom: native position -> the parent's unscaled units
+      Scale := Win32EffectiveScale(ParentHandle);
+      if Scale <> 1.0 then
+      begin
+        LeftTop.X := Win32UnscaleInt(LeftTop.X, Scale);
+        LeftTop.Y := Win32UnscaleInt(LeftTop.Y, Scale);
+      end;
       lclControl := GetWin32WindowInfo(Handle)^.WinControl;
       //Is this an MDIChild?
       //Note: doing a more simple comparison: (ParentHandle = Win32WidgetSet.MDIClientHandle) has side effects, hence this more elaborate version
@@ -2500,6 +2531,8 @@ var
   R: TRect;
   Info: tagWINDOWINFO;
   WindowInfo: PWin32WindowInfo;
+  Scale: Double;
+  Border: TSize;
 begin
   WP.length := SizeOf(WP);
   Result := Boolean(Windows.GetWindowPlacement(Handle, WP));
@@ -2546,6 +2579,17 @@ begin
   WindowInfo := GetWin32WindowInfo(Handle);
   if WindowInfo^.UpDown <> 0 then
     AdjustUpDownSize(WindowInfo, WP);
+  // designer zoom: native size -> the parent's unscaled units. A form's
+  // border is native (TWin32WSCustomForm.SetBounds scales only the client).
+  Scale := Win32ParentScale(Handle);
+  if Scale <> 1.0 then
+  begin
+    Border := TSize.Create(0, 0);
+    if GetWin32WindowInfo(Handle)^.WinControl is TCustomForm then
+      AdjustFormClientToWindowSize(Handle, Border);
+    Width := Win32UnscaleInt(Width - Border.cx, Scale) + Border.cx;
+    Height := Win32UnscaleInt(Height - Border.cy, Scale) + Border.cy;
+  end;
 end;
 
 function TWin32WidgetSet.GradientFill(DC: HDC; Vertices: PTriVertex;
@@ -2583,7 +2627,8 @@ function TWin32WidgetSet.InvalidateRect(AHandle: HWND; Rect: PRect;
   BErase: Boolean): Boolean;
 var
   Flags: UINT;
-  ORect: TRect;
+  ORect, NativeRect: TRect;
+  Scale: Double;
 begin
   Flags := RDW_INVALIDATE or RDW_ALLCHILDREN;
   if BErase then
@@ -2592,6 +2637,17 @@ begin
   begin
     GetLCLClientBoundsOffset(aHandle, ORect);
     OffsetRect(Rect^, ORect.Left, ORect.Top);
+    // designer zoom: the rect is in unscaled client units; grow it by a pixel
+    // so rounding never leaves a stale edge
+    Scale := Win32EffectiveScale(aHandle);
+    if Scale <> 1.0 then
+    begin
+      NativeRect.Left := Trunc(Rect^.Left * Scale) - 1;
+      NativeRect.Top := Trunc(Rect^.Top * Scale) - 1;
+      NativeRect.Right := Trunc(Rect^.Right * Scale) + 2;
+      NativeRect.Bottom := Trunc(Rect^.Bottom * Scale) + 2;
+      Exit(Boolean(Windows.RedrawWindow(aHandle, @NativeRect, 0, Flags)));
+    end;
   end;
   Result := Boolean(Windows.RedrawWindow(aHandle, Rect, 0, Flags));
 end;
@@ -3104,8 +3160,17 @@ end;
   coordinates.
  ------------------------------------------------------------------------------}
 function TWin32WidgetSet.ScreenToClient(Handle: HWND; var P: TPoint): Integer;
+var
+  Scale: Double;
 begin
   Result := Integer(Windows.ScreenToClient(Handle, @P));
+  // designer zoom: back to the unscaled client units of Handle
+  Scale := Win32EffectiveScale(Handle);
+  if Scale <> 1.0 then
+  begin
+    P.X := Win32UnscaleInt(P.X, Scale);
+    P.Y := Win32UnscaleInt(P.Y, Scale);
+  end;
 end;
 
 {------------------------------------------------------------------------------

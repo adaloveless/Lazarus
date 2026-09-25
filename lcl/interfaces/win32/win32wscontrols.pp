@@ -138,6 +138,9 @@ var
   // WindowPosChanging hack - see comment in TWin32WSWinControl.SetBounds
   LockWindowPosChanging: Boolean = False;
   LockWindowPosChangingXY: TPoint;
+  // designer zoom: TWin32WSCustomForm.SetBounds passes an already native
+  // (scaled client + unscaled border) size; only the position gets scaled
+  Win32SetBoundsNativeSize: Boolean = False;
 
 implementation
 
@@ -148,6 +151,8 @@ uses
 
 procedure PrepareCreateWindow(const AWinControl: TWinControl;
   const CreateParams: TCreateParams; out Params: TCreateWindowExParams);
+var
+  Scale: Double;
 begin
   with Params do
   begin
@@ -167,6 +172,15 @@ begin
     Height := CreateParams.Height;
 
     LCLBoundsToWin32Bounds(AWinControl, Left, Top);
+    // designer zoom: created inside a content-scaled parent (Win32ParentScale)
+    Scale := Win32EffectiveScale(Parent);
+    if Scale <> 1.0 then
+    begin
+      Left := Win32ScaleInt(Left, Scale);
+      Top := Win32ScaleInt(Top, Scale);
+      Width := Win32ScaleInt(Width, Scale);
+      Height := Win32ScaleInt(Height, Scale);
+    end;
     SetStdBiDiModeParams(AWinControl, Params);
 
     if not (csDesigning in AWinControl.ComponentState) and not AWinControl.IsEnabled then
@@ -454,12 +468,25 @@ var
   WindowPlacement: TWINDOWPLACEMENT;
   Mon: HMONITOR;
   MonInfo: TMonitorInfo;
+  Scale: Double;
 begin
   IntfLeft := ALeft;
   IntfTop := ATop;
   IntfWidth := AWidth;
   IntfHeight := AHeight;
   LCLBoundsToWin32Bounds(AWinControl, IntfLeft, IntfTop);
+  // designer zoom: LCL bounds are in the parent's unscaled units
+  Scale := Win32ParentScale(AWinControl.Handle);
+  if Scale <> 1.0 then
+  begin
+    IntfLeft := Win32ScaleInt(IntfLeft, Scale);
+    IntfTop := Win32ScaleInt(IntfTop, Scale);
+    if not Win32SetBoundsNativeSize then
+    begin
+      IntfWidth := Win32ScaleInt(IntfWidth, Scale);
+      IntfHeight := Win32ScaleInt(IntfHeight, Scale);
+    end;
+  end;
   {$IFDEF VerboseSizeMsg}
   DebugLn('TWin32WSWinControl.ResizeWindow A ', dbgsName(AWinControl),
     ' LCL=',Format('%d, %d, %d, %d', [ALeft,ATop,AWidth,AHeight]),
@@ -515,10 +542,17 @@ begin
 end;
 
 class procedure TWin32WSWinControl.SetFont(const AWinControl: TWinControl; const AFont: TFont);
+var
+  NewFont, OldScaled: HFONT;
 begin
   if not WSCheckHandleAllocated(AWinControl, 'SetFont')
   then Exit;
-  Windows.SendMessage(AWinControl.Handle, WM_SETFONT, Windows.WParam(AFont.Reference.Handle), 1);
+  // designer zoom: native controls draw their own text, give them a scaled font
+  NewFont := Win32ScaledFontFor(AWinControl.Handle, AFont.Reference.Handle,
+    Win32ParentScale(AWinControl.Handle), OldScaled);
+  Windows.SendMessage(AWinControl.Handle, WM_SETFONT, Windows.WParam(NewFont), 1);
+  if (OldScaled <> 0) and (OldScaled <> NewFont) then
+    Windows.DeleteObject(OldScaled);
 end;
 
 class procedure TWin32WSWinControl.SetText(const AWinControl: TWinControl; const AText: string);
