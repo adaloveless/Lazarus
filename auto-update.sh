@@ -701,7 +701,12 @@ rebuild_vp_packages() {
         # the bin tarball + the unit tarball, then ppcx64 -n -Fuunits/x86_64-linux), which is
         # the use Otto proposed it for -- an operator choice, not automatic script behaviour.
         log_info "Compiler was rebuilt -- rebuilding the VibePascal RTL and packages from clean..."
-        make -C "$VP_DIR" rtl_clean packages_clean PP="$VP_COMPILER" OPT="$vp_make_opt" >/dev/null 2>&1 || true
+        # packages_clean FIRST, as its own make: it has to compile fpmake against the RTL, so
+        # after rtl_clean it fails -- silently, under the redirect -- and cleans nothing. The
+        # stale units then left fpmake believing fcl-base was built while chm could not find
+        # it ("Can't find unit StreamEx used by chmls").
+        make -C "$VP_DIR" packages_clean PP="$VP_COMPILER" OPT="$vp_make_opt" >/dev/null 2>&1 || true
+        make -C "$VP_DIR" rtl_clean PP="$VP_COMPILER" OPT="$vp_make_opt" >/dev/null 2>&1 || true
     fi
     if [ "$VP_COMPILER_REBUILT" -eq 1 ] || [ ! -d "$rtl_units" ]; then
         log_info "Building VibePascal RTL..."
@@ -716,7 +721,7 @@ rebuild_vp_packages() {
     echo "  Compiled $(grep -cE "Compiling" "$pk_log") units"
     if [ "$pk_exit" -ne 0 ]; then
         log_err "VibePascal packages build FAILED (exit $pk_exit)"
-        log_err "  First error: $(grep -m1 -E 'Error:|Fatal:|\*\*\*|^ld: ' "$pk_log" 2>/dev/null || echo '(none captured)')"
+        log_err "  First error: $(grep -m1 -E 'Error:|Fatal:|\*\*\*|^ld: (library|symbol|error)' "$pk_log" 2>/dev/null || echo '(none captured)')"
         log_err "  Full log: $pk_log"
         return 1
     fi
