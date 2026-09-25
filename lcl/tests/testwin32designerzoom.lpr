@@ -6,7 +6,7 @@ program TestWin32DesignerZoom;
 // Exercises real HWNDs and synchronous window messages, not mocked geometry.
 uses
   Interfaces, Classes, SysUtils, Types, Math, Forms, Controls, StdCtrls, ExtCtrls,
-  Buttons, LCLIntf, LCLType, Win32Proc, Windows;
+  Buttons, LCLIntf, LCLType, Win32Proc, Windows, uDarkStyleParams;
 
 type
   TTestForm = class(TForm)
@@ -68,7 +68,8 @@ end;
 var
   Host: TForm;
   Design: TTestForm;
-  Container, Panel: TPanel;
+  Container, Panel, CheckRow: TPanel;
+  Checks: array[0..5] of TCheckBox;
   Button: TButton;
   LabelControl: TLabel;
   Shape: TShape;
@@ -81,13 +82,14 @@ var
   HostBounds: TRect;
   NativeRect: TRect;
   P, Q: TPoint;
-  Width, Height, X, Y, I, J: Integer;
+  Width, Height, X, Y, I, J, K: Integer;
   Scale: Double;
   OldHandle: HWND;
 const
-  Scales: array[0..9] of Double = (0.5, 0.9, 1.1, 0.333333, 2, 0.25, 0.1, 4, 0.99999, 1);
+  Scales: array[0..10] of Double = (1.25, 0.5, 0.9, 1.1, 0.333333, 2, 0.25, 0.1, 4, 0.99999, 1);
 begin
   try
+    PreferredAppMode := pamForceDark;
     Application.Initialize;
     Application.ShowMainForm := False;
     Observer := TObserver.Create;
@@ -142,13 +144,36 @@ begin
       Combo.SetBounds(11, 61, 151, 23);
       Combo.Items.Add('Native combo');
       Combo.ItemIndex := 0;
+      // FormDecks has a bottom row of aligned, margin-separated checkboxes.
+      // Dark-theme painting must not continually undo their scaled placement.
+      CheckRow := TPanel.Create(Design);
+      CheckRow.Name := 'CheckRow';
+      CheckRow.Parent := Design;
+      CheckRow.Height := 41;
+      CheckRow.Align := alBottom;
+      for K := Low(Checks) to High(Checks) do
+      begin
+        Checks[K] := TCheckBox.Create(Design);
+        Checks[K].Name := 'Check' + IntToStr(K);
+        Checks[K].Parent := CheckRow;
+        Checks[K].Caption := 'Hide Singers ' + IntToStr(K);
+        Checks[K].Width := 155 + K * 7;
+        Checks[K].AlignWithMargins := True;
+        Checks[K].Margins.Left := 15;
+        Checks[K].Margins.Right := 15;
+        Checks[K].Align := alLeft;
+      end;
       Design.DesignMode;
       Host.Show;
       Design.Show;
       Application.ProcessMessages;
+      Check(Windows.GetProp(Checks[0].Handle, 'LazDarkCheckRadioOldProc') <> 0,
+        'dark checkbox subclass was not installed');
       Design.OnChangeBounds := @Observer.BoundsChanged;
       Panel.OnChangeBounds := @Observer.BoundsChanged;
       Button.OnChangeBounds := @Observer.BoundsChanged;
+      for K := Low(Checks) to High(Checks) do
+        Checks[K].OnChangeBounds := @Observer.BoundsChanged;
       Original := Serialize(Design);
       HostBounds := Host.BoundsRect;
       Observer.Changes := 0;
@@ -156,6 +181,15 @@ begin
         for I := Low(Scales) to High(Scales) do
         begin
           Check(SetWindowContentScale(Container.Handle, Scales[I]), 'scale rejected');
+          for K := Low(Checks) to High(Checks) do
+          begin
+            Windows.SendMessage(Checks[K].Handle, WM_APP + 806, 0, 0);
+            Checks[K].Repaint;
+            Windows.GetWindowRect(Checks[K].Handle, NativeRect);
+            Scale := GetWindowEffectiveScale(Checks[K].Handle);
+            Check(NativeRect.Width = Round(Checks[K].Width * Scale),
+              'dark checkbox paint undid scaled width');
+          end;
           Application.ProcessMessages;
           // The IDE invalidates these caches before saving/design operations.
           Design.InvalidateClientRectCache(True);

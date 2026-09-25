@@ -154,6 +154,14 @@ and run `lcl/tests/lib/x86_64-win64/testwin32designerzoom.exe`. It uses real HWN
 checks serialized form properties through repeated 10%-400% zoom (including
 fractional scales and invalidated client caches), native geometry, nested controls,
 the designer's direct SetWindowPos path, coordinate conversion, and destruction.
+It also forces dark mode and exercises the FormDecks-style row of aligned
+checkboxes through repaint and bounds synchronization at 125%. Dark checkbox
+placement must compare native rectangles with scaled bounds, otherwise painting
+undoes zoom and can cause an endless layout/repaint loop.
+CommonX TZD previews have a separate bitmap presentation path: on Windows,
+`PasZD.LCL.pas` must use StretchDIBits with a logical destination size rather
+than SetDIBitsToDevice, so the rendered bitmap follows the designer DC mapping.
+That source lives in the external CommonX SVN working copy, not this repository.
 Real IDE checks also covered dark rendering, a 40px drag at 50% (80 logical units,
 grid-snapped), native/graphic control selection and dragging, resize, Fit and reset.
 

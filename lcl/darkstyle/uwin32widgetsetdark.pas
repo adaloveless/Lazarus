@@ -1288,7 +1288,8 @@ function SyncDarkCheckRadioWindowBounds(Window: HWND; Control: TWinControl;
 var
   Parent: HWND;
   R: TRect;
-  WinLeft, WinTop: Integer;
+  WinLeft, WinTop, WinWidth, WinHeight: Integer;
+  Scale: Double;
 begin
   Result := False;
   if (Window = 0) or (Control = nil) or
@@ -1314,14 +1315,21 @@ begin
   WinLeft := Control.Left;
   WinTop := Control.Top;
   LCLBoundsToWin32Bounds(Control, WinLeft, WinTop);
+  // Compare native rectangles in native pixels. Comparing them with logical
+  // bounds makes WM_PAINT undo designer zoom and repeatedly realign siblings.
+  Scale := Win32ParentScale(Window);
+  WinLeft := Win32ScaleInt(WinLeft, Scale);
+  WinTop := Win32ScaleInt(WinTop, Scale);
+  WinWidth := Win32ScaleInt(Control.Width, Scale);
+  WinHeight := Win32ScaleInt(Control.Height, Scale);
 
   if (R.Left = WinLeft) and (R.Top = WinTop) and
-     (R.Right - R.Left = Control.Width) and
-     (R.Bottom - R.Top = Control.Height) then
+     (R.Right - R.Left = WinWidth) and
+     (R.Bottom - R.Top = WinHeight) then
     Exit;
 
   SetWindowPos(Window, 0, WinLeft, WinTop,
-    Control.Width, Control.Height,
+    WinWidth, WinHeight,
     SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
   InvalidateDarkChildPlacement(Window, ARedrawNow);
   Result := True;
