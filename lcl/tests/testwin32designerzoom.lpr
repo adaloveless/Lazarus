@@ -6,9 +6,14 @@ program TestWin32DesignerZoom;
 // Exercises real HWNDs and synchronous window messages, not mocked geometry.
 uses
   Interfaces, Classes, SysUtils, Types, Math, Forms, Controls, StdCtrls, ExtCtrls,
-  Buttons, LCLIntf, LCLType, Win32Proc, Windows, uDarkStyleParams;
+  Buttons, Graphics, LCLIntf, LCLType, Win32Proc, Windows, uDarkStyleParams;
 
 type
+  TPaintSurface = class(TCustomControl)
+  protected
+    procedure Paint; override;
+  end;
+
   TTestForm = class(TForm)
   public
     procedure DesignMode;
@@ -22,6 +27,12 @@ type
 procedure TTestForm.DesignMode;
 begin
   SetDesigning(True);
+end;
+
+procedure TPaintSurface.Paint;
+begin
+  Canvas.Brush.Color := $00332211;
+  Canvas.FillRect(ClientRect);
 end;
 
 procedure TObserver.BoundsChanged(Sender: TObject);
@@ -77,6 +88,10 @@ var
   Group: TGroupBox;
   Edit: TEdit;
   Combo: TComboBox;
+  Surface: TPaintSurface;
+  Memo: TMemo;
+  PixelDC: HDC;
+  PixelColor: DWORD;
   Observer: TObserver;
   Original: RawByteString;
   HostBounds: TRect;
@@ -144,6 +159,16 @@ begin
       Combo.SetBounds(11, 61, 151, 23);
       Combo.Items.Add('Native combo');
       Combo.ItemIndex := 0;
+      Surface := TPaintSurface.Create(Design);
+      Surface.Name := 'BufferedSurface';
+      Surface.Parent := Design;
+      Surface.SetBounds(350, 200, 201, 151);
+      Surface.DoubleBuffered := True;
+      Memo := TMemo.Create(Design);
+      Memo.Name := 'memState';
+      Memo.Parent := Surface;
+      Memo.SetBounds(71, 51, 91, 61);
+      Memo.Lines.Text := 'memState';
       // FormDecks has a bottom row of aligned, margin-separated checkboxes.
       // Dark-theme painting must not continually undo their scaled placement.
       CheckRow := TPanel.Create(Design);
@@ -191,6 +216,23 @@ begin
               'dark checkbox paint undid scaled width');
           end;
           Application.ProcessMessages;
+          // Buffer allocation and presentation must cover the *native* client,
+          // including pixels beyond logical Width/Height when zoom exceeds 100%.
+          if (Scales[I] >= 0.5) and (Scales[I] <= 1.25) then
+          begin
+            Surface.Repaint;
+            Windows.GetClientRect(Surface.Handle, NativeRect);
+            PixelDC := Windows.GetDC(Surface.Handle);
+            try
+              PixelColor := Windows.GetPixel(PixelDC, NativeRect.Right - 4,
+                NativeRect.Bottom - 4);
+            finally
+              Windows.ReleaseDC(Surface.Handle, PixelDC);
+            end;
+            Check(PixelColor = $00332211,
+              'buffered paint missed client edge at ' + FloatToStr(Scales[I]) +
+              ': ' + IntToHex(PixelColor, 8));
+            end;
           // The IDE invalidates these caches before saving/design operations.
           Design.InvalidateClientRectCache(True);
           if Serialize(Design) <> Original then

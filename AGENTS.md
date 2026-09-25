@@ -158,6 +158,14 @@ It also forces dark mode and exercises the FormDecks-style row of aligned
 checkboxes through repaint and bounds synchronization at 125%. Dark checkbox
 placement must compare native rectangles with scaled bounds, otherwise painting
 undoes zoom and can cause an endless layout/repaint loop.
+The Win32 double buffer and its final BitBlt must use native client dimensions,
+not GetWindowSize (which returns logical dimensions under zoom). An undersized
+buffer leaves stale/doubled controls and overlay lines beyond its right/bottom
+edge at 125%. The regression checks actual painted edge pixels as well as bounds.
+Verified the full FormDecks layout at 125% and FormDecksZD in the rebuilt IDE at
+50%, 100%, and 125%, including scrubbers, faders, and the memo. Use
+`--force-new-instance` as well as a separate `--pcp` for GUI tests: a separate
+config directory alone does not prevent forwarding the launch to the user's IDE.
 CommonX TZD previews have a separate bitmap presentation path: on Windows,
 `PasZD.LCL.pas` must use StretchDIBits with a logical destination size rather
 than SetDIBitsToDevice, so the rendered bitmap follows the designer DC mapping.

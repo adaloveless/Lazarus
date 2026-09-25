@@ -506,6 +506,7 @@ function TWindowProcHelper.PrepareDoubleBuffer(out DoubleBufferBitmapOld: HBITMA
 // Returns True if BackupBuffer was saved.
 var
   DC: HDC;
+  NativeRect: TRect;
 begin
   Result := CurDoubleBuffer.DC <> 0;
   if Result then
@@ -517,7 +518,12 @@ begin
   end;
   CurDoubleBuffer.DC := Windows.CreateCompatibleDC(0);
 
-  GetWindowSize(Window, WindowWidth, WindowHeight);
+  // The bitmap and final BitBlt use device pixels. GetWindowSize returns LCL
+  // logical bounds under designer zoom, which clips the buffer above 100% and
+  // leaves stale controls/overlay lines in the unpainted right and bottom area.
+  Windows.GetClientRect(Window, NativeRect);
+  WindowWidth := NativeRect.Right - NativeRect.Left;
+  WindowHeight := NativeRect.Bottom - NativeRect.Top;
   if (CurDoubleBuffer.BitmapWidth < WindowWidth) or (CurDoubleBuffer.BitmapHeight < WindowHeight) then
   begin
     DC := Windows.GetDC(0);
