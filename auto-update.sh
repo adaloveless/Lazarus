@@ -74,6 +74,7 @@ else
 fi
 
 # --- portable shims (GNU coreutils vs BSD/macOS) ---------------------------
+sha256_of()   { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d" " -f1; }
 md5_of()      { if command -v md5sum >/dev/null 2>&1; then md5sum "$1" | cut -d" " -f1; else md5 -q "$1"; fi; }
 mtime_of()    { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
 mtime_human() { stat -c "%y" "$1" 2>/dev/null | cut -d. -f1 || stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$1" 2>/dev/null; }
@@ -358,7 +359,7 @@ relaunch_if_updated() {
     if [ "$SELF_UPDATED" -eq 1 ]; then return; fi
     local script_path="$LAZARUS_DIR/auto-update.sh"
     local post_hash
-    post_hash=$(sha256sum "$script_path" 2>/dev/null | cut -d' ' -f1)
+    post_hash=$(sha256_of "$script_path")
     if [ "$pre_hash" != "$post_hash" ]; then
         log_info "auto-update.sh was updated by pull -- relaunching with new version"
         local args=("--self-updated")
@@ -494,7 +495,9 @@ rebuild_vp_compiler() {
     local src="$VP_DIR/compiler/$PPC_NAME" reason boot_src boot_dir boot opt logf
     local old_md5="" old_mtime=0 new_md5 new_mtime
     log_header "VibePascal compiler"
-    if ! reason=$(vp_compiler_is_stale); then
+    if [ "$FORCE_REBUILD" -eq 1 ]; then
+        reason="force rebuild requested"
+    elif ! reason=$(vp_compiler_is_stale); then
         log_ok "Compiler binary is current: $src ($("$src" -iV 2>/dev/null) $("$src" -iD 2>/dev/null)) -- no compiler source changed"
         return 0
     fi
@@ -687,10 +690,10 @@ rebuild_vp_packages() {
     # untracked, and when the compiler binary is already current nothing regenerates it --
     # measured lazdev 2026-09-25: "verbose.pas(39,4) Fatal: Cannot open include file
     # msgtxt.inc". Regenerate whenever the compiler tree has none.
-    if [ ! -f "$VP_DIR/compiler/msg/msgtxt.inc" ]; then
+    if [ ! -f "$VP_DIR/compiler/msgtxt.inc" ]; then
         log_info "Regenerating compiler/msg/msgtxt.inc (generated file the wipe removes)..."
         make -C "$VP_DIR/compiler" msg PP="$VP_COMPILER" OPT="$vp_make_opt" >/dev/null 2>&1 || true
-        [ -f "$VP_DIR/compiler/msg/msgtxt.inc" ] || log_warn "msgtxt.inc still missing -- the packages build may fail with 'Cannot open include file msgtxt.inc'"
+        [ -f "$VP_DIR/compiler/msgtxt.inc" ] || log_warn "msgtxt.inc still missing -- the packages build may fail with 'Cannot open include file msgtxt.inc'"
     fi
     local pk_exit=0
     make -C "$VP_DIR" packages PP="$VP_COMPILER" OPT="$vp_make_opt" > "$pk_log" 2>&1 || pk_exit=$?
@@ -1646,7 +1649,7 @@ rebuild_ide() {
     # turned off" whenever the compiler's fpc.cfg does not already carry -Sc (measured on
     # lazdev 2026-09-16 with the r25 linux cfg: exit 2 without, exit 0 with). Idempotent when
     # the cfg has it too.
-    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide=-Sci \
+    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide="$LAZ_EXTRA_OPT -Sci" \
         --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | { grep -E "Linking|lines compiled|Fatal|Error" || true; }
     local build_exit=${PIPESTATUS[0]}
     if [ "$build_exit" -ne 0 ]; then
@@ -2008,7 +2011,7 @@ echo "  VibePascal: $VP_DIR"
 echo "  Compiler:   $VP_COMPILER"
 echo ""
 
-SCRIPT_PRE_HASH=$(sha256sum "$LAZARUS_DIR/auto-update.sh" 2>/dev/null | cut -d' ' -f1)
+SCRIPT_PRE_HASH=$(sha256_of "$LAZARUS_DIR/auto-update.sh")
 
 # c722 -- MEASURED ON A SCRATCH CLONE WITH NO 'upstream' REMOTE, which is MVMJ26's shape:
 # c719 -- take HEAD BEFORE anything can move it. Nothing above this point pulls: the fetch
@@ -2167,7 +2170,7 @@ if [ "$ANY_UPDATED" -eq 1 ]; then
         log_info "Skipping rebuild (--no-build)"
     else
         if [ "$VP_UPDATED" -eq 1 ] || [ "$VP_REBUILD" -eq 1 ]; then
-            rebuild_vp_compiler || true
+            rebuild_vp_compiler
             rebuild_vp_packages
         fi
         rebuild_lazbuild
