@@ -2242,6 +2242,31 @@ fi
 
 print_summary
 
+# Keep the desktop/application-menu launcher pointed at this checkout.  Older machines may
+# have a hand-written "lazarus-latest" script which contains a stale copy of the build logic;
+# never let a launcher rebuild or select packages independently of this updater.
+install_desktop_launcher() {
+    [ "$LAZ_OS_TARGET" = "linux" ] || return 0
+    local bin_dir="$HOME/.local/bin"
+    local app_dir="$HOME/.local/share/applications"
+    local launcher="$bin_dir/lazarus-latest"
+    local desktop="$app_dir/lazarus.desktop"
+    local desktop_tmp="$desktop.tmp.$$"
+    local exe="$LAZARUS_DIR/startlazarus"
+    [ -x "$exe" ] || exe="$LAZARUS_DIR/lazarus"
+    [ -x "$exe" ] || { log_warn "No IDE executable available for desktop launcher"; return 0; }
+
+    mkdir -p "$bin_dir" "$app_dir"
+    ln -sfn "$exe" "$launcher"
+    sed "s|^Exec=.*|Exec=$launcher %f|" "$LAZARUS_DIR/install/lazarus.desktop" > "$desktop_tmp"
+    mv "$desktop_tmp" "$desktop"
+    chmod 644 "$desktop"
+    command -v update-desktop-database >/dev/null 2>&1 && \
+        update-desktop-database "$app_dir" >/dev/null 2>&1 || true
+    log_ok "Application-menu launcher -> $exe"
+}
+install_desktop_launcher
+
 # Start the IDE, like auto-update.bat does (-NoLaunch there, --no-launch here). Reaching this
 # line means the run succeeded (set -e). A running IDE that was just rebuilt is quit first --
 # normally, so it still asks about unsaved files -- or the user keeps using the old binary.

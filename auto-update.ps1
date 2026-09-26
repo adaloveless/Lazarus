@@ -3254,6 +3254,31 @@ if ($anyUpdated) {
     }
 }
 
+function Install-CanonicalStartMenuShortcut {
+    $starter = Join-Path $LazarusDir "startlazarus.exe"
+    $lazarus = Join-Path $LazarusDir "lazarus.exe"
+    $target = if (Test-Path $starter) { $starter } elseif (Test-Path $lazarus) { $lazarus } else { $null }
+    if (-not $target) {
+        Log-Warn "No IDE executable available for the Start-menu shortcut"
+        return
+    }
+
+    $programs = [Environment]::GetFolderPath('Programs')
+    if (-not $programs) {
+        Log-Warn "Cannot resolve the current user's Start-menu Programs directory"
+        return
+    }
+    $shortcutPath = Join-Path $programs "Lazarus.lnk"
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $target
+    $shortcut.WorkingDirectory = $LazarusDir
+    $shortcut.IconLocation = (Join-Path $LazarusDir "images\mainicon.ico")
+    $shortcut.Description = "Lazarus IDE (managed by auto-update)"
+    $shortcut.Save()
+    Log-Ok "Start-menu shortcut -> $target"
+}
+
 # Post-rebuild sanity check: fail loudly if the IDE will warn at startup.
 $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
 if ($quality.Quality -ne "Compatible") {
@@ -3262,6 +3287,8 @@ if ($quality.Quality -ne "Compatible") {
     Log-ErrDetail "IDE will show 'Without a proper Lazarus directory you will get a lot of warnings' on startup."
     Log-Info "Run: auto-update.bat -Doctor for a full diagnosis."
 }
+
+Install-CanonicalStartMenuShortcut
 
 if (-not $NoLaunch) {
     $starter = Join-Path $LazarusDir "startlazarus.exe"
