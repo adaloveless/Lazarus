@@ -950,7 +950,12 @@ print_summary() {
     report_repo_outcome "VibePascal" "$VP_UPDATED" "$VP_HEAD_BEFORE" "$vp_now" "$VP_DIR" "$apply_hint"
     report_repo_outcome "Lazarus" "$LAZARUS_UPDATED" "$origin_before" "$laz_now" "$LAZARUS_DIR" "$apply_hint"
 
+    if [ "$IDE_REBUILT" -eq 1 ]; then
+        changes=1
+        log_ok "Lazarus IDE rebuilt successfully"
+    fi
     if [ "$VP_COMPILER_REBUILT" -eq 1 ]; then
+        changes=1
         echo -e "  ${GREEN}✓${NC} VibePascal compiler rebuilt from source ($VP_DIR/compiler/$PPC_NAME)"
     fi
     if [ "$VP_COMPILER_REBUILD_FAILED" -eq 1 ]; then
@@ -1054,11 +1059,12 @@ configure_environment() {
     mkdir -p "$env_dir"
 
     if [ -f "$env_file" ]; then
-        local cur_compiler cur_fpcsrc
+        local cur_compiler cur_fpcsrc cur_lazarus
         cur_compiler="$(env_opt_value "$env_file" CompilerFilename)"
         cur_fpcsrc="$(env_opt_value "$env_file" FPCSourceDirectory)"
+        cur_lazarus="$(env_opt_value "$env_file" LazarusDirectory)"
 
-        if [ "$cur_compiler" = "$VP_COMPILER" ] && [ "$cur_fpcsrc" = "$VP_DIR" ]; then
+        if [ "$cur_compiler" = "$VP_COMPILER" ] && [ "$cur_fpcsrc" = "$VP_DIR" ] && [ "$cur_lazarus" = "$LAZARUS_DIR" ]; then
             log_ok "$env_file already points at this VibePascal -- left unchanged"
             log_info "  CompilerFilename    = $cur_compiler"
             log_info "  FPCSourceDirectory  = $cur_fpcsrc"
@@ -1083,11 +1089,13 @@ configure_environment() {
             xmlstarlet ed -L \
                 -u '//CompilerFilename/@Value' -v "$VP_COMPILER" \
                 -u '//FPCSourceDirectory/@Value' -v "$VP_DIR" \
+                -u '//LazarusDirectory/@Value' -v "$LAZARUS_DIR" \
                 "$env_file"
             log_ok "Updated $env_file via xmlstarlet"
         else
             sed_inplace "s|CompilerFilename Value=\"[^\"]*\"|CompilerFilename Value=\"$VP_COMPILER\"|" "$env_file"
             sed_inplace "s|FPCSourceDirectory Value=\"[^\"]*\"|FPCSourceDirectory Value=\"$VP_DIR\"|" "$env_file"
+            sed_inplace "s|LazarusDirectory Value=\"[^\"]*\"|LazarusDirectory Value=\"$LAZARUS_DIR\"|" "$env_file"
             log_ok "Updated $env_file via sed"
         fi
     else

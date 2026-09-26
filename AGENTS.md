@@ -45,6 +45,15 @@ fixing something that is probably already fixed.
   show your local change is not already upstream (`git cherry origin/main HEAD`).
 - Never rewrite `main` history (no force-push, no rebase of pushed commits).
 
+### Update sources and delivery
+
+All updater entry points fetch **origin only**. Never fetch or merge `upstream`
+from an updater: the three machines must build the same published fork. Upstream
+integration is a separate, deliberate maintenance task. `auto-update-mac.sh` is
+only a compatibility wrapper for `auto-update.sh`; do not restore a separate Mac
+implementation. A local commit is not delivered: push fixes (including compiler
+fixes in VibePascal) to `origin/main` and verify the remote SHA before calling them done.
+
 ## 2. What "installing a component" means here
 
 Lazarus has no dynamic package loading. Design-time packages are linked statically into
