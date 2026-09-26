@@ -2320,6 +2320,11 @@ begin
     or (MouseDownControl.Perform(CM_DESIGNHITTEST, TheMessage.Keys, Longint(SmallPoint(p.X, p.Y))) > 0) then
     begin
       TControlAccess(MouseDownComponent).MouseDown(Button, Shift, p.X, p.Y);
+      // Interactive designers (for example a ZD host selecting a sub-control)
+      // handle selection themselves, but the docked designer must still take
+      // keyboard focus after that selection has updated the Object Inspector.
+      if PropertyEditorHook<>nil then
+        PropertyEditorHook.DesignerMouseDown(Sender, Button, Shift, p.X, p.Y);
       Exit;
     end;
   end
@@ -2857,10 +2862,10 @@ begin
     Handled := True;
     case TheMessage.CharCode of
       VK_DELETE:
-        if not Selection.OnlyInvisiblePersistentsSelected then
-        begin
-          Application.QueueAsyncCall(@DoDeleteSelectedPersistentsAsync, 0);
-        end;
+        // RegisterNoIcon components can be visible inside an interactive host.
+        // Let the deletion handler check ownership, inheritance and the root;
+        // lack of a designer icon does not make a selected component undeletable.
+        Application.QueueAsyncCall(@DoDeleteSelectedPersistentsAsync, 0);
 
       VK_UP:
         Nudge(0,-1);
@@ -4504,4 +4509,3 @@ begin
 end;
 
 end.
-
