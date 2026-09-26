@@ -3,8 +3,9 @@
   <ProjectOptions>
     <Version Value="12"/>
     <General><MainUnit Value="0"/></General>
-    <RequiredPackages Count="1">
-      <Item1><PackageName Value="LCL"/></Item1>
+    <RequiredPackages Count="2">
+      <Item1><PackageName Value="LazOpenGLContext"/></Item1>
+      <Item2><PackageName Value="LCL"/></Item2>
     </RequiredPackages>
     <Units Count="1">
       <Unit0>

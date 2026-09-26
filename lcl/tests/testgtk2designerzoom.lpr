@@ -5,21 +5,98 @@ program TestGtk2DesignerZoom;
 // Run on Linux: lazbuild --ws=gtk2 testgtk2designerzoom.lpi
 uses
   Interfaces, Classes, SysUtils, Types, Math, Forms, Controls, StdCtrls,
-  ExtCtrls, Graphics, LCLIntf, LCLType, Gtk2, Gdk2, Gtk2Proc;
+  ExtCtrls, Graphics, LCLIntf, LCLType, LMessages, OpenGLContext, Gtk2, Gdk2,
+  Gtk2Def, Gtk2Proc;
 
 type
   TPaintSurface = class(TCustomControl)
   public
     LastClip: TRect;
+    LastPaintScale: Double;
+    LastLeftPixel, LastRightPixel: Cardinal;
   protected
     procedure Paint; override;
   end;
 
+  TOpenGLPaintSurface = class(TCustomOpenGLControl)
+  private
+    FDesignCanvas: TControlCanvas;
+  public
+    LastPaintScale: Double;
+    procedure DesignMode;
+    destructor Destroy; override;
+  protected
+    procedure WMPaint(var Message: TLMPaint); message LM_PAINT;
+  end;
+
+procedure TOpenGLPaintSurface.DesignMode;
+begin
+  SetDesigning(True);
+end;
+
+destructor TOpenGLPaintSurface.Destroy;
+begin
+  FDesignCanvas.Free;
+  inherited Destroy;
+end;
+
+procedure TOpenGLPaintSurface.WMPaint(var Message: TLMPaint);
+var
+  ViewExt, WindowExt: TPoint;
+begin
+  inherited;
+  if FDesignCanvas = nil then begin
+    FDesignCanvas := TControlCanvas.Create;
+    FDesignCanvas.Control := Self;
+  end;
+  if Message.DC <> 0 then FDesignCanvas.Handle := Message.DC;
+  try
+    GetViewportExtEx(FDesignCanvas.Handle, @ViewExt);
+    GetWindowExtEx(FDesignCanvas.Handle, @WindowExt);
+    if WindowExt.X <> 0 then LastPaintScale := ViewExt.X / WindowExt.X;
+  finally
+    if Message.DC <> 0 then FDesignCanvas.Handle := 0;
+  end;
+end;
+
 procedure TPaintSurface.Paint;
+var
+  ViewExt, WindowExt: TPoint;
+  B: TBitmap;
+  Image: PGdkImage;
+  NativeW, NativeH: Integer;
+  Origin: TPoint;
 begin
   GetClipBox(Canvas.Handle, @LastClip);
-  Canvas.Brush.Color := $00332211;
-  Canvas.FillRect(ClientRect);
+  GetViewportExtEx(Canvas.Handle, @ViewExt);
+  GetWindowExtEx(Canvas.Handle, @WindowExt);
+  if WindowExt.X <> 0 then
+    LastPaintScale := ViewExt.X / WindowExt.X
+  else
+    LastPaintScale := 0;
+  B := TBitmap.Create;
+  try
+    B.SetSize(ClientWidth, ClientHeight);
+    B.Canvas.Brush.Color := clBlue;
+    B.Canvas.FillRect(B.Canvas.ClipRect);
+    B.Canvas.Brush.Color := clRed;
+    B.Canvas.FillRect(Rect(ClientWidth - 20, 0, ClientWidth, ClientHeight));
+    Canvas.Draw(0, 0, B);
+    NativeW := Round(ClientWidth * LastPaintScale);
+    NativeH := Round(ClientHeight * LastPaintScale);
+    Origin := TGtkDeviceContext(Canvas.Handle).Offset;
+    Image := gdk_drawable_get_image(TGtkDeviceContext(Canvas.Handle).Drawable,
+      Origin.X, Origin.Y, NativeW, NativeH);
+    if Image <> nil then
+    try
+      LastLeftPixel := gdk_image_get_pixel(Image, 5, NativeH div 2);
+      LastRightPixel := gdk_image_get_pixel(Image, NativeW - 5, NativeH div 2);
+    finally
+      gdk_image_unref(Image);
+    end;
+  finally
+    B.Free;
+  end;
 end;
 
 procedure Check(AValue: Boolean; const ADetail: string);
@@ -63,6 +140,7 @@ var
   Container, Panel: TPanel;
   Button: TButton;
   Surface: TPaintSurface;
+  GLSurface: TOpenGLPaintSurface;
   Original: RawByteString;
   P, Q: TPoint;
   PaintRect: TRect;
@@ -70,7 +148,7 @@ var
   NativeW, NativeH: Integer;
   Scale: Double;
 const
-  Scales: array[0..7] of Double = (0.5, 1.25, 0.9, 2, 0.25, 4, 0.99999, 1);
+  Scales: array[0..8] of Double = (0.5, 0.8, 1.25, 0.9, 2, 0.25, 4, 0.99999, 1);
 begin
   try
     Application.Initialize;
@@ -101,6 +179,11 @@ begin
       Surface.Parent := Design;
       Surface.SetBounds(350, 200, 201, 151);
       Surface.DoubleBuffered := True;
+      GLSurface := TOpenGLPaintSurface.Create(Design);
+      GLSurface.Name := 'GLSurface';
+      GLSurface.Parent := Design;
+      GLSurface.SetBounds(350, 20, 201, 151);
+      GLSurface.DesignMode;
       Host.Show;
       Design.Show;
       Application.ProcessMessages;
@@ -123,6 +206,18 @@ begin
           'wrong native button width');
         Check(PGtkWidget(Button.Handle)^.allocation.height = Round(41 * Scale),
           'wrong native button height');
+        Check(PGtkWidget(GetFixedWidget(PGtkWidget(Design.Handle)))^.allocation.width =
+          Round(Design.ClientWidth * Scale),
+          'designed form client is scaled twice: ' +
+          IntToStr(PGtkWidget(GetFixedWidget(PGtkWidget(Design.Handle)))^.allocation.width) +
+          ' expected ' + IntToStr(Round(Design.ClientWidth * Scale)));
+        Check(PGtkWidget(GetFixedWidget(PGtkWidget(Design.Handle)))^.allocation.height =
+          Round(Design.ClientHeight * Scale),
+          'designed form client height is scaled twice');
+        Check(PGtkWidget(GetFixedWidget(PGtkWidget(Panel.Handle)))^.allocation.width =
+          Round(Panel.ClientWidth * Scale), 'panel client is scaled twice');
+        Check(PGtkWidget(GetFixedWidget(PGtkWidget(GLSurface.Handle)))^.allocation.width =
+          Round(GLSurface.ClientWidth * Scale), 'OpenGL client is scaled twice');
         GetWindowSize(Button.Handle, W, H);
         Check((W = 101) and (H = 41), 'lossy logical size');
         GetWindowRelativePosition(Button.Handle, X, Y);
@@ -145,11 +240,24 @@ begin
           Surface.LastClip := Rect(0, 0, 0, 0);
           LCLIntf.InvalidateRect(Surface.Handle, @PaintRect, False);
           Application.ProcessMessages;
+          Check(Abs(Surface.LastPaintScale - Scale) <= 1 / 65536,
+            'custom control paint DC is not scaled: ' +
+            FloatToStr(Surface.LastPaintScale) + ' expected ' + FloatToStr(Scale));
+          GLSurface.Invalidate;
+          Application.ProcessMessages;
+          Check(Abs(GLSurface.LastPaintScale - Scale) <= 1 / 65536,
+            'OpenGL design paint DC is not scaled: ' +
+            FloatToStr(GLSurface.LastPaintScale) + ' expected ' + FloatToStr(Scale));
           Check((Surface.LastClip.Right >= Surface.ClientWidth - 1) and
             (Surface.LastClip.Bottom >= Surface.ClientHeight - 1),
             'scaled logical paint clip missed client edge at ' +
             FloatToStr(Scale) + ': ' + IntToStr(Surface.LastClip.Right) + 'x' +
             IntToStr(Surface.LastClip.Bottom));
+          Check(Surface.LastLeftPixel <> Surface.LastRightPixel,
+            'bitmap draw ignored paint scale and clipped its right edge at ' +
+            FloatToStr(Scale) + ': ' + IntToHex(Surface.LastLeftPixel, 8) + '/' +
+            IntToHex(Surface.LastRightPixel, 8) + ' native ' + IntToStr(NativeW) +
+            'x' + IntToStr(NativeH));
         end;
       end;
       Check(SetWindowContentScale(Container.Handle, 0.5), 'edit scale rejected');
