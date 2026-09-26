@@ -311,6 +311,18 @@ begin
 end;
 
 {------------------------------------------------------------------------------
+  function GetWindowEffectiveScale(Handle: HWND): Double;
+
+  Returns how many screen pixels one client pixel of Handle covers, including
+  the content scale of Handle and all its parents (see SetWindowContentScale).
+  1.0 when nothing is scaled or the widgetset cannot scale.
+------------------------------------------------------------------------------}
+function GetWindowEffectiveScale(Handle: HWND): Double;
+begin
+  Result := WidgetSet.GetWindowEffectiveScale(Handle);
+end;
+
+{------------------------------------------------------------------------------
   function GetWindowRelativePosition(Handle: hwnd;
     var Left, Top: integer): boolean;
 
@@ -453,6 +465,21 @@ end;
 procedure SetEventHandlerFlags(AHandler: PEventHandler; NewFlags: dword);
 begin
   WidgetSet.SetEventHandlerFlags(AHandler, NewFlags);
+end;
+
+{------------------------------------------------------------------------------
+  function SetWindowContentScale(Handle: HWND; const AScale: Double): Boolean;
+
+  Draws the children of Handle scaled by AScale, without changing their
+  bounds: children keep their unscaled Left/Top/Width/Height, Handle keeps its
+  own size, and mouse positions, ClientToScreen and ScreenToClient of the
+  children map through the scale. Used by the IDE form designer to zoom a
+  designed form. Returns False if the widgetset cannot do this; AScale = 1
+  always succeeds.
+------------------------------------------------------------------------------}
+function SetWindowContentScale(Handle: HWND; const AScale: Double): Boolean;
+begin
+  Result := WidgetSet.SetWindowContentScale(Handle, AScale);
 end;
 
 procedure SetRubberBandRect(const ARubberBand: HWND; const ARect: TRect);

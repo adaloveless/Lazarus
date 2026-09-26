@@ -1038,6 +1038,7 @@ var
   view: NSObject;
   contentView: TCocoaWindowContent absolute view;
   dx, dy: Integer;
+  scale: Double;
 begin
   Result := 0;
   if Handle=0 then
@@ -1054,6 +1055,14 @@ begin
   end else begin
     // handle is Control
     ARect := view.lclFrame;
+    // the frame is in the superview's units; on screen it covers them scaled
+    // when an ancestor is content-scaled (SetWindowContentScale)
+    scale := GetWindowEffectiveScale(HWND(NSView(view).superview));
+    if scale <> 1.0 then
+    begin
+      ARect.Right := ARect.Left + Round(ARect.Width * scale);
+      ARect.Bottom := ARect.Top + Round(ARect.Height * scale);
+    end;
     dx := 0;
     dy := 0;
     view.lclLocalToScreen( dx, dy );

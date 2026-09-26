@@ -372,7 +372,14 @@ begin
   WinControl := Info^.WinControl;
   case Msg of
     WM_WINDOWPOSCHANGING:
+    begin
       CallWindowPosChanging;
+      // LCL bounds have already passed the logical constraints. DefWindowProc
+      // would enforce normal caption/track sizes on this view in native pixels
+      // (e.g. clamp a 60px-wide view to 120px at 10% zoom).
+      // https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-windowposchanging
+      if Win32ParentScale(Window) <> 1.0 then Exit(0);
+    end;
     WM_GETMINMAXINFO:
       begin
         SetMinMaxInfo(WinControl, PMINMAXINFO(LParam)^);
@@ -645,7 +652,9 @@ var
   lSize: Windows.SIZE;
   L, T, W, H: Integer;
   Attempt: 0..1; // 2 attempts
+  Scale: Double;
 begin
+  Scale := Win32ParentScale(AForm.Handle);
   // Problem:
   //   When setting the ClientRect, the main menu may change height (the menu lines may change).
   //   After the first attempt to set bounds, they can be wrong because the number of the lines changed and
@@ -659,6 +668,9 @@ begin
     // the LCL defines the size of a form without border, win32 with.
     // -> adjust size according to BorderStyle
     lSize := TSize.Create(AWidth, AHeight);
+    // designer zoom: scale the client size only, the native border stays
+    if Scale <> 1.0 then
+      lSize := TSize.Create(Win32ScaleInt(AWidth, Scale), Win32ScaleInt(AHeight, Scale));
 
     AdjustFormClientToWindowSize(AForm, lSize);
     L := ALeft;

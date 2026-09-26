@@ -1,0 +1,284 @@
+program TestGtk2DesignerZoom;
+
+{$mode objfpc}{$H+}
+
+// Run on Linux: lazbuild --ws=gtk2 testgtk2designerzoom.lpi
+uses
+  Interfaces, Classes, SysUtils, Types, Math, Forms, Controls, StdCtrls,
+  ExtCtrls, Graphics, LCLIntf, LCLType, LMessages, OpenGLContext, Gtk2, Gdk2,
+  Gtk2Def, Gtk2Proc;
+
+type
+  TPaintSurface = class(TCustomControl)
+  public
+    LastClip: TRect;
+    LastPaintScale: Double;
+    LastLeftPixel, LastRightPixel: Cardinal;
+  protected
+    procedure Paint; override;
+  end;
+
+  TOpenGLPaintSurface = class(TCustomOpenGLControl)
+  private
+    FDesignCanvas: TControlCanvas;
+  public
+    LastPaintScale: Double;
+    procedure DesignMode;
+    destructor Destroy; override;
+  protected
+    procedure WMPaint(var Message: TLMPaint); message LM_PAINT;
+  end;
+
+procedure TOpenGLPaintSurface.DesignMode;
+begin
+  SetDesigning(True);
+end;
+
+destructor TOpenGLPaintSurface.Destroy;
+begin
+  FDesignCanvas.Free;
+  inherited Destroy;
+end;
+
+procedure TOpenGLPaintSurface.WMPaint(var Message: TLMPaint);
+var
+  ViewExt, WindowExt: TPoint;
+begin
+  inherited;
+  if FDesignCanvas = nil then begin
+    FDesignCanvas := TControlCanvas.Create;
+    FDesignCanvas.Control := Self;
+  end;
+  if Message.DC <> 0 then FDesignCanvas.Handle := Message.DC;
+  try
+    GetViewportExtEx(FDesignCanvas.Handle, @ViewExt);
+    GetWindowExtEx(FDesignCanvas.Handle, @WindowExt);
+    if WindowExt.X <> 0 then LastPaintScale := ViewExt.X / WindowExt.X;
+  finally
+    if Message.DC <> 0 then FDesignCanvas.Handle := 0;
+  end;
+end;
+
+procedure TPaintSurface.Paint;
+var
+  ViewExt, WindowExt: TPoint;
+  B: TBitmap;
+  Image: PGdkImage;
+  NativeW, NativeH: Integer;
+  Origin: TPoint;
+begin
+  GetClipBox(Canvas.Handle, @LastClip);
+  GetViewportExtEx(Canvas.Handle, @ViewExt);
+  GetWindowExtEx(Canvas.Handle, @WindowExt);
+  if WindowExt.X <> 0 then
+    LastPaintScale := ViewExt.X / WindowExt.X
+  else
+    LastPaintScale := 0;
+  B := TBitmap.Create;
+  try
+    B.SetSize(ClientWidth, ClientHeight);
+    B.Canvas.Brush.Color := clBlue;
+    B.Canvas.FillRect(B.Canvas.ClipRect);
+    B.Canvas.Brush.Color := clRed;
+    B.Canvas.FillRect(Rect(ClientWidth - 20, 0, ClientWidth, ClientHeight));
+    Canvas.Draw(0, 0, B);
+    NativeW := Round(ClientWidth * LastPaintScale);
+    NativeH := Round(ClientHeight * LastPaintScale);
+    Origin := TGtkDeviceContext(Canvas.Handle).Offset;
+    Image := gdk_drawable_get_image(TGtkDeviceContext(Canvas.Handle).Drawable,
+      Origin.X, Origin.Y, NativeW, NativeH);
+    if Image <> nil then
+    try
+      LastLeftPixel := gdk_image_get_pixel(Image, 5, NativeH div 2);
+      LastRightPixel := gdk_image_get_pixel(Image, NativeW - 5, NativeH div 2);
+    finally
+      gdk_image_unref(Image);
+    end;
+  finally
+    B.Free;
+  end;
+end;
+
+procedure Check(AValue: Boolean; const ADetail: string);
+begin
+  if not AValue then Raise Exception.Create(ADetail);
+end;
+
+function Serialize(AComponent: TComponent): RawByteString;
+var
+  Stream: TMemoryStream;
+begin
+  Stream := TMemoryStream.Create;
+  try
+    Stream.WriteComponent(AComponent);
+    SetLength(Result, Stream.Size);
+    if Stream.Size > 0 then Move(Stream.Memory^, Result[1], Stream.Size);
+  finally
+    Stream.Free;
+  end;
+end;
+
+procedure SaveText(const Data: RawByteString; const AFileName: string);
+var
+  Input, Output: TMemoryStream;
+begin
+  Input := TMemoryStream.Create;
+  Output := TMemoryStream.Create;
+  try
+    Input.WriteBuffer(Data[1], Length(Data));
+    Input.Position := 0;
+    ObjectBinaryToText(Input, Output);
+    Output.SaveToFile(AFileName);
+  finally
+    Output.Free;
+    Input.Free;
+  end;
+end;
+
+var
+  Host, Design: TForm;
+  Container, Panel: TPanel;
+  Button: TButton;
+  Surface: TPaintSurface;
+  GLSurface: TOpenGLPaintSurface;
+  Original: RawByteString;
+  P, Q: TPoint;
+  PaintRect: TRect;
+  W, H, X, Y, I: Integer;
+  NativeW, NativeH: Integer;
+  Scale: Double;
+const
+  Scales: array[0..8] of Double = (0.5, 0.8, 1.25, 0.9, 2, 0.25, 4, 0.99999, 1);
+begin
+  try
+    Application.Initialize;
+    Application.ShowMainForm := False;
+    Host := TForm.CreateNew(nil);
+    try
+      Host.SetBounds(100, 100, 900, 700);
+      Container := TPanel.Create(Host);
+      Container.Parent := Host;
+      Container.BevelOuter := bvNone;
+      Container.SetBounds(0, 0, 850, 650);
+      Design := TForm.CreateNew(Host);
+      Design.Name := 'DesignedForm';
+      Design.Parent := Container;
+      Design.SetBounds(11, 13, 601, 401);
+      Panel := TPanel.Create(Design);
+      Panel.Name := 'Panel';
+      Panel.Parent := Design;
+      Panel.BevelOuter := bvNone;
+      Panel.SetBounds(21, 23, 301, 201);
+      Button := TButton.Create(Design);
+      Button.Name := 'Button';
+      Button.Parent := Panel;
+      Button.SetBounds(31, 33, 101, 41);
+      Button.Caption := 'Native control';
+      Surface := TPaintSurface.Create(Design);
+      Surface.Name := 'Surface';
+      Surface.Parent := Design;
+      Surface.SetBounds(350, 200, 201, 151);
+      Surface.DoubleBuffered := True;
+      GLSurface := TOpenGLPaintSurface.Create(Design);
+      GLSurface.Name := 'GLSurface';
+      GLSurface.Parent := Design;
+      GLSurface.SetBounds(350, 20, 201, 151);
+      GLSurface.DesignMode;
+      Host.Show;
+      Design.Show;
+      Application.ProcessMessages;
+      Application.ProcessMessages;
+      Design.InvalidateClientRectCache(True);
+      Original := Serialize(Design);
+      for I := Low(Scales) to High(Scales) do
+      begin
+        Check(SetWindowContentScale(Container.Handle, Scales[I]), 'scale rejected');
+        Application.ProcessMessages;
+        if Serialize(Design) <> Original then
+        begin
+          SaveText(Original, '/tmp/gtkzoom-before.lfm');
+          SaveText(Serialize(Design), '/tmp/gtkzoom-after.lfm');
+          Check(False, 'zoom changed serialized form');
+        end;
+        Scale := GetWindowEffectiveScale(Button.Handle);
+        Check(Abs(Scale - Scales[I]) < 1 / 65536, 'wrong effective scale');
+        Check(PGtkWidget(Button.Handle)^.allocation.width = Round(101 * Scale),
+          'wrong native button width');
+        Check(PGtkWidget(Button.Handle)^.allocation.height = Round(41 * Scale),
+          'wrong native button height');
+        Check(PGtkWidget(GetFixedWidget(PGtkWidget(Design.Handle)))^.allocation.width =
+          Round(Design.ClientWidth * Scale),
+          'designed form client is scaled twice: ' +
+          IntToStr(PGtkWidget(GetFixedWidget(PGtkWidget(Design.Handle)))^.allocation.width) +
+          ' expected ' + IntToStr(Round(Design.ClientWidth * Scale)));
+        Check(PGtkWidget(GetFixedWidget(PGtkWidget(Design.Handle)))^.allocation.height =
+          Round(Design.ClientHeight * Scale),
+          'designed form client height is scaled twice');
+        Check(PGtkWidget(GetFixedWidget(PGtkWidget(Panel.Handle)))^.allocation.width =
+          Round(Panel.ClientWidth * Scale), 'panel client is scaled twice');
+        Check(PGtkWidget(GetFixedWidget(PGtkWidget(GLSurface.Handle)))^.allocation.width =
+          Round(GLSurface.ClientWidth * Scale), 'OpenGL client is scaled twice');
+        GetWindowSize(Button.Handle, W, H);
+        Check((W = 101) and (H = 41), 'lossy logical size');
+        GetWindowRelativePosition(Button.Handle, X, Y);
+        Check((X = 31) and (Y = 33), 'lossy logical position');
+        P := Button.ClientToScreen(Point(40, 20));
+        Q := Button.ScreenToClient(P);
+        Check((Abs(Q.X - 40) <= Ceil(1 / Scale)) and
+          (Abs(Q.Y - 20) <= Ceil(1 / Scale)), 'coordinate round trip');
+        if (Scale >= 0.5) and (Scale <= 1.25) then
+        begin
+          Check(PGtkWidget(GetFixedWidget(PGtkWidget(Surface.Handle)))^.allocation.width =
+            Round(Surface.ClientWidth * Scale),
+            'scaled client widget has wrong native width: ' +
+            IntToStr(PGtkWidget(GetFixedWidget(PGtkWidget(Surface.Handle)))^.allocation.width));
+          gdk_window_get_size(GetControlWindow(PGtkWidget(GetFixedWidget(
+            PGtkWidget(Surface.Handle)))), @NativeW, @NativeH);
+          Check(NativeW = Round(Surface.ClientWidth * Scale),
+            'scaled client window has wrong native width: ' + IntToStr(NativeW));
+          PaintRect := Rect(0, 0, Surface.ClientWidth, Surface.ClientHeight);
+          Surface.LastClip := Rect(0, 0, 0, 0);
+          LCLIntf.InvalidateRect(Surface.Handle, @PaintRect, False);
+          Application.ProcessMessages;
+          Check(Abs(Surface.LastPaintScale - Scale) <= 1 / 65536,
+            'custom control paint DC is not scaled: ' +
+            FloatToStr(Surface.LastPaintScale) + ' expected ' + FloatToStr(Scale));
+          GLSurface.Invalidate;
+          Application.ProcessMessages;
+          Check(Abs(GLSurface.LastPaintScale - Scale) <= 1 / 65536,
+            'OpenGL design paint DC is not scaled: ' +
+            FloatToStr(GLSurface.LastPaintScale) + ' expected ' + FloatToStr(Scale));
+          Check((Surface.LastClip.Right >= Surface.ClientWidth - 1) and
+            (Surface.LastClip.Bottom >= Surface.ClientHeight - 1),
+            'scaled logical paint clip missed client edge at ' +
+            FloatToStr(Scale) + ': ' + IntToStr(Surface.LastClip.Right) + 'x' +
+            IntToStr(Surface.LastClip.Bottom));
+          Check(Surface.LastLeftPixel <> Surface.LastRightPixel,
+            'bitmap draw ignored paint scale and clipped its right edge at ' +
+            FloatToStr(Scale) + ': ' + IntToHex(Surface.LastLeftPixel, 8) + '/' +
+            IntToHex(Surface.LastRightPixel, 8) + ' native ' + IntToStr(NativeW) +
+            'x' + IntToStr(NativeH));
+        end;
+      end;
+      Check(SetWindowContentScale(Container.Handle, 0.5), 'edit scale rejected');
+      Button.SetBounds(111, 113, 121, 61);
+      LCLIntf.SetWindowPos(Button.Handle, 0, Button.Left, Button.Top,
+        Button.Width, Button.Height, SWP_NOZORDER or SWP_NOACTIVATE);
+      Application.ProcessMessages;
+      Check((Button.Left = 111) and (Button.Top = 113) and
+        (Button.Width = 121) and (Button.Height = 61), 'zoomed edit changed bounds');
+      Check(SetWindowContentScale(Container.Handle, 1), 'reset rejected');
+      Check(not SetWindowContentScale(0, 0.5), 'invalid handle accepted');
+      Check(not SetWindowContentScale(Host.Handle, 0), 'invalid scale accepted');
+      WriteLn('PASS: GTK2 designer zoom geometry, serialization, coordinates, edits');
+    finally
+      Host.Free;
+    end;
+  except
+    on E: Exception do
+    begin
+      WriteLn(StdErr, 'FAIL: ', E.Message);
+      Halt(1);
+    end;
+  end;
+end.

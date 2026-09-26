@@ -448,6 +448,11 @@ begin
   Result := false;
 end;
 
+function TWidgetSet.GetWindowEffectiveScale(Handle: HWND): Double;
+begin
+  Result := 1.0;
+end;
+
 function TWidgetSet.GetWindowRelativePosition(Handle: hwnd;
   var Left, Top: integer): boolean;
 { returns the position of the left, top coordinate relative to the clientorigin
@@ -682,6 +687,11 @@ end;
 procedure TWidgetSet.SetRubberBandRect(const ARubberBand: HWND; const ARect: TRect);
 begin
 
+end;
+
+function TWidgetSet.SetWindowContentScale(Handle: HWND; const AScale: Double): Boolean;
+begin
+  Result := SameValue(AScale, 1.0);
 end;
 
 // This routine is only for platforms which need a special combobox dialog, like Android

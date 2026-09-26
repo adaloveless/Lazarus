@@ -760,6 +760,17 @@ begin
   Result:= HSVToColor(H, S, V);
 end;
 
+function DarkControlFont(Window: HWND; Control: TWinControl): HFONT;
+begin
+  // These painters use a native (unmapped) DC. The LCL font stays at design
+  // size; WM_SETFONT carries the widgetset's scaled copy for designer zoom.
+  Result := 0;
+  if Win32ParentScale(Window) <> 1.0 then
+    Result := HFONT(SendMessage(Window, WM_GETFONT, 0, 0));
+  if Result = 0 then
+    Result := Control.Font.Reference.Handle;
+end;
+
 procedure DrawDarkPushButtonWindow(Window: HWND; DC: HDC);
 var
   Info: PWin32WindowInfo;
@@ -862,7 +873,7 @@ begin
   if Assigned(Control) then
   begin
     Text := UTF8ToUTF16(Control.Caption);
-    FontHandle := Control.Font.Reference.Handle;
+    FontHandle := DarkControlFont(Window, Control);
   end
   else
   begin
@@ -1223,7 +1234,7 @@ begin
   if Control <> nil then
   begin
     Text := UTF8ToUTF16(Control.Caption);
-    FontHandle := Control.Font.Reference.Handle;
+    FontHandle := DarkControlFont(Window, Control);
   end
   else
   begin
@@ -1277,7 +1288,8 @@ function SyncDarkCheckRadioWindowBounds(Window: HWND; Control: TWinControl;
 var
   Parent: HWND;
   R: TRect;
-  WinLeft, WinTop: Integer;
+  WinLeft, WinTop, WinWidth, WinHeight: Integer;
+  Scale: Double;
 begin
   Result := False;
   if (Window = 0) or (Control = nil) or
@@ -1303,14 +1315,21 @@ begin
   WinLeft := Control.Left;
   WinTop := Control.Top;
   LCLBoundsToWin32Bounds(Control, WinLeft, WinTop);
+  // Compare native rectangles in native pixels. Comparing them with logical
+  // bounds makes WM_PAINT undo designer zoom and repeatedly realign siblings.
+  Scale := Win32ParentScale(Window);
+  WinLeft := Win32ScaleInt(WinLeft, Scale);
+  WinTop := Win32ScaleInt(WinTop, Scale);
+  WinWidth := Win32ScaleInt(Control.Width, Scale);
+  WinHeight := Win32ScaleInt(Control.Height, Scale);
 
   if (R.Left = WinLeft) and (R.Top = WinTop) and
-     (R.Right - R.Left = Control.Width) and
-     (R.Bottom - R.Top = Control.Height) then
+     (R.Right - R.Left = WinWidth) and
+     (R.Bottom - R.Top = WinHeight) then
     Exit;
 
   SetWindowPos(Window, 0, WinLeft, WinTop,
-    Control.Width, Control.Height,
+    WinWidth, WinHeight,
     SWP_NOZORDER or SWP_NOACTIVATE or SWP_NOCOPYBITS);
   InvalidateDarkChildPlacement(Window, ARedrawNow);
   Result := True;
@@ -1630,7 +1649,7 @@ begin
   if Control <> nil then
   begin
     Text := UTF8ToUTF16(Control.Caption);
-    FontHandle := Control.Font.Reference.Handle;
+    FontHandle := DarkControlFont(Window, Control);
   end
   else
   begin

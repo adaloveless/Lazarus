@@ -125,9 +125,30 @@ var
   // the whole palette if found in InvisibleClasses.
   InvisibleClasses: TClassList;
 
-function GetParentFormRelativeTopLeft(Component: TComponent): TPoint;
+// Screen point -> client coordinates of the designed form. Screen distances
+// cover client distances times the form's scale, which is not 1 when the
+// designer zooms the form (LCLIntf.SetWindowContentScale).
+function FormClientPosFromScreen(Form: TCustomForm; const ScreenPos: TPoint): TPoint;
 var
   FormOrigin: TPoint;
+  Scale: Double;
+begin
+  FormOrigin := Form.ClientOrigin;
+  Result.X := ScreenPos.X - FormOrigin.X;
+  Result.Y := ScreenPos.Y - FormOrigin.Y;
+  if Form.HandleAllocated then
+  begin
+    Scale := GetWindowEffectiveScale(Form.Handle);
+    if Scale <> 1.0 then
+    begin
+      Result.X := Round(Result.X / Scale);
+      Result.Y := Round(Result.Y / Scale);
+    end;
+  end;
+end;
+
+function GetParentFormRelativeTopLeft(Component: TComponent): TPoint;
+var
   ParentForm: TCustomForm;
   Parent: TWinControl;
   p: TPoint;
@@ -141,11 +162,10 @@ begin
       Result := Point(0, 0);
     end else
     begin
-      Result := Parent.ClientOrigin;
-      FormOrigin := ParentForm.ClientOrigin;
-      //DebugLn(['GetParentFormRelativeTopLeft Component=',dbgsName(Component),' Parent=',dbgsName(Parent),' ',dbgs(Result),' ParentForm=',dbgsName(ParentForm),' ',dbgs(FormOrigin)]);
-      Result.X := Result.X - FormOrigin.X + TControl(Component).Left;
-      Result.Y := Result.Y - FormOrigin.Y + TControl(Component).Top;
+      Result := FormClientPosFromScreen(ParentForm, Parent.ClientOrigin);
+      //DebugLn(['GetParentFormRelativeTopLeft Component=',dbgsName(Component),' Parent=',dbgsName(Parent),' ',dbgs(Result),' ParentForm=',dbgsName(ParentForm)]);
+      Result.X := Result.X + TControl(Component).Left;
+      Result.Y := Result.Y + TControl(Component).Top;
     end;
   end else
   begin
@@ -157,10 +177,9 @@ begin
       ParentForm := GetDesignerForm(Parent);
       if (ParentForm<>nil) and (ParentForm<>Parent) then
       begin
-        p:=Parent.ClientOrigin;
-        FormOrigin := ParentForm.ClientOrigin;
-        inc(Result.X,p.X-FormOrigin.X);
-        inc(Result.Y,p.Y-FormOrigin.Y);
+        p:=FormClientPosFromScreen(ParentForm, Parent.ClientOrigin);
+        inc(Result.X,p.X);
+        inc(Result.Y,p.Y);
       end;
     end;
   end;
@@ -179,7 +198,6 @@ end;
 
 function GetParentFormRelativeClientOrigin(Component: TComponent): TPoint;
 var
-  FormOrigin: TPoint;
   ParentForm: TCustomForm;
 begin
   if Component is TControl then
@@ -188,12 +206,7 @@ begin
     if ParentForm = nil then
       Result := Point(0, 0)
     else
-    begin
-      Result := TControl(Component).ClientOrigin;
-      FormOrigin := ParentForm.ClientOrigin;
-      Result.X := Result.X - FormOrigin.X;
-      Result.Y := Result.Y - FormOrigin.Y;
-    end;
+      Result := FormClientPosFromScreen(ParentForm, TControl(Component).ClientOrigin);
   end else
   begin
     Result.X := LeftFromDesignInfo(Component.DesignInfo);
@@ -203,7 +216,6 @@ end;
 
 function GetParentFormRelativeParentClientOrigin(Component: TComponent): TPoint;
 var
-  FormOrigin, ParentOrigin: TPoint;
   ParentForm: TCustomForm;
   Parent: TWinControl;
 begin
@@ -215,10 +227,7 @@ begin
       Result := Point(0, 0)
     else
     begin
-      ParentOrigin := Parent.ClientOrigin;
-      FormOrigin := ParentForm.ClientOrigin;
-      Result.X := ParentOrigin.X - FormOrigin.X;
-      Result.Y := ParentOrigin.Y - FormOrigin.Y;
+      Result := FormClientPosFromScreen(ParentForm, Parent.ClientOrigin);
     end;
   end
   else
@@ -244,14 +253,12 @@ end;
 
 function GetFormRelativeMousePosition(Form: TCustomForm): TPoint;
 var
-  FormClientOrigin: TPoint;
+  CursorPos: TPoint;
 begin
-  Result.X:=0;
-  Result.Y:=0;
-  GetCursorPos(Result);
-  FormClientOrigin:=Form.ClientOrigin;
-  dec(Result.X,FormClientOrigin.X);
-  dec(Result.Y,FormClientOrigin.Y);
+  CursorPos.X:=0;
+  CursorPos.Y:=0;
+  GetCursorPos(CursorPos);
+  Result:=FormClientPosFromScreen(Form, CursorPos);
 end;
 
 procedure GetComponentBounds(AComponent: TComponent; out Left, Top, Width,
@@ -477,9 +484,7 @@ begin
           AControlOrigin := FDCControl.Parent.ClientToScreen(FDCControl.BoundsRect.TopLeft)
         else
           AControlOrigin := FDCControl.ClientToScreen(Point(0, 0));
-        FFormOrigin := FForm.ClientToScreen(Point(0, 0));
-        FFormOrigin.X := AControlOrigin.X - FFormOrigin.X;
-        FFormOrigin.Y := AControlOrigin.Y - FFormOrigin.Y;
+        FFormOrigin := FormClientPosFromScreen(FForm, AControlOrigin);
       end
       else
         FFormOrigin := Point(0, 0);

@@ -875,6 +875,82 @@ begin
     Result:=nil;
 end;
 
+function TGtk2WidgetSet.GetWindowEffectiveScale(Handle: HWND): Double;
+begin
+  Result := Gtk2HandleEffectiveScale(Handle);
+end;
+
+function TGtk2WidgetSet.SetWindowContentScale(Handle: HWND;
+  const AScale: Double): Boolean;
+
+  procedure Relayout(AParent: TWinControl);
+  var
+    I: Integer;
+    C: TWinControl;
+  begin
+    for I := 0 to AParent.ControlCount - 1 do
+      if AParent.Controls[I] is TWinControl then
+      begin
+        C := TWinControl(AParent.Controls[I]);
+        if not C.HandleAllocated then Continue;
+        TWSWinControlClass(C.WidgetSetClass).SetBounds(C, C.Left, C.Top,
+          C.Width, C.Height);
+        TWSWinControlClass(C.WidgetSetClass).SetFont(C, C.Font);
+        gtk_widget_queue_draw(PGtkWidget(C.Handle));
+        if GetFixedWidget(PGtkWidget(C.Handle)) <> Pointer(C.Handle) then
+          gtk_widget_queue_draw(PGtkWidget(GetFixedWidget(PGtkWidget(C.Handle))));
+        Relayout(C);
+      end;
+  end;
+
+  procedure CaptureClientSizes(AParent: TWinControl);
+  var
+    I: Integer;
+    C: TWinControl;
+    ClientInfo: PWidgetInfo;
+  begin
+    for I := 0 to AParent.ControlCount - 1 do
+      if AParent.Controls[I] is TWinControl then
+      begin
+        C := TWinControl(AParent.Controls[I]);
+        if not C.HandleAllocated then Continue;
+        CaptureClientSizes(C);
+        ClientInfo := GetWidgetInfo(PGtkWidget(C.Handle));
+        ClientInfo^.UnscaledClientWidth := C.ClientWidth;
+        ClientInfo^.UnscaledClientHeight := C.ClientHeight;
+      end;
+  end;
+
+var
+  Owner: TObject;
+  Info: PWidgetInfo;
+  PreviousRoot: TWinControl;
+  Scale: Double;
+begin
+  Result := False;
+  if (Handle = 0) or (AScale < 1 / 65536) or (AScale > 32767) or
+     not GtkWidgetIsA(PGtkWidget(Handle), GTK_TYPE_WIDGET) then Exit;
+  Owner := GetLCLObject(PGtkWidget(Handle));
+  if not (Owner is TWinControl) then Exit;
+  Info := GetWidgetInfo(PGtkWidget(Handle));
+  if Info = nil then Exit;
+  Scale := Round(AScale * 65536) / 65536;
+  if Info^.ContentScale = 0 then Info^.ContentScale := 1.0;
+  if Info^.ContentScale = Scale then Exit(True);
+  PreviousRoot := Gtk2ContentScaleRoot;
+  Gtk2ContentScaleRoot := TWinControl(Owner);
+  try
+    if Info^.ContentScale = 1.0 then
+      CaptureClientSizes(TWinControl(Owner));
+    Info^.ContentScale := Scale;
+    Relayout(TWinControl(Owner));
+  finally
+    Gtk2ContentScaleRoot := PreviousRoot;
+  end;
+  gtk_widget_queue_draw(PGtkWidget(Handle));
+  Result := True;
+end;
+
 function PromptUserBoxClosed(Widget : PGtkWidget; {%H-}Event : PGdkEvent;
   data: gPointer) : GBoolean; cdecl;
 var
@@ -1517,4 +1593,3 @@ procedure TGtk2WidgetSet.RemoveProcessEventHandler(var AHandler: PProcessEventHa
 begin
 end;
 {$endif}
-

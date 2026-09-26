@@ -332,6 +332,27 @@ else
                     || fail "auto-update.sh has no docked-layout verifier"
             fi ;;
     esac
+
+    # FPC SOURCES (c738, 2026-09-23). Without them the IDE built from a Linux tarball opens on
+    # the "Configure Lazarus IDE" wizard, FPC sources red ("directory rtl not found"), and a
+    # second modal about crippled code completion -- measured on r27 x86_64-linux. The IDE's
+    # own test (CheckFPCSrcDirQuality) is rtl/ + packages/ + rtl/linux/system.pp, so that is
+    # the test here. install-lazarus.sh points FPCSourceDirectory at fpcsrc/ when it passes.
+    if [[ "$TARGET" == *-linux ]]; then
+        if [ -f "$STAGING/fpcsrc/rtl/linux/system.pp" ] && [ -d "$STAGING/fpcsrc/packages" ]; then
+            ok "fpcsrc/ carries rtl/linux/system.pp + packages/ (the IDE's first launch finds FPC sources)"
+            # Build outputs in there mean stage_fpc_sources' filter stopped filtering: a few
+            # hundred MB of .ppu/.o nobody reads, in every Linux tarball.
+            stray=$(find "$STAGING/fpcsrc" -type f \( -name '*.ppu' -o -name '*.o' \) | wc -l)
+            if [ "$stray" -gt 0 ]; then
+                fail "fpcsrc/ carries $stray .ppu/.o build output file(s) -- stage_fpc_sources' filter regressed"
+            fi
+        else
+            fail "fpcsrc/rtl/linux/system.pp + fpcsrc/packages/ -- no FPC sources: the IDE's first launch"
+            echo "         stops on the Configure Lazarus IDE wizard (FPC sources: directory rtl not found)."
+            echo "         stage_fpc_sources copies them from VP_DIR; its WARNING line in the roll log says why not."
+        fi
+    fi
 fi
 
 # ---------------------------------------------------------------- what this asset contains
@@ -368,6 +389,13 @@ if [ -n "$want_native" ] && [ -f "$STAGING/compiler/$want_native" ]; then
 fi
 echo "rtl_ppu:           $rtl_ppu"
 echo "package_unit_sets: $pkg_dirs"
+# Counted here, not copied from VP_SOURCE.txt: the producer's own number is not a measurement.
+if [ -d "$STAGING/fpcsrc" ]; then
+    echo "fpcsrc_files:      $(find "$STAGING/fpcsrc" -type f | wc -l)"
+    if [ -f "$STAGING/fpcsrc/VP_SOURCE.txt" ]; then
+        echo "fpcsrc_origin:     $(sed -n 's/^vp_origin: *//p' "$STAGING/fpcsrc/VP_SOURCE.txt")"
+    fi
+fi
 echo "verified_at:       $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
 echo ""

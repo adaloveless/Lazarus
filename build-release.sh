@@ -829,6 +829,80 @@ copy_native_linux_compiler_to_staging() {
     return 0
 }
 
+stage_fpc_sources() {
+    # Bundle the VibePascal rtl/ + packages/ SOURCES as fpcsrc/ in a Linux tarball.
+    # $1 staging
+    #
+    # WHY (Lars, c736-c738 2026-09-23): the Linux tarballs ship lazbuild, compiled units and
+    # the IDE sources, and the IDE is built on the user's box. Measured end to end on r27
+    # x86_64-linux (install-lazarus.sh -> lazbuild --build-ide= -> first launch): the IDE's
+    # first launch stopped on the "Configure Lazarus IDE" wizard with FPC sources the ONLY
+    # red item ("directory rtl not found"), and getting past it took a second modal saying
+    # code browsing and completion "will be very limited". Nothing in the tarball was an FPC
+    # source tree. CheckFPCSrcDirQuality (ide/packages/ideconfig/initialsetupproc.pas) wants
+    # rtl/ + packages/ + rtl/linux/system.pp; with FPCSourceDirectory pointed at VP
+    # rtl+packages the same IDE opened straight to its main window. install-lazarus.sh points
+    # FPCSourceDirectory here whenever fpcsrc/rtl/linux/system.pp exists.
+    #
+    # Copied from $VP_DIR -- the SAME tree units/rtl and units/packages were just copied from,
+    # so the sources match the units that ship. A filtered copy, not `git archive`: a roll's
+    # VP_DIR need not be a git checkout (Bruno's roll dir is a plain copy). The filter was
+    # measured against `git ls-files rtl packages` on a VP checkout: no tracked file lives
+    # under units/, units_bs/ or bin/, and the only tracked .o/.a are three palmos/m68k
+    # objects. .res is NOT filtered -- 45 tracked .res files are sources.
+    # Costs about 48.6 MB gzipped per tarball (VP 90633664ca rtl+packages, measured c737).
+    local staging=$1
+    local dest="$1/fpcsrc" d origin n top
+    rm -rf "$dest"
+    for d in rtl packages; do
+        if [ ! -d "$VP_DIR/$d" ]; then
+            echo "WARNING: $VP_DIR/$d does not exist -- NO FPC sources bundled in $(basename "$staging")."
+            return 1
+        fi
+    done
+    mkdir -p "$dest"
+    ( set -o pipefail
+      cd "$VP_DIR" &&
+      find rtl packages \
+          -type d \( -name units -o -name units_bs -o -name bin \) -prune -o \
+          -type f ! \( -name '*.ppu' -o -name '*.o' -o -name '*.a' -o -name '*.so' \
+                       -o -name '*.rsj' -o -name '*.rst' -o -name '*.or' -o -name '*.fpm' \
+                       -o -name '*.compiled' -o -name 'fpcmade.*' -o -name fpmake \
+                       -o -name ppas.sh -o -name 'link*.res' \) -print0 |
+      tar --null -T - -cf - ) | tar -xf - -C "$dest"
+    local copy_rc="${PIPESTATUS[0]}/${PIPESTATUS[1]}"
+    if [ "$copy_rc" != "0/0" ]; then
+        echo "WARNING: copying FPC sources from $VP_DIR failed (rc $copy_rc) -- NO FPC sources bundled."
+        rm -rf "$dest"
+        return 1
+    fi
+    if [ ! -f "$dest/rtl/linux/system.pp" ]; then
+        echo "WARNING: $VP_DIR has no rtl/linux/system.pp -- NO FPC sources bundled."
+        rm -rf "$dest"
+        return 1
+    fi
+
+    # Which VP commit? Only a checkout whose OWN top level is $VP_DIR can say: `git -C` walks
+    # up, and a plain copy sitting inside some other repository would report that one's HEAD.
+    origin="commit UNKNOWN -- $VP_DIR is not a git checkout"
+    top=$(git -C "$VP_DIR" rev-parse --show-toplevel 2>/dev/null) || top=""
+    if [ -n "$top" ] && [ "$(cd "$top" && pwd -P)" = "$(cd "$VP_DIR" && pwd -P)" ]; then
+        origin="git $(git -C "$VP_DIR" rev-parse HEAD) ($(git -C "$VP_DIR" rev-parse --abbrev-ref HEAD)),"
+        origin="$origin $(git -C "$VP_DIR" status --porcelain -- rtl packages | wc -l) changed path(s) under rtl/ packages/"
+    fi
+    n=$(find "$dest" -type f | wc -l)
+    {
+        echo "VibePascal rtl/ and packages/ SOURCES, for the IDE's code tools (Tools > Options >"
+        echo "Environment > FPC source directory). The compiler does not read them: the units it"
+        echo "links against are the ones in units/."
+        echo "vp_dir:    $VP_DIR"
+        echo "vp_origin: $origin"
+        echo "files:     $n"
+    } > "$dest/VP_SOURCE.txt"
+    echo "Bundled FPC sources as fpcsrc/: $n files from $VP_DIR ($origin)."
+    return 0
+}
+
 build_darwin_fpcres() {
     local target=$1
     local dest=$2
@@ -2218,6 +2292,54 @@ strip_stale_host_arch_artifacts() {
         -prune -print0 2>/dev/null)
 }
 
+prune_staged_ignored_leftovers() {
+    # package_release cp -r's ten source dirs with no filter, so any gitignored file
+    # another build left in the clone ships. r27 caught one by hand: the x86_64-linux
+    # re-roll carried the ide/revision.inc that the 07:27Z Mac IDE build had written,
+    # and a user's `lazbuild --build-ide` keeps an existing revision.inc (idebuilder
+    # CheckRevisionInc), so the About box would have named that other build.
+    #
+    # Why not stage from `git ls-files`: build outputs are gitignored and are the
+    # product. Listed 2026-09-23, all five shipped r27 tarballs: every gitignored file
+    # under these ten dirs sits under a units/ or lib/ dir (.ppu .o .compiled .rsj
+    # .res .lfm), except ide/revision.inc in the two darwin legs, which their own
+    # IDE build writes (RevisionStr = the release tag). So files under units/ and
+    # lib/ are left to strip_stale_host_arch_artifacts, and a gitignored file
+    # anywhere else ships only if THIS target's build wrote it, i.e. it is newer
+    # than the marker build_platform sets right after `make clean`.
+    local staging=$1
+    local target=$2
+    local marker=$3
+    local rel=""
+    local kept=0
+    local pruned=0
+
+    if ! git -C "$LAZARUS_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "WARNING: $LAZARUS_DIR is not a git work tree, so gitignored leftovers cannot be" >&2
+        echo "         told from sources; $target staging is NOT pruned." >&2
+        return 0
+    fi
+    # No marker means nothing can prove a file came from this build: prune them all.
+    [ -n "$marker" ] && [ -f "$marker" ] || marker=""
+
+    while IFS= read -r -d '' rel; do
+        case "/$rel" in
+            */units/*|*/lib/*) continue ;;
+        esac
+        [ -e "$staging/$rel" ] || [ -L "$staging/$rel" ] || continue
+        if [ -n "$marker" ] && [ "$LAZARUS_DIR/$rel" -nt "$marker" ]; then
+            kept=$((kept + 1))
+            continue
+        fi
+        rm -f "$staging/$rel"
+        echo "  pruned gitignored leftover (not written by this $target build): $rel"
+        pruned=$((pruned + 1))
+    done < <(git -C "$LAZARUS_DIR" ls-files -z --others --ignored --exclude-standard -- \
+        components lcl packager ide ideintf debugger converter designer tools images)
+
+    echo "Staging $target: pruned $pruned gitignored leftover(s) outside units/ and lib/; kept $kept written by this build."
+}
+
 create_darwin_app_bundle() {
     local target=$1
     local cpu_target=$(echo "$target" | cut -d- -f1)
@@ -2682,6 +2804,8 @@ package_release() {
     cp -r "$LAZARUS_DIR/tools" "$staging/" 2>/dev/null || true
     cp -r "$LAZARUS_DIR/images" "$staging/" 2>/dev/null || true
 
+    prune_staged_ignored_leftovers "$staging" "$target" "${BUILD_START_MARKER:-}"
+
     # Ship the auto-update helper scripts at tarball root so users can refresh
     # and rebuild the IDE from the source tree this tarball delivers. The copies
     # above bring only subtrees (components/, lcl/, ide/, ...) -- never repo-root
@@ -2713,6 +2837,13 @@ package_release() {
     strip_stale_host_arch_artifacts "$staging" "$target"
 
     restore_staged_mtimes "$staging"
+
+    # After restore_staged_mtimes on purpose: tar keeps the VP mtimes, and that loop would
+    # otherwise stat ~15,000 fpcsrc files against a Lazarus path that never exists.
+    # Non-fatal here; release-verify-staging.sh refuses a Linux tarball without them.
+    if [[ "$target" == *-linux ]]; then
+        stage_fpc_sources "$staging" || true
+    fi
 
     if [[ "$target" == *-darwin ]]; then
         materialize_darwin_lhelp_app "$staging/components/chmhelp/lhelp"
@@ -3282,6 +3413,12 @@ build_platform() {
         return 1
     fi
 
+    # Every file this target's build writes from here on is newer than this marker.
+    # package_release uses it to tell this build's own byproducts from leftovers of
+    # other builds in the same clone (prune_staged_ignored_leftovers).
+    [ -n "${BUILD_START_MARKER:-}" ] && rm -f "$BUILD_START_MARKER"
+    BUILD_START_MARKER=$(mktemp)
+
     build_lazbuild "$target" "$cfg"
 
     # Darwin: build IDE and .app bundle
@@ -3371,6 +3508,8 @@ build_platform() {
     fi
 
     package_release "$target"
+    rm -f "$BUILD_START_MARKER"
+    BUILD_START_MARKER=""
 
     # Must come AFTER package_release: the tarball is cut from $LAZARUS_DIR/lazbuild, so the
     # target binary has to still be there when packaging runs. By the time package_release
@@ -3386,6 +3525,94 @@ build_platform() {
     # it. Continuing costs nothing that was not already lost. The roll still fails loudly at
     # the end with a non-zero exit so a degraded roll cannot be mistaken for a clean one.
     restore_host_lazbuild "$target" || HOST_LAZBUILD_BROKEN=1
+}
+
+# --- No cfg may put ANOTHER Lazarus checkout on the unit path (Lars, c736 2026-09-23;
+# Bruno's r27 letter) ------------------------------------------------------------------
+# The six $*_CFG files above are Otto's, in the SHARED VibePascal checkout, and both
+# darwin cfgs are UNTRACKED there (see the macho note near resolve_exec_compiler). Each
+# darwin cfg carried 38 lines of the form -Fu/home/jason/src/lazarus/components/fpdebug;
+# the other four carry none (measured 2026-09-23). Otto stripped the darwin pair at 05:57Z
+# that morning; this guard stays because nothing tracks those files, so a regenerated cfg
+# can bring the lines back with no diff to notice. Those lines name the SHARED Lazarus
+# checkout by absolute path, so a roll from a scratch clone -- the courtesy protocol,
+# never build in the tree 30 agents share -- put the shared tree on the unit path of
+# every darwin compile. Bruno's r27 x86_64-darwin attempt (2026-09-23 04:35-04:46Z)
+# compiled 414 objects out of /home/jason/src/lazarus while LAZARUS_DIR was his clone,
+# and died only because laz.vtgraphics.pas got recompiled outside its package's cocoa
+# include path. A unit set that happened to compile would have shipped a Mac tarball
+# whose source is not the tagged commit, and nothing would have said so. With the lines
+# removed from his rig copy both Macs built clean (0 compile-log lines, 0 objects naming
+# src/lazarus).
+#
+# So a roll hands the compiler a cfg that cannot see a Lazarus tree other than the one
+# it builds: any -F<x>/<path> line whose path resolves inside a DIFFERENT Lazarus
+# checkout (a directory holding ide/lazarus.pp and lcl/lclbase.lpk, compared by
+# realpath, because /home/jason/src/lazarus is itself a symlink into /mnt/data) is left
+# out of a sanitized copy under $BUILD_STATE_DIR, the drop is printed with its count,
+# and the $*_CFG variable is repointed at the copy. A cfg with nothing foreign in it is
+# NOT copied and its variable is NOT touched, and lines naming our OWN tree are kept, so
+# a roll from the shared checkout itself -- where those 38 lines name LAZARUS_DIR --
+# runs exactly as it did before.
+
+# lazarus_root_of_path <absolute-path>
+# Echo the realpath of the Lazarus checkout that contains <path>, or nothing. A path
+# that does not exist (yet) is judged by its deepest existing ancestor; a glob or cfg
+# macro ends the literal part.
+lazarus_root_of_path() {
+    local p=${1%%[*\$]*}
+    while [ -n "$p" ] && [ ! -e "$p" ]; do
+        p=${p%/*}
+    done
+    [ -n "$p" ] || return 0
+    p=$(readlink -f "$p" 2>/dev/null) || return 0
+    [ -d "$p" ] || p=${p%/*}
+    while [ -n "$p" ]; do
+        if [ -f "$p/ide/lazarus.pp" ] && [ -f "$p/lcl/lclbase.lpk" ]; then
+            echo "$p"
+            return 0
+        fi
+        p=${p%/*}
+    done
+    return 0
+}
+
+# sanitize_cfg_for_lazarus_dir <NAME-of-a-$*_CFG-variable>
+sanitize_cfg_for_lazarus_dir() {
+    local var=$1
+    local cfg=${!var}
+    [ -f "$cfg" ] || return 0
+    local own outdir tmp out line root
+    local dropped=0 roots=""
+    own=$(readlink -f "$LAZARUS_DIR")
+    outdir="$BUILD_STATE_DIR/cfg/$(printf '%s' "$own" | md5sum | cut -c1-12)"
+    mkdir -p "$outdir"
+    tmp=$(mktemp "$outdir/.$(basename "$cfg").XXXXXX")
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            -F?/*)
+                root=$(lazarus_root_of_path "${line:3}")
+                if [ -n "$root" ] && [ "$root" != "$own" ]; then
+                    dropped=$((dropped + 1))
+                    case " $roots " in
+                        *" $root "*) ;;
+                        *) roots="$roots $root" ;;
+                    esac
+                    continue
+                fi
+                ;;
+        esac
+        printf '%s\n' "$line" >> "$tmp"
+    done < "$cfg"
+    if [ "$dropped" -eq 0 ]; then
+        rm -f "$tmp"
+        return 0
+    fi
+    out="$outdir/$(basename "$cfg")"
+    mv -f "$tmp" "$out"
+    echo "[cfg] $(basename "$cfg"): dropped $dropped -F line(s) naming another Lazarus checkout:$roots"
+    echo "[cfg]   this roll builds from $own -- the compiler gets $out"
+    printf -v "$var" '%s' "$out"
 }
 
 TARGET="${1:-all}"
@@ -3404,6 +3631,16 @@ echo "Lazarus Release Builder (VibePascal)"
 echo "Compiler: $VP_COMPILER"
 echo "Version: $LAZARUS_VERSION"
 echo ""
+
+# Before any target reads its cfg (see sanitize_cfg_for_lazarus_dir). Not for usage().
+case "$TARGET" in
+    linux|win64|pi64|pi32|osx64|osxarm|all)
+        for cfg_var in LINUX_CFG WIN64_CFG AARCH64_LINUX_CFG ARM_LINUX_CFG \
+                       DARWIN_X86_64_CFG DARWIN_AARCH64_CFG; do
+            sanitize_cfg_for_lazarus_dir "$cfg_var"
+        done
+        ;;
+esac
 
 case "$TARGET" in
     linux)

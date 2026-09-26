@@ -2,6 +2,13 @@ unit ImportTypelib;
 
 {$mode objfpc}{$H+}
 
+{$IFNDEF MSWINDOWS}
+// Type-library import is Windows-only; empty elsewhere (see activexcontainer.pas).
+interface
+implementation
+end.
+{$ENDIF}
+
 interface
 
 {$ifndef wince}

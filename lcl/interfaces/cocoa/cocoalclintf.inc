@@ -137,6 +137,29 @@ begin
 end;
 *)
 
+{------------------------------------------------------------------------------
+  Method:  GetWindowEffectiveScale
+  Params:  Handle - Handle of window
+  Returns: Screen points per client unit of Handle; content scaling of Handle
+           and of all its superviews is included (the Retina backing scale is
+           not: LCL screen coordinates are points)
+ ------------------------------------------------------------------------------}
+function TCocoaWidgetSet.GetWindowEffectiveScale(Handle: HWND): Double;
+var
+  v: NSView;
+  sz: NSSize;
+begin
+  Result := 1.0;
+  if (Handle = 0) or not NSObject(Handle).isKindOfClass(NSView) then Exit;
+  v := NSObject(Handle).lclContentView;
+  if not Assigned(v) then Exit;
+  sz := v.convertSize_toView(NSMakeSize(1000, 1000), nil);
+  Result := Abs(sz.width) / 1000;
+  // keep the unscaled case exactly 1, callers take integer shortcuts on it
+  if (Result <= 0) or SameValue(Result, 1.0, 1e-4) then
+    Result := 1.0;
+end;
+
 function TCocoaWidgetSet.InvalidateFrame(aHandle: HWND; ARect: pRect;
   bErase: Boolean; BorderWidth: integer): Boolean;
 begin
@@ -156,6 +179,47 @@ end;
 function TCocoaWidgetSet.IsDesignerDC(WindowHandle: HWND; DC: HDC): Boolean;
 begin
   Result := (WindowHandle <> 0) and (DC <> 0) and TCocoaContext(DC).isDesignDC;
+end;
+
+{------------------------------------------------------------------------------
+  Method:  SetWindowContentScale
+  Params:  Handle - Handle of window
+           AScale - Scale of the children of Handle
+  Returns: True
+
+  The view keeps its frame; its bounds become frame/AScale, so AppKit draws
+  and hit-tests every subview scaled. Subviews keep their LCL bounds: they
+  are placed again from their LCL BoundsRect, because a non-flipped view
+  positions them from its bounds height, which just changed. Call it again
+  after the view's frame changed.
+ ------------------------------------------------------------------------------}
+function TCocoaWidgetSet.SetWindowContentScale(Handle: HWND; const AScale: Double): Boolean;
+var
+  v, sv: NSView;
+  fr: NSRect;
+  i: Integer;
+  target: TObject;
+begin
+  Result := False;
+  if (Handle = 0) or (AScale <= 0) or not NSObject(Handle).isKindOfClass(NSView) then Exit;
+  v := NSObject(Handle).lclContentView;
+  if not Assigned(v) then Exit;
+  fr := v.frame;
+  v.setBoundsOrigin(NSZeroPoint);
+  v.setBoundsSize(NSMakeSize(fr.size.width / AScale, fr.size.height / AScale));
+  for i := 0 to Integer(v.subviews.count) - 1 do
+  begin
+    sv := NSView(v.subviews.objectAtIndex(i));
+    target := sv.lclGetTarget;
+    if target is TWinControl then
+      sv.lclSetFrame(TWinControl(target).BoundsRect);
+  end;
+  {$ifdef BOOLFIX}
+  v.setNeedsDisplay__(Ord(true));
+  {$else}
+  v.setNeedsDisplay_(true);
+  {$endif}
+  Result := True;
 end;
 
 procedure TCocoaWidgetSet.SyncClipboard();

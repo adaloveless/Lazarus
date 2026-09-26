@@ -449,6 +449,11 @@ msgstr "Tipus de giny LCL"
 msgid "Make Executable"
 msgstr "Fes executable"
 
+#: ideconfstrconsts.lismakeexeisnotgnumake
+#, object-pascal-format
+msgid "The make executable %s identifies itself as \"%s\", so it is not GNU make. Building the IDE requires GNU make; Embarcadero and Borland make cannot be used."
+msgstr ""
+
 #: ideconfstrconsts.lismakenotfound
 msgid "Make not found"
 msgstr "No s'ha trobat Make"

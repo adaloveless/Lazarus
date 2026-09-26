@@ -374,6 +374,7 @@ type
     function GetLeftGuideLine(var ALine: TRect): boolean;
     function GetRightGuideLine(var ALine: TRect): boolean;
     function GetRealGrabberSize: integer;
+    function ZoomedSize(ASize: integer): integer;
     function GetTopGuideLine(var ALine: TRect): boolean;
     procedure FindNearestBottomGuideLine(var NearestInt: TNearestInt);
     procedure FindNearestClientLeftRight(var NearestInt: TNearestInt);
@@ -2189,6 +2190,23 @@ begin
   Result := FGrabberSize;
   if Assigned(FForm) and Application.Scaled then
     Result := FForm.Scale96ToScreen(FGrabberSize);
+  Result := ZoomedSize(Result);
+end;
+
+function TControlSelection.ZoomedSize(ASize: integer): integer;
+// grabbers and markers are drawn on the form, in its client units: when the
+// designer zooms the form, they must shrink/grow inversely to keep their
+// on-screen size (and stay grabbable when zoomed out)
+var
+  Scale: Double;
+begin
+  Result := ASize;
+  if Assigned(FForm) and FForm.HandleAllocated then
+  begin
+    Scale := GetWindowEffectiveScale(FForm.Handle);
+    if Scale <> 1.0 then
+      Result := Max(2, Round(ASize / Scale));
+  end;
 end;
 
 function TControlSelection.GetItems(Index:integer):TSelectedControl;
@@ -2575,6 +2593,10 @@ begin
   if (Count=0) or (FForm=nil) or LookupRootSelected or
      OnlyInvisiblePersistentsSelected then Exit;
 
+  // the designer zoom changed since the grabbers were placed
+  if FGrabbers[Low(TGrabIndex)].Width <> GetRealGrabberSize then
+    AdjustGrabbers;
+
   Diff := DC.FormOrigin;
 
   // debugln(['[DrawGrabbers] ',' DC=',Diff.X,',',Diff.Y,' Grabber1=',FGrabbers[0].Left,',',FGrabbers[0].Top]);
@@ -2600,11 +2622,11 @@ procedure TControlSelection.DrawMarkerAt(DC: TDesignerDeviceContext;
   aLeft, aTop, aWidth, aHeight: integer);
 var
   lOldBrushColor: TColor;
-  lRight, lBottom: integer;
+  lRight, lBottom, lSize: integer;
 
   procedure FillRect(x, y: integer);
   begin
-    DC.Canvas.FillRect(x, y, x + MarkerSize, y + MarkerSize);
+    DC.Canvas.FillRect(x, y, x + lSize, y + lSize);
   end;
 
 begin
@@ -2612,8 +2634,9 @@ begin
   lOldBrushColor := DC.Canvas.Brush.Color;
   DC.Canvas.Brush.Color := MarkerColor;
 
-  lRight := aLeft + aWidth - MarkerSize;
-  lBottom := aTop + aHeight - MarkerSize;
+  lSize := ZoomedSize(MarkerSize);
+  lRight := aLeft + aWidth - lSize;
+  lBottom := aTop + aHeight - lSize;
 
   FillRect(aLeft , aTop   );
   FillRect(aLeft , lBottom);
@@ -2654,7 +2677,7 @@ procedure TControlSelection.InvalidateMarkersForComponent(AComponent: TComponent
   var
     R: TRect;
   begin
-    R:=Rect(x,y,x+MarkerSize,y+MarkerSize);
+    R:=Rect(x,y,x+ZoomedSize(MarkerSize),y+ZoomedSize(MarkerSize));
     InvalidateRect(FForm.Handle,@R,true);
   end;
   
@@ -2675,8 +2698,8 @@ begin
       ComponentBounds:=CurItem.MarkerPaintedBounds;
       LeftMarker:=ComponentBounds.Left;
       TopMarker:=ComponentBounds.Top;
-      RightMarker:=ComponentBounds.Right-MarkerSize;
-      BottomMarker:=ComponentBounds.Bottom-MarkerSize;
+      RightMarker:=ComponentBounds.Right-ZoomedSize(MarkerSize);
+      BottomMarker:=ComponentBounds.Bottom-ZoomedSize(MarkerSize);
       InvalidateMarker(LeftMarker,TopMarker);
       InvalidateMarker(LeftMarker,BottomMarker);
       InvalidateMarker(RightMarker,TopMarker);

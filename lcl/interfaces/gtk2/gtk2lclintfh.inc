@@ -45,6 +45,7 @@ function FontIsMonoSpace(Font: HFont): boolean; override;
 function GetAcceleratorString(const AVKey: Byte; const AShiftState: TShiftState): String; override;
 function GetControlConstraints(Constraints: TObject): boolean; override;
 function GetLCLOwnerObject(Handle: HWnd): TObject; override;
+function GetWindowEffectiveScale(Handle: HWND): Double; override;
 
 function PromptUser(const DialogCaption : string;
                     const DialogMessage : string;
@@ -64,6 +65,8 @@ function RawImage_QueryDescription(AFlags: TRawImageQueryFlags; var ADesc: TRawI
 procedure RemoveEventHandler(var AHandler: PEventHandler); override;
 procedure RemovePipeEventHandler(var AHandler: PPipeEventHandler); override;
 procedure RemoveProcessEventHandler(var AHandler: PProcessEventHandler); override;
+
+function SetWindowContentScale(Handle: HWND; const AScale: Double): Boolean; override;
 
 function SetComboMinDropDownSize(Handle: HWND; MinItemsWidth, MinItemsHeight, MinItemCount: integer): boolean; override;
 procedure SetEventHandlerFlags(AHandler: PEventHandler; NewFlags: dword); override;

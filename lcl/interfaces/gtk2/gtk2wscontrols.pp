@@ -795,6 +795,7 @@ class procedure TGtk2WSWinControl.SetFont(const AWinControl: TWinControl;
   const AFont: TFont);
 var
   Widget: PGtkWidget;
+  Scale: Double;
 begin
   if not WSCheckHandleAllocated(AWinControl, 'SetFont')
   then Exit;
@@ -805,6 +806,9 @@ begin
 
   //DebugLn('TGtk2WSWinControl.SetFont ',DbgSName(AWinControl));
   Gtk2WidgetSet.SetWidgetFont(Widget, AFont);
+  Scale := Gtk2EffectiveScale(AWinControl);
+  if Scale <> 1.0 then
+    Gtk2SetScaledWidgetFont(Widget, AFont, Scale);
   Gtk2WidgetSet.SetWidgetColor(Widget, AFont.Color, clNone,
                               [GTK_STATE_NORMAL,GTK_STATE_ACTIVE,
                                GTK_STATE_PRELIGHT,GTK_STATE_SELECTED,

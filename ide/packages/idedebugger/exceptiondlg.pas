@@ -28,8 +28,8 @@ unit ExceptionDlg;
 interface
 
 uses
-  Classes, math, Forms, Dialogs, StdCtrls, Buttons, IDEImagesIntf,
-  IdeIntfStrConsts, IdeDebuggerStringConstants;
+  Classes, math, Forms, Controls, Dialogs, StdCtrls, Buttons, Clipbrd, LCLType,
+  IDEImagesIntf, IdeIntfStrConsts, IdeDebuggerStringConstants;
 
 type
   
@@ -38,8 +38,11 @@ type
   TIDEExceptionDlg = class(TForm)
     btnBreak: TBitBtn;
     btnContinue: TBitBtn;
+    btnCopy: TBitBtn;
     cbIgnoreExceptionType: TCheckBox;
     lblMessage: TLabel;
+    procedure btnCopyClick(Sender: TObject);
+    procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
   private
     { private declarations }
   public
@@ -76,15 +79,36 @@ begin
   Caption := lisExceptionDialog;
   btnBreak.Caption := lisMenuBreak;
   btnContinue.Caption := lisBtnContinue;
+  btnCopy.Caption := lisCopy;
   cbIgnoreExceptionType.Caption := lisIgnoreExceptionType;
 
   IDEImages.AssignImage(btnBreak, 'menu_pause');
   IDEImages.AssignImage(btnContinue, 'menu_run');
+  IDEImages.AssignImage(btnCopy, 'laz_copy');
 
   DefaultControl := btnBreak;
   CancelControl := btnContinue;
 
   RegisterDialogForCopyToClipboard(Self);
+end;
+
+procedure TIDEExceptionDlg.btnCopyClick(Sender: TObject);
+begin
+  // The message exactly as shown (class, text, file and line), without the
+  // button captions the generic dialog copy adds. The dialog stays open.
+  Clipboard.AsText := lblMessage.Caption;
+end;
+
+procedure TIDEExceptionDlg.FormKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+begin
+  // OnKeyDown runs before the handler RegisterDialogForCopyToClipboard adds,
+  // so Ctrl+C / Ctrl+Ins copy the same text as the Copy button.
+  if (Key in [VK_C, VK_INSERT]) and (Shift = [ssModifier]) then
+  begin
+    btnCopyClick(nil);
+    Key := 0;
+  end;
 end;
 
 function TIDEExceptionDlg.Execute(AMessage: String; out IgnoreException: Boolean): TModalResult;

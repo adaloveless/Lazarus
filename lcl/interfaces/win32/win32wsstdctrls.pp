@@ -1306,7 +1306,10 @@ class procedure TWin32WSCustomComboBox.SetFont(const AWinControl: TWinControl;
   const AFont: TFont);
 begin
   TWin32WSWinControl.SetFont(AWinControl, AFont);
-  GetControlConstraints(AWinControl.Constraints);
+  // Changing the native font for a view transform must not resize the LCL
+  // combo to the native (zoomed) selection-field height.
+  if not Win32ChangingContentScale(AWinControl.Handle) then
+    GetControlConstraints(AWinControl.Constraints);
 end;
 
 class procedure TWin32WSCustomComboBox.SetSelStart(const ACustomComboBox: TCustomComboBox; NewStart: integer);
@@ -1358,11 +1361,33 @@ begin
 end;
 
 class function TWin32WSCustomComboBox.GetItemHeight(const ACustomComboBox: TCustomComboBox): Integer;
+var
+  DC: HDC;
+  OldFont: HGDIOBJ;
+  Metrics: Windows.TEXTMETRICW;
 begin
   if not WSCheckHandleAllocated(ACustomComboBox, 'GetItemHeight') then
     Result := 0
   else
+  begin
     Result := SendMessage(ACustomComboBox.Handle, CB_GETITEMHEIGHT, 0, 0);
+    if Win32ParentScale(ACustomComboBox.Handle) = 1.0 then Exit;
+    // For ordinary combos the item height is the font's text height. Measure
+    // the real LCL font, not WM_GETFONT's scaled copy: ItemHeight is streamed
+    // into the .lfm, and dividing rounded native metrics loses information.
+    DC := Windows.GetDC(ACustomComboBox.Handle);
+    if DC = 0 then Exit;
+    try
+      OldFont := Windows.SelectObject(DC, ACustomComboBox.Font.Reference.Handle);
+      try
+        if Windows.GetTextMetricsW(DC, @Metrics) then Result := Metrics.tmHeight;
+      finally
+        Windows.SelectObject(DC, OldFont);
+      end;
+    finally
+      Windows.ReleaseDC(ACustomComboBox.Handle, DC);
+    end;
+  end;
 end;
 
 class procedure TWin32WSCustomComboBox.SetItemHeight(const ACustomComboBox: TCustomComboBox; const AItemHeight: Integer);

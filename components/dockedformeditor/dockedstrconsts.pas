@@ -48,6 +48,14 @@ resourceString
   STreatBorderCaption         = 'Automatically treat BorderSpacing properties';
   STreatBorderHint            = 'Automatically replace BorderSpacing.Around properties of controls and adapt BorderSpacing.Left/Right/Top/Bottom if needed';
   SWarningCaption             = 'Warning';
+  SZoomCaption                = 'Zoom:';
+  SZoomFit                    = 'Fit';
+  SZoomFitHint                = 'Zoom out so the whole form fits (keeps fitting while the page or form is resized)';
+  SZoomInHint                 = 'Zoom in (Ctrl/Cmd + mouse wheel, Ctrl/Cmd + "+")';
+  SZoomOutHint                = 'Zoom out (Ctrl/Cmd + mouse wheel, Ctrl/Cmd + "-")';
+  SZoomResetHint              = 'Actual size (Ctrl/Cmd + 0)';
+  SZoomComboHint              = 'Designer zoom. Only the view is scaled: the form''s Left/Top/Width/Height and all control bounds stay unchanged.';
+  SZoomUnsupported            = 'Designer zoom is not supported by this widgetset yet';
 
   STabPositionTop             = 'Top';
   STabPositionBottom          = 'Bottom';

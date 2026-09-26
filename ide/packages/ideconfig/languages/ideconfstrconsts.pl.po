@@ -445,6 +445,11 @@ msgstr "Typ widżetu LCL"
 msgid "Make Executable"
 msgstr "Utwórz plik wykonywalny"
 
+#: ideconfstrconsts.lismakeexeisnotgnumake
+#, object-pascal-format
+msgid "The make executable %s identifies itself as \"%s\", so it is not GNU make. Building the IDE requires GNU make; Embarcadero and Borland make cannot be used."
+msgstr ""
+
 #: ideconfstrconsts.lismakenotfound
 msgid "Make not found"
 msgstr "Nie znaleziono \"make\""

@@ -242,12 +242,15 @@ begin
   Result.Y := Round(ParentHeight - point.Y);
 end;
 
+// The view-based conversions flip with the view's BOUNDS height: it is the
+// height of the view's own coordinate system, which differs from the frame
+// height when the view is content-scaled (see SetWindowContentScale).
 class function TCocoaTypeUtil.toPoint(
   const lclPoint: TPoint;
   const view: NSView ): NSPoint;
 begin
   if Assigned(view) and NOT view.isFlipped then
-    Result:= TCocoaTypeUtil.toPoint( lclPoint, view.frame.size.height )
+    Result:= TCocoaTypeUtil.toPoint( lclPoint, view.bounds.size.height )
   else
     Result:= TCocoaTypeUtil.toPoint( lclPoint );
 end;
@@ -257,7 +260,7 @@ class function TCocoaTypeUtil.toPoint(
   const view: NSView ): TPoint;
 begin
   if Assigned(view) and NOT view.isFlipped then
-    Result:= TCocoaTypeUtil.toPoint( point, view.frame.size.height )
+    Result:= TCocoaTypeUtil.toPoint( point, view.bounds.size.height )
   else
     Result:= TCocoaTypeUtil.toPoint( point );
 end;
@@ -332,7 +335,7 @@ class function TCocoaTypeUtil.toRect(
   const view: NSView ): NSRect;
 begin
   if Assigned(view) and NOT view.isFlipped then
-    Result:= TCocoaTypeUtil.toRect( lclRect, view.frame.size.height )
+    Result:= TCocoaTypeUtil.toRect( lclRect, view.bounds.size.height )
   else
     Result:= TCocoaTypeUtil.toRect( lclRect );
 end;
@@ -342,7 +345,7 @@ class function TCocoaTypeUtil.toRect(
   const view: NSView ): TRect;
 begin
   if Assigned(view) and NOT view.isFlipped then
-    Result:= TCocoaTypeUtil.toRect( rect, view.frame.size.height )
+    Result:= TCocoaTypeUtil.toRect( rect, view.bounds.size.height )
   else
     Result:= TCocoaTypeUtil.toRect( rect );
 end;

@@ -1326,6 +1326,7 @@ begin
                                Point(TruncToInt(Event^.X), TruncToInt(Event^.Y)),
                                {%H-}PGtkWidget(AWinControl.Handle));
   MappedXY := SubtractScoll({%H-}PGtkWidget(AWinControl.Handle), MappedXY);
+  Gtk2UnscalePoint(AWinControl, MappedXY);
 
   ShiftState := GTKEventStateToShiftState(Event^.State);
   with Msg do
@@ -1998,6 +1999,7 @@ begin
   MappedXY := TranslateGdkPointToClientArea(Event^.Window, EventXY,
                                             {%H-}PGtkWidget(AWinControl.Handle));
   MappedXY := SubtractScoll({%H-}PGtkWidget(AWinControl.Handle), MappedXY);
+  Gtk2UnscalePoint(AWinControl, MappedXY);
   //DebugLn('DeliverMouseDownMessage ',DbgSName(AWinControl),' Mapped=',dbgs(MappedXY.X),',',dbgs(MappedXY.Y),' Event=',dbgs(EventXY.X),',',dbgs(EventXY.Y));
 
   if event^.Button in [4, 5] then
@@ -2211,6 +2213,7 @@ begin
                                EventXY,
                                {%H-}PGtkWidget(AWinControl.Handle));
   MappedXY := SubtractScoll({%H-}PGtkWidget(AWinControl.Handle), MappedXY);
+  Gtk2UnscalePoint(AWinControl, MappedXY);
   //DebugLn(['DeliverMouseUpMessage ',GetWidgetDebugReport(Widget),' ',dbgsName(AWinControl),' ',dbgs(MappedXY)]);
 
   ShiftState := GTKEventStateToShiftState(Event^.State);
@@ -2410,6 +2413,7 @@ begin
   MappedXY:=TranslateGdkPointToClientArea(Event^.Window,EventXY,
                                           {%H-}PGtkWidget(AWinControl.Handle));
   MappedXY := SubtractScoll({%H-}PGtkWidget(AWinControl.Handle), MappedXY);
+  Gtk2UnscalePoint(AWinControl, MappedXY);
   //DebugLn('gtkMouseWheelCB ',DbgSName(AWinControl),' Mapped=',dbgs(MappedXY.X),',',dbgs(MappedXY.Y),' Event=',dbgs(EventXY.X),',',dbgs(EventXY.Y));
 
   // this is a mouse wheel event
@@ -2494,6 +2498,9 @@ var
 begin
   Result := CallBackDefaultReturn;
 
+  if (TObject(Data) is TControl) and
+     Gtk2ChangingContentScale(TControl(Data)) then Exit;
+
   EventTrace('size-allocate', data);
 
   //with Size^ do DebugLn(Format('Trace:[gtksize_allocateCB] %s --> X: %d, Y: %d, Width: %d, Height: %d', [TObject(data).ClassName, X, Y, Width, Height]));
@@ -2545,6 +2552,9 @@ var
   ClientWidget: PGtkWidget;
 begin
   Result := CallBackDefaultReturn;
+
+  if (TObject(Data) is TControl) and
+     Gtk2ChangingContentScale(TControl(Data)) then Exit;
 
   if (TObject(Data) is TWinControl) then
   begin
@@ -3860,5 +3870,3 @@ begin
   if (Event^.Count > 0) then exit;
   DrawNotebookPageIcon(ThePage, Widget);
 end;
-
-

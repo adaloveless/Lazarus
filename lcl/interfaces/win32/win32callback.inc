@@ -367,6 +367,8 @@ type
     procedure DoMsgKeyDownUp(aMsg: Cardinal; var WinResult: LResult);
     procedure DoMsgMeasureItem;
     procedure DoMsgMouseMove;
+    procedure UnscaleMousePos(var X, Y: SmallInt); overload;
+    procedure UnscaleMousePos(var X, Y: Integer); overload;
     procedure DoMsgMouseDownUpClick(aButton: Byte; aIsDblClick: Boolean; aMouseDown: Boolean);
     procedure DoMsgContextMenu;
     function DoMsgMouseWheel(var WinResult: LResult; AHorz: Boolean): Boolean;
@@ -504,6 +506,7 @@ function TWindowProcHelper.PrepareDoubleBuffer(out DoubleBufferBitmapOld: HBITMA
 // Returns True if BackupBuffer was saved.
 var
   DC: HDC;
+  NativeRect: TRect;
 begin
   Result := CurDoubleBuffer.DC <> 0;
   if Result then
@@ -515,7 +518,12 @@ begin
   end;
   CurDoubleBuffer.DC := Windows.CreateCompatibleDC(0);
 
-  GetWindowSize(Window, WindowWidth, WindowHeight);
+  // The bitmap and final BitBlt use device pixels. GetWindowSize returns LCL
+  // logical bounds under designer zoom, which clips the buffer above 100% and
+  // leaves stale controls/overlay lines in the unpainted right and bottom area.
+  Windows.GetClientRect(Window, NativeRect);
+  WindowWidth := NativeRect.Right - NativeRect.Left;
+  WindowHeight := NativeRect.Bottom - NativeRect.Top;
   if (CurDoubleBuffer.BitmapWidth < WindowWidth) or (CurDoubleBuffer.BitmapHeight < WindowHeight) then
   begin
     DC := Windows.GetDC(0);
@@ -617,6 +625,7 @@ var
   useDoubleBuffer: Boolean;
   isNativeControl: Boolean;
   needParentPaint: Boolean;
+  PaintScale: Double;
 begin
   // note: ignores the received DC
   // do not use default deliver message
@@ -747,6 +756,19 @@ begin
     begin
       DCIndex := Windows.SaveDC(PaintMsg.DC);
       MoveWindowOrgEx(PaintMsg.DC, ORect.Left, ORect.Top);
+      // designer zoom: the LCL paints in unscaled units (RestoreDC below undoes it)
+      PaintScale := Win32EffectiveScale(Window);
+      if PaintScale <> 1.0 then
+      begin
+        Win32ApplyDCScale(PaintMsg.DC, PaintScale);
+        with PS.rcPaint do
+        begin
+          Left := Trunc(Left / PaintScale);
+          Top := Trunc(Top / PaintScale);
+          Right := Trunc(Right / PaintScale) + 1;
+          Bottom := Trunc(Bottom / PaintScale) + 1;
+        end;
+      end;
 {$ifdef DEBUG_DOUBLEBUFFER}
       Windows.GetClipBox(PaintMsg.DC, ClipBox);
       DebugLn('LCL Drawing in DC ', IntToHex(PaintMsg.DC, 8), ' with clipping rect (',
@@ -1619,6 +1641,7 @@ begin
 
   LMMouse.XPos := GET_X_LPARAM(LParam);
   LMMouse.YPos := GET_Y_LPARAM(LParam);
+  UnscaleMousePos(LMMouse.XPos, LMMouse.YPos);
   LMMouse.Keys := WParam;
   if (lWinControl is TCustomListView) then // workaround #30234
     case Msg of
@@ -1646,6 +1669,27 @@ begin
   end;
 end;
 
+procedure TWindowProcHelper.UnscaleMousePos(var X, Y: SmallInt);
+var
+  Scale: Double;
+begin
+  // designer zoom: native client pixels -> unscaled client units
+  Scale := Win32EffectiveScale(Window);
+  if Scale = 1.0 then Exit;
+  X := Win32UnscaleInt(X, Scale);
+  Y := Win32UnscaleInt(Y, Scale);
+end;
+
+procedure TWindowProcHelper.UnscaleMousePos(var X, Y: Integer);
+var
+  Scale: Double;
+begin
+  Scale := Win32EffectiveScale(Window);
+  if Scale = 1.0 then Exit;
+  X := Win32UnscaleInt(X, Scale);
+  Y := Win32UnscaleInt(Y, Scale);
+end;
+
 procedure TWindowProcHelper.DoMsgMouseMove;
 begin
   NotifyUserInput := True;
@@ -1655,6 +1699,7 @@ begin
     Msg := LM_MOUSEMOVE;
     XPos := GET_X_LPARAM(LParam);
     YPos := GET_Y_LPARAM(LParam);
+    UnscaleMousePos(XPos, YPos);
     Keys := WParam;
     // check if this is a spurious WM_MOUSEMOVE message, pos not actually changed
     if (XPos = WindowInfo^.MouseX) and (YPos = WindowInfo^.MouseY) then
@@ -1718,6 +1763,7 @@ begin
     Msg := NCode;
     // important: LM_MOUSEWHEEL needs client coordinates (windows WM_MOUSEWHEEL are screen coordinates)
     Windows.ScreenToClient(TargetWindow, P);
+    UnscaleMousePos(P.X, P.Y);
     X := P.X;
     Y := P.Y;
     Button := LOWORD(Integer(WParam));
@@ -1956,6 +2002,7 @@ var
   NewWidth: integer = 0;
   NewHeight: integer = 0;
   OverlayWindow: HWND;
+  OverlayRect: TRect;
 {$IFDEF VerboseSizeMsg}
   R: TRect;
 {$ENDIF}
@@ -2000,7 +2047,15 @@ begin
     end;
     OverlayWindow := GetWin32WindowInfo(Window)^.Overlay;
     if OverlayWindow <> 0 then
-      Windows.SetWindowPos(OverlayWindow, HWND_TOP, 0, 0, NewWidth, NewHeight, SWP_NOMOVE);
+    begin
+      // native size: NewWidth/NewHeight are in unscaled units under designer zoom
+      if Win32ParentScale(Window) <> 1.0 then
+        Windows.GetWindowRect(Window, @OverlayRect)
+      else
+        OverlayRect := Rect(0, 0, NewWidth, NewHeight);
+      Windows.SetWindowPos(OverlayWindow, HWND_TOP, 0, 0,
+        OverlayRect.Right - OverlayRect.Left, OverlayRect.Bottom - OverlayRect.Top, SWP_NOMOVE);
+    end;
   end;
 end;
 
@@ -2036,6 +2091,11 @@ begin
   NotifyUserInput := False;
 
   WindowInfo := GetWin32WindowInfo(Window);
+  // A content-scale change moves native windows only. Forward to the native
+  // control, but never feed these intermediate pixel sizes into LCL layout.
+  if Win32ChangingContentScale(Window) and
+    (Msg in [WM_MOVE, WM_SIZE, WM_WINDOWPOSCHANGING, WM_WINDOWPOSCHANGED]) then
+    Exit(CallDefaultWindowProc(Window, Msg, WParam, LParam));
   if WindowInfo^.isChildEdit then
   begin
     if DoChildEdit(Result) then Exit;
@@ -2926,7 +2986,8 @@ begin
       Owner := GetWin32WindowInfo(Parent)^.WinControl;
       P.x := GET_X_LPARAM(lParam);
       P.y := GET_Y_LPARAM(lParam);
-      Windows.ScreenToClient(Parent, P);
+      // Win32WidgetSet, not Windows: unscaled form units under designer zoom
+      Win32WidgetSet.ScreenToClient(Parent, P);
       if (Owner is TCustomForm) then
       begin
         // ask form about control under mouse. we need TWinControl
@@ -2939,7 +3000,7 @@ begin
       if (Control <> nil) then
       begin
         // Now ask control is it needs mouse messages
-        MapWindowPoints(Parent, TWinControl(Control).Handle, P, 1);
+        P := TWinControl(Control).ScreenToClient(Owner.ClientToScreen(P));
         if TWSWinControlClass(TWinControl(Control).WidgetSetClass).GetDesignInteractive(TWinControl(Control), P) then
           Result := HTTRANSPARENT
       end;
