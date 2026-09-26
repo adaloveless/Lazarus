@@ -4347,6 +4347,10 @@ var
   AUnitInfo: TEditableUnitInfo;
   ACmd: TIDECommand;
   AHint: string;
+  ACommandUser: TIDESpecialCommand;
+  AButtonCommand: TIDEButtonCommand;
+  AToolButton: TIDEToolButton;
+  i: Integer;
 begin
   GetCurrentUnit(ASrcEdit,AUnitInfo);
   if not UpdateProjectCommandsStamp.Changed(AUnitInfo) then
@@ -4363,6 +4367,17 @@ begin
   if Assigned(Project1) then
     AHint := AHint + sLineBreak + Project1.ActiveBuildMode.GetCaption;
   ACmd.Hint := AHint;
+  for i := 0 to ACmd.UserCount-1 do
+  begin
+    ACommandUser := ACmd.Users[i];
+    if ACommandUser is TIDEButtonCommand then
+    begin
+      AButtonCommand := TIDEButtonCommand(ACommandUser);
+      for AToolButton in AButtonCommand.ToolButtons do
+        if AToolButton is TSetBuildModeToolButton then
+          TSetBuildModeToolButton(AToolButton).UpdateDisplay;
+    end;
+  end;
 
   // run
   ACmd := IDECommandList.FindIDECommand(ecRun);
@@ -14320,4 +14335,3 @@ initialization
   EnvironmentOpts.GroupEnvironmentI18NCaption := @dlgGroupEnvironment;
 
 end.
-

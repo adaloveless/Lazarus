@@ -315,6 +315,7 @@ type
     end;
   public
     procedure DoOnAdded; override;
+    procedure UpdateDisplay;
   end;
 
 var
@@ -2076,6 +2077,7 @@ procedure TSetBuildModeToolButton.TBuildModeMenu.DoPopup(Sender: TObject);
 var
   CurIndex: Integer;
   i: Integer;
+  TargetItem: TMenuItem;
 
   procedure AddMode(BuildModeIndex: Integer; CurMode: TProjectBuildMode);
   var
@@ -2098,8 +2100,24 @@ var
   end;
 
 begin
+  if Owner is TSetBuildModeToolButton then
+    TSetBuildModeToolButton(Owner).UpdateDisplay;
+
   // fill the PopupMenu
   CurIndex := 0;
+  if Items.Count > CurIndex then
+    TargetItem := Items[CurIndex]
+  else
+  begin
+    TargetItem := TMenuItem.Create(Self);
+    TargetItem.Name := Name + 'Target';
+    Items.Add(TargetItem);
+  end;
+  TargetItem.Caption := Format(dlgTargetPlatform + ': %s-%s',
+    [MainBuildBoss.GetTargetCPU, MainBuildBoss.GetTargetOS]);
+  TargetItem.Enabled := False;
+  inc(CurIndex);
+
   if Project1<>nil then
     for i:=0 to Project1.BuildModes.Count-1 do
       AddMode(i, Project1.BuildModes[i]);
@@ -2133,6 +2151,10 @@ begin
   MainBuildBoss.SetBuildTargetProject1(false);
   MainIDE.UpdateCaption;
   MainIDE.UpdateDefineTemplates;
+  if GetParentMenu is TSetBuildModeToolButton.TBuildModeMenu then
+    with TSetBuildModeToolButton.TBuildModeMenu(GetParentMenu) do
+      if Owner is TSetBuildModeToolButton then
+        TSetBuildModeToolButton(Owner).UpdateDisplay;
   if Assigned(ProjInspector) then
     ProjInspector.UpdateTitle;
 end;
@@ -2145,6 +2167,24 @@ begin
 
   DropdownMenu := TBuildModeMenu.Create(Self);
   Style := tbsDropDown;
+  ShowCaption := True;
+  AutoSize := True;
+  UpdateDisplay;
+end;
+
+procedure TSetBuildModeToolButton.UpdateDisplay;
+var
+  ModeName, TargetCPU, TargetOS: String;
+begin
+  if Project1=nil then
+    ModeName := lisBuildModes
+  else
+    ModeName := Project1.ActiveBuildMode.GetCaption;
+  TargetCPU := MainBuildBoss.GetTargetCPU;
+  TargetOS := MainBuildBoss.GetTargetOS;
+  Caption := Format('%s  |  %s-%s', [ModeName, TargetCPU, TargetOS]);
+  Hint := lisChangeBuildMode + LineEnding + Caption + LineEnding +
+    dlgTargetPlatform + ': click to edit; arrow to select build mode';
 end;
 
 initialization
@@ -2155,4 +2195,3 @@ initialization
   RegisterIDEOptionsGroup(GroupCompiler, TProjectCompilerOptions);
 
 end.
-
