@@ -64,7 +64,7 @@ if [ "$LAZ_OS_TARGET" = "darwin" ]; then
     DARWIN_SDK_OPT="-XR$DARWIN_SDK -Fl$DARWIN_SDK/usr/lib"
     VP_OPT=""
     [ -f "$DARWIN_CFG" ] && VP_OPT="-n @$DARWIN_CFG"
-    LAZ_EXTRA_OPT="-Sci -k-weak_framework -kUserNotifications"
+    LAZ_EXTRA_OPT="-Sc -k-weak_framework -kUserNotifications"
     LAZ_MAKE_TARGET_OPTS="CPU_TARGET=$LAZ_CPU_TARGET OS_TARGET=$LAZ_OS_TARGET LCL_PLATFORM=$LAZ_WS"
 else
     VP_OPT="-n"
@@ -1681,14 +1681,14 @@ rebuild_ide() {
     cx_build_log="$LAZARUS_DIR/.vpcompiler/ide-build.log"   # kept: the error below points at it
     COMMONX_FIRST_ERROR=""
     COMMONX_PPU_HINT=""
-    # --build-ide=-Sci: lazbuild compiles ide/lazarus.pp with the compiler DIRECTLY and passes
+    # --build-ide=-Sc: lazbuild compiles ide/lazarus.pp with the compiler DIRECTLY and passes
     # no syntax switches of its own, while the IDE sources use C-style operators (`s+=...`).
-    # The make route has always added -Sci (ide/Makefile.fpc [compiler] options); without it
+    # The make route has always enabled C-style operators; without -Sc
     # this step dies at ide/checkcompileropts.pas(199) "C styled assignment operators are
     # turned off" whenever the compiler's fpc.cfg does not already carry -Sc (measured on
     # lazdev 2026-09-16 with the r25 linux cfg: exit 2 without, exit 0 with). Idempotent when
     # the cfg has it too.
-    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide="$LAZ_EXTRA_OPT -Sci" \
+    "$LAZARUS_DIR/lazbuild" --lazarusdir="$LAZARUS_DIR" --build-ide="$LAZ_EXTRA_OPT -Sc" \
         --compiler="$VP_COMPILER" --cpu="$LAZ_CPU_TARGET" --os="$LAZ_OS_TARGET" --ws="$ws" $add_pkg_args 2>&1 | tee "$cx_build_log" | { grep -E "Linking|lines compiled|Fatal|Error" || true; }
     local build_exit=${PIPESTATUS[0]}
     if [ "$build_exit" -ne 0 ]; then
