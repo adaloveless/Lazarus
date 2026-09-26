@@ -33,10 +33,11 @@ unit CustomFormEditor;
 interface
 
 { $DEFINE VerboseFormEditor}
-{ $DEFINE VerboseSaveUnitComponent}
 
 uses
-  {$IFDEF IDE_MEM_CHECK}MemCheck,{$ENDIF}
+{$IFDEF IDE_MEM_CHECK}
+  MemCheck,
+{$ENDIF}
   // RTL+FCL
   Classes, SysUtils, TypInfo, Math, AVL_Tree,
   // LCL
@@ -44,7 +45,6 @@ uses
   // LazUtils
   FileUtil, LazFileUtils, LazFileCache, CompWriterPas, LazLoggerBase, LazTracer,
   LazMemManager, LazUTF8, AvgLvlTree,
-  {$IFDEF VerboseSaveUnitComponent}ProjResConvert,{$ENDIF}
   // Codetools
   CodeCache, CodeTree, CodeToolManager, FindDeclarationTool,
   // BuildIntf
@@ -465,7 +465,7 @@ end;
 
 { TCustomFormEditor }
 
-procedure PasWriterDefinePropertyTStrings(Writer: TCompWriterPas;
+procedure OnPasWriterDefinePropertyTStrings(Writer: TCompWriterPas;
   Instance: TPersistent; const Identifier: string; var Handled: boolean);
 var
   List: TStrings;
@@ -530,7 +530,7 @@ begin
 
   GlobalDesignHook.AddHandlerGetAncestorInstProp(@OnPropHookGetAncestorInstProp);
 
-  RegisterDefinePropertiesPas(TStrings,@PasWriterDefinePropertyTStrings);
+  RegisterDefinePropertiesPas(TStrings,@OnPasWriterDefinePropertyTStrings);
 end;
 
 destructor TCustomFormEditor.Destroy;
@@ -2565,36 +2565,23 @@ end;
 function TCustomFormEditor.CreateUniqueComponentName(const AClassName: string;
   OwnerComponent: TComponent): string;
 var
-  i, j, k: integer;
-  CompName: string;
-  HasConflict: Boolean;
-  SubComp: TComponent;
+  i, j: integer;
 begin
   Result:=AClassName;
   if (OwnerComponent=nil) or (Result='') then exit;
-  CompName:=ClassNameToComponentName(AClassName);
-  if CompName[length(CompName)] in ['0'..'9'] then
-    CompName:=CompName+'_';
-  i:=0;
-  repeat
-    inc(i);
-    Result:=CompName+IntToStr(i);
-    j:=OwnerComponent.ComponentCount;
-    repeat
+  i:=1;
+  while true do begin
+    j:=OwnerComponent.ComponentCount-1;
+    Result:=ClassNameToComponentName(AClassName);
+    if Result[length(Result)] in ['0'..'9'] then
+      Result:=Result+'_';
+    Result:=Result+IntToStr(i);
+    while (j>=0)
+    and (CompareText(Result,OwnerComponent.Components[j].Name)<>0) do
       dec(j);
-      HasConflict:=False;
-      if j<0 then break;
-      SubComp:=OwnerComponent.Components[j];
-      if SubComp is TFrame then begin
-        k:=SubComp.ComponentCount;
-        repeat
-          dec(k);
-          if k<0 then break;
-          HasConflict:=SameText(Result, SubComp.Components[k].Name);
-        until HasConflict;
-      end;
-    until HasConflict or SameText(Result, SubComp.Name);
-  until j<0;
+    if j<0 then exit;
+    inc(i);
+  end;
 end;
 
 function TCustomFormEditor.TranslateKeyToDesignerCommand(Key: word; Shift: TShiftState): word;

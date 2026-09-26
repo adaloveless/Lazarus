@@ -140,7 +140,7 @@ begin
     if FormattingSettings.Spaces.SpaceAfterOpenBrackets then
       exit(true);
   end
-  else if (pt.TokenType = ttMultiWordOperator) and (pt.NextSolidTokenType <> ttSemicolon) then
+  else if pt.TokenType = ttMultiWordOperator then
     exit(True);
 
   { 'absolute' as a var directive }

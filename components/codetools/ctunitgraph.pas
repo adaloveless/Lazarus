@@ -421,8 +421,11 @@ function TUsesGraph.Parse(IgnoreErrors: boolean; out Completed: boolean;
     Abort:=false;
     OnLoadFile(Self,CurUnit.Filename,CurUnit.Code,Abort);
     if Abort then exit;
-    if CurUnit.Code=nil then
-      exit(IgnoreErrors); // Happens with "Virtual units" which are not in a package.
+    if CurUnit.Code=nil then begin
+      debugln(['TUsesGraph.Parse failed loading file ',CurUnit.Filename]);
+      Result:=IgnoreErrors;
+      exit;
+    end;
     try
       MainUsesSection:=nil;
       ImplementationUsesSection:=nil;

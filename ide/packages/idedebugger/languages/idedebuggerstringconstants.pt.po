@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Poedit 3.6\n"
+"X-Generator: Poedit 3.9\n"
 
 #: idedebuggerstringconstants.arrnavautohide
 msgid "Hide automatically"
@@ -27,26 +27,6 @@ msgstr "- Adicionar novo grupo -"
 #: idedebuggerstringconstants.breakviewheadernogroup
 msgid "No group"
 msgstr "Sem grupos"
-
-#: idedebuggerstringconstants.brkhandleignorebreakpoints
-msgid "Handle/Ignore breakpoints"
-msgstr ""
-
-#: idedebuggerstringconstants.brkhandleignoreexceptions
-msgid "Handle/Ignore exceptions"
-msgstr ""
-
-#: idedebuggerstringconstants.brkshowbreakpointsandwatchpo
-msgid "Show breakpoints and watchpoints"
-msgstr ""
-
-#: idedebuggerstringconstants.brkshowbreakwatchpointsandex
-msgid "Show break/watchpoints and exception-filter"
-msgstr ""
-
-#: idedebuggerstringconstants.brkshowexceptionfilter
-msgid "Show exception-filter"
-msgstr ""
 
 #: idedebuggerstringconstants.dbgasmwindowlinktarget
 msgid "Link target line"
@@ -159,6 +139,7 @@ msgid "Please choose the formatter to add."
 msgstr "Por favor, escolha o formatador a adicionar."
 
 #: idedebuggerstringconstants.dbgvaluedisabled
+#, fuzzy
 msgctxt "idedebuggerstringconstants.dbgvaluedisabled"
 msgid "Disabled"
 msgstr "Desactivado"
@@ -166,28 +147,29 @@ msgstr "Desactivado"
 #: idedebuggerstringconstants.dbgvalueerror
 #, object-pascal-format
 msgid "Error: %s"
-msgstr "Erro: %s"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgvalueevaluating
+#, fuzzy
 msgctxt "idedebuggerstringconstants.dbgvalueevaluating"
 msgid "Evaluating"
 msgstr "A avaliar"
 
 #: idedebuggerstringconstants.dbgvalueinvalid
 msgid "Invalid"
-msgstr "Inválido"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgvaluenotevaluated
 msgid "Not evaluated"
-msgstr "Não avaliado"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgvalueunavailable
 msgid "Unavailable"
-msgstr "Indisponível"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgwatchcolorautoopenconsolewindowlinu
 msgid "Auto open console Window (Linux):"
-msgstr "Abrir consola automaticamente (Linux):"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgwatchcolordisabled
 msgctxt "idedebuggerstringconstants.dbgwatchcolordisabled"
@@ -209,17 +191,18 @@ msgid "Evaluating"
 msgstr "A avaliar"
 
 #: idedebuggerstringconstants.dbgwatchcolornever
+#, fuzzy
 msgctxt "idedebuggerstringconstants.dbgwatchcolornever"
 msgid "Never"
 msgstr "Nunca"
 
 #: idedebuggerstringconstants.dbgwatchcoloronoutputalways
 msgid "On output (always)"
-msgstr "Na saída (sempre)"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgwatchcoloronoutputonceperdebugsessi
 msgid "On output (once per debug session)"
-msgstr "Na saída (uma vez por depuração)"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgwatchcolors
 msgid "Watches/Locals"
@@ -227,7 +210,7 @@ msgstr "Vigias/Locais"
 
 #: idedebuggerstringconstants.dbgwatchcolorshadowlast
 msgid "From previous pause"
-msgstr "A partir da pausa anterior"
+msgstr ""
 
 #: idedebuggerstringconstants.dbgwatchcolorunknown
 msgid "Unknown"
@@ -335,10 +318,6 @@ msgctxt "idedebuggerstringconstants.dispformatcharord"
 msgid "Ordinal"
 msgstr "Ordinal"
 
-#: idedebuggerstringconstants.dispformatdlgaddrprefix
-msgid "Address marker"
-msgstr ""
-
 #: idedebuggerstringconstants.dispformatdlgarraycombine
 msgid "Combine lengths"
 msgstr "Combinar tamanhos"
@@ -383,10 +362,6 @@ msgstr "Incluir incorporado"
 #: idedebuggerstringconstants.dispformatdlgbtnadrformat
 msgid "Address"
 msgstr "Endereço"
-
-#: idedebuggerstringconstants.dispformatdlgbtnadrformatdata
-msgid "Data-address"
-msgstr ""
 
 #: idedebuggerstringconstants.dispformatdlgbtnall
 msgid "All"
@@ -477,10 +452,6 @@ msgstr "(Tipado)"
 msgctxt "idedebuggerstringconstants.dispformatdlgindent"
 msgid "Multiline"
 msgstr "Multilinha"
-
-#: idedebuggerstringconstants.dispformatdlgnumprefix
-msgid "Number marker"
-msgstr ""
 
 #: idedebuggerstringconstants.dispformatenumname
 msgctxt "idedebuggerstringconstants.dispformatenumname"
@@ -834,37 +805,6 @@ msgstr "- Predefinição -"
 #: idedebuggerstringconstants.dlgbackendconvoptdisabled
 msgid "- Disabled -"
 msgstr "- Desactivado -"
-
-#: idedebuggerstringconstants.dlgdebugconsolewindowchangetakeseffect
-msgid "A change takes effect when the next debug session starts."
-msgstr ""
-
-#: idedebuggerstringconstants.dlgdebugconsolewindoweditdiv
-msgid "Edit IDE console provider"
-msgstr ""
-
-#: idedebuggerstringconstants.dlgdebugconsolewindowediting
-#, object-pascal-format
-msgid "Currently editing %s"
-msgstr ""
-
-#: idedebuggerstringconstants.dlgdebugconsolewindownone
-msgid "No console window is available."
-msgstr ""
-
-#: idedebuggerstringconstants.dlgdebugconsolewindowoptions
-msgid "Debug Console Window"
-msgstr ""
-
-#: idedebuggerstringconstants.dlgdebugconsolewindowrunparamshint
-msgid ""
-"Selects the default Console for showing the target's StdIn/Out in the IDE.\n"
-"Project can override this in their \"Run Parameters\". The default there is \"use IDE default\"."
-msgstr ""
-
-#: idedebuggerstringconstants.dlgdebugconsolewindowselectdiv
-msgid "Select provider for IDE console window"
-msgstr ""
 
 #: idedebuggerstringconstants.dlgdisplayformatdebugoptions
 msgid "Display Format"
@@ -1324,10 +1264,6 @@ msgstr "Visibilidade"
 msgid "Condition"
 msgstr "Condição"
 
-#: idedebuggerstringconstants.lisconsolelocalecho
-msgid "Echo typed input"
-msgstr ""
-
 #: idedebuggerstringconstants.liscopyall
 msgid "Copy All"
 msgstr "Copiar tudo"
@@ -1465,10 +1401,6 @@ msgctxt "idedebuggerstringconstants.lisdbgwinpowerhint"
 msgid "Disable/Enable updates for the entire window"
 msgstr "Activar/Desactivar actualizações da janela"
 
-#: idedebuggerstringconstants.lisdebugconsolebuiltinname
-msgid "IDE Debug Console"
-msgstr ""
-
 #: idedebuggerstringconstants.lisdebuggerfeedbackerror
 msgid "Debugger Error"
 msgstr "Erro do depurador"
@@ -1540,7 +1472,7 @@ msgstr "Eliminar ponto de vigia para %s?"
 #: idedebuggerstringconstants.lisdeletetracepointforexception
 #, object-pascal-format
 msgid "Delete exception filter for \"%s\"?"
-msgstr "Eliminar filtro de excepção para \"%s\"?"
+msgstr ""
 
 #: idedebuggerstringconstants.lisdigits
 msgid "Digits:"
@@ -1638,7 +1570,7 @@ msgstr "Adicionar comentário"
 
 #: idedebuggerstringconstants.lisexceptionclass
 msgid "Class:"
-msgstr "Classe:"
+msgstr ""
 
 #: idedebuggerstringconstants.lisexceptiondialog
 msgid "Debugger Exception Notification"
@@ -1646,7 +1578,7 @@ msgstr "Notificação de excepção do depurador"
 
 #: idedebuggerstringconstants.lisexceptionfilter
 msgid "&Exception filter ..."
-msgstr "Filtro de &excepção..."
+msgstr ""
 
 #: idedebuggerstringconstants.lisexport
 msgctxt "lazarusidestrconsts.lisexport"
@@ -1952,10 +1884,8 @@ msgid "Assembler"
 msgstr "Assembler"
 
 #: idedebuggerstringconstants.lismenuviewbreakpointsandexceptions
-#, fuzzy
-#| msgid "BreakPoints/Exceptions"
-msgid "Breakpoints/Exceptions"
-msgstr "Pontos de quebra/Excepções"
+msgid "BreakPoints/Exceptions"
+msgstr ""
 
 #: idedebuggerstringconstants.lismenuviewcallstack
 msgid "Call Stack"
@@ -2043,7 +1973,7 @@ msgstr "MaxCount:NamePattern"
 
 #: idedebuggerstringconstants.lisskipexception
 msgid "Continue"
-msgstr "Continuar"
+msgstr ""
 
 #: idedebuggerstringconstants.lissourcebreakpoint
 msgid "&Source Breakpoint ..."
@@ -2259,10 +2189,6 @@ msgstr "Word (Big Endian)"
 #: idedebuggerstringconstants.memviewgroupwordlittleendian
 msgid "Word (Little Endian)"
 msgstr "Word (Little Endian)"
-
-#: idedebuggerstringconstants.mnuconsoleinoutputwindow
-msgid "Console In/Output (Lazarus)"
-msgstr ""
 
 #: idedebuggerstringconstants.optdispguttercustomdisplayformat
 msgid "Custom Display Format"

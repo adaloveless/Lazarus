@@ -146,11 +146,7 @@ begin
           WM_SETNOFRAME:
             begin
               KillTimer(Form.Handle, WM_SETNOFRAME);
-              // Do not hide a form which is already docked into a form page.
-              // That happens when the form was loaded on demand by clicking the
-              // form page. Hiding the child window would blank the designer.
-              // HideWindow hides only if the form has no parent.
-              HideWindow;
+              LCLIntf.ShowWindow(Form.Handle, SW_HIDE);
               FHiding := False;
               FixF12_ActiveEditor;
               Exit;

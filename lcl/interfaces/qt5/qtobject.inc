@@ -1015,13 +1015,6 @@ begin
         // a thread is waiting -> synchronize
         CheckSynchronize;
       end;
-    LCLQt_DestroySocketNotifiers:
-      begin
-        DoDestroySocketNotifiers(PWaitHandleEventHandler(
-          {%H-}Pointer(QLCLMessageEvent_getWParam(QLCLMessageEventH(Event)))));
-        Result := True;
-        QEvent_Accept(Event);
-      end;
   end;
 end;
 

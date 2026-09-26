@@ -158,7 +158,7 @@ function TFpRspRemoteDebugger.RequestCommand(const ACommand: TDBGCommand;
   const AParams: array of const; const ACallback: TMethod): Boolean;
 begin
   if (ACommand in [dcRun, dcStepOver, dcStepInto, dcStepOut, dcStepTo, dcRunTo, dcJumpto,
-      dcStepOverInstr, dcStepIntoInstr, dcAttach, dcAttachToTargetStarter]) and
+      dcStepOverInstr, dcStepIntoInstr, dcAttach]) and
      not assigned(FDbgController.MainProcess)
   then
   begin

@@ -286,10 +286,6 @@ type
     FParseValues: array[TEnvOptParseType] of TParseString;
     FLazarusDirHistory: TStringList;
     FCompilerFileHistory: TStringList;
-    FTrustedCompilers: TStringList;
-    FSessionTrustedCompilers: TStringList; // trusted via "Trust this time", not saved, cleared on project close
-    FTrustedCommands: TStringList; // trusted execute before/after shell commands
-    FSessionTrustedCommands: TStringList; // trusted via "Trust this time", not saved, cleared on project close
     FFPCSourceDirHistory: TStringList;
     FMakeFileHistory: TStringList;
     FTestBuildDirHistory: TStringList;
@@ -312,9 +308,6 @@ type
     FMaxRecentProjectFiles: integer;
     FRecentPackageFiles: TStringList;
     FMaxRecentPackageFiles: integer;
-    FProjectsInOpenToolbarButton: boolean;
-    FPackagesInOpenToolbarButton: boolean;
-    FFilesInOpenToolbarButton: boolean;
     FOpenLastProjectAtStart: boolean;
     FNewProjectTemplateAtStart: string;
     FMultipleInstances: TIDEMultipleInstancesOption;
@@ -442,16 +435,6 @@ type
     property LazarusDirHistory: TStringList read FLazarusDirHistory write FLazarusDirHistory;
     property CompilerFilename: string read GetCompilerFilename write SetCompilerFilename;
     property CompilerFileHistory: TStringList read FCompilerFileHistory write FCompilerFileHistory;
-    property TrustedCompilers: TStringList read FTrustedCompilers;
-    function IsCompilerTrusted(const aFilename: string): boolean;
-    procedure AddTrustedCompiler(const aFilename: string);
-    procedure AddSessionTrustedCompiler(const aFilename: string); // trust for this session only, not saved to disk
-    procedure ClearSessionTrustedCompilers; // called when a project is closed
-    property TrustedCommands: TStringList read FTrustedCommands;
-    function IsCommandTrusted(const aCommand: string): boolean;
-    procedure AddTrustedCommand(const aCommand: string);
-    procedure AddSessionTrustedCommand(const aCommand: string); // trust for this session only, not saved to disk
-    procedure ClearSessionTrustedCommands; // called when a project is closed
     property FPCSourceDirectory: string read GetFPCSourceDirectory write SetFPCSourceDirectory;
     property FPCSourceDirHistory: TStringList read FFPCSourceDirHistory;
     property MakeFilename: string read GetMakeFilename write SetMakeFilename;
@@ -499,10 +482,6 @@ type
                                          write FMaxRecentPackageFiles;
     procedure AddToRecentPackageFiles(const AFilename: string); override;
     procedure RemoveFromRecentPackageFiles(const AFilename: string); override;
-    // show recent items in "Open" drop-down toolbar button
-    property ProjectsInOpenToolbarButton: boolean read FProjectsInOpenToolbarButton write FProjectsInOpenToolbarButton;
-    property PackagesInOpenToolbarButton: boolean read FPackagesInOpenToolbarButton write FPackagesInOpenToolbarButton;
-    property FilesInOpenToolbarButton   : boolean read FFilesInOpenToolbarButton    write FFilesInOpenToolbarButton   ;
     property LastSavedProjectFile: string read FLastSavedProjectFile
                      write FLastSavedProjectFile; { if empty then create new project,
                                                     if '-' then do not load/create any project }
@@ -753,10 +732,6 @@ begin
   FLazarusDirHistory:=TStringList.Create;
   CompilerFilename:='';
   FCompilerFileHistory:=TStringList.Create;
-  FTrustedCompilers:=TStringList.Create;
-  FSessionTrustedCompilers:=TStringList.Create;
-  FTrustedCommands:=TStringList.Create;
-  FSessionTrustedCommands:=TStringList.Create;
   FPCSourceDirectory:='';
   FFPCSourceDirHistory:=TStringList.Create;
   MakeFilename:=DefaultMakefilename;
@@ -778,9 +753,6 @@ begin
   FMaxRecentProjectFiles:=DefaultMaxRecentProjectFiles;
   FRecentPackageFiles:=TStringList.Create;
   FMaxRecentPackageFiles:=DefaultMaxRecentPackageFiles;
-  FProjectsInOpenToolbarButton:=true;
-  FPackagesInOpenToolbarButton:=true;
-  FFilesInOpenToolbarButton:=true;
   FOpenLastProjectAtStart:=true;
   FMultipleInstances:=DefaultIDEMultipleInstancesOption;
 
@@ -832,10 +804,6 @@ begin
   FreeAndNil(FRecentPackageFiles);
   FreeAndNil(FLazarusDirHistory);
   FreeAndNil(FCompilerFileHistory);
-  FreeAndNil(FTrustedCompilers);
-  FreeAndNil(FSessionTrustedCompilers);
-  FreeAndNil(FTrustedCommands);
-  FreeAndNil(FSessionTrustedCommands);
   FreeAndNil(FFPCSourceDirHistory);
   FreeAndNil(FMakeFileHistory);
   FreeAndNil(FManyBuildModesSelection);
@@ -977,8 +945,6 @@ begin
   CompilerFilename:=TrimFilename(FXMLCfg.GetValue(
                         Path+'CompilerFilename/Value',CompilerFilename));
   LoadRecentList(FXMLCfg,FCompilerFileHistory,Path+'CompilerFilename/History/',rltFile);
-  LoadRecentList(FXMLCfg,FTrustedCompilers,Path+'TrustedCompilers/',rltFile);
-  LoadRecentList(FXMLCfg,FTrustedCommands,Path+'TrustedCommands/',rltCaseSensitive);
   FPCSourceDirectory:=FXMLCfg.GetValue(Path+'FPCSourceDirectory/Value',FPCSourceDirectory);
   LoadRecentList(FXMLCfg,FFPCSourceDirHistory,Path+'FPCSourceDirectory/History/',rltFile);
   MakeFilename:=TrimFilename(FXMLCfg.GetValue(Path+'MakeFilename/Value',MakeFilename));
@@ -1110,9 +1076,6 @@ begin
     LoadRecentList(FXMLCfg,FRecentProjectFiles,Path+'Recent/ProjectFiles/',rltFile);
     FMaxRecentPackageFiles:=FXMLCfg.GetValue(Path+'Recent/PackageFiles/Max',DefaultMaxRecentPackageFiles);
     LoadRecentList(FXMLCfg,FRecentPackageFiles,Path+'Recent/PackageFiles/',rltFile);
-    FProjectsInOpenToolbarButton:=FXMLCfg.GetValue(Path+'Recent/ProjectFiles/ShowInOpenToolbarButton',true);
-    FPackagesInOpenToolbarButton:=FXMLCfg.GetValue(Path+'Recent/PackageFiles/ShowInOpenToolbarButton',true);
-    FFilesInOpenToolbarButton:=FXMLCfg.GetValue(Path+'Recent/OpenFiles/ShowInOpenToolbarButton',true);
     FNewProjectTemplateAtStart:=FXMLCfg.GetValue(Path+'NewProjectTemplateAtStart/Value','Application');
     FMultipleInstances:=StrToIDEMultipleInstancesOption(FXMLCfg.GetValue(Path+'MultipleInstances/Value',''));
     FAlreadyPopulatedRecentFiles := FXMLCfg.GetValue(Path+'Recent/AlreadyPopulated', false);
@@ -1212,8 +1175,6 @@ begin
   SaveRecentList(FXMLCfg,FLazarusDirHistory,Path+'LazarusDirectory/History/');
   FXMLCfg.SetDeleteValue(Path+'CompilerFilename/Value',CompilerFilename,'');
   SaveRecentList(FXMLCfg,FCompilerFileHistory,Path+'CompilerFilename/History/');
-  SaveRecentList(FXMLCfg,FTrustedCompilers,Path+'TrustedCompilers/');
-  SaveRecentList(FXMLCfg,FTrustedCommands,Path+'TrustedCommands/');
   FXMLCfg.SetDeleteValue(Path+'FPCSourceDirectory/Value',FPCSourceDirectory,'');
   SaveRecentList(FXMLCfg,FFPCSourceDirHistory,Path+'FPCSourceDirectory/History/');
   FXMLCfg.SetDeleteValue(Path+'MakeFilename/Value',MakeFilename,DefaultMakefilename);
@@ -1320,9 +1281,6 @@ begin
     SaveRecentList(FXMLCfg,FRecentProjectFiles,Path+'Recent/ProjectFiles/',FMaxRecentProjectFiles);
     FXMLCfg.SetDeleteValue(Path+'Recent/PackageFiles/Max',FMaxRecentPackageFiles,DefaultMaxRecentPackageFiles);
     SaveRecentList(FXMLCfg,FRecentPackageFiles,Path+'Recent/PackageFiles/',FMaxRecentPackageFiles);
-    FXMLCfg.SetDeleteValue(Path+'Recent/ProjectFiles/ShowInOpenToolbarButton',FProjectsInOpenToolbarButton,true);
-    FXMLCfg.SetDeleteValue(Path+'Recent/PackageFiles/ShowInOpenToolbarButton',FPackagesInOpenToolbarButton,true);
-    FXMLCfg.SetDeleteValue(Path+'Recent/OpenFiles/ShowInOpenToolbarButton',FFilesInOpenToolbarButton,true);
     FXMLCfg.SetDeleteValue(Path+'NewProjectTemplateAtStart/Value',FNewProjectTemplateAtStart,'Application');
     FXMLCfg.SetDeleteValue(Path+'MultipleInstances/Value',
         IDEMultipleInstancesOptionNames[FMultipleInstances],
@@ -1627,63 +1585,6 @@ end;
 function TEnvironmentOptions.GetParsedCompilerFilename: string;
 begin
   Result:=GetParsedValue(eopCompilerFilename);
-end;
-
-function TEnvironmentOptions.IsCompilerTrusted(const aFilename: string): boolean;
-var
-  i: integer;
-begin
-  for i:=0 to FTrustedCompilers.Count-1 do
-    if CompareFilenames(FTrustedCompilers[i],aFilename)=0 then exit(true);
-  for i:=0 to FSessionTrustedCompilers.Count-1 do
-    if CompareFilenames(FSessionTrustedCompilers[i],aFilename)=0 then exit(true);
-  Result:=false;
-end;
-
-procedure TEnvironmentOptions.AddTrustedCompiler(const aFilename: string);
-begin
-  if (aFilename='') or IsCompilerTrusted(aFilename) then exit;
-  FTrustedCompilers.Add(aFilename);
-end;
-
-procedure TEnvironmentOptions.AddSessionTrustedCompiler(const aFilename: string);
-begin
-  if (aFilename='') or IsCompilerTrusted(aFilename) then exit;
-  FSessionTrustedCompilers.Add(aFilename);
-end;
-
-procedure TEnvironmentOptions.ClearSessionTrustedCompilers;
-begin
-  FSessionTrustedCompilers.Clear;
-end;
-
-function TEnvironmentOptions.IsCommandTrusted(const aCommand: string): boolean;
-var
-  i: integer;
-begin
-  // a command is an exact shell command line, not a filename -> compare case-sensitive
-  for i:=0 to FTrustedCommands.Count-1 do
-    if FTrustedCommands[i]=aCommand then exit(true);
-  for i:=0 to FSessionTrustedCommands.Count-1 do
-    if FSessionTrustedCommands[i]=aCommand then exit(true);
-  Result:=false;
-end;
-
-procedure TEnvironmentOptions.AddTrustedCommand(const aCommand: string);
-begin
-  if (aCommand='') or IsCommandTrusted(aCommand) then exit;
-  FTrustedCommands.Add(aCommand);
-end;
-
-procedure TEnvironmentOptions.AddSessionTrustedCommand(const aCommand: string);
-begin
-  if (aCommand='') or IsCommandTrusted(aCommand) then exit;
-  FSessionTrustedCommands.Add(aCommand);
-end;
-
-procedure TEnvironmentOptions.ClearSessionTrustedCommands;
-begin
-  FSessionTrustedCommands.Clear;
 end;
 
 function TEnvironmentOptions.FileHasChangedOnDisk: boolean;

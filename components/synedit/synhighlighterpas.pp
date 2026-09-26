@@ -86,6 +86,7 @@ type
     rsSlash,        // // : Only if it's from the "start of line" (ignore lead whitespace). Used for calling SlashCommentProc 
     rsIDEDirective, // {%
     rsDirective,    // {$
+    rsBacktickString,
     rsAsm,          // assembler block
     rsProperty,
     rsInPropertyNameOrIndex, // Set by "property" kept until "read/write/...": property NAME [IDX: TTYPE]: TTYPE read ...
@@ -93,8 +94,6 @@ type
     rsInParamDeclaration, // [OPT] Either in property-index "foo[AIndex:int]" or in procedure param declaration
     rsInterface,
     rsImplementation,   // Program or Implementation
-    rsModeByDirectiveSet,     // A source may only have one $mode directive
-    rsModeByDirectiveLocked,  // All mode/modeswitches must be before the first code statement
 
     // we need to detect:    type TFoo = procedure; // must not fold
     //                       var  foo: procedure;   // must not fold
@@ -529,8 +528,7 @@ type
     //pcsAdvancedRecords,
     pcsObjectiveC1,
     pcsObjectiveC2,
-    pcsFunctionReferences,
-    pcsAnonymousFunctions
+    pcsFunctionReferences
   );
   TPascalCompilerModeSwitches = set of TPascalCompilerModeSwitch;
 
@@ -597,19 +595,11 @@ type
 
   TSynHighlighterPasRangeList = class(specialize TGenLazHighlighterLineRangeShiftList<TSynPasFullRangeInfo>)
   private
-    FCompilerMode: TPascalCompilerMode;
-    FCompilerModeLocked: Boolean;
-    FModeSwitches: TPascalCompilerModeSwitches;
-    FModeSwitchesLocked: TPascalCompilerModeSwitches;
     function GetTSynPasRangeInfo(Index: Integer): TSynPasRangeInfo;
     procedure SetTSynPasRangeInfo(Index: Integer; const AValue: TSynPasRangeInfo);
   public
     property PasRangeInfo[Index: Integer]: TSynPasRangeInfo
       read GetTSynPasRangeInfo write SetTSynPasRangeInfo;
-    property CompilerMode: TPascalCompilerMode read FCompilerMode write FCompilerMode;
-    property ModeSwitches: TPascalCompilerModeSwitches read FModeSwitches write FModeSwitches;
-    property CompilerModeLocked: Boolean read FCompilerModeLocked write FCompilerModeLocked;
-    property ModeSwitchesLocked: TPascalCompilerModeSwitches read FModeSwitchesLocked write FModeSwitchesLocked;
   end;
 
   { TSynPasSynRange }
@@ -769,8 +759,6 @@ type
     PSynPasSynCustomTokenInfoListEx = ^TSynPasSynCustomTokenInfoListEx;
   private
     FCaseLabelAttriMatchesElseOtherwise: Boolean;
-    FCompilerModeLocked: Boolean;
-    FModeSwitchesLocked: TPascalCompilerModeSwitches;
     FPasAttributes: array [TSynPasAttribute] of TLazEditHighlighterAttributes;
     FPasAttributesMod: array [TSynPasAttributeMod] of TLazEditHighlighterAttributesModifier;
     FNestedBracketAttribs: TLazEditTextAttributeModifierCollection;
@@ -798,7 +786,7 @@ type
     FPasStartLevel: Smallint;
     fRange: TRangeStates;
     FOldRange: TRangeStates;
-    FTokenState, FNextTokenState, FLastTokenState: TTokenState;
+    FTokenState, FNextTokenState: TTokenState;
     FRangeCompilerMode: TPascalCompilerMode;
     FRangeModeSwitches: TPascalCompilerModeSwitches;
     FRequiredStates, FRequiredStatesAtLastLineInit: TRequiredStates;
@@ -820,13 +808,12 @@ type
     FTokenTypeDeclExtraAttrib, FLastTokenTypeDeclExtraAttrib: TTokenTypeDeclExtraAttrib;
     FTokenIsCaseLabel: Boolean;
     FTokenIsValueOrTypeName: Boolean;
-    FCompilerMode, FDefaultCompilerMode: TPascalCompilerMode;
-    FModeSwitches, FDefaultModeSwitches: TPascalCompilerModeSwitches;
-    FModeSwitchesLoaded, FDefaultModeSet: Boolean;
+    FCompilerMode: TPascalCompilerMode;
+    FModeSwitches: TPascalCompilerModeSwitches;
+    FModeSwitchesLoaded: Boolean;
     fD4syntax: boolean;
     // Divider
     FDividerDrawConfig: Array [TSynPasDividerDrawLocation] of TLazEditDividerDrawConfig;
-    FStoreModesPerFile: boolean;
 
     procedure DoCustomTokenChanged(Sender: TObject);
     procedure DoReadLfmNestedComments(Reader: TReader);
@@ -853,10 +840,7 @@ type
     function  GetCustomTokens(AnIndex: integer): TSynPasSynCustomToken;
     function GetPasCodeFoldRange: TSynPasSynRange; inline;
     procedure PasDocAttrChanged(Sender: TObject);
-    procedure SetStoreModesPerFile(AValue: boolean);
     function  SwitchesForMode(const AValue: TPascalCompilerMode):TPascalCompilerModeSwitches;
-    procedure SetCompilerModeLocked(AValue: Boolean);
-    procedure SetModeSwitchesLocked(AValue: TPascalCompilerModeSwitches);
     procedure SetCompilerMode(const AValue: TPascalCompilerMode);
     procedure SetGenericConstraintAttributeMode(AValue: TSynPasTypeAttributeMode);
     procedure SetProcNameImplAttributeMode(AValue: TProcNameAttrbuteModes);
@@ -1068,7 +1052,6 @@ type
     function GetRangeClass: TLazHighlighterRangeClass; override;
     procedure CreateRootCodeFoldBlock; override;
     function CreateRangeList(ALines: TLazEditStringsBase): TLazHighlighterLineRangeList; override;
-    procedure DoCurrentLinesChanged; override;
     function UpdateRangeInfoAtEOL: Boolean; override; // Returns true if range changed
     function DoPrepareLines(AFirstLineIdx: IntIdx; AMinimumRequiredLineIdx: IntIdx = - 1; AMaxTime: integer = 0): integer; override;
 
@@ -1230,10 +1213,6 @@ type
 
     property CompilerMode: TPascalCompilerMode read FCompilerMode write SetCompilerMode default pcmDelphi;
     property ModeSwitches: TPascalCompilerModeSwitches read FModeSwitches write SetModeSwitches stored GetModeSwitchesStored;
-    property CompilerModeLocked: Boolean read FCompilerModeLocked write SetCompilerModeLocked default False;
-    property ModeSwitchesLocked: TPascalCompilerModeSwitches read FModeSwitchesLocked write SetModeSwitchesLocked default [];
-    property StoreModesPerFile: boolean read FStoreModesPerFile write SetStoreModesPerFile default False;
-
     property D4syntax: boolean read FD4syntax write SetD4syntax default true;
     property ExtendedKeywordsMode: Boolean
              read FExtendedKeywordsMode write SetExtendedKeywordsMode default False;
@@ -1659,7 +1638,7 @@ begin
     pcmFPC,
     pcmObjFPC:        Result := [pcsNestedComments];
     pcmDelphi,
-    pcmDelphiUnicode: Result := [pcsTypeHelpers, pcsFunctionReferences, pcsAnonymousFunctions];
+    pcmDelphiUnicode: Result := [pcsTypeHelpers, pcsFunctionReferences];
     pcmTP:            Result := [];
     pcmGPC:           Result := [pcsNestedComments];
     pcmMacPas:        Result := [pcsObjectiveC1, pcsObjectiveC2];
@@ -1668,57 +1647,12 @@ begin
   end;
 end;
 
-procedure TSynPasSyn.SetCompilerModeLocked(AValue: Boolean);
-begin
-  if FCompilerModeLocked = AValue then Exit;
-  FCompilerModeLocked := AValue;
-
-  if (CurrentRanges <> nil) then begin
-    TSynHighlighterPasRangeList(CurrentRanges).CompilerModeLocked := FCompilerModeLocked;
-    CurrentRanges.InvalidateAll;
-    CurrentLines.SendHighlightRescanNeeded;
-  end;
-  if not StoreModesPerFile then
-    RequestFullRescan;
-end;
-
-procedure TSynPasSyn.SetModeSwitchesLocked(AValue: TPascalCompilerModeSwitches);
-begin
-  if FModeSwitchesLocked = AValue then Exit;
-  FModeSwitchesLocked := AValue;
-
-  if (CurrentRanges <> nil) then begin
-    TSynHighlighterPasRangeList(CurrentRanges).ModeSwitchesLocked := FModeSwitchesLocked;
-    CurrentRanges.InvalidateAll;
-    CurrentLines.SendHighlightRescanNeeded;
-  end;
-  if not StoreModesPerFile then
-    RequestFullRescan;
-end;
-
 procedure TSynPasSyn.SetCompilerMode(const AValue: TPascalCompilerMode);
-var
-  rescan: Boolean;
-  ms: TPascalCompilerModeSwitches;
 begin
-  if (not FModeSwitchesLoaded) or not(csLoading in ComponentState) then begin
-    ms := SwitchesForMode(AValue);
-    rescan := FModeSwitches <> ms;
-    FModeSwitches := ms;
-  end;
+  if (not FModeSwitchesLoaded) or not(csLoading in ComponentState) then
+    ModeSwitches := SwitchesForMode(AValue);
   //if FCompilerMode=AValue then exit;
-  rescan := rescan or (FCompilerMode <> AValue);
   FCompilerMode:=AValue;
-  if (CurrentRanges <> nil) then begin
-    TSynHighlighterPasRangeList(CurrentRanges).CompilerMode := FCompilerMode;
-    TSynHighlighterPasRangeList(CurrentRanges).ModeSwitches := FModeSwitches;
-    if rescan then begin
-      CurrentRanges.InvalidateAll;
-      CurrentLines.SendHighlightRescanNeeded;
-    end;
-  end;
-  if rescan and not StoreModesPerFile then
-    RequestFullRescan;
 end;
 
 procedure TSynPasSyn.SetGenericConstraintAttributeMode(AValue: TSynPasTypeAttributeMode);
@@ -1743,23 +1677,11 @@ begin
 end;
 
 procedure TSynPasSyn.SetModeSwitches(AValue: TPascalCompilerModeSwitches);
-var
-  rescan: Boolean;
 begin
   if (csLoading in ComponentState) then
     FModeSwitchesLoaded := True;
 
-  rescan := FModeSwitches <> AValue;
   FModeSwitches := AValue;
-  if (CurrentRanges <> nil) then begin
-    TSynHighlighterPasRangeList(CurrentRanges).ModeSwitches := FModeSwitches;
-    if rescan then begin
-      CurrentRanges.InvalidateAll;
-      CurrentLines.SendHighlightRescanNeeded;
-    end;
-  end;
-  if rescan and not StoreModesPerFile then
-    RequestFullRescan;
 end;
 
 procedure TSynPasSyn.SetDeclaredTypeAttributeMode(AValue: TSynPasTypeAttributeMode);
@@ -2060,12 +1982,6 @@ begin
                 FPasAttributesMod[attribPasDocSymbol].IsEnabled or
                 FPasAttributesMod[attribPasDocUnknown].IsEnabled;
   DefHighlightChange(Sender);
-end;
-
-procedure TSynPasSyn.SetStoreModesPerFile(AValue: boolean);
-begin
-  if FStoreModesPerFile = AValue then Exit;
-  FStoreModesPerFile := AValue;
 end;
 
 function TSynPasSyn.Func15: TtkTokenKind;
@@ -4704,29 +4620,19 @@ end;
 procedure TSynPasSyn.DirectiveProc;
   procedure ApplyModeSwitch(ASwitch: TPascalCompilerModeSwitch);
   begin
-    if ASwitch in FModeSwitchesLocked then
-      exit;
     // skip space
     while (LinePtr[Run] in [' ',#9,#10,#13]) do inc(Run);
-    if (LinePtr[Run] in ['+', '}']) or
-       ((LinePtr[Run] in ['o','O']) and (LinePtr[Run+1] in ['n','N']) and (LinePtr[Run+2] in [#0, #9, #10, #13, ' ', '}']) )
-    then begin
-      FRangeModeSwitches := FRangeModeSwitches + [ASwitch];
-    end
+    if LinePtr[Run] in ['+', '}'] then
+      FRangeModeSwitches := FRangeModeSwitches + [ASwitch]
     else
-    if (LinePtr[Run] = '-') or
-       ((LinePtr[Run] in ['o','O']) and (LinePtr[Run+1] in ['f','F']) and (LinePtr[Run+2] in ['f','F']) and (LinePtr[Run+3] in [#0, #9, #10, #13, ' ', '}']) )
-    then begin
+    if LinePtr[Run] = '-' then
       FRangeModeSwitches := FRangeModeSwitches - [ASwitch];
-    end;
   end;
 begin
   fTokenID := tkDirective;
   Include(FTokenExtraAttribs, eaPartTokenNotAtEnd); // BorProc will clear this, if it reaches the end
 
-  if (not (rsModeByDirectiveLocked in fRange)) and
-     TextComp('modeswitch')
-  then begin
+  if TextComp('modeswitch') then begin
     // modeswitch directive
     inc(Run,10);
     // skip space
@@ -4759,19 +4665,9 @@ begin
     begin
       inc(Run,18);
       ApplyModeSwitch(pcsFunctionReferences);
-    end
-    else
-    if TextComp('anonymousfunctions') then
-    begin
-      inc(Run,18);
-      ApplyModeSwitch(pcsAnonymousFunctions);
     end;
   end;
-  if (fRange * [rsModeByDirectiveSet, rsModeByDirectiveLocked] = []) and
-     (not FCompilerModeLocked) and
-     TextComp('mode')
-  then begin
-    Include(fRange, rsModeByDirectiveSet);
+  if TextComp('mode') then begin
     // $mode directive
     inc(Run,4);
     // skip space
@@ -5010,8 +4906,7 @@ end;
 procedure TSynPasSyn.BacktickProc;
 begin
   FTokenID := tkString;
-  FNextTokenState := tsInMultiLineStingTick;
-  FLastTokenState := tsInMultiLineStingTick;
+  Include(fRange, rsBacktickString);
   if reStringBacktick in FRequiredStates then
     FCustomCommentTokenMarkup := FPasAttributesMod[attribStringBacktick];
 
@@ -5032,6 +4927,7 @@ var
   IsInWord, WasInWord, ct: Boolean;
 begin
   fTokenID := tkString;
+  Include(FOldRange, rsBacktickString); // for the closing tick
   if reStringBacktick in FRequiredStates then
     FCustomCommentTokenMarkup := FPasAttributesMod[attribStringBacktick];
 
@@ -5074,8 +4970,7 @@ begin
           end;
         end;
         Inc(Run);
-        FNextTokenState := tsNone;
-        FTokenState := tsNone;
+        Exclude(fRange, rsBacktickString);
 
         // modifiers like "alias" take a string as argument
         if (PasCodeFoldRange.BracketNestLevel = 0) then begin
@@ -6051,8 +5946,7 @@ end;
 procedure TSynPasSyn.StringProc_MultiLineDQ;
 begin
   fTokenID := tkString;
-  FNextTokenState := tsInMultiLineStingDQ;
-  FLastTokenState := tsInMultiLineStingDQ;
+  fRange := fRange + [rsAnsiMultiDQ];
 
   while (LinePtr[Run] <> #0) do
   begin
@@ -6061,8 +5955,7 @@ begin
       Inc(Run);
       if (LinePtr[Run] <> '"') then
       begin
-        FTokenState := tsNone;
-        FNextTokenState := tsNone;
+        fRange := fRange - [rsAnsiMultiDQ];
         Break;
       end;
     end;
@@ -6424,7 +6317,6 @@ begin
   fTokenPos := Run;
   FCustomTokenMarkup := nil;
   FTokenExtraKind := tkeUnknown;
-  FLastTokenState := FTokenState;
   if Run>=fLineLen then begin
     NullProc;
     exit;
@@ -6503,9 +6395,6 @@ begin
 
 
         if not (FTokenID in [tkSpace, tkComment, tkIDEDirective, tkDirective, tkNull]) then begin
-          if (FTokenID = tkKey) and (rsInterface in FOldRange) then
-            fRange := fRange + [rsModeByDirectiveLocked];
-
           if (FNextTokenState = tsNone) and (FTokenState in [tsAfterExternal, tsAfterExternalName]) and
              (FTokenID in [tkIdentifier, tkString, tkKey])
           then
@@ -6675,7 +6564,7 @@ begin
          (lafPastEOL in FPasAttributes[attribComment].Features)
       then
         x2 := MaxInt;
-      if (Result = FPasAttributes[attribString]) and (FLastTokenState = tsInMultiLineStingDQ) and
+      if (Result = FPasAttributes[attribString]) and (rsAnsiMultiDQ in fRange) and
          (lafPastEOL in FPasAttributes[attribString].Features)
       then
         x2 := MaxInt;
@@ -6989,12 +6878,12 @@ begin
     end;
   end
   else
-  if FLastTokenState = tsInMultiLineStingTick then begin
+  if fRange * [rsBacktickString] <> [] then begin
     if lafPastEOL in FPasAttributesMod[attribStringBacktick].Features then
       Result := Merge(FPasAttributes[attribString], FPasAttributesMod[attribStringBacktick]);
   end
   else
-  if FLastTokenState = tsInMultiLineStingDQ then begin
+  if fRange * [rsAnsiMultiDQ] <> [] then begin
     if lafPastEOL in FPasAttributes[attribString].Features then
       Result := FPasAttributes[attribString];
   end
@@ -7106,7 +6995,7 @@ begin
          AFlags := AFlags + [bfUnknownNestLevel];
        end;
     5: begin // ''
-         if (FTokenID = tkString) and not (FLastTokenState = tsInMultiLineStingTick) then begin
+         if (FTokenID = tkString) and not (rsBacktickString in (FOldRange+fRange)) then begin
            AFlags := AFlags + [bfNotNestable, bfSingleLine] - [bfNoLanguageContext, bfUnknownNestLevel, bfUniform];
            AContext := KIND_STRING_BOUND;
            if  IsOpeningString(LogIdx) then
@@ -7133,8 +7022,8 @@ begin
          AFlags := AFlags + [bfUniform, bfNotNestable, bfNoLanguageContext] - [bfOpen, bfSingleLine];
        end;
     8: begin // ` backtick
-         if (FTokenID = tkString) and (FLastTokenState = tsInMultiLineStingTick) then begin
-           AFlags := AFlags + [bfNotNestable] - [bfNoLanguageContext, bfUnknownNestLevel, bfUniform];
+         if (FTokenID = tkString) and (rsBacktickString in (FOldRange+fRange)) then begin
+           AFlags := AFlags + [bfNotNestable, bfSingleLine] - [bfNoLanguageContext, bfUnknownNestLevel, bfUniform];
            AContext := KIND_BACKTICK_STRING_BOUND;
            if  IsOpeningString(LogIdx) then
              AFlags := AFlags + [bfOpen]  // string start
@@ -7569,14 +7458,9 @@ var
   FndLine: String;
   FndPos, FndLen: integer;
 begin
-  Result := ScanAheadForNextToken(RunOffs, FndLine, FndPos, FndLen, 1);
+  Result := ScanAheadForNextToken(RunOffs, FndLine, FndPos, FndLen, 0);
   if not Result then
-    exit(pcsAnonymousFunctions in FRangeModeSwitches);
-
-  if FndLine[FndPos] in ['a'..'z', 'A'..'Z', '_'] then
-    Result := False // we found a name. Exceptions below
-  else
-    Result := pcsAnonymousFunctions in FRangeModeSwitches;
+    exit;
 
   case FndLine[FndPos] of
     ':':      Result := AnIsFunction;
@@ -8278,9 +8162,6 @@ begin
 
   if (TPascalCodeFoldBlockType(Index) in [cfbtIfThen, cfbtForDo, cfbtWhileDo, cfbtWithDo, cfbtIfElse]) then
     m := [];
-  if TPascalCodeFoldBlockType(Index) in [cfbtCaseElse] then
-    m := m - [fmMarkup];
-
   if TPascalCodeFoldBlockType(Index) in [cfbtSlashComment] then
     Result.Modes := [fmFold, fmHide] + m
   else
@@ -8296,33 +8177,6 @@ end;
 function TSynPasSyn.CreateRangeList(ALines: TLazEditStringsBase): TLazHighlighterLineRangeList;
 begin
   Result := TSynHighlighterPasRangeList.Create;
-  if not FDefaultModeSet then begin
-    FDefaultCompilerMode := FCompilerMode;
-    FDefaultModeSwitches := FModeSwitches;
-    FDefaultModeSet := True;
-  end;
-  TSynHighlighterPasRangeList(Result).CompilerMode := FDefaultCompilerMode;
-  TSynHighlighterPasRangeList(Result).ModeSwitches := FDefaultModeSwitches;
-end;
-
-procedure TSynPasSyn.DoCurrentLinesChanged;
-begin
-  inherited DoCurrentLinesChanged;
-  if CurrentRanges <> nil then begin
-    if FStoreModesPerFile then begin
-      FCompilerMode := TSynHighlighterPasRangeList(CurrentRanges).CompilerMode;
-      FModeSwitches := TSynHighlighterPasRangeList(CurrentRanges).ModeSwitches;
-      FModeSwitchesLocked := TSynHighlighterPasRangeList(CurrentRanges).ModeSwitchesLocked;
-      FModeSwitchesLocked := TSynHighlighterPasRangeList(CurrentRanges).ModeSwitchesLocked;
-    end
-    else begin
-      // always keep synced, if later enabled
-      TSynHighlighterPasRangeList(CurrentRanges).CompilerMode := FDefaultCompilerMode;
-      TSynHighlighterPasRangeList(CurrentRanges).ModeSwitches := FDefaultModeSwitches;
-      TSynHighlighterPasRangeList(CurrentRanges).ModeSwitchesLocked := FModeSwitchesLocked;
-      TSynHighlighterPasRangeList(CurrentRanges).ModeSwitchesLocked := FModeSwitchesLocked;
-    end;
-  end;
 end;
 
 function TSynPasSyn.UpdateRangeInfoAtEOL: Boolean;
@@ -8342,10 +8196,8 @@ end;
 function TSynPasSyn.DoPrepareLines(AFirstLineIdx: IntIdx; AMinimumRequiredLineIdx: IntIdx;
   AMaxTime: integer): integer;
 begin
-  if (AFirstLineIdx > 0) and (AFirstLineIdx = CurrentRanges.UnsentValidationStartLine) then begin
-    AFirstLineIdx := AFirstLineIdx - 1;
-    CurrentRanges.UpdateUnsentValidationStartLine(AFirstLineIdx); // TODO: check if LastLineCodeFoldLevelFix changes
-  end;
+  if AFirstLineIdx = CurrentRanges.UnsentValidationStartLine then
+    CurrentRanges.UpdateUnsentValidationStartLine(AFirstLineIdx - 1); // TODO: check if LastLineCodeFoldLevelFix changes
   Result := inherited DoPrepareLines(AFirstLineIdx, AMinimumRequiredLineIdx, AMaxTime);
 end;
 

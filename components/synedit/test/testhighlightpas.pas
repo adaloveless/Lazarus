@@ -3382,52 +3382,35 @@ begin
 end;
 
 procedure TTestHighlighterPas.TestContextForTypeHelper;
-  procedure DoChecksHelperOn(AWithFold: Boolean = false);
+  procedure DoChecks;
   begin
-    CheckTokensForLine('a helper',  3,
+    CheckTokensForLine('not a helper',  2,
       [ tkIdentifier, tkSpace, tkSymbol, tkSpace,
-        tkKey {type}, tkSpace, tkKey {helper}, tkSpace, tkKey {for}, tkSpace, tkIdentifier, tkSpace, tkKey, tkSymbol
+        tkKey {type}, tkSpace, tkIdentifier {helper}, tkSpace, tkKey {for}, tkSpace, tkIdentifier, tkSymbol
       ]);
-    AssertEquals('a helper / no fold', 0, PasHighLighter.FoldOpenCount(3));
+    AssertEquals('not a helper / no fold', 0, PasHighLighter.FoldOpenCount(2));
 
-    CheckTokensForLine('helper',  4,
+    CheckTokensForLine('helper',  5,
       [ tkIdentifier, tkSpace, tkSymbol, tkSpace,
         tkKey {type}, tkSpace, tkKey {helper}, tkSpace, tkKey {for}, tkSpace, tkIdentifier
       ]);
-    CheckTokensForLine('procedure in helper',  5,
+    CheckTokensForLine('procedure in helper',  6,
       [ tkKey, tkSpace, tkIdentifier + FAttrProcName,  tkSymbol, tkSpace, tkModifier,  tkSymbol ]);
-    if AWithFold then
-      AssertEquals('helper type / fold', 1, PasHighLighter.FoldOpenCount(4));
-
-    CheckTokensForLine('uniq type',  7,
+    CheckTokensForLine('uniq type',  8,
       [ tkIdentifier, tkSpace, tkSymbol, tkSpace,
         tkKey {type}, tkSpace, tkIdentifier, tkSymbol
       ]);
-    AssertEquals('uniq type / no fold', 0, PasHighLighter.FoldOpenCount(7));
+    AssertEquals('uniq type / no fold', 0, PasHighLighter.FoldOpenCount(8));
 
-    CheckTokensForLine('helper',  9,
+    CheckTokensForLine('not a helper, switched off',  11,
       [ tkIdentifier, tkSpace, tkSymbol, tkSpace,
-        tkKey {type}, tkSpace, tkKey {helper}, tkSpace, tkKey {for}, tkSpace, tkIdentifier
+        tkKey {type}, tkSpace, tkIdentifier {helper}, tkSpace, tkKey {for}, tkSpace, tkIdentifier, tkSymbol
       ]);
-    CheckTokensForLine('class section',  10,
+    AssertEquals('not a helper, switched off / no fold', 0, PasHighLighter.FoldOpenCount(11));
+
+    CheckTokensForLine('class section',  14,
       [ tkKey ]);
-
-  end;
-  procedure DoChecksHelperOff;
-  begin
-    CheckTokensForLine('not a helper',  3,
-      [ tkIdentifier, tkSpace, tkSymbol, tkSpace,
-        tkKey {type}, tkSpace, tkIdentifier {helper}, tkSpace, tkKey {for}, tkSpace, tkIdentifier, tkSpace, tkKey, tkSymbol
-      ]);
-    AssertEquals('not a helper / no fold', 0, PasHighLighter.FoldOpenCount(3));
-
-    CheckTokensForLine('uniq type',  7,
-      [ tkIdentifier, tkSpace, tkSymbol, tkSpace,
-        tkKey {type}, tkSpace, tkIdentifier, tkSymbol
-      ]);
-    AssertEquals('uniq type / no fold', 0, PasHighLighter.FoldOpenCount(7));
-
-    CheckTokensForLine('NOT class section',  10,
+    CheckTokensForLine('NOT class section',  18,
       [ tkIdentifier ]);
   end;
 
@@ -3443,54 +3426,36 @@ begin
 
     ReCreateEdit;
     EnableFolds(AFolds);
-
     SetLines
-      ([ 'Unit A; {$mode objfpc} interface {$modeswitch typehelpers-}',
+      ([ 'Unit A; {$mode objfpc} interface',
+         'type',
+         'helper = type helper for helper;',
+         'type',
          '{$modeswitch typehelpers}',
-         'type',
-
-         'helper = type helper for helper end;',  // 3: single line
-         'helper = type helper for helper',   // 4:
+         'helper = type helper for helper',
            'procedure Foo; static;',
           'end;',
-         'helper = type integer;',  // 7:
+         'helper = type integer;',
          'type',
-         'helper = type helper for helper',  // 9:
-         'protected',
-         'end;',
-         ''
-      ]);
-
-    DoChecksHelperOn(cfbtClass in AFolds);
-    PasHighLighter.FoldConfig[ord(cfbtClass)].Enabled := False;
-    DoChecksHelperOn;
-
-    SynEdit.TestTypeText(2, 2, ' ');
-    DoChecksHelperOff; // modeswitch off rescan
-
-
-    PasHighLighter.FoldConfig[ord(cfbtClass)].Enabled := True;
-    SetLines
-      ([ 'Unit A; {$mode objfpc} interface {$modeswitch typehelpers}',
          '{$modeswitch typehelpers-}',
-         'type',
-
-         'helper = type helper for helper end;',  // 3: single line
-         'helper = type helper for helper',   // 4:
-           'procedure Foo; static;',
-          'end;',
-         'helper = type integer;',  // 7:
-         'type',
-         'helper = type helper for helper',  // 9:
+         'helper = type helper for helper;',
+         '{$modeswitch typehelpers}',
+         'helper = type helper for helper',
          'protected',
          'end;',
+         '{$modeswitch typehelpers-}',
+         'helper = type helper for helper',
+         'protected',
+         '{$modeswitch typehelpers}',
          ''
       ]);
 
-    DoChecksHelperOff;
-    SynEdit.TestTypeText(2, 2, ' ');
-    DoChecksHelperOn(True); // modeswitch on rescan
+    DoChecks;
+    SynEdit.TestTypeText(1, 2, ' ');
+    DoChecks; // modeswitch on rescan
 
+    PasHighLighter.FoldConfig[ord(cfbtClass)].Enabled := False;
+    DoChecks;
   end;
 end;
 

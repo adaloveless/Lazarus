@@ -23,7 +23,7 @@ uses
   // LCL
   Forms, LResources,
   // LazUtils
-  LazMemManager, ProjResConvert,
+  LazMemManager,
   // BuildIntf
   UnitResourceIntf, ProjPackIntf,
   // IdeIntf

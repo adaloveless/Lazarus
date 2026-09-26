@@ -4213,7 +4213,6 @@ begin
       BoundsRect:=OldBaseBounds;
     //DebugLn(['TControl.SetAlign ',DbgSName(Self),' Cur=',DbgS(FAlign),' New=',DbgS(Value),' ',Anchors<>AnchorAlign[FAlign],' Anchors=',dbgs(Anchors)]);
   finally
-    AdjustSize; // set cfAutoSizeNeeded including in parents
     EnableAutoSizing{$IFDEF DebugDisableAutoSizing}('TControl.SetAlign'){$ENDIF};
   end;
 end;

@@ -578,8 +578,6 @@ begin
 end;
 
 function IsDarwinFilePackage(Filename: string): Boolean;
-{$IF NOT DEFINED(CPUPOWERPC)}
-// CFURLCopyResourcePropertyForKey is available on macOS 10.6 and up, which does not support PowerPC
 var
   cfFilename: CFStringRef;
   cfURL: CFURLRef;
@@ -601,11 +599,6 @@ begin
   CFRelease(cfFilename);
   CFRelease(cfUrl);
 end;
-{$ELSE}
-begin
-  Result:= False;
-end;
-{$ENDIF}
 {$ENDIF}
 
 function ExtractFileNameOnly(const AFilename: string): string;

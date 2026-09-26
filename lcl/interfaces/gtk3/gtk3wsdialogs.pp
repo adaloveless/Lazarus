@@ -302,18 +302,11 @@ var
   FileDetailLabel: PGtkWidget;
   Filename, OldFilename, Details: String;
   Widget: PGtkWidget;
-  cFilename: PChar;
 begin
   //DebugLn(['UpdateDetailView ']);
   Widget := TGtk3Dialog(OpenDialog.Handle).Widget;
 
-  cFilename := gtk_file_chooser_get_filename(PGtkFileChooser(Widget));
-  if Assigned(cFilename) then
-  begin
-    FileName := cFilename;
-    g_free(cFilename);
-  end else
-    FileName := '';
+  FileName := gtk_file_chooser_get_filename(PGtkFileChooser(Widget));
 
   OldFilename := OpenDialog.Filename;
   if Filename = OldFilename then
@@ -456,11 +449,8 @@ begin
   //DebugLn(['Gtk3FileChooserResponseCB ']);
   theDialog := TFileDialog(TGtk3Dialog(Data).CommonDialog);
 
-  if arg1 = GTK_RESPONSE_NONE then
-    exit;
-
   if (arg1 = GTK_RESPONSE_CANCEL) or (arg1 = GTK_RESPONSE_DELETE_EVENT) or
-     (arg1 = GTK_RESPONSE_REJECT) then
+     (arg1 = GTK_RESPONSE_NONE) or (arg1 = GTK_RESPONSE_REJECT) then
   begin
     TheDialog.UserChoice := mrCancel;
     Exit;
@@ -1336,15 +1326,7 @@ begin
       InitialFilename := TrimFilename(OpenDialog.InitialDir + PathDelim + InitialFilename);
     if not FilenameIsAbsolute(InitialFilename) then
       InitialFilename := CleanAndExpandFilename(InitialFilename);
-    if gtk_file_chooser_get_action(Chooser) in
-      [GTK_FILE_CHOOSER_ACTION_SAVE, GTK_FILE_CHOOSER_ACTION_CREATE_FOLDER] then
-    begin
-      if FileExistsUTF8(InitialFilename) then
-        gtk_file_chooser_set_filename(Chooser, PChar(InitialFilename))
-      else
-        gtk_file_chooser_set_current_name(Chooser, PChar(ExtractFileName(InitialFilename)));
-    end else
-      gtk_file_chooser_set_filename(Chooser, PChar(InitialFilename));
+    gtk_file_chooser_set_filename(Chooser, PChar(InitialFilename));
   end;
 
   //if InitialFilter <> 'none' then

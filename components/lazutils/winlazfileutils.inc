@@ -136,22 +136,26 @@ end;
 
 function TUnicodeSearchRecHelper.UniversalTime: int64;
 var
-  SysTime: TSystemTime;
+  LSystemTime: TSystemTime;
 begin
-  if FileTimeToSystemtime(FindData.ftLastWriteTime, SysTime) then
-    Result := DateTimeToUnix(EncodeDate(SysTime.Year, SysTime.Month, SysTime.Day) +
-                             EncodeTime(SysTime.Hour, SysTime.Minute, SysTime.Second, 0))
+  if FileTimeToSystemtime(FindData.ftLastWriteTime, LSystemTime) then
+    begin
+      Result := DateTimeToUnix(EncodeDate(LSystemTime.Year, LSystemTime.Month, LSystemTime.Day) +
+                               EncodeTime(LSystemTime.Hour, LSystemTime.Minute, LSystemTime.Second, 0));
+    end
   else
     Result:=-1;
 end;
 
 function TRawbyteSearchRecHelper.UniversalTime: int64;
 var
-  SysTime: TSystemTime;
+  LSystemTime: TSystemTime;
 begin
-  if FileTimeToSystemtime(FindData.ftLastWriteTime, SysTime) then
-    Result := DateTimeToUnix(EncodeDate(SysTime.Year, SysTime.Month, SysTime.Day) +
-                             EncodeTime(SysTime.Hour, SysTime.Minute, SysTime.Second, 0))
+  if FileTimeToSystemtime(FindData.ftLastWriteTime, LSystemTime) then
+    begin
+      Result := DateTimeToUnix(EncodeDate(LSystemTime.Year, LSystemTime.Month, LSystemTime.Day) +
+                               EncodeTime(LSystemTime.Hour, LSystemTime.Minute, LSystemTime.Second, 0));
+    end
   else
     Result:=-1;
 end;
@@ -160,7 +164,7 @@ function UniversalFileAge (Const FileName : UnicodeString): Int64;
 var
   Handle: THandle;
   FindData: TWin32FindDataW;
-  SysTime: TSystemTime;
+  LSystemTime: TSystemTime;
   A: integer;
 begin
   // Universal time is always in seconds from Epoch, regardless of O/S
@@ -171,10 +175,13 @@ begin
   if Handle <> INVALID_HANDLE_VALUE then
   begin
     Windows.FindClose(Handle);
-    if (FindData.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY = 0)
-    and FileTimeToSystemtime(FindData.ftLastWriteTime, SysTime) then
-      exit(DateTimeToUnix(EncodeDate(SysTime.Year, SysTime.Month, SysTime.Day) +
-                          EncodeTime(SysTime.Hour, SysTime.Minute, SysTime.Second, 0)));
+    if (FindData.dwFileAttributes and FILE_ATTRIBUTE_DIRECTORY) = 0 then
+      if FileTimeToSystemtime(FindData.ftLastWriteTime, LSystemTime) then
+        begin
+          Result := DateTimeToUnix(EncodeDate(LSystemTime.Year, LSystemTime.Month, LSystemTime.Day) +
+                                   EncodeTime(LSystemTime.Hour, LSystemTime.Minute, LSystemTime.Second, 0));
+          exit;
+        end;
   end;
   Result := -1;
 end;

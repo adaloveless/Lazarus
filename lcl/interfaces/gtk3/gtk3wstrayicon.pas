@@ -73,8 +73,6 @@ var
   GlobalAppIndicator: PAppIndicator;
   GlobalIcon: Pointer;
   GlobalIconPath: string;
-  GlobalAppIndicatorMenuOwner: TCustomTrayIcon;
-  GlobalDetachedMenu: PGtkWidget;
 
 constructor TAppIndTrayIconHandle.Create(TrayIcon: TCustomTrayIcon);
 var
@@ -82,10 +80,9 @@ var
 begin
   inherited Create;
   FTrayIcon := TrayIcon;
-  FName := 'app-' + IntToHex(IntPtr(Application), SizeOf(IntPtr) * 2) +
-    '-' + IntToHex(GetProcessID, SizeOf(SizeUInt) * 2);
+  FName := 'app-' + IntToHex(IntPtr(Application), SizeOf(IntPtr) * 2);
   NewIcon := nil;
-  if Assigned(FTrayIcon.Icon) and not FTrayIcon.Icon.Empty then
+  if Assigned(FTrayIcon.Icon) and FTrayIcon.Icon.HandleAllocated then
     NewIcon := {%H-}Pointer(TGtk3Image(FTrayIcon.Icon.Handle).handle);
   if (NewIcon = nil) and Assigned(Application.Icon) and not Application.Icon.Empty then
     NewIcon := {%H-}Pointer(TGtk3Image(Application.Icon.Handle).handle);
@@ -121,19 +118,8 @@ end;
 
 destructor TAppIndTrayIconHandle.Destroy;
 begin
-  if GlobalAppIndicator <> nil then
-  begin
-    if GlobalAppIndicatorMenuOwner = FTrayIcon then
-    begin
-      GlobalDetachedMenu := PGtkWidget(app_indicator_get_menu(GlobalAppIndicator));
-      if GlobalDetachedMenu <> nil then
-        g_object_ref(PGObject(GlobalDetachedMenu));
-      app_indicator_set_menu(GlobalAppIndicator, gtk_menu_new);
-      GlobalAppIndicatorMenuOwner := nil;
-    end;
-    { Hide the global AppIndicator }
-    app_indicator_set_status(GlobalAppIndicator, APP_INDICATOR_STATUS_PASSIVE);
-  end;
+  { Hide the global AppIndicator }
+  app_indicator_set_status(GlobalAppIndicator, APP_INDICATOR_STATUS_PASSIVE);
   inherited Destroy;
 end;
 
@@ -142,7 +128,7 @@ var
   NewIcon: Pointer;
 begin
   NewIcon := nil;
-  if Assigned(FTrayIcon.Icon) and not FTrayIcon.Icon.Empty then
+  if Assigned(FTrayIcon.Icon) and FTrayIcon.Icon.HandleAllocated then
     NewIcon := {%H-}Pointer(TGTK3Image(FTrayIcon.Icon.Handle).Handle);
   if (NewIcon = nil) and Assigned(Application.Icon) and not Application.Icon.Empty then
     NewIcon := {%H-}Pointer(TGTK3Image(Application.Icon.Handle).Handle);
@@ -159,18 +145,9 @@ begin
     app_indicator_set_icon(GlobalAppIndicator, PChar(GlobalIconPath));
   end;
   { It seems to me you can only set the menu once for an AppIndicator }
-  if ((app_indicator_get_menu(GlobalAppIndicator) = nil) or
-      (GlobalAppIndicatorMenuOwner = nil)) and (FTrayIcon.PopUpMenu <> nil) then
-  begin
+  if (app_indicator_get_menu(GlobalAppIndicator) = nil) and (FTrayIcon.PopUpMenu <> nil) then
     //app_indicator_set_menu(GlobalAppIndicator, {%H-}PGtkMenu(FTrayIcon.PopUpMenu.Handle));
     app_indicator_set_menu(GlobalAppIndicator, {%H-}PGtkMenu(TGTK3Menu(FTrayIcon.PopUpMenu.Handle).Widget));
-    GlobalAppIndicatorMenuOwner := FTrayIcon;
-    if GlobalDetachedMenu <> nil then
-    begin
-      g_object_unref(PGObject(GlobalDetachedMenu));
-      GlobalDetachedMenu := nil;
-    end;
-  end;
   app_indicator_set_status(GlobalAppIndicator, APP_INDICATOR_STATUS_ACTIVE);
 end;
 
@@ -359,11 +336,8 @@ end;
 
 initialization
   GlobalAppIndicator := nil;
-  GlobalAppIndicatorMenuOwner := nil;
-  GlobalDetachedMenu := nil;
   GlobalIconPath := '';
-  IconThemePath := '/tmp/appindicators-' + GetEnvironmentVariable('USER') + '-' +
-    IntToHex(GetProcessID, SizeOf(SizeUInt) * 2) + '/';
+  IconThemePath := '/tmp/appindicators-' + GetEnvironmentVariable('USER') + '/';
 
 finalization
   if FileExists(GlobalIconPath) then

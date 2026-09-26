@@ -112,7 +112,7 @@ if not [%FPC_ONLY_DIR%]==[] mv %BUILDDIR%\fpc  %BUILDDIR%\image\%FPC_ONLY_DIR%
 if  [%IDE_WIDGETSET%]==[] SET IDE_WIDGETSET=%FPCTARGETOS%
 if  [%IDE_WIDGETSET%]==[] SET IDE_WIDGETSET=
 
-SET OutputFileName=fpc-%FPCFULLVERSION%-%FPCTARGETOS%-%FPC_ONLY_FILENAME%for-lazarus
+SET OutputFileName=fpc-%FPCFULLVERSION%-%FPCTARGETOS%
 
 ::=====================================================================
 :: INSTALLER (Laz or fpc only)

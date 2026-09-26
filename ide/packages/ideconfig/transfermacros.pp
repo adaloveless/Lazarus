@@ -191,6 +191,7 @@ end;
 
 procedure TTransferMacroList.SetMarkUnhandledMacros(const AValue: boolean);
 begin
+  if FMarkUnhandledMacros=AValue then exit;
   FMarkUnhandledMacros:=AValue;
 end;
 
@@ -351,7 +352,7 @@ begin
   until false;
 
   // convert $$ chars
-  MacroStart:=1;
+  MacroStart:=2;
   while (MacroStart<sLen) do begin
     if (s[MacroStart]='$') and (s[MacroStart+1]='$') then begin
       System.Delete(s,MacroStart,1);

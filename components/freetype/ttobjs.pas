@@ -92,8 +92,7 @@ uses LazFreeType,
      TTCache,
      TTFile,
      TTTables,
-     TTCMap,
-     TTVar;
+     TTCMap;
 
 type
   (* Graphics State                            *)
@@ -286,10 +285,6 @@ type
                        element_flag : Int;
                        transform    : TGlyph_Transform;
                        file_offset  : Long;
-                       componentCount: Int;
-                       componentIndex: Int;
-                       varDeltaX    : TT_Pos;
-                       varDeltaY    : TT_Pos;
 
                        pp1, pp2     : TT_Vector;
 
@@ -433,9 +428,6 @@ type
             hdmx : THdmx;
             (* 'hdmx' = horizontal device metrics table *)
 
-            variations : TTTVariationData;
-            (* OpenType variation table data shared by all instances *)
-
             nameTable : TName_Table;
             (* 'name' = name table *)
 
@@ -537,9 +529,6 @@ type
                 cvtSize   : Int;
                 cvt       : PLong;
                 (* the scaled control value table *)
-
-                variations : TTTVariationInstance;
-                (* selected OpenType variation coordinates for this instance *)
 
                 twilight  : TGlyph_Zone;
                 (* the instance's twilight zone *)
@@ -1351,8 +1340,8 @@ const
                  glyphIns,
                  face^.maxProfile.maxSizeOfInstructions );
 
-     (* Variation data can address all four TrueType phantom points. *)
-     Update_Points( face^.maxPoints+TTVar_PhantomPointCount, face^.maxContours, exec );
+     (* XXXX : Don't forget the phantom points !! *)
+     Update_Points( face^.maxPoints+2, face^.maxContours, exec );
 
      pts.n_points   := 0;
      pts.n_contours := 0;
@@ -1424,9 +1413,6 @@ const
 
      Free( cvt );
      cvtSize := 0;
-
-     variations.Free;
-     variations := nil;
 
      Free( storage );
      storeSize := 0;
@@ -1509,9 +1495,6 @@ const
 
      if Alloc( cvt, cvtSize * sizeof(Long) ) then
        goto Fail_Memory;
-
-     if face^.variations <> nil then
-       variations := face^.variations.CreateInstance;
 
    end;
 
@@ -1758,88 +1741,6 @@ const
 
 (*******************************************************************
  *
- *  Function    :  Load_TrueType_Variations
- *
- *  Description :  Load optional OpenType variation tables.
- *
- *****************************************************************)
-
-  function Load_Optional_Table( AStream : TFreeTypeStream;
-                                face    : PFace;
-                                aTag    : string;
-                                var buffer : Pointer;
-                                var length : LongInt ) : Boolean;
-  var
-    table : Int;
-  begin
-    Result := False;
-    buffer := nil;
-    length := 0;
-    table := LookUp_TrueType_Table( face, aTag );
-    if table < 0 then
-      exit;
-
-    length := face^.dirTables^[table].Length;
-    if length <= 0 then
-      exit;
-
-    if Alloc( buffer, length ) then
-      exit;
-
-    if AStream.ReadAtFile( face^.dirTables^[table].Offset, buffer^, length ) then
-    begin
-      Free( buffer );
-      length := 0;
-      exit;
-    end;
-
-    Result := True;
-  end;
-
-  procedure Load_TrueType_Variations( AStream : TFreeTypeStream;
-                                      face    : PFace );
-  var
-    buffer : Pointer;
-    length : LongInt;
-    vars   : TTTVariationData;
-  begin
-    buffer := nil;
-    length := 0;
-
-    if face^.variations <> nil then
-      exit;
-
-    if not Load_Optional_Table( AStream, face, 'fvar', buffer, length ) then
-      exit;
-
-    vars := TTTVariationData.Create;
-    try
-      if not vars.LoadFVar( buffer^, length ) then
-      begin
-        vars.Free;
-        exit;
-      end;
-    finally
-      Free( buffer );
-    end;
-
-    if Load_Optional_Table( AStream, face, 'avar', buffer, length ) then
-    begin
-      vars.LoadAVar( buffer^, length );
-      Free( buffer );
-    end;
-
-    if Load_Optional_Table( AStream, face, 'gvar', buffer, length ) then
-    begin
-      vars.LoadGVar( buffer^, length, face^.numGlyphs );
-      Free( buffer );
-    end;
-
-    face^.variations := vars;
-  end;
-
-(*******************************************************************
- *
  *  Function    :  Face_Destroy
  *
  *  Description :  The face object destructor
@@ -1912,9 +1813,6 @@ const
     Free( face^.hdmx.records );
     face^.hdmx.num_records := 0;
 
-    face^.variations.Free;
-    face^.variations := nil;
-
     TT_Close_Stream( face^.stream );
   end;
 
@@ -1964,8 +1862,6 @@ const
        Load_TrueType_Metrics_Header              ( ftstream, face, true  ) then
       goto Fail;
 
-    Load_TrueType_Variations( ftstream, face );
-
     Face_Create := Success;
     TT_Done_Stream(face^.stream);
     exit;
@@ -2000,7 +1896,7 @@ const
     glyph := PGlyph(_glyph);
 
     glyph^.face := PFace(_face);
-    error       := TT_New_Outline( glyph^.face^.maxPoints+TTVar_PhantomPointCount,
+    error       := TT_New_Outline( glyph^.face^.maxPoints+2,
                                    glyph^.face^.maxContours,
                                    glyph^.outline );
     if error <> TT_Err_Ok then
@@ -2044,3 +1940,4 @@ const
   end;
 
 end.
+

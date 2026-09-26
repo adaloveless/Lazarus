@@ -80,7 +80,6 @@ begin
   FPicture.OnChange := @PictureChanged;
   FRowSize := 26;
   FRowSnap := True;
-  FGrabberCursor := crDrag;
   SetInitialBounds(0, 0, 100, 50);
 end;
 
@@ -174,7 +173,7 @@ begin
   FCursorLock := True;
   case ACursor of
     cdDefault: Cursor := FDefCursor;
-    cdGrabber: Cursor := FGrabberCursor;
+    cdGrabber: Cursor := crDrag;
     cdRestricted: Cursor := crNo;
   end;
   FCursorLock := False;

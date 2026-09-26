@@ -131,8 +131,10 @@ end;
 {$pop}
 
 function CharIsOctDigit(const c: Char): Boolean;
+const
+  OctDigits: set of Char = [ '0', '1', '2', '3', '4', '5', '6', '7'];
 begin
-  Result := c in ['0'..'7'];
+  Result := (c in OctDigits);
 end;
 
 // 123_456 Ok  _123_456 Bad

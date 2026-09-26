@@ -39,7 +39,7 @@ uses
   // LCL
   Forms,
   // BuildIntf
-  IDEOptionsIntf, ProjectIntf,
+  IDEOptionsIntf,
   // IdeIntf
   IDEOptEditorIntf, IdeDebuggerWatchValueIntf,
   // DebuggerIntf
@@ -63,6 +63,7 @@ type
     ddtAssembler,
     ddtMemViewer,
     ddtInspect,
+    ddtPseudoTerminal,
     ddtThreads,
     ddtHistory
     );
@@ -82,6 +83,7 @@ const
     'Assembler',
     'MemViewer',
     'Inspect',
+    'PseudoTerminal',
     'Threads',
     'DbgHistory'
     );
@@ -155,17 +157,6 @@ type
     function DoStopProject: TModalResult; virtual; abstract;
     procedure DoToggleCallStack; virtual; abstract;
     procedure DoSendConsoleInput(AText: String); virtual; abstract;
-
-    (* Whether a console selection means the debuggee's streams are captured
-       into the IDE, rather than served by a console of the OS.
-
-       This is not a question about the platform. The selected backend has to be
-       able to capture, and a backend that cannot must not be handed
-       diomCaptureInternal -- the user would choose a destination that silently
-       receives nothing. Hence it is asked here, where the current backend is
-       known, and both the mapping and the Run Parameters dialog ask it, so that
-       what the dialog enables and what the launch does cannot disagree. *)
-    function ConsoleIsCaptured(AConsoleMode: TRunParamsConsoleMode): Boolean; virtual; abstract;
     procedure ProcessCommand(Command: word; var Handled: boolean); virtual; abstract;
 
     procedure LockCommandProcessing; virtual; abstract;

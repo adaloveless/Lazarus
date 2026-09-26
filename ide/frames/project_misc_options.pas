@@ -15,7 +15,7 @@ uses
   // IdeIntf
   IDEOptEditorIntf,
   // IDE
-  Project, LazarusIDEStrConsts, EditableProject, SynHighlighterSQL;
+  Project, LazarusIDEStrConsts;
 
 type
 
@@ -25,7 +25,6 @@ type
     AlwaysBuildCheckBox: TCheckBox;
     Bevel1: TBevel;
     Bevel2: TBevel;
-    Bevel3: TBevel;
     LRSInOutputDirCheckBox: TCheckBox;
     MainUnitHasCreateFormStatementsCheckBox: TCheckBox;
     CompatibilityModeCheckBox: TCheckBox;
@@ -36,13 +35,10 @@ type
     PathDelimComboBox: TComboBox;
     PathDelimLabel: TLabel;
     ResourceGroupBox: TGroupBox;
-    SQLDialectComboBox: TComboBox;
-    OverrideGlobalSQLDialectCheckBox: TCheckBox;
     RunnableCheckBox: TCheckBox;
     UseDesignTimePkgsCheckBox: TCheckBox;
     UseFPCResourcesRadioButton: TRadioButton;
     UseLRSFilesRadioButton: TRadioButton;
-    procedure OverrideGlobalSQLDialectCheckBoxChange(Sender: TObject);
   private
   public
     function GetTitle: string; override;
@@ -58,19 +54,12 @@ implementation
 
 { TProjectMiscOptionsFrame }
 
-procedure TProjectMiscOptionsFrame.OverrideGlobalSQLDialectCheckBoxChange(Sender: TObject);
-begin
-  SQLDialectComboBox.Enabled := OverrideGlobalSQLDialectCheckBox.Checked;
-end;
-
 function TProjectMiscOptionsFrame.GetTitle: string;
 begin
   Result := dlgPOMisc;
 end;
 
 procedure TProjectMiscOptionsFrame.Setup(ADialog: TAbstractOptionsEditorDialog);
-var
-  sd: TSQLDialect;
 begin
   MainUnitIsPascalSourceCheckBox.Caption := lisMainUnitIsPascalSource;
   MainUnitIsPascalSourceCheckBox.Hint := lisMainUnitIsPascalSourceHint;
@@ -102,19 +91,11 @@ begin
   PathDelimComboBox.Items.Text:=lisDoNotChange+LineEnding
                                +lisChangeToUnix+LineEnding
                                +lisChangeToWindows;
-  OverrideGlobalSQLDialectCheckBox.Checked := False;
-  OverrideGlobalSQLDialectCheckBox.Caption := lisSQLHighlighterDialect;
-  SQLDialectComboBox.Enabled := False;
-  SQLDialectComboBox.Items.Clear;
-  SQLDialectComboBox.Sorted := True;
-  for sd := Low(TSQLDialect) to High(TSQLDialect) do
-    SQLDialectComboBox.Items.AddObject(SQLDialectToName(sd), TObject(PtrInt(Ord(sd))));
-  SQLDialectComboBox.ItemIndex := 0;
 end;
 
 procedure TProjectMiscOptionsFrame.ReadSettings(AOptions: TAbstractIDEOptions);
 begin
-  with (AOptions as TProjectIDEOptions).Project as TEditableProject do
+  with (AOptions as TProjectIDEOptions).Project do
   begin
     MainUnitIsPascalSourceCheckBox.Checked := (pfMainUnitIsPascalSource in Flags);
     MainUnitHasUsesSectionForAllUnitsCheckBox.Checked := (pfMainUnitHasUsesSectionForAllUnits in Flags);
@@ -144,17 +125,12 @@ begin
     pdsUnix: PathDelimComboBox.ItemIndex:=1;
     pdsWindows: PathDelimComboBox.ItemIndex:=2;
     end;
-    if OverrideGlobalSqlDialect then
-      SQLDialectComboBox.ItemIndex := SQLDialectComboBox.Items.IndexOfObject(TObject(PtrInt(Ord(SQLDialect))))
-    else
-      SQLDialectComboBox.ItemIndex := SQLDialectComboBox.Items.IndexOfObject(TObject(PtrInt(Ord(sqlStandard))));
-    OverrideGlobalSQLDialectCheckBox.Checked := OverrideGlobalSqlDialect;
   end;
 end;
 
 procedure TProjectMiscOptionsFrame.WriteSettings(AOptions: TAbstractIDEOptions);
 var
-  Project: TEditableProject;
+  Project: TProject;
   NewFlags: TProjectFlags;
 
   procedure SetProjectFlag(AFlag: TProjectFlag; AValue: Boolean);
@@ -166,7 +142,7 @@ var
   end;
 
 begin
-  Project := (AOptions as TProjectIDEOptions).Project as TEditableProject;
+  Project := (AOptions as TProjectIDEOptions).Project;
   NewFlags := Project.Flags;
   SetProjectFlag(pfMainUnitIsPascalSource,
                  MainUnitIsPascalSourceCheckBox.Checked);
@@ -194,11 +170,6 @@ begin
   1: Project.StorePathDelim:=pdsUnix;
   2: Project.StorePathDelim:=pdsWindows;
   end;
-  Project.OverrideGlobalSqlDialect := OverrideGlobalSQLDialectCheckBox.Checked;
-  if OverrideGlobalSQLDialectCheckBox.Checked then
-    Project.SQLDialect := TSQLDialect(PtrInt(SQLDialectComboBox.Items.Objects[SQLDialectComboBox.ItemIndex]))
-  else
-    Project.SQLDialect := sqlStandard;
 end;
 
 class function TProjectMiscOptionsFrame.SupportedOptionsClass: TAbstractIDEOptionsClass;

@@ -64,7 +64,7 @@ uses
   // Codetools
   CodeToolManager,
   // SynEdit
-  SynEditKeyCmds, SynHighlighterSQL,
+  SynEditKeyCmds,
   // BuildIntf
   ProjectIntf,
   // IDEIntf
@@ -79,12 +79,10 @@ uses
   LazConf, EnvironmentOpts, CompilerOptions,
   // IdeProject
   Project,
-  // IdePackager
-  BasePkgManager,
   // IDE
   LazarusIDEStrConsts, EditorOptions, EnvGuiOptions, EditableProject,
   SourceEditor, SourceSynEditor, FindInFilesDlg, Splash, MainBar, MainIntf,
-  Designer, Debugger, IdeDebuggerOpts, FindInFilesWnd, RunParamOptions;
+  Designer, Debugger, FindInFilesWnd, RunParamOptions;
 
 type
   TResetToolFlag = (
@@ -111,7 +109,6 @@ type
     FWindowMenuActiveForm: TCustomForm;
     FDisplayState: TDisplayState;
     function CodeToolBossCheckAbort: boolean;
-    procedure DoUpdateSubMenuViewDebugWindows(Sender: TObject);
     procedure SetDisplayState(AValue: TDisplayState);
     procedure UpdateWindowMenu;
   protected
@@ -234,7 +231,6 @@ type
     procedure RefreshMenu(Sender: TObject);
     procedure mnuOpenFile(Sender: TObject);
     procedure mnuProjectFile(Sender: TObject);
-    procedure mnuPackageFile(Sender: TObject);
   public
     constructor Create(aOwner: TComponent); override;
     destructor Destroy; override;
@@ -510,11 +506,6 @@ begin
   MainIDE.DoOpenProjectFile((Sender as TOpenFileMenuItem).Hint, [ofAddToRecent]);
 end;
 
-procedure TOpenFileToolButton.mnuPackageFile(Sender: TObject);
-begin
-  PkgBoss.DoOpenPackageFile((Sender as TOpenFileMenuItem).Hint, [pofAddToRecent], false);
-end;
-
 procedure TOpenFileToolButton.RefreshMenu(Sender: TObject);
 
   procedure AddFile(const AFileName: string; const AOnClick: TNotifyEvent);
@@ -531,45 +522,27 @@ procedure TOpenFileToolButton.RefreshMenu(Sender: TObject);
       AMenuItem.ImageIndex := LoadProjectIconIntoImages(AFileName, DropdownMenu.Images, FIndex);
   end;
 
-  procedure AddHeader(const ACaption: string);
-  var
-    AMenuItem: TOpenFileMenuItem;
-  begin
-    AMenuItem := TOpenFileMenuItem.Create(DropdownMenu);
-    AMenuItem.Caption := ACaption;
-    AMenuItem.Enabled := false;
-    DropdownMenu.Items.Add(AMenuItem);
-  end;
-
-  procedure AddRecentItemsGroup(List: TStringList; MaxCount: integer; const AOnClick: TNotifyEvent; const AHeader: string);
+  procedure AddFiles(List: TStringList; MaxCount: integer; const AOnClick: TNotifyEvent);
   var
     i: integer;
   begin
-    if List.Count <= 0 then
-      exit;
-    // separator
-    if DropdownMenu.Items.Count > 0 then
-      DropdownMenu.Items.AddSeparator;
-    // header
-    AddHeader(AHeader);
-    // value 0 means unlimited
     if MaxCount <= 0 then
       MaxCount := List.Count;
-    // files
     for i := 0 to Min(MaxCount, List.Count) - 1 do
       AddFile(List[i], AOnClick);
   end;
 
-var
-  EO: TEnvironmentOptions absolute EnvironmentOptions; // short alias
 begin
   DropdownMenu.Items.Clear;
-  if EO.ProjectsInOpenToolbarButton then
-    AddRecentItemsGroup(EO.RecentProjectFiles, EO.MaxRecentProjectFiles, @mnuProjectFile, dlgRecentProjectsHeader);
-  if EO.PackagesInOpenToolbarButton then
-    AddRecentItemsGroup(EO.RecentPackageFiles, EO.MaxRecentPackageFiles, @mnuPackageFile, dlgRecentPackagesHeader);
-  if EO.FilesInOpenToolbarButton then
-    AddRecentItemsGroup(EO.RecentOpenFiles   , EO.MaxRecentOpenFiles   , @mnuOpenFile   , dlgRecentFilesHeader   );
+
+  // first add recent projects
+  AddFiles(EnvironmentOptions.RecentProjectFiles, EnvironmentOptions.MaxRecentProjectFiles,
+           @mnuProjectFile);
+  // add a separator
+  DropdownMenu.Items.AddSeparator;
+  // then add recent files
+  AddFiles(EnvironmentOptions.RecentOpenFiles, EnvironmentOptions.MaxRecentOpenFiles,
+           @mnuOpenFile);
 end;
 
 // Variables and functions used by TMainIDEBase
@@ -871,11 +844,6 @@ begin
   Result:=ToolStatus<>itCodeTools;
 end;
 
-procedure TMainIDEBase.DoUpdateSubMenuViewDebugWindows(Sender: TObject);
-begin
-  itmViewDebugConsoleWindows.Visible := HasConsoleSupport and (itmViewDebugConsoleWindows.Count > 1);
-end;
-
 procedure TMainIDEBase.DoMergeDefaultProjectOptions;
 var
   AFilename: String;
@@ -1055,6 +1023,7 @@ begin
     CreateMainMenuItem(mnuProject,'Project',lisMenuProject);
     CreateMainMenuItem(mnuRun,'Run',lisMenuRun);
     CreateMainMenuItem(mnuPackage,'Package',lisMenuPackage);
+    mnuComponent:=mnuPackage;
     CreateMainMenuItem(mnuTools,'Tools',lisMenuTools);
     CreateMainMenuItem(mnuWindow,'Window',lisMenuWindow);
     mnuWindow.OnClick  := @DoMnuWindowClicked;
@@ -1231,8 +1200,7 @@ begin
     CreateMenuSeparatorSection(mnuView,itmViewSecondaryWindows,'itmViewSecondaryWindows');
     ParentMI:=itmViewSecondaryWindows;
     CreateMenuItem(ParentMI,itmViewSearchResults,'itmViewSearchResults',lisMenuViewSearchResults, 'menu_view_search_results');
-    CreateMenuSubSection(ParentMI,itmViewDebugWindowsMenu,'itmViewDebugWindowsMenu',lisMenuDebugWindows,'debugger');
-    CreateMenuSeparatorSection(itmViewDebugWindowsMenu,itmViewDebugWindows,'itmViewDebugWindows');
+    CreateMenuSubSection(ParentMI,itmViewDebugWindows,'itmViewDebugWindows',lisMenuDebugWindows,'debugger');
     begin
       CreateMenuItem(itmViewDebugWindows,itmViewWatches,'itmViewWatches',lisMenuViewWatches,'debugger_watches');
       CreateMenuItem(itmViewDebugWindows,itmViewBreakPoints,'itmViewBreakPoints',lisMenuViewBreakPointsAndExceptions,'debugger_breakpoints');
@@ -1246,14 +1214,9 @@ begin
       CreateMenuItem(itmViewDebugWindows,itmViewCallStack,'itmViewCallStack',lisMenuViewCallStack,'debugger_call_stack');
       CreateMenuItem(itmViewDebugWindows,itmViewThreads,'itmViewThreads',lisMenuViewThreads, 'debugger_threads');
       CreateMenuItem(itmViewDebugWindows,itmViewAssembler,'itmViewAssembler',lisMenuViewAssembler, 'debugger_assembler');
-      CreateMenuItem(itmViewDebugWindows,itmViewMemViewer,'itmViewMemViewer',lisMenuViewMemViewer, 'debugger_mem_viewer');
+      CreateMenuItem(itmViewDebugWindows,itmViewMemViewer,'itmViewMemViewer',lisMenuViewMemViewer, 'debugger_mem_viewer_200');
       CreateMenuItem(itmViewDebugWindows,itmViewDebugEvents,'itmViewDebugEvents',lisMenuViewDebugEvents,'debugger_event_log');
       CreateMenuItem(itmViewDebugWindows,itmViewDbgHistory,'itmViewDbgHistory',lisMenuViewHistory, 'debugger_historie');
-
-      CreateMenuSubSection(itmViewDebugWindows, itmViewDebugConsoleWindows, 'itmViewDebugConsoleWindows', lisMenuViewPseudoTerminal);
-      if not HasConsoleSupport then
-        itmViewDebugWindows.Visible := False;
-      mnuView.AddHandlerOnShow(@DoUpdateSubMenuViewDebugWindows);
     end;
     CreateMenuSubSection(ParentMI, itmViewIDEInternalsWindows, 'itmViewIDEInternalsWindows', lisMenuIDEInternals);
     begin
@@ -1455,7 +1418,7 @@ var
   ParentMI: TIDEMenuSection;
 begin
   with MainIDEBar do begin
-    CreateMenuSeparatorSection(mnuPackage,itmPkgOpening,'itmPkgOpening');
+    CreateMenuSeparatorSection(mnuComponent,itmPkgOpening,'itmPkgOpening');
     ParentMI:=itmPkgOpening;
     CreateMenuItem(ParentMI,itmPkgNewPackage,'itmPkgNewPackage',lisMenuNewPackage, 'pkg_add');
     CreateMenuItem(ParentMI,itmPkgOpenLoadedPackage,'itmPkgOpenPackage',lisMenuOpenPackage,'pkg_installed');
@@ -1463,12 +1426,12 @@ begin
     CreateMenuItem(ParentMI,itmPkgOpenPackageOfCurUnit,'itmPkgOpenPackageOfCurUnit',lisMenuOpenPackageOfCurUnit,'pkg_open_packageofcurunit');
     CreateMenuSubSection(ParentMI,itmPkgOpenRecent,'itmPkgOpenRecent',lisMenuOpenRecentPkg, 'pkg_open_recent');
 
-    CreateMenuSeparatorSection(mnuPackage,itmPkgUnits,'itmPkgUnits');
+    CreateMenuSeparatorSection(mnuComponent,itmPkgUnits,'itmPkgUnits');
     ParentMI:=itmPkgUnits;
     CreateMenuItem(ParentMI,itmPkgAddCurFileToPkg,'itmPkgAddCurFileToPkg',lisMenuAddCurFileToPkg,'pkg_new');
     CreateMenuItem(ParentMI, itmPkgAddNewComponentToPkg, 'itmPkgAddNewComponentToPkg', lisMenuNewComponent+' ...', 'pkg_comp_new');
 
-    CreateMenuSeparatorSection(mnuPackage,itmPkgGraphSection,'itmPkgGraphSection');
+    CreateMenuSeparatorSection(mnuComponent,itmPkgGraphSection,'itmPkgGraphSection');
     ParentMI:=itmPkgGraphSection;
     CreateMenuItem(ParentMI,itmPkgPkgGraph,'itmPkgPkgGraph',lisMenuPackageGraph+' ...','pkg_graph');
     CreateMenuItem(ParentMI,itmPkgPackageLinks,'itmPkgPackageLinks',lisMenuPackageLinks, 'pkg_links');
@@ -1799,8 +1762,6 @@ begin
       if h<>nil then begin
         h.BeginUpdate;
         EditorOpts.GetHighlighterSettings(h);
-        if (h is TSynSQLSyn) and (EditableProject1<>nil) and EditableProject1.OverrideGlobalSqlDialect then
-          TSynSQLSyn(h).SQLDialect := EditableProject1.SQLDialect;
         h.EndUpdate;
       end;
     end;

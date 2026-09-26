@@ -12,7 +12,6 @@ object FormMessagesComposer: TFormMessagesComposer
   Constraints.MinHeight = 500
   Constraints.MinWidth = 520
   Position = poScreenCenter
-  LCLVersion = '4.99.0.0'
   OnCreate = MessagesInitExecute
   OnShow = FormShow
   object CaptionLabel: TLabel
@@ -226,7 +225,7 @@ object FormMessagesComposer: TFormMessagesComposer
     Anchors = [akTop, akLeft, akRight]
     DropDownCount = 24
     ItemHeight = 15
-    ItemIndex = 2
+    ItemIndex = 0
     Items.Strings = (
       'mtWarning'
       'mtError'
@@ -236,7 +235,7 @@ object FormMessagesComposer: TFormMessagesComposer
     )
     Style = csDropDownList
     TabOrder = 1
-    Text = 'mtInformation'
+    Text = 'mtWarning'
   end
   object HelpContextSpinEdit: TSpinEdit
     AnchorSideLeft.Control = HelpContextLabel
@@ -396,7 +395,9 @@ object FormMessagesComposer: TFormMessagesComposer
       Width = 67
       BorderSpacing.Left = 8
       Caption = 'if...then...'
+      Checked = True
       TabOrder = 0
+      TabStop = True
       OnClick = SetIfOrCaseExecute
     end
     object IfThenElseRadioButton: TRadioButton
@@ -440,16 +441,15 @@ object FormMessagesComposer: TFormMessagesComposer
       OnClick = SetIfOrCaseExecute
     end
     object BeginEndCheckBox: TCheckBox
-      AnchorSideLeft.Control = NoneRadioButton
-      AnchorSideTop.Control = NoneRadioButton
+      AnchorSideLeft.Control = IfThenRadioButton
+      AnchorSideTop.Control = IfThenElseRadioButton
       AnchorSideTop.Side = asrBottom
       Left = 8
       Height = 19
-      Top = 75
+      Top = 54
       Width = 83
       BorderSpacing.Top = 6
       Caption = 'begin ... end'
-      Enabled = False
       TabOrder = 4
     end
     object SourceNotebook: TNotebook
@@ -459,8 +459,8 @@ object FormMessagesComposer: TFormMessagesComposer
       AnchorSideRight.Control = SourceWrapperGroupBox
       AnchorSideRight.Side = asrBottom
       Left = 8
-      Height = 121
-      Top = 102
+      Height = 142
+      Top = 81
       Width = 252
       PageIndex = 0
       Align = alBottom
@@ -468,7 +468,6 @@ object FormMessagesComposer: TFormMessagesComposer
       BorderSpacing.Left = 8
       BorderSpacing.Top = 8
       BorderSpacing.Right = 8
-      Enabled = False
       TabOrder = 5
       TabStop = True
       object PageIf: TPage
@@ -570,21 +569,6 @@ object FormMessagesComposer: TFormMessagesComposer
         end
       end
     end
-    object NoneRadioButton: TRadioButton
-      AnchorSideLeft.Control = IfThenElseRadioButton
-      AnchorSideTop.Control = IfThenElseRadioButton
-      AnchorSideTop.Side = asrBottom
-      Left = 8
-      Height = 19
-      Top = 50
-      Width = 45
-      BorderSpacing.Top = 2
-      Caption = 'none'
-      Checked = True
-      TabOrder = 6
-      TabStop = True
-      OnClick = SetIfOrCaseExecute
-    end
   end
   object KindMessageComboBox: TComboBox
     AnchorSideLeft.Control = KindMessageLabel
@@ -683,7 +667,7 @@ object FormMessagesComposer: TFormMessagesComposer
         TabOrder = 0
         OnItemClick = ButtonsCheckGroupItemClick
         Data = {
-          0C000000020203020202020202020202
+          0C000000020203030202020202020202
         }
       end
     end

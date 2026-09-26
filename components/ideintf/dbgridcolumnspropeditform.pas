@@ -58,7 +58,6 @@ type
     procedure SelectInObjectInspector(ForceUpdate: Boolean);
     procedure UnSelectInObjectInspector(ForceUpdate: Boolean);
     procedure UpdDesignHook(aSelection: TPersistentSelectionList);
-    procedure NotifyCollectionChanged;
   protected
     procedure UpdateCaption;
     procedure UpdateButtons;
@@ -129,7 +128,6 @@ begin
   if CollectionListBox.Items.Count > 0 then
     CollectionListBox.ItemIndex := CollectionListBox.Items.Count - 1;
   SelectInObjectInspector(True);
-  NotifyCollectionChanged;
   UpdateButtons;
   UpdateCaption;
   Modified;
@@ -159,7 +157,6 @@ begin
       Item.Title.Caption:=DataSet.Fields[i].DisplayLabel;
     end;
   finally
-    NotifyCollectionChanged;
     RefreshPropertyValues;
     UpdateButtons;
     UpdateCaption;
@@ -177,7 +174,6 @@ begin
       UnSelectInObjectInspector(True);
       FCollection.Clear;
     finally
-      NotifyCollectionChanged;
       RefreshPropertyValues;
       UpdateButtons;
       UpdateCaption;
@@ -212,7 +208,6 @@ begin
     CollectionListBox.ItemIndex := I;
     SelectInObjectInspector(False);
   end;
-  NotifyCollectionChanged;
   Modified;
   UpdateButtons;
   UpdateCaption;
@@ -254,7 +249,6 @@ begin
 
   FillCollectionListBox;
   SelectInObjectInspector(True);
-  NotifyCollectionChanged;
   Modified;
 end;
 
@@ -272,7 +266,6 @@ begin
 
   FillCollectionListBox;
   SelectInObjectInspector(True);
-  NotifyCollectionChanged;
   Modified;
 end;
 
@@ -410,13 +403,6 @@ begin
   if GlobalDesignHook = nil then Exit;
   GlobalDesignHook.SetSelection(aSelection);
   GlobalDesignHook.LookupRoot := GetLookupRootForComponent(FOwnerPersistent);
-end;
-
-procedure TDBGridColumnsPropertyEditorForm.NotifyCollectionChanged;
-// Sync columns collection with the object inspector
-begin
-  if (GlobalDesignHook <> nil) and (FCollection <> nil) then
-    GlobalDesignHook.CallCollectionChangedHandlers(Self, FCollection);
 end;
 
 procedure TDBGridColumnsPropertyEditorForm.SetCollection(NewCollection: TCollection;

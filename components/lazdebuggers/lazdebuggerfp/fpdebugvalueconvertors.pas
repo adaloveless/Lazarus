@@ -433,9 +433,7 @@ begin
     exit;
 
   ProcSym := nil;
-  (* Link tables only: a mangled name, which can not collide with a source
-     level one. *)
-  ProcSym := CurProc.FindNamedProcSymbol('SYSTEM_$$_GETVARIANTMANAGER$TVARIANTMANAGER', [psfLinkTableSym]);
+  ProcSym := CurProc.FindProcSymbol('SYSTEM_$$_GETVARIANTMANAGER$TVARIANTMANAGER');
   try
     if (ProcSym = nil) or (not (ProcSym.Kind = skProcedure)) or
        (not IsTargetAddr(ProcSym.Address))

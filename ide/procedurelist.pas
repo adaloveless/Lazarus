@@ -105,7 +105,6 @@ type
     FImageIdxFunction: Integer;
     FImageIdxConstructor: Integer;
     FImageIdxDestructor: Integer;
-    FImageIdxOperator: Integer;
     iconBmp: TBitmap;
     function GetCodeTreeNode(out lCodeTool: TCodeTool): TCodeTreeNode;
     { Move editors focus to selected method. }
@@ -114,7 +113,6 @@ type
     procedure PopulateGrid;
     { Populates only tho cbObjects combo with available classes. }
     procedure PopulateObjectsCombo;
-    function GetCodeNodeImage(aTool: TCodeTool; aNode: TCodeTreeNode): integer;
     function AddToGrid(pCodeTool: TCodeTool; pNode: TCodeTreeNode): boolean;
     function PassFilter(pSearchAll: boolean; pProcName, pSearchStr: string; pCodeTool: TCodeTool; pNode: TCodeTreeNode): boolean;
     procedure ClearGrid;
@@ -268,7 +266,6 @@ begin
   FImageIdxFunction        := IDEImages.LoadImage('cc_function');
   FImageIdxConstructor     := IDEImages.LoadImage('cc_constructor');
   FImageIdxDestructor      := IDEImages.LoadImage('cc_destructor');
-  FImageIdxOperator        := IDEImages.LoadImage('cc_operator');
 
   SG.FocusRectVisible := false;
 
@@ -554,17 +551,6 @@ begin
   end;
 end;
 
-function TProcedureListForm.GetCodeNodeImage(aTool: TCodeTool; aNode: TCodeTreeNode): integer;
-begin
-  if aNode.Desc <> ctnProcedure then exit(-1);
-
-  if      aTool.NodeIsConstructor(aNode) then result := FImageIdxConstructor
-  else if aTool.NodeIsDestructor (aNode) then result := FImageIdxDestructor
-  else if aTool.NodeIsFunction   (aNode) then result := FImageIdxFunction
-  else if aTool.NodeIsOperator   (aNode) then result := FImageIdxOperator
-  else                                        result := FImageIdxProcedure;
-end;
-
 function TProcedureListForm.AddToGrid(pCodeTool: TCodeTool; pNode: TCodeTreeNode): boolean;
 var
   lNodeText: string;
@@ -627,8 +613,16 @@ begin
                    phpWithOfObject,phpWithCallingSpecs,phpWithProcModifiers]);
   lRowObject.FullProcedureName := lNodeText;
 
-  { image }
-  lRowObject.ImageIdx := GetCodeNodeImage(pCodeTool, pNode);
+  if PosI('procedure ', lNodeText) > 0 then
+    lRowObject.ImageIdx := FImageIdxProcedure
+  else if PosI('function ', lNodeText) > 0 then
+    lRowObject.ImageIdx := FImageIdxFunction
+  else if PosI('constructor ', lNodeText) > 0 then
+    lRowObject.ImageIdx := FImageIdxConstructor
+  else if PosI('destructor ', lNodeText) > 0 then
+    lRowObject.ImageIdx := FImageIdxDestructor
+  else
+    lRowObject.ImageIdx := -1;
 
   result := true;
 end;

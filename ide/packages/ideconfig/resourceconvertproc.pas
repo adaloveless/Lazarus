@@ -7,7 +7,7 @@ interface
 uses
   Classes, SysUtils, System.UITypes,
   // LazUtils
-  LazFileCache, LazFileUtils, LazLoggerBase, ProjResProc, ProjResConvert,
+  LazFileCache, LazFileUtils, LazLoggerBase, ProjResProc,
   // CodeTools
   CodeCache, CodeToolManager,
   // IdeConfig

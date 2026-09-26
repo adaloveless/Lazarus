@@ -667,13 +667,11 @@ begin
   end;
 
   if Result = ALogStartFrom then begin
-    PhysWidthPtr := @PhysCharWidths[ALogStartFrom];
+    PhysWidthPtr := @PhysCharWidths[0];
     pLine := LastGoodPos;
     while pLine  < eLine do begin
       CurCharPhysWidth := PhysWidthPtr^ and PCWMask;
-      if (CurCharPhysWidth <= AMaxWidth) or (Result = ALogStartFrom) or
-         (CurCharPhysWidth = 0) // always sweep in continuation bytes
-      then begin
+      if (CurCharPhysWidth <= AMaxWidth) or (Result = ALogStartFrom) then begin
         inc(pLine);
         inc(PhysWidthPtr);
         inc(Result);

@@ -195,7 +195,7 @@ begin
       SrcEdit:=SrcWinAndEditorByListItem(i, SrcWindow);
       Assert(Assigned(SrcEdit), 'TEditorFileManagerForm.SaveCheckedButtonClick: SrcEdit is not assigned.');
       if (not SrcEdit.CodeBuffer.IsVirtual) and (LazarusIDE.DoSaveEditorFile(SrcEdit, []) <> mrOk) then
-        DebugLn(['TEditorFileManagerForm.SaveCheckedButtonClick LazarusIDE.DoSaveEditorFile failed']);
+        DebugLn(['TSourceNotebook.EncodingClicked LazarusIDE.DoSaveEditorFile failed']);
     end;
 end;
 

@@ -6043,18 +6043,13 @@ var
   R: TRect;
 begin
   FNodeUnderCursor := nil;
-  if not (tvoHotTrack in FOptions) then begin
-    if Cursor = crHandPoint then
-      Cursor := crDefault;
-    Exit;
-  end;
+  if Cursor = crHandPoint then
+    Cursor := crDefault;
+  if not (tvoHotTrack in FOptions) then Exit;
 
   FNodeUnderCursor := GetNodeAt(X, Y);
   if Assigned(FNodeUnderCursor) then
-    Cursor := crHandPoint
-  else
-  if Cursor = crHandPoint then
-    Cursor := crDefault;
+    Cursor := crHandPoint;
 
   // Invalidate;
   // Too global, can lead to massive flicker (issue #41290). Replaced by code below.

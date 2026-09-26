@@ -69,7 +69,7 @@ uses
   StdCodeTools, EventCodeTool, CodeCreationDlg, IdentCompletionTool,
   // LazUtils
   // use lazutf8, lazfileutils and lazfilecache after FileProcs and FileUtil
-  FileUtil, LazFileUtils, LazUtilities, LazUTF8, UTF8Process, ProjResConvert, ProjResProc,
+  FileUtil, LazFileUtils, LazUtilities, LazUTF8, UTF8Process, ProjResProc,
   LConvEncoding, Laz2_XMLCfg, LazLoggerBase, LazLogger, LazFileCache, AvgLvlTree,
   GraphType, LazStringUtils, LazVersion, LazTracer,
   LCLExceptionStacktrace,
@@ -172,7 +172,7 @@ uses
   IdeDebuggerWatchResult, InitialSetupDlgs, NewDialog,
   MakeResStrDlg, DialogProcs, FindReplaceDialog, FindInFilesDlg,
   CodeExplorer, BuildFileDlg, ProcedureList, ExtractProcDlg,
-  FindRenameIdentExec, AbstractsMethodsDlg, EmptyMethodsDlg, UnusedUnitsDlg,
+  FindRenameIdentifier, AbstractsMethodsDlg, EmptyMethodsDlg, UnusedUnitsDlg,
   UseUnitDlg, FindOverloadsDlg, EditorFileManager, CleanDirDlg, CodeContextForm,
   AboutFrm, CompatibilityRestrictions, RestrictionBrowser, ProjectWizardDlg,
   CodeExplOpts, EditorMacroListViewer, EditableProject,
@@ -907,8 +907,6 @@ type
     function GetDesignerFormOfSource(AnUnitInfo: TEditableUnitInfo;
                                      LoadForm: boolean): TCustomForm;
     function GetUnitFileOfLFM(LFMFilename: string): string;
-    function GetUnitCodeOfLFMFile(AnUnitInfo: TEditableUnitInfo;
-                                  out PasCode: TCodeBuffer): boolean;
     function GetProjectFileWithRootComponent(AComponent: TComponent): TLazProjectFile; override;
     function GetProjectFileWithDesigner(ADesigner: TIDesigner): TLazProjectFile; override;
     procedure GetObjectInspectorUnit(
@@ -944,11 +942,6 @@ type
     function DoJumpToSourcePosition(const Filename: string;
                                NewX, NewY, NewTopLine: integer;
                                Flags: TJumpToCodePosFlags = [jfFocusEditor]): TModalResult; override;
-    function DoJumpToCodePosition(
-                        ActiveSrcEdit: TSourceEditorInterface;
-                        NewX, NewY, NewTopLine,
-                        BlockTopLine, BlockBottomLine: integer;
-                        Flags: TJumpToCodePosFlags = [jfFocusEditor]): TModalResult; override;
     function DoJumpToCodePosition(
                         ActiveSrcEdit: TSourceEditorInterface;
                         ActiveUnitInfo: TEditableUnitInfo;
@@ -998,7 +991,7 @@ type
     function DoJumpToCompilerMessage(FocusEditor: boolean; Msg: TMessageLine = nil
       ): boolean; override;
     procedure DoJumpToNextCompilerMessage(aMinUrgency: TMessageLineUrgency; DirectionDown: boolean); override;
-    procedure DoShowMessagesView; override;
+    procedure DoShowMessagesView(BringToFront: boolean = true); override;
 
     // methods for debugging, compiling and external tools
     function GetTestBuildDirectory: string; override;
@@ -1030,6 +1023,7 @@ const
   CodeToolsIncludeLinkFile = 'includelinks.xml';
 
 implementation
+
 
 var
   ParamBaseDirectory: string = '';
@@ -1839,7 +1833,7 @@ begin
   TestCompilerOptions:=nil;
 
   // free project, if it is still there
-  Project1.Free;
+  FreeThenNil(Project1);
 
   // free IDE parts
   FreeFormEditor;
@@ -1881,7 +1875,7 @@ begin
   EnvironmentOptions.UnRegisterSubConfig(EnvironmentGuiOpts);
   FreeThenNil(EnvironmentDebugOpts);
   FreeThenNil(EnvironmentGuiOpts);
-  if ConsoleVerbosity>0 then
+  if ConsoleVerbosity>=0 then
     DebugLn('Hint: (lazarus) [TMainIDE.Destroy] B  -> inherited Destroy... ',ClassName);
   {$IFDEF IDE_MEM_CHECK}CheckHeapWrtMemCnt('TMainIDE.Destroy B ');{$ENDIF}
   FreeThenNil(MainBuildBoss);
@@ -3292,31 +3286,11 @@ end;
 {------------------------------------------------------------------------------}
 
 procedure TMainIDE.mnuToggleFormUnitClicked(Sender: TObject);
-var
-  ShowTheForm: Boolean;
 begin
   if IDETabMaster <> nil then
-  begin
-    // the designer is docked into the source editor, there is no layout to switch
-    IDETabMaster.ToggleFormUnit;
-    exit;
-  end;
-
-  // Set the ShowTheForm before switching the desktop
-  ShowTheForm := DisplayState = dsSource;
-
-  if ShowTheForm then
-  begin
-    // Desktop first, form second: RestoreSimpleLayout raises every registered IDE window
-    EnvironmentGuiOpts.EnableDesignDesktop;
-    DoShowDesignerFormOfCurrentSrc(false);
-    if DisplayState <> dsForm then
-      EnvironmentGuiOpts.DisableDesignDesktop;  // there was no designer form
-  end else
-  begin
-    EnvironmentGuiOpts.DisableDesignDesktop;
-    DoShowSourceOfActiveDesignerForm;
-  end;
+    IDETabMaster.ToggleFormUnit
+  else
+    DoBringToFrontFormOrUnit;
 end;
 
 procedure TMainIDE.mnuViewAnchorEditorClicked(Sender: TObject);
@@ -4079,12 +4053,7 @@ begin
   if (MainIDEBar <> nil) and not IDEIsClosing and MainIDEBar.HandleAllocated then
   begin
     if (ToolStatus = itDebugger) then
-    begin
-      // leave the design desktop first, so that LastDesktopBeforeDebug gets the
-      // desktop the user really works with
-      EnvironmentGuiOpts.DisableDesignDesktop;
-      EnvironmentGuiOpts.EnableDebugDesktop;
-    end
+      EnvironmentGuiOpts.EnableDebugDesktop
     else if (ToolStatus <> itExiting) then
       EnvironmentGuiOpts.DisableDebugDesktop;
   end;
@@ -4499,9 +4468,8 @@ end;
 
 procedure TMainIDE.mnuViewMessagesClick(Sender: TObject);
 begin
-  MessagesView.ApplyIDEOptions;
-  // If it was already visible, but user does not see it, try to move in view
-  IDEWindowCreators.ShowForm(MessagesView, true);
+  // it was already visible, but user does not see it, try to move in view
+  DoShowMessagesView;
 end;
 
 procedure TMainIDE.mnuViewSearchResultsClick(Sender: TObject);
@@ -4689,8 +4657,6 @@ begin
     MainBuildBoss.SetBuildTargetProject1(false);
     UpdateCaption;
     UpdateDefineTemplates;
-    if DebugBossMgr <> nil then
-      DebugBossMgr.BreakPoints.TriggerChanged;
   end;
 end;
 
@@ -5330,7 +5296,6 @@ begin
   finally
     SourceEditorManager.EndGlobalUpdate;
   end;
-  DebugBossMgr.UpdateDebugDialogFromOptions;
 end;
 
 procedure TMainIDE.CodetoolsOptionsAfterWrite(Sender: TObject; Restore: boolean);
@@ -5350,8 +5315,6 @@ procedure TMainIDE.ProjectOptionsBeforeRead(Sender: TObject);
 //var
 //  ActiveSrcEdit: TSourceEditor;
 //  ActiveUnitInfo: TUnitInfo;
-var
-  Cmd: TKeyCommandRelation;
 begin
   //DebugLn(['TMainIDE.DoProjectOptionsBeforeRead ',DbgSName(Sender)]);
   if not (Sender is TProjectIDEOptions) then exit;
@@ -5362,11 +5325,6 @@ begin
   Project1.UpdateExecutableType;
   Project1.UseAsDefault := False;
   TProjectIDEOptions(Sender).CheckLclApp;
-  if (CodeHelpBoss <> nil) then begin
-    Cmd:=EditorOpts.KeyMap.FindByCommand(ecFocusHint);
-    if (Cmd<>nil) then
-      CodeHelpBoss.FocusHintShortCut := Cmd.ShortcutA;
-  end;
 end;
 
 procedure TMainIDE.ProjectOptionsAfterWrite(Sender: TObject; Restore: boolean);
@@ -5394,8 +5352,6 @@ begin
                            mtWarning, [mbOk]);
     end;
     UpdateCaption;
-    if DebugBossMgr <> nil then
-      DebugBossMgr.BreakPoints.TriggerChanged;
     if Assigned(ProjInspector) then
       ProjInspector.UpdateTitle;
     if Project1.UseAsDefault then
@@ -5485,7 +5441,6 @@ begin
     SaveDesktopSettings(EnvironmentGuiOpts);
     DebuggerOptions.Save; // before environment
     EnvironmentOptions.Save(false);
-    DebugBossMgr.UpdateDebugDialogFromOptions;
     EditorMacroListViewer.SaveGlobalInfo;
     (IDEMacros as TLazIDEMacros).SaveBuildMacros;
     //debugln('TMainIDE.SaveEnvironment A ',dbgsName(ObjectInspector1.Favorites));
@@ -5658,7 +5613,7 @@ var
       exit(mrCancel);
     end;
 
-    RefUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(UnitFilename));
+    RefUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(UnitFilename));
     // create unit info
     if RefUnitInfo=nil then begin
       RefUnitInfo:=TEditableUnitInfo.Create(nil);
@@ -6543,7 +6498,7 @@ var
 begin
   Result:=mrCancel;
   if (Project1=nil) then exit;
-  AnUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(Filename,[]));
+  AnUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(Filename,[]));
   if (AnUnitInfo<>nil) and (AnUnitInfo.OpenEditorInfoCount > 0) then
     Result:=OpenEditorFile(AnUnitInfo.Filename,
                            AnUnitInfo.OpenEditorInfo[0].PageIndex,
@@ -7097,17 +7052,13 @@ begin
 
   // show messages
   MessagesView.ApplyIDEOptions;
-  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaDefault then
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
     IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   // clear old error lines
   SourceEditorManager.ClearErrorLines;
 
   // check common mistakes in search paths
   Result:=PkgBoss.CheckUserSearchPaths(Project1.CompilerOptions);
-  if Result<>mrOk then exit;
-
-  // ask the user about untrusted compilers/commands before building anything
-  Result:=PkgBoss.CheckCompileTrust(Project1,nil);
   if Result<>mrOk then exit;
 
   CompilerParams:=nil;
@@ -7421,7 +7372,7 @@ begin
     // check sources
     DoCheckFilesOnDisk;
   end;
-  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaDefault then
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
     IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   if ConsoleVerbosity>=0 then
     debugln(['Info: (lazarus) [TMainIDE.DoBuildProject] Success']);
@@ -8192,7 +8143,7 @@ begin
 
   // show messages
   MessagesView.ApplyIDEOptions;
-  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaDefault then
+  if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
     IDEWindowCreators.ShowForm(MessagesView,EnvironmentGuiOpts.MsgViewFocus);
   // clear old error lines
   SourceEditorManager.ClearErrorLines;
@@ -8227,9 +8178,6 @@ begin
     MainBuildBoss.SetBuildTargetIDE;
 
     ErrMsg:=PackageGraph.SrcBasePackagesNeedLazbuild;
-    {$IFDEF TestBuildLazNeedsLazbuild}
-    ErrMsg:='TestBuildLazNeedsLazbuild';
-    {$ENDIF}
     if ErrMsg<>'' then
     begin
       r:=IDEQuestionDialog(lisMajorChangesDetected,
@@ -8689,7 +8637,7 @@ begin
       exit;
     end;
   end else if Project1<>nil then begin
-    AnUnitInfo:=Project1.UnitWithFilename(aFilename);
+    AnUnitInfo:=Project1.UnitInfoWithFilename(aFilename);
     if AnUnitInfo=nil then exit;
     StringToStringList(AnUnitInfo.CustomData['IDEDirectives'],DirectiveList);
     //DebugLn(['TMainIDE.GetIDEDirectives ',dbgstr(DirectiveList.Text)]);
@@ -8810,8 +8758,8 @@ begin
   if CodeToolBoss.CheckSyntax(ActiveUnitInfo.Source,NewCode,NewX,NewY,
     NewTopLine,ErrorMsg) then
   begin
-    if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaDefault then
-      DoShowMessagesView;
+    if EnvironmentGuiOpts.MsgViewShowAutomatically = mwsaCompiling then
+      DoShowMessagesView(false);
     MessagesView.ClearCustomMessages;
     MessagesView.AddCustomMessage(mluImportant,lisMenuQuickSyntaxCheckOk);
   end else begin
@@ -8966,6 +8914,7 @@ begin
         DoOpenProjectFile(Project1.ProjectInfoFile,[ofRevert])
       else
         Project1.IgnoreProjectInfoFileOnDisk;
+      exit(mrOk);
     end;
 
     AIgnoreList := TFPList.Create;
@@ -8982,7 +8931,7 @@ begin
       for i:=0 to BufferList.Count-1 do begin
         CurCode:=TCodeBuffer(BufferList[i]);
 
-        CurUnit:=TEditableUnitInfo(Project1.UnitWithFilename(CurCode.Filename));
+        CurUnit:=TEditableUnitInfo(Project1.UnitInfoWithFilename(CurCode.Filename));
         if CurUnit=nil then continue;
 
         if (Reload=mrOk)
@@ -9022,7 +8971,7 @@ begin
       for i:=0 to BufferList.Count-1 do begin
         CurCode:=TCodeBuffer(BufferList[i]);
         if LFMLoaded.IndexOf(CurCode)>=0 then continue;
-        CurUnit:=TEditableUnitInfo(Project1.UnitWithLFMFilename(CurCode.Filename));
+        CurUnit:=TEditableUnitInfo(Project1.UnitInfoWithLFMFilename(CurCode.Filename));
         if (CurUnit=nil) or (CurUnit.Component=nil) then continue;
         // designer form
         if (Reload=mrOk)
@@ -9116,16 +9065,15 @@ begin
 
   if (GlobalMacroList <> nil) then begin
     CustomCaption := EnvironmentGuiOpts.Desktop.IDETitleBarCustomText;
-    if CustomCaption <> '' then
-      try
-        OldMarkUnhandledMacros := GlobalMacroList.MarkUnhandledMacros;
-        GlobalMacroList.MarkUnhandledMacros := false;
-        GlobalMacroList.SubstituteStr(CustomCaption, 0, 0, True);
-        if CustomCaption <> '' then
-          NewCaption := AddToCaption(NewCaption, CustomCaption);
-      finally
-        GlobalMacroList.MarkUnhandledMacros := OldMarkUnhandledMacros;
+    if CustomCaption <> '' then begin
+      OldMarkUnhandledMacros := GlobalMacroList.MarkUnhandledMacros;
+      GlobalMacroList.MarkUnhandledMacros := false;
+      GlobalMacroList.SubstituteStr(CustomCaption, 0, 0, True);
+      if CustomCaption <> '' then begin
+        NewCaption := AddToCaption(NewCaption, CustomCaption);
       end;
+      GlobalMacroList.MarkUnhandledMacros := OldMarkUnhandledMacros;
+    end;
   end;
 
   case ToolStatus of
@@ -9494,7 +9442,7 @@ begin
   ResultFlags:=[];
   AnUnitInfo:=nil;
   if Project1<>nil then
-    AnUnitInfo:=Project1.UnitWithFilename(AFilename);
+    AnUnitInfo:=Project1.UnitInfoWithFilename(AFilename);
   if AnUnitInfo<>nil then begin
     // readonly
     if (ifsReadOnly in NeededFlags) and AnUnitInfo.ReadOnly then
@@ -9565,7 +9513,7 @@ begin
     // open the file in the source editor
     AnUnitInfo := nil;
     if Project1<>nil then
-      AnUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(SearchedFilename));
+      AnUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(SearchedFilename));
     AnEditorInfo := nil;
     if AnUnitInfo <> nil then
       AnEditorInfo := GetAvailableUnitEditorInfo(AnUnitInfo, LogCaretXY);
@@ -9586,7 +9534,7 @@ begin
       if TopLine<1 then TopLine:=1;
       if FocusEditor then begin
         if EnvironmentGuiOpts.MsgViewShowAutomatically <> mwsaNever then
-          DoShowMessagesView;
+          DoShowMessagesView(true);
         SourceEditorManager.ShowActiveWindowOnTop(True);
       end;
       if IDETabMaster <> nil then
@@ -9654,7 +9602,7 @@ begin
       // open the file in the source editor
       AnUnitInfo := nil;
       if Project1<>nil then
-        AnUnitInfo := TEditableUnitInfo(Project1.UnitWithFilename(SearchedFilename));
+        AnUnitInfo := TEditableUnitInfo(Project1.UnitInfoWithFilename(SearchedFilename));
       AnEditorInfo := nil;
       if AnUnitInfo <> nil then
         AnEditorInfo := GetAvailableUnitEditorInfo(AnUnitInfo, LogCaretXY);
@@ -9706,13 +9654,13 @@ begin
   end;//if
 end;
 
-procedure TMainIDE.DoShowMessagesView;
+procedure TMainIDE.DoShowMessagesView(BringToFront: boolean);
 begin
   //debugln('TMainIDE.DoShowMessagesView');
-  if not MessagesView.IsVisible then
-    MessagesView.ApplyIDEOptions;
+  MessagesView.ApplyIDEOptions;
+
   // don't move the messagesview, if it was already visible.
-  IDEWindowCreators.ShowForm(MessagesView, EnvironmentGuiOpts.MsgViewFocus);
+  IDEWindowCreators.ShowForm(MessagesView,BringToFront);
 end;
 
 procedure TMainIDE.DoShowSearchResultsView(State: TIWGetFormState);
@@ -9825,7 +9773,7 @@ begin
     DebugLn('Hint: (lazarus) TMainIDE.DesignerPasteComponent A');
 
   // check the class of the new component
-  NewClassName:=ProjResProc.FindLFMClassName(TxtCompStream);
+  NewClassName:=FindLFMClassName(TxtCompStream);
 
   // check if component class is registered
   ARegComp:=IDEComponentPalette.FindRegComponent(NewClassName);
@@ -10143,7 +10091,7 @@ begin
     SrcBuf:=CodeToolBoss.SourceChangeCache.BuffersToModify[i];
     AnUnitInfo:=nil;
     if Project1<>nil then
-      AnUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(SrcBuf.Filename));
+      AnUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(SrcBuf.Filename));
     if AnUnitInfo<>nil then
       AnUnitInfo.Modified:=true;
 
@@ -10433,67 +10381,6 @@ begin
   Result:=DoJumpToCodePosition(nil,nil,CodeBuffer,NewX,NewY,NewTopLine, Flags);
 end;
 
-function TMainIDE.DoJumpToCodePosition(ActiveSrcEdit: TSourceEditorInterface; NewX, NewY,
-  NewTopLine, BlockTopLine, BlockBottomLine: integer; Flags: TJumpToCodePosFlags): TModalResult;
-var
-  SrcEdit: TSourceEditor;
-begin
-  Result:=mrCancel;
-
-  if ActiveSrcEdit = nil then
-    SrcEdit := SourceEditorManager.ActiveEditor
-  else
-    SrcEdit := ActiveSrcEdit as TSourceEditor;
-  if (SrcEdit = nil) or ((SrcEdit.EditorComponent = nil)) then
-    exit;
-
-  SourceEditorManager.BeginAutoFocusLock;
-  try
-    if (jfAddJumpPoint in Flags) and
-       ( (SrcEdit.EditorComponent.CaretX<>NewX) or
-         (SrcEdit.EditorComponent.CaretY<>NewY) )
-    then
-      SourceEditorManager.AddJumpPointClicked(Self);
-
-    if NewX<1 then NewX:=1;
-    if NewY<1 then NewY:=1;
-    if jfMapLineFromDebug in Flags then
-      NewY := SrcEdit.DebugToSourceLine(NewY);
-
-    try
-      SrcEdit.BeginUpdate;
-      SrcEdit.EditorComponent.MoveLogicalCaretIgnoreEOL(Point(NewX,NewY));
-      if not SrcEdit.IsLocked then begin
-        if NewTopLine < 1 then
-          SrcEdit.CenterCursor(True)
-        else
-        begin
-          if not(
-            CodeToolsOpts.AvoidUnnecessaryJumps and
-            (BlockTopLine>=SrcEdit.TopLine) and
-            (BlockBottomLine<=SrcEdit.EditorComponent.BottomLine)
-          )
-          then
-            SrcEdit.TopLine:=NewTopLine;
-        end;
-      end;
-      //DebugLn('TMainIDE.DoJumpToCodePosition NewY=',dbgs(NewY),' ',dbgs(TopLine),' ',dbgs(NewTopLine));
-      SrcEdit.CenterCursorHoriz(hcmSoftKeepEOL);
-    finally
-      SrcEdit.EndUpdate;
-    end;
-    if jfMarkLine in Flags then
-      SrcEdit.ErrorLine := NewY;
-
-    if jfFocusEditor in Flags then
-      SourceEditorManager.ShowActiveWindowOnTop(True);
-    UpdateSourceNames;
-    Result:=mrOk;
-  finally
-    SourceEditorManager.EndAutoFocusLock;
-  end;
-end;
-
 function TMainIDE.DoJumpToCodePosition(ActiveSrcEdit: TSourceEditorInterface;
   ActiveUnitInfo: TEditableUnitInfo; NewSource: TCodeBuffer; NewX, NewY, NewTopLine,
   BlockTopLine, BlockBottomLine: integer; Flags: TJumpToCodePosFlags
@@ -10532,13 +10419,13 @@ begin
     if (ActiveUnitInfo = nil) or (NewSource<>ActiveUnitInfo.Source)
     then begin
       // jump to other file -> open it
-      ActiveUnitInfo := TEditableUnitInfo(Project1.UnitWithFilename(NewSource.Filename));
+      ActiveUnitInfo := TEditableUnitInfo(Project1.UnitInfoWithFilename(NewSource.Filename));
       if (ActiveUnitInfo = nil) and (Project1.IsVirtual) and (jfSearchVirtualFullPath in Flags)
       then begin
         STB := AppendPathDelim(GetTestBuildDirectory);
         FNStart := copy(NewSource.Filename, 1, length(STB));
         if AnsiCompareText(FNStart, STB) = 0 then
-          ActiveUnitInfo := TEditableUnitInfo(Project1.UnitWithFilename(
+          ActiveUnitInfo := TEditableUnitInfo(Project1.UnitInfoWithFilename(
             copy(NewSource.Filename, 1+length(STB), MaxInt), [pfsfOnlyVirtualFiles]));
       end;
 
@@ -10738,7 +10625,7 @@ begin
   end;
   // syntax error -> show error in message view and jump
   if EnvironmentGuiOpts.MsgViewShowAutomatically <> mwsaNever then
-    DoShowMessagesView;
+    DoShowMessagesView(false);
   DoShowCodeToolBossError;
 
   // jump to error in source editor
@@ -10751,7 +10638,7 @@ begin
     if CodeToolBoss.ErrorCode.IsVirtual then
       Include(OpenFlags,ofVirtualFile);
 
-    AnUnitInfo := TEditableUnitInfo(Project1.UnitWithFilename(ErrorFilename));
+    AnUnitInfo := TEditableUnitInfo(Project1.UnitInfoWithFilename(ErrorFilename));
     AnEditorInfo := nil;
     ActiveSrcEdit := nil;
     if AnUnitInfo <> nil then
@@ -10794,7 +10681,7 @@ procedure TMainIDE.DoFindDeclarationAtCaret(const LogCaretXY: TPoint);
 var
   ActiveSrcEdit: TSourceEditor;
   ActiveUnitInfo: TEditableUnitInfo;
-  NewSource, BodySource, PasCode: TCodeBuffer;
+  NewSource, BodySource: TCodeBuffer;
   NewX, NewY, NewTopLine, BodyX, BodyY, BodyTopLine, NewCleanPos,
     BlockTopLine, BlockBottomLine: integer;
   FindFlags: TFindSmartFlags;
@@ -10811,18 +10698,6 @@ begin
   {$ENDIF}
   {$IFDEF IDE_MEM_CHECK}CheckHeapWrtMemCnt('TMainIDE.DoFindDeclarationAtCaret A');{$ENDIF}
   //DebugLn(['TMainIDE.DoFindDeclarationAtCaret LogCaretXY=',dbgs(LogCaretXY),' SynEdit.Log=',dbgs(ActiveSrcEdit.EditorComponent.LogicalCaretXY),' SynEdit.Caret=',dbgs(ActiveSrcEdit.EditorComponent.CaretXY)]);
-
-  if GetUnitCodeOfLFMFile(ActiveUnitInfo,PasCode) then begin
-    // the source editor shows a form file -> search the identifier in its unit
-    if (PasCode<>nil)
-    and CodeToolBoss.FindLFMDeclaration(PasCode,ActiveUnitInfo.Source,
-      LogCaretXY.X,LogCaretXY.Y,NewSource,NewX,NewY)
-    then
-      DoJumpToCodePosition(ActiveSrcEdit, ActiveUnitInfo,
-          NewSource, NewX, NewY, -1, -1, -1,
-          [jfAddJumpPoint, jfFocusEditor]);
-    exit;
-  end;
 
   // do not jump twice, check if current node is procedure
   JumpToBody := False;
@@ -10875,7 +10750,7 @@ end;
 
 function TMainIDE.DoFindRenameIdentifier(Rename: boolean): TModalResult;
 begin
-  Result:=FindRenameIdentExec.DoFindRenameIdentifier(true,Rename,nil);
+  Result:=FindRenameIdentifier.DoFindRenameIdentifier(true,Rename,nil);
 end;
 
 function TMainIDE.DoFindUsedUnitReferences: boolean;
@@ -10910,7 +10785,7 @@ begin
 
     DoShowSearchResultsView(iwgfShow);
     // create a search result page
-    //debugln(['DoFindUsedUnitReferences ',DbgSName(SearchResultsView)]);
+    //debugln(['ShowIdentifierReferences ',DbgSName(SearchResultsView)]);
     SearchPageIndex:=SearchResultsView.AddSearch(
       UsedUnitFilename,
       '',
@@ -11033,7 +10908,6 @@ var
 begin
   ActiveSrcEdit:=nil;
   if not BeginCodeTool(ActiveSrcEdit,ActiveUnitInfo,[]) then exit(false);
-  if (ActiveSrcEdit=nil) or not ActiveSrcEdit.CanShowCodeContext then exit(false);
   {$IFDEF IDE_DEBUG}
   debugln('');
   debugln('[TMainIDE.DoShowCodeContext] ************');
@@ -12537,7 +12411,7 @@ procedure TMainIDE.SrcNoteBookMouseLink(Sender: TObject; X, Y: Integer;
   var AllowMouseLink: Boolean);
 var
   ActiveUnitInfo: TEditableUnitInfo;
-  NewSource, PasCode: TCodeBuffer;
+  NewSource: TCodeBuffer;
   NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine: integer;
   SrcEdit: TSourceEditor;
 begin
@@ -12552,13 +12426,6 @@ begin
     {$IFDEF VerboseFindDeclarationFail}
     debugln(['TMainIDE.SrcNoteBookMouseLink BeginCodeTool failed ',SrcEdit.FileName,' X=',X,' Y=',Y]);
     {$ENDIF}
-    exit;
-  end;
-  if GetUnitCodeOfLFMFile(ActiveUnitInfo,PasCode) then begin
-    // the source editor shows a form file -> search the identifier in its unit
-    AllowMouseLink:=(PasCode<>nil)
-      and CodeToolBoss.FindLFMDeclaration(PasCode,ActiveUnitInfo.Source,X,Y,
-                                          NewSource,NewX,NewY);
     exit;
   end;
   AllowMouseLink := CodeToolBoss.FindDeclaration(
@@ -12749,7 +12616,7 @@ begin
   if Assigned(FDesignerToBeFreed) then begin
     for FileItem in FDesignerToBeFreed do begin
       if Project1=nil then break;
-      AnUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(FileItem^.Name));
+      AnUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(FileItem^.Name));
       if AnUnitInfo=nil then continue;
       if AnUnitInfo.Component=nil then continue;
       CloseUnitComponent(AnUnitInfo,[]);
@@ -13367,27 +13234,6 @@ begin
     end;
   end;
   Result:='';
-end;
-
-function TMainIDE.GetUnitCodeOfLFMFile(AnUnitInfo: TEditableUnitInfo; out
-  PasCode: TCodeBuffer): boolean;
-{ Check if AnUnitInfo is a form file (lfm/dfm/fmx).
-  Result=true means it is a form file, no matter if the pascal unit was found.
-  PasCode is the code of the pascal unit or nil if there is none. }
-var
-  UnitFilename: String;
-begin
-  PasCode:=nil;
-  Result:=false;
-  if AnUnitInfo=nil then exit;
-  if not (FilenameExtIs(AnUnitInfo.Filename,'lfm',true)
-       or FilenameExtIs(AnUnitInfo.Filename,'dfm')
-       or FilenameExtIs(AnUnitInfo.Filename,'fmx')) then exit;
-  Result:=true;
-  UnitFilename:=GetUnitFileOfLFM(AnUnitInfo.Filename);
-  if UnitFilename='' then exit;
-  // Note: keep this quiet, it is called on every mouse move over a link
-  PasCode:=CodeToolBoss.LoadFile(UnitFilename,false,false);
 end;
 
 function TMainIDE.GetProjectFileWithRootComponent(AComponent: TComponent): TLazProjectFile;

@@ -55,14 +55,14 @@ type
   private
     FItems: TList;
     function GetItems(Index: integer): THistoryList;
-    function GetXMLListPath(const Path: string; i: integer; ALegacyList: Boolean = false): string;
+    function GetXMLListPath(const Path: string; i: integer; ALegacyList: Boolean): string;
   public
     constructor Create;
     destructor Destroy;  override;
     procedure Clear;
     function Count: integer;
     procedure LoadFromXMLConfig(XMLConfig: TXMLConfig; const Path: string);
-    procedure SaveToXMLConfig(XMLConfig: TXMLConfig; const Path: string);
+    procedure SaveToXMLConfig(XMLConfig: TXMLConfig; const Path: string; const ALegacyList: Boolean);
     function IndexOfName(const Name: string): integer;
     function GetList(const Name: string;
       CreateIfNotExists: boolean; ListType: TRecentListType): THistoryList;
@@ -305,14 +305,16 @@ begin
   end;
 end;
 
-procedure THistoryLists.SaveToXMLConfig(XMLConfig: TXMLConfig; const Path: string);
+procedure THistoryLists.SaveToXMLConfig(XMLConfig: TXMLConfig;
+  const Path: string; const ALegacyList: Boolean);
 var
   i, CurID: integer;
 begin
+  XMLConfig.SetListItemCount(Path,Count,ALegacyList);
   CurID:=0;
   for i:=0 to Count-1 do begin
     if Items[i].Count>0 then begin
-      Items[i].SaveToXMLConfig(XMLConfig,GetXMLListPath(Path,CurID));
+      Items[i].SaveToXMLConfig(XMLConfig,GetXMLListPath(Path,CurID,ALegacyList));
       inc(CurID);
     end;
   end;

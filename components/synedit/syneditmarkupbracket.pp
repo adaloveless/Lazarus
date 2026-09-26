@@ -34,14 +34,9 @@ type
   TSynEditBracketHighlightStyle = (
     sbhsLeftOfCursor,
     sbhsRightOfCursor,
-    sbhsBoth,
-    sbhsBothRight
+    sbhsBoth
   );
 
-const
-  sbhsBothLeft = sbhsBoth; // old name
-
-type
   { TSynEditMarkupBracket }
 
   TSynEditMarkupBracket = class(TSynEditMarkup)
@@ -225,15 +220,6 @@ begin
       then
         exit;
       dir := bsdLeftThenRight;
-    end;
-    sbhsBothRight:     begin
-      if not(
-        ( (LogCaret.X <= Length(StartLine)) and (StartLine[LogCaret.X] in FBracketChars) ) or
-        ( (LogCaret.X > 1) and (LogCaret.X-1 <= Length(StartLine)) and (StartLine[LogCaret.X-1] in FBracketChars) )
-      )
-      then
-        exit;
-      dir := bsdRightThenLeft;
     end;
   end;
 

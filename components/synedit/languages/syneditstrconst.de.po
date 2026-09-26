@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "POT-Creation-Date: \n"
-"PO-Revision-Date: 2026-08-27 21:41+0200\n"
+"PO-Revision-Date: 2026-06-24 13:53+0200\n"
 "Last-Translator: Karl-Michael Schindler <tonne1.schindler@web.de>\n"
 "Language-Team: \n"
 "Language: de\n"
@@ -29,7 +29,7 @@ msgstr "Kann nur während der Pause wiederaufnehmen"
 
 #: syneditstrconst.syns_attrannotation
 msgid "Annotation"
-msgstr "Annotation"
+msgstr ""
 
 #: syneditstrconst.syns_attrasp
 msgid "Asp"
@@ -57,11 +57,11 @@ msgstr "Klammern"
 
 #: syneditstrconst.syns_attrcaselabel
 msgid "Case label"
-msgstr "Case-Marke"
+msgstr ""
 
 #: syneditstrconst.syns_attrcdata
 msgid "CDATA"
-msgstr "CDATA"
+msgstr ""
 
 #: syneditstrconst.syns_attrcdatasection
 msgid "CDATA Section"
@@ -73,7 +73,7 @@ msgstr "Zeichen"
 
 #: syneditstrconst.syns_attrcharset
 msgid "Charset"
-msgstr "Zeichensatz"
+msgstr ""
 
 #: syneditstrconst.syns_attrchunkmarker
 #, fuzzy
@@ -101,11 +101,11 @@ msgstr "Klasse"
 
 #: syneditstrconst.syns_attrclientkeyword
 msgid "Keyword (Client)"
-msgstr "Schlüsselwort (Client)"
+msgstr ""
 
 #: syneditstrconst.syns_attrcollation
 msgid "Collation"
-msgstr "Kollation"
+msgstr ""
 
 #: syneditstrconst.syns_attrcomment
 msgid "Comment"
@@ -113,19 +113,19 @@ msgstr "Kommentar"
 
 #: syneditstrconst.syns_attrcommentansi
 msgid "ANSI Comment"
-msgstr "ANSI-Kommentar"
+msgstr ""
 
 #: syneditstrconst.syns_attrcommentcurly
 msgid "Curly Comment"
-msgstr "Geschweifter Kommentar"
+msgstr ""
 
 #: syneditstrconst.syns_attrcommentslash
 msgid "Slash Comment"
-msgstr "Slash-Kommentar"
+msgstr ""
 
 #: syneditstrconst.syns_attrcommentsym
 msgid "Comment Symbol"
-msgstr "Kommentar-Symbol"
+msgstr ""
 
 #: syneditstrconst.syns_attrcondition
 msgid "Condition"
@@ -137,19 +137,19 @@ msgstr "Datentyp"
 
 #: syneditstrconst.syns_attrdeclarationtype
 msgid "Declaration block type"
-msgstr "Deklarationsblock-Typ"
+msgstr ""
 
 #: syneditstrconst.syns_attrdeclarationtypename
 msgid "Declaration block (Type) name"
-msgstr "Deklarationsblockname (Type)"
+msgstr ""
 
 #: syneditstrconst.syns_attrdeclarationvalue
 msgid "Declaration block value"
-msgstr "Deklarationsblock-Wert"
+msgstr ""
 
 #: syneditstrconst.syns_attrdeclarationvarconstname
 msgid "Declaration block (Var, Const) name"
-msgstr "Deklarationsblockname (Var, Const)"
+msgstr ""
 
 #: syneditstrconst.syns_attrdefaultpackage
 msgid "Default packages"
@@ -165,7 +165,7 @@ msgstr "Direktive"
 
 #: syneditstrconst.syns_attrdoctype
 msgid "DOCTYPE"
-msgstr "DOCTYPE"
+msgstr ""
 
 #: syneditstrconst.syns_attrdoctypesection
 msgid "DOCTYPE Section"
@@ -201,11 +201,11 @@ msgstr "Ereignis"
 
 #: syneditstrconst.syns_attrexception
 msgid "Exception"
-msgstr "Exception"
+msgstr "Ausnahme"
 
 #: syneditstrconst.syns_attrflags
 msgid "Flags"
-msgstr "Flags"
+msgstr ""
 
 #: syneditstrconst.syns_attrfloat
 msgid "Float"
@@ -221,15 +221,15 @@ msgstr "Funktion"
 
 #: syneditstrconst.syns_attrgenericconstraint
 msgid "Generic param constraint"
-msgstr "Generische Parametereinschränkung"
+msgstr ""
 
 #: syneditstrconst.syns_attrgenericparam
 msgid "Generic param name"
-msgstr "Name des generischen Parameters"
+msgstr ""
 
 #: syneditstrconst.syns_attrgotolabel
 msgid "Goto Label"
-msgstr "Sprungmarke (Goto)"
+msgstr ""
 
 #: syneditstrconst.syns_attrhexadecimal
 msgid "Hexadecimal"
@@ -281,7 +281,7 @@ msgstr "Von Diff eingefügte Zeile"
 
 #: syneditstrconst.syns_attrlinechanged
 msgid "Diff Changed Line"
-msgstr "Von Diff geänderte Zeile"
+msgstr "Geänderte Diff-Zeile"
 
 #: syneditstrconst.syns_attrlinecontext
 msgid "Diff Context Line"
@@ -305,7 +305,7 @@ msgstr "Mathematischer Modus"
 
 #: syneditstrconst.syns_attrmeasurementunitvalue
 msgid "Measurement unit"
-msgstr "Maßeinheit"
+msgstr ""
 
 #: syneditstrconst.syns_attrmessage
 msgid "Message"
@@ -317,7 +317,7 @@ msgstr "Verschiedenes"
 
 #: syneditstrconst.syns_attrmodifier
 msgid "Modifier"
-msgstr "Modifikator"
+msgstr ""
 
 #: syneditstrconst.syns_attrnamespaceattrname
 msgid "Namespace Attribute Name"
@@ -329,15 +329,15 @@ msgstr "Namensraum Attribut Wert"
 
 #: syneditstrconst.syns_attrnamespacecolon
 msgid "Namespace Colon"
-msgstr "Namensraum-Doppelpunkt"
+msgstr ""
 
 #: syneditstrconst.syns_attrnamespaceidentdef
 msgid "Namespace Identifier Definition"
-msgstr "Namensraum-Bezeichner-Definition"
+msgstr ""
 
 #: syneditstrconst.syns_attrnamespaceidentprefix
 msgid "Namespace Identifier Prefix"
-msgstr "Namensraum-Bezeichner-Präfix"
+msgstr ""
 
 #: syneditstrconst.syns_attrnewfile
 msgid "Diff New File"
@@ -365,19 +365,19 @@ msgstr "Operator"
 
 #: syneditstrconst.syns_attrorigfile
 msgid "Diff Original File"
-msgstr "Ursprüngliche Diff-Datei"
+msgstr "Ursprüngliches Diff-Datei"
 
 #: syneditstrconst.syns_attrpasdockey
 msgid "PasDoc Keyword"
-msgstr "PasDoc-Schlüsselwort"
+msgstr ""
 
 #: syneditstrconst.syns_attrpasdocsymbol
 msgid "PasDoc Symbol"
-msgstr "PasDoc-Symbol"
+msgstr ""
 
 #: syneditstrconst.syns_attrpasdocunknown
 msgid "PasDoc Unknown"
-msgstr "PasDoc unbekannt"
+msgstr ""
 
 #: syneditstrconst.syns_attrplsql
 msgid "Reserved word (PL/SQL)"
@@ -397,23 +397,23 @@ msgstr "Vorheriger Wert"
 
 #: syneditstrconst.syns_attrprocedureheadername
 msgid "Procedure header name"
-msgstr "Prozedurkopf-Name"
+msgstr ""
 
 #: syneditstrconst.syns_attrprocedureheaderparam
 msgid "Procedure header param name"
-msgstr "Prozedurkopf-Parametername"
+msgstr ""
 
 #: syneditstrconst.syns_attrprocedureheaderresult
 msgid "Procedure header result"
-msgstr "Prozedurkopf-Ergebnis"
+msgstr ""
 
 #: syneditstrconst.syns_attrprocedureheadertype
 msgid "Procedure header type"
-msgstr "Prozedurkopf-Typ"
+msgstr ""
 
 #: syneditstrconst.syns_attrprocedureheadervalue
 msgid "Procedure header value"
-msgstr "Prozedurkopf-Wert"
+msgstr ""
 
 #: syneditstrconst.syns_attrprocessinginstr
 msgid "Processing Instruction"
@@ -421,11 +421,11 @@ msgstr "Anweisung ausführen"
 
 #: syneditstrconst.syns_attrprocessinginstrsym
 msgid "Processing Instruction Symbol"
-msgstr "Verarbeitungsanweisungs-Symbol"
+msgstr ""
 
 #: syneditstrconst.syns_attrpropertyname
 msgid "Property name"
-msgstr "Eigenschaftsname"
+msgstr ""
 
 #: syneditstrconst.syns_attrqualifier
 msgid "Qualifier"
@@ -477,7 +477,7 @@ msgstr "Abschnitt"
 
 #: syneditstrconst.syns_attrselectorvalue
 msgid "Selector"
-msgstr "Selektor"
+msgstr ""
 
 #: syneditstrconst.syns_attrspace
 msgid "Space"
@@ -485,7 +485,7 @@ msgstr "Leerzeichen"
 
 #: syneditstrconst.syns_attrspecializeparam
 msgid "Specialize param"
-msgstr "Parameter (specialize)"
+msgstr ""
 
 #: syneditstrconst.syns_attrspecialvariable
 msgid "Special variable"
@@ -509,23 +509,23 @@ msgstr "Zeichenkette"
 
 #: syneditstrconst.syns_attrstringbacktick
 msgid "Backtick String"
-msgstr "Backtick-Zeichenkette"
+msgstr ""
 
 #: syneditstrconst.syns_attrstringcaret
 msgid "Ctrl Char (Caret)"
-msgstr "Steuerzeichen (Caret)"
+msgstr ""
 
 #: syneditstrconst.syns_attrstringhash
 msgid "Ordinal Char (Hash)"
-msgstr "Ordinalzeichen (Raute)"
+msgstr ""
 
 #: syneditstrconst.syns_attrstringsingle
 msgid "Single quoted String"
-msgstr "Zeichenkette (einfache Anführungszeichen)"
+msgstr ""
 
 #: syneditstrconst.syns_attrstructmember
 msgid "Structure member"
-msgstr "Strukturelement"
+msgstr ""
 
 #: syneditstrconst.syns_attrsymbol
 msgid "Symbol"
@@ -589,15 +589,15 @@ msgstr "Trenn-/Leerzeichen"
 
 #: syneditstrconst.syns_copy
 msgid "&Copy"
-msgstr "&Kopieren"
+msgstr ""
 
 #: syneditstrconst.syns_cut
 msgid "C&ut"
-msgstr "Aus&schneiden"
+msgstr ""
 
 #: syneditstrconst.syns_delete
 msgid "&Delete"
-msgstr "&Löschen"
+msgstr ""
 
 #: syneditstrconst.syns_duplicateshortcutmsg
 #, object-pascal-format
@@ -642,7 +642,7 @@ msgstr "Kontextmenü"
 
 #: syneditstrconst.syns_emccontextmenucaretmove_opt
 msgid "\"Move caret, when selection exists\", Never, \"Click outside\", Always"
-msgstr "\"Cursor bewegen, wenn Auswahl vorhanden\", Nie, \"Klick außerhalb\", Immer"
+msgstr ""
 
 #: syneditstrconst.syns_emcmouselink
 msgid "Source Link"
@@ -658,11 +658,11 @@ msgstr "Keine Aktion"
 
 #: syneditstrconst.syns_emcoverviewguttergotomark
 msgid "Jump to Mark (Overview Gutter)"
-msgstr "Zur Marke springen (Übersichtsrand)"
+msgstr ""
 
 #: syneditstrconst.syns_emcoverviewgutterscrollto
 msgid "Scroll (Overview Gutter)"
-msgstr "Scrollen (Übersichtsrand)"
+msgstr ""
 
 #: syneditstrconst.syns_emcpasteselection
 msgid "Quick Paste Selection"
@@ -670,23 +670,23 @@ msgstr "Ausgewählten Text einfügen"
 
 #: syneditstrconst.syns_emcpluginextlinkcopyexternallink
 msgid "Copy external link"
-msgstr "Externen Link kopieren"
+msgstr ""
 
 #: syneditstrconst.syns_emcpluginextlinkopenexternallink
 msgid "Open external link"
-msgstr "Externen Link öffnen"
+msgstr ""
 
 #: syneditstrconst.syns_emcpluginextlinkselectexternallink
 msgid "Select external link"
-msgstr "Externen Link auswählen"
+msgstr ""
 
 #: syneditstrconst.syns_emcpluginmulticaretselectiontocarets
 msgid "Set carets at EOL in selected lines"
-msgstr "Cursor an Zeilenenden der ausgewählten Zeilen setzen"
+msgstr ""
 
 #: syneditstrconst.syns_emcpluginmulticarettogglecaret
 msgid "Toggle extra caret"
-msgstr "Zusätzlichen Cursor umschalten"
+msgstr ""
 
 #: syneditstrconst.syns_emcselection_opt
 msgid "Mode,Begin,Continue"
@@ -717,9 +717,8 @@ msgid "Drag Selection"
 msgstr "Auswahl verschieben"
 
 #: syneditstrconst.syns_emcstartdragmove_opt
-#, fuzzy
 msgid "\"Caret on up if not dragged\",yes,no"
-msgstr "\"Cursor oben, wenn nicht gezogen\",ja,nein"
+msgstr ""
 
 #: syneditstrconst.syns_emcstartlineselections
 msgid "Line Selection"
@@ -727,7 +726,7 @@ msgstr "Zeilenmodus"
 
 #: syneditstrconst.syns_emcstartlineselectionsnoneempty
 msgid "Line Selection (select immediate)"
-msgstr "Zeilenauswahl (sofort auswählen)"
+msgstr ""
 
 #: syneditstrconst.syns_emcstartselection
 msgid "Selection"
@@ -735,15 +734,15 @@ msgstr "Auswahl"
 
 #: syneditstrconst.syns_emcstartselectlines
 msgid "Selection (lines)"
-msgstr "Auswahl (Zeilen)"
+msgstr ""
 
 #: syneditstrconst.syns_emcstartselecttokens
 msgid "Selection (tokens) "
-msgstr "Auswahl (Token) "
+msgstr ""
 
 #: syneditstrconst.syns_emcstartselectwords
 msgid "Selection (words)"
-msgstr "Auswahl (Wörter)"
+msgstr ""
 
 #: syneditstrconst.syns_emcsyneditcommand
 msgid "IDE Command"
@@ -751,43 +750,43 @@ msgstr "IDE-Anweisung"
 
 #: syneditstrconst.syns_emcwheelhorizscrolldown
 msgid "Wheel scroll down (Horizontal)"
-msgstr "Mausrad nach unten scrollen (Horizontal)"
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelhorizscrollup
 msgid "Wheel scroll up (Horizontal)"
-msgstr "Mausrad nach oben scrollen (Horizontal)"
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelscrolldown
 msgid "Wheel scroll down"
-msgstr "Mausrad nach unten scrollen"
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelscrollup
 msgid "Wheel scroll up"
-msgstr "Mausrad nach oben scrollen"
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelscroll_opt
 msgid "Speed,\"System settings\",Lines,Pages,\"Pages (less one line)\""
-msgstr "Geschwindigkeit,\"Systemeinstellungen\",Zeilen,Seiten,\"Seiten (minus eine Zeile)\""
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelvertscrolldown
 msgid "Wheel scroll down (Vertical)"
-msgstr "Mausrad nach unten scrollen (Vertikal)"
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelvertscrollup
 msgid "Wheel scroll up (Vertical)"
-msgstr "Mausrad nach oben scrollen (Vertikal)"
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelzoomin
 msgid "Wheel zoom in"
-msgstr "Mausrad vergrößern"
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelzoomnorm
 msgid "Wheel zoom default"
-msgstr "Mausrad Standardzoom"
+msgstr ""
 
 #: syneditstrconst.syns_emcwheelzoomout
 msgid "Wheel zoom out"
-msgstr "Mausrad verkleinern"
+msgstr ""
 
 #: syneditstrconst.syns_exporterformathtml
 msgid "HTML"
@@ -827,7 +826,7 @@ msgstr "JavaScript-Dateien (*.js)|*.js"
 
 #: syneditstrconst.syns_filterlfm
 msgid "Lazarus Form Files (*.lfm)|*.lfm"
-msgstr "Lazarus-Formular-Dateien (*.lfm)|*.lfm"
+msgstr "Lazarus-Form-Dateien (*.lfm)|*.lfm"
 
 #: syneditstrconst.syns_filterpascal
 msgid "Pascal Files (*.pas,*.dpr,*.dpk,*.inc)|*.pas;*.dpr;*.dpk;*.inc"
@@ -871,7 +870,7 @@ msgstr "XML-Dokumente (*.xml,*.xsd,*.xsl,*.xslt,*.dtd)|*.xml;*.xsd;*.xsl;*.xslt;
 
 #: syneditstrconst.syns_paste
 msgid "&Paste"
-msgstr "&Einfügen"
+msgstr ""
 
 #: syneditstrconst.syns_previewscrollinfofmt
 #, object-pascal-format
@@ -880,7 +879,7 @@ msgstr "Seite: %d"
 
 #: syneditstrconst.syns_redo
 msgid "&Redo"
-msgstr "&Wiederholen"
+msgstr ""
 
 #: syneditstrconst.syns_scrollinfofmt
 #, object-pascal-format
@@ -894,7 +893,7 @@ msgstr "Oberste Zeile: %d"
 
 #: syneditstrconst.syns_selectall
 msgid "Select &all"
-msgstr "&Alles auswählen"
+msgstr ""
 
 #: syneditstrconst.syns_shortcutnone
 msgid "<none>"
@@ -902,9 +901,9 @@ msgstr "<keine>"
 
 #: syneditstrconst.syns_undo
 msgid "&Undo"
-msgstr "&Rückgängig"
+msgstr ""
 
 #: syneditstrconst.syns_untitled
 msgid "Untitled"
-msgstr "Ohne Titel"
+msgstr "Unbenannt"
 

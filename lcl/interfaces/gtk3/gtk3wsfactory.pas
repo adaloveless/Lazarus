@@ -607,12 +607,14 @@ end;
 
 function RegisterPairSplitterSide: Boolean; alias : 'WSRegisterPairSplitterSide';
 begin
-  Result := False;
+  RegisterWSComponent(TPairSplitterSide, TGtk3WSPairSplitterSide);
+  Result := true;
 end;
 
 function RegisterCustomPairSplitter: Boolean; alias : 'WSRegisterCustomPairSplitter';
 begin
-  Result := False;
+  RegisterWSComponent(TCustomPairSplitter, TGtk3WSCustomPairSplitter);
+  Result := true;
 end;
 
 function RegisterCustomFloatSpinEdit: Boolean; alias : 'WSRegisterCustomFloatSpinEdit';

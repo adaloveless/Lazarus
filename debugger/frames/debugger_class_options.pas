@@ -272,10 +272,9 @@ begin
   UpdateDebuggerClass;
   cmbDebuggerPathEditingDone(nil);
 
-  AName := InitDlgDebugNew;
-  i := ShowChooseItemDialog(dlgNewDebuggerBackend,
-    dlgPleaseChooseTheDebuggerBackend, dlgClass, lisName, AName,
-      cmbDebuggerType.Items, '---');
+  AName := lisNew;
+  i := ShowChooseItemDialog('New debugger backend',
+    'Please chose the debugger backend to add.', 'Class:', 'Name', AName, cmbDebuggerType.Items, '---');
   if (i < 0) then
     exit;
 

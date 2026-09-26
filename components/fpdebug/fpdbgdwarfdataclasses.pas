@@ -353,18 +353,6 @@ type
   { TDwarfInformationEntry }
   TDwarfInformationEntry = class;
 
-  (* Search options for TDwarfInformationEntry.GoNamedChildEx.
-     gncOnlySubroutines must be applied while scanning: the scan stops at the
-     first entry whose name matches, so a procedure that sits behind a variable
-     or a type of the same name can not be recovered by filtering the result. *)
-  TGoNamedChildFlag = (
-    gncSkipArtificial,
-    gncSkipEnumMembers,
-    gncSkipScopedEnumMembers,
-    gncOnlySubroutines
-  );
-  TGoNamedChildFlags = set of TGoNamedChildFlag;
-
   TDwarfAttribData = record
     Idx: Integer;
     InfoPointer: pointer;
@@ -411,9 +399,8 @@ type
     procedure ComputeKnownHashes(AKNownHashes: PKnownNameHashesArray);
 
     function GoNamedChild(const ANameInfo: TNameSearchInfo): Boolean;
-    // find in enum too
-    function GoNamedChildEx(const ANameInfo: TNameSearchInfo; ASkipArtificial: Boolean = False; ASkipEnumMembers: Boolean = False; ASkipScopedEnumMembers: Boolean = False): Boolean; overload; inline;
-    function GoNamedChildEx(const ANameInfo: TNameSearchInfo; AFlags: TGoNamedChildFlags): Boolean; overload;
+    // find in enum too // TODO: control search with a flags param, if needed
+    function GoNamedChildEx(const ANameInfo: TNameSearchInfo; ASkipArtificial: Boolean = False; ASkipEnumMembers: Boolean = False; ASkipScopedEnumMembers: Boolean = False): Boolean;
     // GoNamedChildMatchCaseEx will use
     // - UpperName for Hash
     // - LowerName for compare
@@ -621,19 +608,9 @@ type
     constructor Create(AnAddress: TDbgPtr; AStateMachine: TDwarfLineInfoStateMachine; ACU: TDwarfCompilationUnit);
   end;
 
-  TFpDwarfInfoSymbolScopeBase = class(TFpDbgSymbolScope)
-  protected
-    function FindExportedSymbolInUnits(const AName: String; const ANameInfo: TNameSearchInfo;
-      SkipCompUnit: TDwarfCompilationUnit; out ADbgSymbol: TFpSymbol; const OnlyUnitNameLower: String = '';
-      AFindFlags: TFindExportedSymbolsFlags = []): Boolean; virtual; abstract;
-  end;
-
   { TFpSymbolDwarfClassMap
     Provides Symbol and VAlue evaluation classes depending on the compiler
   }
-
-  TFpSymbolDwarfClassMapCuInfo = class
-  end;
 
   PFpDwarfSymbolClassMap = ^TFpSymbolDwarfClassMap;
 
@@ -650,11 +627,10 @@ type
     class function ClassCanHandleCompUnit(ACU: TDwarfCompilationUnit): Boolean; virtual; abstract;
   public
     constructor Create(ACU: TDwarfCompilationUnit; AHelperData: Pointer); virtual;
-    procedure InitCompUnit(ACU: TDwarfCompilationUnit; var AClassMapInfo: TFpSymbolDwarfClassMapCuInfo); virtual;
     function IgnoreCfiStackEnd: boolean; virtual;
     function GetDwarfSymbolClass(ATag: Cardinal): TDbgDwarfSymbolBaseClass; virtual; abstract;
     function CreateScopeForSymbol(ALocationContext: TFpDbgSimpleLocationContext; ASymbol: TFpSymbol;
-                                 ADwarf: TFpDwarfInfo): TFpDwarfInfoSymbolScopeBase; virtual; abstract;
+                                 ADwarf: TFpDwarfInfo): TFpDbgSymbolScope; virtual; abstract;
     function CreateProcSymbol(ACompilationUnit: TDwarfCompilationUnit;
                                     AInfo: PDwarfAddressInfo; AAddress: TDbgPtr; ADbgInfo: TFpDwarfInfo): TDbgDwarfSymbolBase; virtual; abstract;
     function CreateUnitSymbol(ACompilationUnit: TDwarfCompilationUnit;
@@ -733,7 +709,6 @@ type
     FWaitForComputeHashesSection: TWaitableSection;
     FBuildAddressMapSection: TWaitableSection;
   private
-    FClassMapInfo: TFpSymbolDwarfClassMapCuInfo;
     FOwner: TFpDwarfInfo;
     FDebugFile: PDwarfDebugFile;
     FDwarfSymbolClassMap: TFpSymbolDwarfClassMap;
@@ -841,7 +816,6 @@ type
     // the debug-info is loaded.
     function CalculateRelocatedAddress(AValue: QWord): QWord; inline;
     // Get start/end addresses of proc
-    function GetDwarfAddressInfo(AnAddress: TDBGPtr; out AnDwarfAddressInfoPtr: PDwarfAddressInfo): boolean; inline;
     function GetProcStartEnd(const AAddress: TDBGPtr; out AStartPC, AEndPC: TDBGPtr): boolean;
 
     function HasAddress(AAddress: TDbgPtr; AWaitFor: TWaitRequirements = []): Boolean; inline;
@@ -869,7 +843,6 @@ type
     property DebugFile: PDwarfDebugFile read FDebugFile;
 
     property DwarfSymbolClassMap: TFpSymbolDwarfClassMap read FDwarfSymbolClassMap;
-    property ClassMapInfo: TFpSymbolDwarfClassMapCuInfo read FClassMapInfo;
     property FirstScope: TDwarfScopeInfo read GetFirstScope;
 
     // public for FpDbgDwarfVerbosePrinter
@@ -913,7 +886,6 @@ type
     function FindSymbolScope(ALocationContext: TFpDbgSimpleLocationContext; AAddress: TDbgPtr = 0): TFpDbgSymbolScope; override;
     function FindDwarfProcSymbol(AAddress: TDbgPtr): TDbgDwarfSymbolBase; inline;
     function FindProcSymbol(AAddress: TDbgPtr): TFpSymbol; override; overload;
-    function FindNamedProcSymbol(const AName: String; AFlags: TFpProcSearchFlags = []): TFpSymbol; override;
     function FindProcStartEndPC(const AAddress: TDbgPtr; out AStartPC, AEndPC: TDBGPtr): boolean; override;
     function FindLineInfo(AAddress: TDbgPtr): TFpSymbol; override;
     function FindCallFrameInfo(AnAddress: TDBGPtr; out CIE: TDwarfCIE; out Row: TDwarfCallFrameInformationRow): Boolean; virtual;
@@ -1223,12 +1195,6 @@ constructor TFpSymbolDwarfClassMap.Create(ACU: TDwarfCompilationUnit;
   AHelperData: Pointer);
 begin
   inherited Create;
-end;
-
-procedure TFpSymbolDwarfClassMap.InitCompUnit(ACU: TDwarfCompilationUnit;
-  var AClassMapInfo: TFpSymbolDwarfClassMapCuInfo);
-begin
-  //
 end;
 
 function TFpSymbolDwarfClassMap.CanHandleCompUnit(ACU: TDwarfCompilationUnit;
@@ -3163,31 +3129,12 @@ end;
 function TDwarfInformationEntry.GoNamedChildEx(const ANameInfo: TNameSearchInfo;
   ASkipArtificial: Boolean; ASkipEnumMembers: Boolean; ASkipScopedEnumMembers: Boolean): Boolean;
 var
-  Flags: TGoNamedChildFlags;
-begin
-  Flags := [];
-  if ASkipArtificial then
-    Include(Flags, gncSkipArtificial);
-  if ASkipEnumMembers then
-    Include(Flags, gncSkipEnumMembers);
-  if ASkipScopedEnumMembers then
-    Include(Flags, gncSkipScopedEnumMembers);
-  Result := GoNamedChildEx(ANameInfo, Flags);
-end;
-
-function TDwarfInformationEntry.GoNamedChildEx(const ANameInfo: TNameSearchInfo;
-  AFlags: TGoNamedChildFlags): Boolean;
-var
   Val: Integer;
   EntryName: PChar;
   InEnum: Boolean;
   ParentScopIdx: Integer;
   sc: PDwarfScopeInfoRec;
-  ASkipArtificial, ASkipEnumMembers, ASkipScopedEnumMembers: Boolean;
 begin
-  ASkipArtificial := gncSkipArtificial in AFlags;
-  ASkipEnumMembers := gncSkipEnumMembers in AFlags;
-  ASkipScopedEnumMembers := gncSkipScopedEnumMembers in AFlags;
   Result := False;
   InEnum := False;
   if ANameInfo.NameUpper = '' then
@@ -3208,13 +3155,6 @@ begin
       PrepareAbbrev;
       if (FAbbrev = nil) then begin
         assert(false);
-        GoNextFast;
-        Continue;
-      end;
-
-      (* Only DW_TAG_subprogram is mapped to a proc symbol. DW_TAG_entry_point
-         and DW_TAG_inlined_subroutine are not currently handled. *)
-      if (gncOnlySubroutines in AFlags) and (FAbbrev^.tag <> DW_TAG_subprogram) then begin
         GoNextFast;
         Continue;
       end;
@@ -4381,6 +4321,7 @@ function TFpDwarfInfo.FindProcSymbol(AAddress: TDbgPtr): TFpSymbol;
 var
   n: Integer;
   CU: TDwarfCompilationUnit;
+  Iter: TLockedMapIterator;
   Info: PDwarfAddressInfo;
 begin
   Result := nil;
@@ -4398,45 +4339,29 @@ begin
     if not CU.HasAddress(AAddress, [wrAddrMap]) then
       Continue;
 
-    if not CU.GetDwarfAddressInfo(AAddress, Info) then
-      continue;
+    Iter := TLockedMapIterator.Create(CU.FAddressMap);
+    try
+      if not Iter.Locate(AAddress)
+      then begin
+        if not Iter.BOM
+        then Iter.Previous;
 
-    // TDbgDwarfProcSymbol
-    Result := Cu.DwarfSymbolClassMap.CreateProcSymbol(CU, info, AAddress, Self);
-    if Result<>nil then
-      break;
-  end;
-end;
+        if Iter.BOM
+        then Continue;
+      end;
 
-function TFpDwarfInfo.FindNamedProcSymbol(const AName: String;
-  AFlags: TFpProcSearchFlags): TFpSymbol;
-var
-  Ctx: TFpDbgSimpleLocationContext;
-  Scope: TFpDwarfInfoSymbolScopeBase;
-begin
-  Result := nil;
-  (* Each TDbgInfo answers for its own namespace only. This one is the
-     readable, source level names in the debug info. *)
-  if not ProcSearchIncludes(AFlags, psfDwarfName) then
-    exit;
-  if (AName = '') or (CompilationUnitsCount = 0) then
-    exit;
+      // iter is at the closest defined address before AAddress
+      Info := Iter.DataPtr;
+      if AAddress > Info^.EndPC
+      then Continue;
 
-  (* NOTE: Warning, the context does not have a valid ThreadId.
-     Only search for TFpSymbol, so Scope.ApplyContext will not be called.
-  *)
-  Ctx := TFpDbgSimpleLocationContext.Create(MemManager, 0,
-    CompilationUnits[0].AddressSize, 0, 0);
-  Scope := CompilationUnits[0].DwarfSymbolClassMap.CreateScopeForSymbol(Ctx, nil, Self);
-  try
-    if Scope = nil then
-      exit;
-    if not Scope.FindExportedSymbolInUnits(AName, NameInfoForSearch(AName), nil, Result, '', [fsfNoAddressCheck, fsfOnlySubroutines])
-    then
-      exit;
-  finally
-    Scope.ReleaseReference;
-    Ctx.ReleaseReference;
+      // TDbgDwarfProcSymbol
+      Result := Cu.DwarfSymbolClassMap.CreateProcSymbol(CU, Iter.DataPtr, AAddress, Self);
+      if Result<>nil then
+        break;
+    finally
+      Iter.Free;
+    end;
   end;
 end;
 
@@ -6076,7 +6001,6 @@ begin
 
   if not FAbbrevList.Valid then begin
     FDwarfSymbolClassMap := DwarfSymbolClassMapList.FDefaultMap.GetInstanceForCompUnit(Self);
-    FDwarfSymbolClassMap.InitCompUnit(Self, FClassMapInfo);
     exit;
   end;
 
@@ -6089,7 +6013,6 @@ begin
   if not Scope.IsValid then begin
     DebugLn(FPDBG_DWARF_WARNINGS, ['WARNING compilation unit has no compile_unit tag']);
     FDwarfSymbolClassMap := DwarfSymbolClassMapList.FDefaultMap.GetInstanceForCompUnit(Self);
-    FDwarfSymbolClassMap.InitCompUnit(Self, FClassMapInfo);
     Exit;
   end;
   FValid := True;
@@ -6111,7 +6034,6 @@ begin
 
   FDwarfSymbolClassMap := DwarfSymbolClassMapList.FindMapForCompUnit(Self);
   assert(FDwarfSymbolClassMap <> nil, 'TDwarfCompilationUnit.Create: FDwarfSymbolClassMap <> nil');
-  FDwarfSymbolClassMap.InitCompUnit(Self, FClassMapInfo);
 
   if not LocateAttribute(Scope.Entry, DW_AT_identifier_case, AttribList, Attrib, Form)
   and not ReadValue(Attrib, Form, FIdentifierCase)
@@ -6175,7 +6097,6 @@ begin
   FreeAndNil(FLineInfo.FileNames);
 
   inherited Destroy;
-  FClassMapInfo.Free;
 end;
 
 function TDwarfCompilationUnit.InitLocateAttributeList(AEntry: Pointer;
@@ -6365,10 +6286,11 @@ begin
   {$pop}
 end;
 
-function TDwarfCompilationUnit.GetDwarfAddressInfo(AnAddress: TDBGPtr; out
-  AnDwarfAddressInfoPtr: PDwarfAddressInfo): boolean;
+function TDwarfCompilationUnit.GetProcStartEnd(const AAddress: TDBGPtr; out
+  AStartPC, AEndPC: TDBGPtr): boolean;
 var
   Iter: TLockedMapIterator;
+  Info: PDwarfAddressInfo;
 begin
   if not FAddressMapBuild then
     BuildAddressMap;
@@ -6376,7 +6298,7 @@ begin
   Result := false;
   Iter := TLockedMapIterator.Create(FAddressMap);
   try
-    if not Iter.Locate(AnAddress) then
+    if not Iter.Locate(AAddress) then
     begin
       if not Iter.BOM then
         Iter.Previous;
@@ -6385,31 +6307,17 @@ begin
         Exit;
     end;
 
-    // iter is at the closest defined address before AnAddress
-    AnDwarfAddressInfoPtr := Iter.DataPtr;
-    result := (AnAddress <= AnDwarfAddressInfoPtr^.EndPC);
+    // iter is at the closest defined address before AAddress
+    Info := Iter.DataPtr;
+    result := (AAddress >= Info^.StartPC) and (AAddress <= Info^.EndPC);
+    if Result then
+    begin
+      AStartPC := Info^.StartPC;
+      AEndPC := Info^.EndPC;
+    end;
+
   finally
     Iter.Free;
-  end;
-end;
-
-function TDwarfCompilationUnit.GetProcStartEnd(const AAddress: TDBGPtr; out
-  AStartPC, AEndPC: TDBGPtr): boolean;
-var
-  Info: PDwarfAddressInfo;
-begin
-  if not FAddressMapBuild then
-    BuildAddressMap;
-
-  Result := GetDwarfAddressInfo(AAddress, Info);
-  if not Result then
-    exit;
-  Result := AAddress >= Info^.StartPC;
-
-  if Result then
-  begin
-    AStartPC := Info^.StartPC;
-    AEndPC := Info^.EndPC;
   end;
 end;
 

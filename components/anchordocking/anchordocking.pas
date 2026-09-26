@@ -1674,7 +1674,7 @@ begin
   Config.SetDeleteValue('DockOutsideMargin',DockOutsideMargin,10);
   Config.SetDeleteValue('DockParentMargin',DockParentMargin,10);
   Config.SetDeleteValue('DockSitesCanBeMinimized',DockSitesCanBeMinimized,False);
-  Config.SetDeleteValue('FlatHeadersButtons',FlatHeadersButtons,False);
+  Config.SetDeleteValue('FlatHeadersButtons',DockSitesCanBeMinimized,False);
   Config.SetDeleteValue('DragThreshold',DragTreshold,4);
   Config.SetDeleteValue('FloatingWindowsOnTop',FloatingWindowsOnTop,false);
   Config.SetDeleteValue('HeaderAlignLeft',HeaderAlignLeft,120);
@@ -7021,7 +7021,6 @@ begin
     PreferredWidth := max(R.Bottom - R.Top, PreferredWidth);
     PreferredHeight:=PreferredWidth;
   finally
-    ReleaseDC(Handle, LCanvas.Handle);
     LCanvas.Handle:= 0;
     LCanvas.Free;
   end;

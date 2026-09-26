@@ -144,7 +144,6 @@ type
     );
 
   TDateTimePickerOptions = set of TDateTimePickerOption;
-  TDateTimeSpacing = (dtsWide, dtsNarrow);
 
   { TCustomDateTimePicker }
 
@@ -162,8 +161,6 @@ type
     FCenturyFrom, FEffectiveCenturyFrom: Word;
     FChecked: Boolean;
     FDateDisplayOrder: TDateDisplayOrder;
-    FDateTimeSpacing: TDateTimeSpacing;
-    FDateTimeDistance: Integer;
     FHideDateTimeParts: TDateTimeParts;
     FEffectiveHideDateTimeParts: TEffectiveDateTimeParts;
     FKind: TDateTimeKind;
@@ -249,7 +246,6 @@ type
     procedure SetCustomMonthNames(AValue: TStrings);
     procedure SetDateDisplayOrder(const AValue: TDateDisplayOrder);
     procedure SetDateMode(const AValue: TDTDateMode);
-    procedure SetDateTimeSpacing(AValue: TDateTimeSpacing);
     procedure SetDecimalSeparator(AValue: String);
     procedure SetHideDateTimeParts(AValue: TDateTimeParts);
     procedure SetKind(const AValue: TDateTimeKind);
@@ -403,8 +399,6 @@ type
              read FCenturyFrom write SetCenturyFrom;
     property DateDisplayOrder: TDateDisplayOrder
              read FDateDisplayOrder write SetDateDisplayOrder default ddoTryDefault;
-    property DateTimeSpacing: TDateTimeSpacing
-             read FDateTimeSpacing write SetDateTimeSpacing default dtsWide;
     property MaxDate: TDate
              read FMaxDate write SetMaxDate;
     property MinDate: TDate
@@ -499,7 +493,6 @@ type
     property Checked;
     property CenturyFrom;
     property DateDisplayOrder;
-    property DateTimeSpacing;
     property MaxDate;
     property MinDate;
     property ReadOnly;
@@ -1065,18 +1058,6 @@ begin
   UpdateShowArrowButton;
 end;
 
-procedure TCustomDateTimePicker.SetDateTimeSpacing(AValue: TDateTimeSpacing);
-begin
-  FDateTimeSpacing := AValue;
-  FRecalculatingTextSizesNeeded := True;
-  if AutoSize then
-  begin
-    InvalidatePreferredSize;
-    AdjustSize;
-  end;
-  Invalidate;
-end;
-
 procedure TCustomDateTimePicker.SetDecimalSeparator(AValue: String);
 begin
   SetSeparators(FDateSeparator, FTimeSeparator, AValue);
@@ -1399,11 +1380,6 @@ begin
         FDigitWidth := N;
     end;
 
-    case FDateTimeSpacing of
-      dtsWide   : FDateTimeDistance := 2*FDigitWidth;
-      dtsNarrow : FDateTimeDistance := Canvas.GetTextWidth(#32);
-    end;
-
     DateParts := 0;
     FSepNoSpaceWidth := 0;
     FSeparatorWidth := 0;
@@ -1498,7 +1474,7 @@ begin
 
     FTextWidth := FDateWidth + FTimeWidth;
     if (DateParts > 0) and (TimeParts > 0) then
-      FTextWidth := FTextWidth + FDateTimeDistance;
+      FTextWidth := FTextWidth + 2 * FDigitWidth;
 
     FTextHeight := Canvas.GetTextHeight('0123456789' + S);
 
@@ -2226,9 +2202,9 @@ begin
     InTime := False;
     if FTimeWidth > 0 then begin
       if FDateWidth > 0 then begin
-        if NX >= FDateWidth + FDateTimeDistance div 2 then begin
+        if NX >= FDateWidth + FDigitWidth then begin
           InTime := True;
-          NX := NX - FDateWidth - FDateTimeDistance;
+          NX := NX - FDateWidth - 2 * FDigitWidth;
         end;
       end else
         InTime := True;
@@ -3307,7 +3283,7 @@ begin
               TrimRight(FDateSeparator), TextStyle);
           end;
           if FTimeWidth > 0 then
-            R.Right := R.Right + FDateTimeDistance;
+            R.Right := R.Right + 2 * FDigitWidth;
 
         end;
         R.Left := R.Right;

@@ -45,7 +45,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
     ChildSizing.ControlsPerLine = 2
     ClientHeight = 63
     ClientWidth = 641
-    TabOrder = 0
+    TabOrder = 1
     object VisibleRightMarginCheckBox: TCheckBox
       Left = 7
       Height = 21
@@ -176,7 +176,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
     BevelOuter = bvNone
     ClientHeight = 225
     ClientWidth = 641
-    TabOrder = 1
+    TabOrder = 2
     object VisibleGutterCheckBox: TCheckBox
       AnchorSideLeft.Control = pnlGutter
       AnchorSideTop.Control = pnlGutter
@@ -219,7 +219,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
         'Left'
         'Right'
       )
-      TabOrder = 1
+      TabOrder = 7
       OnClick = rgGutterSiteClick
     end
     object lbGutterParts: TListBox
@@ -234,6 +234,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
       BorderSpacing.Right = 7
       ItemHeight = 0
       TabOrder = 2
+      TopIndex = -1
       OnClick = lbGutterPartsClick
     end
     object btnGutterUp: TSpeedButton
@@ -294,7 +295,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
       BorderSpacing.Top = 7
       BorderSpacing.Bottom = 7
       MaxValue = 99
-      TabOrder = 4
+      TabOrder = 6
       OnChange = spinGutterPartWidthChange
     end
     object lblGutterPartMargin: TLabel
@@ -319,7 +320,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
       BorderSpacing.Left = 19
       BorderSpacing.Around = 7
       MaxValue = 10
-      TabOrder = 5
+      TabOrder = 4
       OnChange = spinGutterPartWidthChange
     end
     object spinGutterPartRightOffs: TSpinEdit
@@ -332,7 +333,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
       Width = 54
       BorderSpacing.Left = 7
       MaxValue = 25
-      TabOrder = 6
+      TabOrder = 5
       OnChange = spinGutterPartWidthChange
     end
     object cbCurLineMarkup: TComboBox
@@ -346,7 +347,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
       BorderSpacing.Top = 7
       BorderSpacing.Bottom = 7
       ItemHeight = 0
-      TabOrder = 7
+      TabOrder = 8
       Text = 'cbCurLineMarkup'
       OnChange = spinGutterPartWidthChange
     end
@@ -362,7 +363,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
       BorderSpacing.Bottom = 7
       MaxValue = 65536
       MinValue = 1
-      TabOrder = 8
+      TabOrder = 1
       Value = 1
       OnChange = GeneralCheckBoxOnChange
     end
@@ -410,7 +411,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
     BevelOuter = bvNone
     ClientHeight = 115
     ClientWidth = 641
-    TabOrder = 2
+    TabOrder = 3
     object EditorFontSizeLabel: TLabel
       AnchorSideLeft.Control = EditorFontSizeSpinEdit
       AnchorSideLeft.Side = asrBottom
@@ -509,7 +510,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
         '1'
         '2'
       )
-      TabOrder = 3
+      TabOrder = 4
       OnChange = ComboboxOnChange
       OnExit = ComboboxOnExit
       OnKeyDown = ComboBoxOnKeyDown
@@ -529,7 +530,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
         '1'
         '2'
       )
-      TabOrder = 5
+      TabOrder = 3
       OnChange = ComboboxOnChange
       OnExit = ComboboxOnExit
       OnKeyDown = ComboBoxOnKeyDown
@@ -544,7 +545,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
       Width = 199
       BorderSpacing.Around = 7
       Caption = 'DisableAntialiasingCheckBox'
-      TabOrder = 4
+      TabOrder = 5
       OnChange = GeneralCheckBoxOnChange
     end
   end
@@ -569,7 +570,7 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
     Font.Style = [fsBold]
     ParentColor = False
     ParentFont = False
-    TabOrder = 3
+    TabOrder = 0
     BookMarkOptions.Xoffset = 30
     Gutter.Width = 60
     Gutter.MouseActions = <    
@@ -979,7 +980,6 @@ object EditorDisplayOptionsFrame: TEditorDisplayOptionsFrame
     )
     VisibleSpecialChars = [vscSpace, vscTabAtLast]
     ReadOnly = True
-    WantTabs = False
     SelectedColor.ForePriority = 50
     SelectedColor.BackPriority = 50
     SelectedColor.FramePriority = 50

@@ -105,12 +105,10 @@ type
     FThread: TDbgThread;
     FIsSymbolResolved: boolean;
     FSymbol: TFpSymbol;
-    FOrigProcSymbol: TFpSymbol;
     FRegisterValueList: TDbgRegisterValueList;
     FIndex: integer;
     function GetContext: TFpDbgSimpleLocationContext;
     function GetFunctionName: string;
-    function GetOrigProcSymbol: TFpSymbol;
     function GetProcSymbol: TFpSymbol;
     function GetLine: integer;
     function GetRegisterValueList: TDbgRegisterValueList;
@@ -128,7 +126,6 @@ type
     property Line: integer read GetLine;
     property RegisterValueList: TDbgRegisterValueList read GetRegisterValueList;
     property ProcSymbol: TFpSymbol read GetProcSymbol;
-    property OrigProcSymbol: TFpSymbol read GetOrigProcSymbol;
     property Index: integer read FIndex;
     property AutoFillRegisters: boolean read FAutoFillRegisters write FAutoFillRegisters;
     property Context: TFpDbgSimpleLocationContext read GetContext write SetContext;
@@ -200,6 +197,11 @@ type
     suGuessed      // Got a frame, but may be wrong
   );
 
+  TDbgUnwinderFlag = (
+    ufSkipArtificialFrames  // e.g. in finally $fin_* methods, find the caller of the outer method
+  );
+  TDbgUnwinderFlags = set of TDbgUnwinderFlag;
+
   { TDbgStackUnwinder }
 
   TDbgStackUnwinder = class
@@ -216,6 +218,7 @@ type
                     ACurrentFrame: TDbgCallstackEntry; // nil for top frame
                     out ANewFrame: TDbgCallstackEntry
                    ): TTDbgStackUnwindResult; virtual; abstract;
+    procedure SetUnwindFlags(AFlags: TDbgUnwinderFlags); virtual; // will be cleared by next InitForThread
   end;
 
   { TDbgStackUnwinderEx }
@@ -322,7 +325,6 @@ type
     procedure SetRegisterValue(AName: string; AValue: QWord); virtual; abstract;
 
     function GetInstructionPointerRegisterValue: TDbgPtr; virtual; abstract;
-    function GetAdjustedInstructionPointerRegisterValue: TDbgPtr; virtual; // maybe replaces GetInstructionPointerForHasBreakpointInfoForAddress
     function GetStackBasePointerRegisterValue: TDbgPtr; virtual; abstract;
     function GetStackPointerRegisterValue: TDbgPtr; virtual; abstract;
     procedure SetStackPointerRegisterValue(AValue: TDbgPtr); virtual; abstract;
@@ -577,21 +579,14 @@ type
 
   TFpDbgBreakpointState = (bksUnknown, bksOk, bksFailed, bksPending);
   TFpDbgBreakpointStateChangeEvent = procedure(Sender: TFpDbgBreakpoint; ANewState: TFpDbgBreakpointState) of object;
-  TFpDbgBreakpointCheckHitEvent = procedure(Sender: TFpDbgBreakpoint;
-    AThread: TDbgThread; var AIsValidHit: Boolean) of object;
 
   TFpDbgBreakpoint = interface ['{B044A854-79AE-4289-B905-9A4E6D19FA0A}']
     function __FpDbgBrk: TFpDbgBreakpointBase;
     function GetState: TFpDbgBreakpointState; virtual;
     function GetEnabled: boolean;
     procedure SetEnabled(AValue: boolean);
-    function GetCondition: String;
     function GetOn_Thread_StateChange: TFpDbgBreakpointStateChangeEvent;
     procedure SetOn_Thread_StateChange(AValue: TFpDbgBreakpointStateChangeEvent);
-    function GetOn_Thread_CheckHit: TFpDbgBreakpointCheckHitEvent;
-    procedure SetOn_Thread_CheckHit(AValue: TFpDbgBreakpointCheckHitEvent);
-    function GetOwnerData: Pointer;
-    procedure SetOwnerData(AValue: Pointer);
     procedure SetFreeByDbgProcess(AValue: Boolean); virtual;
 
     procedure SetAutoDisable;
@@ -609,18 +604,9 @@ type
 
     property State: TFpDbgBreakpointState read GetState;
     property Enabled: boolean read GetEnabled write SetEnabled;
-    property Condition: String read GetCondition write SetCondition;
     property FreeByDbgProcess: Boolean write SetFreeByDbgProcess;
     // Event runs in dbg-thread
     property On_Thread_StateChange: TFpDbgBreakpointStateChangeEvent read GetOn_Thread_StateChange write SetOn_Thread_StateChange;
-    // Event runs in dbg-thread, when the breakpoint is hit and its Condition
-    // (if any) passed. Set AIsValidHit to False to ignore the hit for this
-    // breakpoint; the process still pauses if another breakpoint at the same
-    // address admits it.
-    property On_Thread_CheckHit: TFpDbgBreakpointCheckHitEvent read GetOn_Thread_CheckHit write SetOn_Thread_CheckHit;
-    // For the owner of the breakpoint. Never read, written, copied or freed by
-    // FpDebug, and not cleared when the breakpoint is removed or destroyed.
-    property OwnerData: Pointer read GetOwnerData write SetOwnerData;
   end;
 
   { TFpDbgBreakpointBase }
@@ -643,18 +629,11 @@ type
     FEnabled: boolean;
     FCondition: String;
     FOn_Thread_StateChange: TFpDbgBreakpointStateChangeEvent;
-    FOn_Thread_CheckHit: TFpDbgBreakpointCheckHitEvent;
-    FOwnerData: Pointer;
 
     function GetOn_Thread_StateChange: TFpDbgBreakpointStateChangeEvent;
     procedure SetOn_Thread_StateChange(AValue: TFpDbgBreakpointStateChangeEvent);
-    function GetOn_Thread_CheckHit: TFpDbgBreakpointCheckHitEvent;
-    procedure SetOn_Thread_CheckHit(AValue: TFpDbgBreakpointCheckHitEvent);
-    function GetOwnerData: Pointer;
-    procedure SetOwnerData(AValue: Pointer);
     function __FpDbgBrk: TFpDbgBreakpointBase;
     function GetEnabled: boolean;
-    function GetCondition: String;
     procedure SetProcessToNil;
   protected
     procedure ProcessAutoUpdate;
@@ -675,7 +654,7 @@ type
     constructor Create(const AProcess: TDbgProcess); virtual;
     destructor Destroy; override;
 
-    function IsValidHit(AThread: TDbgThread): Boolean; virtual;
+    function IsValidHit(const AThreadID: Integer): Boolean; virtual;
     function HasLocation(const ALocation: TDBGPtr): Boolean; virtual; abstract;
     // A breakpoint could also be inside/part of a library.
 
@@ -692,13 +671,9 @@ type
     // If the breakpoint does not have a process, it will be destroyed immediately
     property FreeByDbgProcess: Boolean read FFreeByDbgProcess write SetFreeByDbgProcess;
     property Enabled: boolean read FEnabled write SetEnabled;
-    property Condition: String read GetCondition write SetCondition;
     property State: TFpDbgBreakpointState read GetState;
     // Event runs in dbg-thread
     property On_Thread_StateChange: TFpDbgBreakpointStateChangeEvent read FOn_Thread_StateChange write FOn_Thread_StateChange;
-    // Documented on TFpDbgBreakpoint
-    property On_Thread_CheckHit: TFpDbgBreakpointCheckHitEvent read FOn_Thread_CheckHit write FOn_Thread_CheckHit;
-    property OwnerData: Pointer read FOwnerData write FOwnerData;
   end;
 
   TFpInternalBreakpointList = specialize TFPGObjectList<TFpDbgBreakpointBase>;
@@ -774,12 +749,11 @@ type
   private
     FFuncName: String;
     FSymInstance: TDbgInstance;
-    FSearchFlags: TFpProcSearchFlags;
   protected
     procedure UpdateState; override;
     procedure UpdateForLibraryLoaded(ALib: TDbgLibrary); override;
   public
-    constructor Create(const AProcess: TDbgProcess; const AFuncName: String; AnEnabled: Boolean; ASymInstance: TDbgInstance = nil; AFlags: TFpProcSearchFlags = []); virtual;
+    constructor Create(const AProcess: TDbgProcess; const AFuncName: String; AnEnabled: Boolean; ASymInstance: TDbgInstance = nil; AIgnoreCase: Boolean = False); virtual;
   end;
 
   { TFpInternalBreakpointAtFileLine }
@@ -822,7 +796,7 @@ type
     constructor Create(const AProcess: TDbgProcess; const ALocation: TDBGPtr; ASize: Cardinal; AReadWrite: TDBGWatchPointKind;
                       AScope: TDBGWatchPointScope); virtual;
     destructor Destroy; override;
-    function IsValidHit(AThread: TDbgThread): Boolean; override;
+    function IsValidHit(const AThreadID: Integer): Boolean; override;
 
     procedure SetBreak; override;
     procedure ResetBreak; override;
@@ -889,11 +863,7 @@ type
 
     function  GetLineAddresses(AFileName: String; ALine: Cardinal; var AResultList: TDBGPtrArray;
       AFindSibling: TGetLineAddrFindSibling = fsNone; AMaxSiblingDistance: integer = 0): Boolean;
-    function FindProcSymbol(const AName: String; AIgnoreCase: Boolean = False): TFpSymbol; overload; deprecated 'use FindNamedProcSymbol';
-    function FindNamedProcSymbol(const AName: String; AFlags: TFpProcSearchFlags = []): TFpSymbol; overload;
-    (* A single instance may eventually hold more than one match for a name -
-       overloaded procedures. Only one is returned today. *)
-    procedure FindNamedProcSymbol(const AName: String; out ASymList: TFpSymbolArray; AFlags: TFpProcSearchFlags = []); overload;
+    function FindProcSymbol(const AName: String; AIgnoreCase: Boolean = False): TFpSymbol; overload;
     function FindProcSymbol(AAdress: TDbgPtr): TFpSymbol; overload;
   protected
     FDbgInfo: TDbgInfo;
@@ -962,8 +932,8 @@ type
   end;
 
   TDbgInstInfo = record
-    InstrType: (itAny, itJump, itJumpAbs);
-    InstrTargetOffs: Int64; // offset from the START address of instruction, or absolute offset
+    InstrType: (itAny, itJump);
+    InstrTargetOffs: Int64; // offset from the START address of instruction
   end;
 
   TDbgFrameBoundaryKind = (
@@ -993,7 +963,7 @@ type
 
     procedure Disassemble(var AAddress: Pointer; out ACodeBytes: String; out ACode: String; out AnInfo: TDbgInstInfo); virtual; overload;
     procedure Disassemble(var AAddress: Pointer; out ACodeBytes: String; out ACode: String); virtual; abstract; overload;
-    procedure ReverseDisassemble(var AAddress: Pointer; out ACodeBytes: String; out ACode: String; out AnInfo: TDbgInstInfo); virtual;
+    procedure ReverseDisassemble(var AAddress: Pointer; out ACodeBytes: String; out ACode: String); virtual;
 
     function GetInstructionInfo(AnAddress: TDBGPtr): TDbgAsmInstruction; virtual; abstract;
     function GetFrameBoundaryInfo(AnAddress: TDBGPtr; out AFrameBoundaryInfo: TDbgFrameBoundaryInfo; ARoutineStartAddr: TDBGPtr = 0): TDbgFrameBoundaryKind; virtual;
@@ -1016,7 +986,6 @@ type
 
   TDbgProcess = class(TDbgInstance)
   private
-    FCheckingForConsoleOutputThread: TThread;
     FDisassembler: TDbgAsmDecoder;
     FExceptionClass: string;
     FExceptionMessage: string;
@@ -1025,16 +994,13 @@ type
     FLastLibraryUnloaded: TDbgLibrary;
     FOnDebugOutputEvent: TDebugOutputEvent;
     FOSDbgClasses: TOSDbgClasses;
-    FPreAttach: boolean;
     FProcessID: Integer;
-    FStopCheckingForConsoleOutputRequested: boolean;
     FThreadID: Integer;
     FWatchPointData: TFpWatchPointData;
     FProcessConfig: TDbgProcessConfig;
     FConfig: TDbgConfig;
     FGlobalCache: TFpDbgDataCache;
     FHandleUserDebugEvents: TFpHandleUserDebugEvents;
-    FNeedInternalThreadsClearCallStack: Boolean;
     function DoGetCfiFrameBase(AContext: TFpDbgLocationContext; out AnError: TFpError): TDBGPtr;
     function DoGetFrameBase(AContext: TFpDbgLocationContext; out AnError: TFpError): TDBGPtr;
     function GetDisassembler: TDbgAsmDecoder;
@@ -1066,7 +1032,7 @@ type
     procedure SetThreadId(AThreadId: Integer);
     procedure SetExitCode(AValue: DWord);
     function GetLastEventProcessIdentifier: THandle; virtual;
-    function DoBreak(BreakpointAddress: TDBGPtr; AThread: TDbgThread): Boolean;
+    function DoBreak(BreakpointAddress: TDBGPtr; AThreadID: integer): Boolean;
     procedure SetLastLibraryUnloaded(ALib: TDbgLibrary);
     procedure SetLastLibraryUnloadedNil(ALib: TDbgLibrary);
     procedure AddLibrary(ALib: TDbgLibrary; AnID: TDbgPtr);
@@ -1087,8 +1053,6 @@ type
     function CreateConfig: TDbgConfig;
     function CreateBreakPointTargetHandler: TFpBreakPointTargetHandler; virtual; abstract;
     procedure InitializeLoaders; override;
-    property CheckingForConsoleOutputThread: TThread read FCheckingForConsoleOutputThread;
-    property StopCheckingForConsoleOutputRequested: boolean read FStopCheckingForConsoleOutputRequested;
   public
     class function isSupported(ATargetInfo: TTargetDescriptor): boolean; virtual;
     constructor Create(const AFileName: string; AnOsClasses: TOSDbgClasses;
@@ -1102,15 +1066,12 @@ type
 
     function  AddInternalBreak(const ALocation: TDBGPtr): TFpInternalBreakpoint; overload;
     function  AddInternalBreak(const ALocation: TDBGPtrArray): TFpInternalBreakpoint; overload;
-    (* AFlags defaults to the link tables here, and NOT to "all namespaces":
-       internal breakpoints are set on RTL entry points by their linker names,
-       and a user routine may carry the same source level name. *)
-    function  AddInternalBreak(const AFuncName: String; AnEnabled: Boolean = True; ASymInstance: TDbgInstance = nil; AFlags: TFpProcSearchFlags = [psfLinkTableSym]): TFpInternalBreakpoint; overload;
+    function  AddInternalBreak(const AFuncName: String; AnEnabled: Boolean = True; ASymInstance: TDbgInstance = nil; AIgnoreCase: Boolean = False): TFpInternalBreakpoint; overload;
     (* ASymInstance: nil = anywhere / TDbgProcess or TDbgLibrary to limit *)
     function  AddBreak(const ALocation: TDBGPtr; AnEnabled: Boolean = True): TFpDbgBreakpoint; overload;
     function  AddBreak(const ALocation: TDBGPtrArray; AnEnabled: Boolean = True): TFpDbgBreakpoint; overload;
     function  AddBreak(const AFileName: String; ALine: Cardinal; AnEnabled: Boolean = True; ASymInstance: TDbgInstance = nil): TFpDbgBreakpoint; overload;
-    function  AddBreak(const AFuncName: String; AnEnabled: Boolean = True; ASymInstance: TDbgInstance = nil; AFlags: TFpProcSearchFlags = []): TFpDbgBreakpoint; overload;
+    function  AddBreak(const AFuncName: String; AnEnabled: Boolean = True; ASymInstance: TDbgInstance = nil; AIgnoreCase: Boolean = False): TFpDbgBreakpoint; overload;
     function  AddUserBreak(const ALocation: TDBGPtr; AnEnabled: Boolean = True): TFpDbgBreakpoint; overload;
     function  AddWatch(const ALocation: TDBGPtr; ASize: Cardinal; AReadWrite: TDBGWatchPointKind;
                       AScope: TDBGWatchPointScope): TFpDbgBreakpoint;
@@ -1121,20 +1082,11 @@ type
          Search ONLY the program.
        FindProcSymbol(Name, ASymInstance)
          Search ASymInstance (process or lib) / if nil, search all
-         Names can be ambiguous, as dll can have the same names.
+         Names can be ambigious, as dll can have the same names.
     *)
-    function  FindProcSymbol(const AName: String): TFpSymbol; overload; deprecated 'use FindNamedProcSymbol';
-    function  FindProcSymbol(const AName: String; ASymInstance: TDbgInstance): TFpSymbol; overload; deprecated 'use FindNamedProcSymbol';
-    procedure FindProcSymbol(const AName: String; ASymInstance: TDbgInstance; out ASymList: TFpSymbolArray; AIgnoreCase: Boolean = False); deprecated 'use FindNamedProcSymbol';
-    (* FindNamedProcSymbol(Name)
-         Search ONLY the program.
-       FindNamedProcSymbol(Name, ASymInstance)
-         Search ASymInstance (process or lib) / if nil, search all.
-       AFlags selects the namespaces; an empty set searches all of them.
-    *)
-    function  FindNamedProcSymbol(const AName: String; AFlags: TFpProcSearchFlags = []): TFpSymbol; overload;
-    function  FindNamedProcSymbol(const AName: String; ASymInstance: TDbgInstance; AFlags: TFpProcSearchFlags = []): TFpSymbol; overload;
-    procedure FindNamedProcSymbol(const AName: String; out ASymList: TFpSymbolArray; ASymInstance: TDbgInstance = nil; AFlags: TFpProcSearchFlags = []); overload;
+    function  FindProcSymbol(const AName: String): TFpSymbol; overload; // deprecated 'backward compatible / use FindProcSymbol(AName, TheDbgProcess)';
+    function  FindProcSymbol(const AName: String; ASymInstance: TDbgInstance): TFpSymbol; overload;
+    procedure FindProcSymbol(const AName: String; ASymInstance: TDbgInstance; out ASymList: TFpSymbolArray; AIgnoreCase: Boolean = False);
     function  FindProcSymbol(const AName, ALibraryName: String; IsFullLibName: Boolean = True): TFpSymbol;  overload;deprecated 'XXXXXXXXXXXXXXXXXXXXXXXXXX';
     function  FindProcSymbol(AAdress: TDbgPtr): TFpSymbol;  overload;
     function  FindSymbolScope(AThreadId, AStackFrame: Integer): TFpDbgSymbolScope;
@@ -1159,11 +1111,6 @@ type
     procedure RemoveThread(const AID: DWord);
     function FormatAddress(const AAddress): String;
     function  Pause: boolean; virtual;
-    { Step-Out: may a genuine return leave the stack pointer unchanged?  True for
-      architectures whose "call" keeps the return address in a link register (e.g.
-      RISC-V ra), so a step-out before the prologue spills it returns with SP
-      unchanged.  Default False (x86: a real return always increases SP). }
-    function StepOutReturnMayKeepStackPointer: Boolean; virtual;
 
     function ReadData(const AAdress: TDbgPtr; const ASize: Cardinal; out AData): Boolean; virtual;
     function ReadData(const AAdress: TDbgPtr; const ASize: Cardinal; out AData; out APartSize: Cardinal): Boolean; virtual;
@@ -1189,17 +1136,7 @@ type
     // library are cleared.
     procedure RemoveAllBreakPoints;
 
-    (* CheckForConsoleOutput: Waits for Target-App Stdin/Out capture (RedirectConsoleOutput).
-       ATimeOutMs must be supplied, but may or may not be used by the function
-       Experimental: The function may instead (or additionally) react to "StopCheckingForConsoleOutput".
-       - A timeout must always be provided. And the function may (or may not) be blocking for up to that amount of time.
-       - The function may or may not return after the timeout, and may have to be called again to continue
-    *)
     function CheckForConsoleOutput(ATimeOutMs: integer): integer; virtual;
-    {TODO: SetCheckingForConsoleOutputThread - create thread inside the relevant sub-classes / remove this setter}
-    procedure SetCheckingForConsoleOutputThread(AThread: TThread); experimental;
-    procedure StopCheckingForConsoleOutput; virtual;
-    procedure ClearStopCheckingForConsoleOutputRequested;
     function GetConsoleOutput: string; virtual;
     procedure SendConsoleInput(AString: string); virtual;
 
@@ -1208,8 +1145,6 @@ type
     function AddThread(AThreadIdentifier: THandle): TDbgThread;
     function GetThreadArray: TFPDThreadArray;
     procedure ThreadsBeforeContinue;
-    procedure ClearNeedThreadsClearCallStack; inline;
-    procedure MaybeThreadsClearCallStack; inline;
     procedure ThreadsClearCallStack;
     procedure LoadInfo; override;
 
@@ -1220,7 +1155,6 @@ type
     procedure TerminateProcess; virtual; abstract;
     function Detach(AProcess: TDbgProcess; AThread: TDbgThread): boolean; virtual;
 
-    property PreAttach: boolean read FPreAttach write FPreAttach;
     property OSDbgClasses: TOSDbgClasses read FOSDbgClasses;
     property RequiresExecutionInDebuggerThread: boolean read GetRequiresExecutionInDebuggerThread;
     property Handle: THandle read GetHandle;
@@ -1233,7 +1167,6 @@ type
     property CurrentWatchpoint: TFpInternalWatchpoint read FCurrentWatchpoint;
     property PauseRequested: boolean read GetPauseRequested write SetPauseRequested;
     function GetAndClearPauseRequested: Boolean;
-    property BreakTargetHandler: TFpBreakPointTargetHandler read FBreakTargetHandler;
 
     // Properties valid when last event was an deException
     property ExceptionMessage: string read FExceptionMessage write FExceptionMessage;
@@ -2069,17 +2002,17 @@ end;
 
 function TDbgCallstackEntry.GetProcSymbol: TFpSymbol;
 begin
-  if FSymbol = nil then begin
-    // FSymbol has no refcount of tis own.
-    FSymbol := GetOrigProcSymbol;
-    if (FSymbol <> nil) then begin
-      if (FSymbol is TFpSymbolDwarfDataProc) then begin
-        FSymbol := TFpSymbolDwarfDataProc(FSymbol).ResolveInternalFinallySymbol(FThread.Process);
-        if FSymbol = nil then
-          FSymbol := FOrigProcSymbol;
-      end;
-      FOrigProcSymbol.AddReference; // we lost our reference to FSymbol.FOrigSymbol // or we have 2 refs to the same sym now
-    end;
+  if not FIsSymbolResolved then begin
+    if (FIndex > 0) and (FAnAddress <> 0) then
+      FSymbol := FThread.Process.FindProcSymbol(FAnAddress - 1) // -1 => inside the call instruction
+    else
+      FSymbol := FThread.Process.FindProcSymbol(FAnAddress);
+
+    if FSymbol is TFpSymbolDwarfDataProc then
+      FSymbol := TFpSymbolDwarfDataProc(FSymbol).ResolveInternalFinallySymbol(FThread.Process);
+
+
+    FIsSymbolResolved := FSymbol <> nil
   end;
   result := FSymbol;
 end;
@@ -2101,19 +2034,6 @@ begin
   end
   else
     result := '';
-end;
-
-function TDbgCallstackEntry.GetOrigProcSymbol: TFpSymbol;
-begin
-  if not FIsSymbolResolved then begin
-    if (FIndex > 0) and (FAnAddress <> 0) then
-      FOrigProcSymbol := FThread.Process.FindProcSymbol(FAnAddress - 1) // -1 => inside the call instruction
-    else
-      FOrigProcSymbol := FThread.Process.FindProcSymbol(FAnAddress);
-
-    FIsSymbolResolved := FOrigProcSymbol <> nil
-  end;
-  result := FOrigProcSymbol;
 end;
 
 function TDbgCallstackEntry.GetContext: TFpDbgSimpleLocationContext;
@@ -2191,7 +2111,6 @@ destructor TDbgCallstackEntry.Destroy;
 begin
   FreeAndNil(FRegisterValueList);
   ReleaseRefAndNil(FSymbol);
-  ReleaseRefAndNil(FOrigProcSymbol);
   FContext.ReleaseReference;
   inherited Destroy;
 end;
@@ -2501,7 +2420,7 @@ end;
 // Many pitfalls with X86 instruction encoding...
 // Avr may give 130/65535 = 0.2% errors per instruction reverse decoded
 procedure TDbgAsmDecoder.ReverseDisassemble(var AAddress: Pointer; out
-  ACodeBytes: String; out ACode: String; out AnInfo: TDbgInstInfo);
+  ACodeBytes: String; out ACode: String);
 var
   instrLen: integer;
   tmpAddress: PtrUint;
@@ -2511,7 +2430,7 @@ begin
   repeat
     dec(instrLen, MinInstructionSize);
     tmpAddress := PtrUInt(AAddress) - instrLen;
-    Disassemble(pointer(tmpAddress), ACodeBytes, ACode, AnInfo);
+    Disassemble(pointer(tmpAddress), ACodeBytes, ACode);
   until (tmpAddress >= PtrUInt(AAddress)) or (instrLen = MinInstructionSize);
 
   // After disassemble tmpAddress points to the starting address of next instruction
@@ -2548,43 +2467,13 @@ end;
 
 function TDbgInstance.FindProcSymbol(const AName: String; AIgnoreCase: Boolean
   ): TFpSymbol;
-var
-  Flags: TFpProcSearchFlags;
 begin
-  (* The old name keeps the old behaviour: link tables only. *)
-  Flags := [psfLinkTableSym];
-  if AIgnoreCase then
-    Include(Flags, psfIgnoreCase);
-  Result := FindNamedProcSymbol(AName, Flags);
-end;
-
-function TDbgInstance.FindNamedProcSymbol(const AName: String;
-  AFlags: TFpProcSearchFlags): TFpSymbol;
-begin
-  (* Fixed search order: debug info, then the link tables. Each TDbgInfo
-     answers only for the namespace it is, so both can simply be asked. *)
-  Result := nil;
   if FDbgInfo <> nil then
-    Result := FDbgInfo.FindNamedProcSymbol(AName, AFlags);
+    Result := FDbgInfo.FindProcSymbol(AName)
+  else
+    Result := nil;
   if (Result = nil) and (SymbolTableInfo <> nil) then
-    Result := SymbolTableInfo.FindNamedProcSymbol(AName, AFlags);
-end;
-
-procedure TDbgInstance.FindNamedProcSymbol(const AName: String; out
-  ASymList: TFpSymbolArray; AFlags: TFpProcSearchFlags);
-var
-  Sym: TFpSymbol;
-begin
-  (* TODO: overloaded procedures. One name can legitimately have several
-     entries, in one unit and across units. Possible approach: keep the
-     ScopeIndex a hit was found at, and teach GoNamedChild to continue from
-     there, behind a further flag. Until then this returns at most one. *)
-  ASymList := nil;
-  Sym := FindNamedProcSymbol(AName, AFlags);
-  if Sym <> nil then begin
-    SetLength(ASymList, 1);
-    ASymList[0] := Sym;
-  end;
+    Result := SymbolTableInfo.FindProcSymbol(AName, AIgnoreCase);
 end;
 
 constructor TDbgInstance.Create(const AProcess: TDbgProcess);
@@ -2757,11 +2646,11 @@ begin
 end;
 
 function TDbgProcess.AddBreak(const AFuncName: String; AnEnabled: Boolean;
-  ASymInstance: TDbgInstance; AFlags: TFpProcSearchFlags): TFpDbgBreakpoint;
+  ASymInstance: TDbgInstance; AIgnoreCase: Boolean): TFpDbgBreakpoint;
 var
   r: TFpInternalBreakpointAtSymbol;
 begin
-  r := TFpInternalBreakpointAtSymbol.Create(Self, AFuncName, AnEnabled, ASymInstance, AFlags);
+  r := TFpInternalBreakpointAtSymbol.Create(Self, AFuncName, AnEnabled, ASymInstance, AIgnoreCase);
   AfterBreakpointAdded(r);
   Result := r;
 end;
@@ -2787,56 +2676,27 @@ end;
 
 function TDbgProcess.FindProcSymbol(const AName: String; ASymInstance: TDbgInstance
   ): TFpSymbol;
-begin
-  Result := FindNamedProcSymbol(AName, ASymInstance, [psfLinkTableSym]);
-end;
-
-procedure TDbgProcess.FindProcSymbol(const AName: String;
-  ASymInstance: TDbgInstance; out ASymList: TFpSymbolArray; AIgnoreCase: Boolean
-  );
-var
-  Flags: TFpProcSearchFlags;
-begin
-  (* The old name keeps the old behaviour: link tables only. *)
-  Flags := [psfLinkTableSym];
-  if AIgnoreCase then
-    Include(Flags, psfIgnoreCase);
-  FindNamedProcSymbol(AName, ASymList, ASymInstance, Flags);
-end;
-
-function TDbgProcess.FindProcSymbol(const AName: String): TFpSymbol;
-begin
-  Result := FindNamedProcSymbol(AName, [psfLinkTableSym]);
-end;
-
-function TDbgProcess.FindNamedProcSymbol(const AName: String;
-  AFlags: TFpProcSearchFlags): TFpSymbol;
-begin
-  Result := inherited FindNamedProcSymbol(AName, AFlags);
-end;
-
-function TDbgProcess.FindNamedProcSymbol(const AName: String;
-  ASymInstance: TDbgInstance; AFlags: TFpProcSearchFlags): TFpSymbol;
 var
   Lib: TDbgLibrary;
 begin
   if ASymInstance <> nil then begin
-    Result := ASymInstance.FindNamedProcSymbol(AName, AFlags);
+    Result := ASymInstance.FindProcSymbol(AName);
   end
   else begin
-    Result := inherited FindNamedProcSymbol(AName, AFlags); // the program only
+    Result := FindProcSymbol(AName);
     if Result <> nil then
       exit;
     for Lib in FLibMap do begin
-      Result := Lib.FindNamedProcSymbol(AName, AFlags);
+      Result := Lib.FindProcSymbol(AName);
       if Result <> nil then
         exit;
     end;
   end;
 end;
 
-procedure TDbgProcess.FindNamedProcSymbol(const AName: String; out
-  ASymList: TFpSymbolArray; ASymInstance: TDbgInstance; AFlags: TFpProcSearchFlags);
+procedure TDbgProcess.FindProcSymbol(const AName: String;
+  ASymInstance: TDbgInstance; out ASymList: TFpSymbolArray; AIgnoreCase: Boolean
+  );
 var
   Lib: TDbgLibrary;
   Sym: TFpSymbol;
@@ -2844,24 +2704,32 @@ begin
   // TODO: find multiple symbols within the same DbgInfo
   ASymList := nil;
   if ASymInstance <> nil then begin
-    ASymInstance.FindNamedProcSymbol(AName, ASymList, AFlags);
+    Sym := ASymInstance.FindProcSymbol(AName, AIgnoreCase);
+    if Sym <> nil then begin
+      SetLength(ASymList, 1);
+      ASymList[0] := Sym;
+    end;
   end
   else begin
-    inherited FindNamedProcSymbol(AName, ASymList, AFlags); // the program only
+    Sym := FindProcSymbol(AName, AIgnoreCase);
+    if Sym <> nil then begin
+      SetLength(ASymList, 1);
+      ASymList[0] := Sym;
+    end;
 
     for Lib in FLibMap do begin
-      Sym := Lib.FindNamedProcSymbol(AName, AFlags);
+      Sym := Lib.FindProcSymbol(AName, AIgnoreCase);
       if Sym <> nil then begin
-        (* Unchanged: still at most one entry, and a later library replaces an
-           earlier match. The reference to the replaced symbol used to be
-           dropped without being released. *)
-        if Length(ASymList) > 0 then
-          ASymList[0].ReleaseReference;
         SetLength(ASymList, 1);
         ASymList[0] := Sym;
       end;
     end;
   end;
+end;
+
+function TDbgProcess.FindProcSymbol(const AName: String): TFpSymbol;
+begin
+  Result := inherited FindProcSymbol(AName);
 end;
 
 function TDbgProcess.FindProcSymbol(const AName, ALibraryName: String;
@@ -3000,9 +2868,9 @@ begin
 end;
 
 function TDbgProcess.AddInternalBreak(const AFuncName: String; AnEnabled: Boolean;
-  ASymInstance: TDbgInstance; AFlags: TFpProcSearchFlags): TFpInternalBreakpoint;
+  ASymInstance: TDbgInstance; AIgnoreCase: Boolean): TFpInternalBreakpoint;
 begin
-  Result := TFpInternalBreakpointAtSymbol.Create(Self, AFuncName, AnEnabled, ASymInstance, AFlags);
+  Result := TFpInternalBreakpointAtSymbol.Create(Self, AFuncName, AnEnabled, ASymInstance, AIgnoreCase);
   Result.FInternal := True;
   AfterBreakpointAdded(Result);
 end;
@@ -3318,7 +3186,7 @@ begin
     FCurrentWatchpoint:=AThread.DetectHardwareWatchpoint;
     if (FCurrentWatchpoint <> nil) and
        ( (FWatchPointList.IndexOf(TFpInternalWatchpoint(FCurrentWatchpoint)) < 0) or
-         (not FCurrentWatchpoint.IsValidHit(AThread))
+         (not FCurrentWatchpoint.IsValidHit(AThread.ID))
        )
     then begin
       FCurrentWatchpoint := nil;
@@ -3338,7 +3206,7 @@ begin
 
     // Whatever reason there was to change the result to deInternalContinue,
     // if a breakpoint has been hit, always trigger it...
-    if DoBreak(CurrentAddr, AThread) then
+    if DoBreak(CurrentAddr, AThread.ID) then
       result := deBreakpoint;
   end
 end;
@@ -3346,21 +3214,6 @@ end;
 function TDbgProcess.CheckForConsoleOutput(ATimeOutMs: integer): integer;
 begin
   result := -1;
-end;
-
-procedure TDbgProcess.SetCheckingForConsoleOutputThread(AThread: TThread);
-begin
-  FCheckingForConsoleOutputThread := AThread;
-end;
-
-procedure TDbgProcess.StopCheckingForConsoleOutput;
-begin
-  FStopCheckingForConsoleOutputRequested := True;
-end;
-
-procedure TDbgProcess.ClearStopCheckingForConsoleOutputRequested;
-begin
-  FStopCheckingForConsoleOutputRequested := False;
 end;
 
 function TDbgProcess.GetConsoleOutput: string;
@@ -3454,23 +3307,11 @@ begin
   FWatchPointData.Changed := False;
 end;
 
-procedure TDbgProcess.ClearNeedThreadsClearCallStack;
-begin
-  FNeedInternalThreadsClearCallStack := False;
-end;
-
-procedure TDbgProcess.MaybeThreadsClearCallStack;
-begin
-  if FNeedInternalThreadsClearCallStack then
-    ThreadsClearCallStack;
-end;
-
 procedure TDbgProcess.ThreadsClearCallStack;
 var
   Iterator: TMapIterator;
   Thread: TDbgThread;
 begin
-  FNeedInternalThreadsClearCallStack := False;
   GlobalCache.Clear;
   Iterator := TLockedMapIterator.Create(FThreadMap);
   try
@@ -3676,7 +3517,7 @@ begin
   result := 0;
 end;
 
-function TDbgProcess.DoBreak(BreakpointAddress: TDBGPtr; AThread: TDbgThread): Boolean;
+function TDbgProcess.DoBreak(BreakpointAddress: TDBGPtr; AThreadID: integer): Boolean;
 var
   BList: TFpInternalBreakpointArray;
   i, xtra: Integer;
@@ -3691,7 +3532,7 @@ begin
   xtra := 0;
   for i := 0 to Length(BList) - 1 do begin
     if (not BList[i].FInternal) and
-       (BList[i]).IsValidHit(AThread)
+       (BList[i]).IsValidHit(AThreadID)
     then begin
       if (FCurrentBreakpoint = nil) then begin
         FCurrentBreakpoint := BList[i];
@@ -3823,11 +3664,6 @@ begin
   Result := TFpWatchPointData.Create;
 end;
 
-function TDbgProcess.StepOutReturnMayKeepStackPointer: Boolean;
-begin
-  Result := False;
-end;
-
 procedure TDbgProcess.Init(const AProcessID, AThreadID: Integer);
 begin
   FProcessID := AProcessID;
@@ -3915,6 +3751,13 @@ end;
 procedure TDbgStackFrameInfo.FlagAsSteppedOut;
 begin
   FHasSteppedOut := True;
+end;
+
+{ TDbgStackUnwinder }
+
+procedure TDbgStackUnwinder.SetUnwindFlags(AFlags: TDbgUnwinderFlags);
+begin
+  //
 end;
 
 { TDbgStackUnwinderEx }
@@ -4270,11 +4113,6 @@ begin
   result := nil;
 end;
 
-function TDbgThread.GetAdjustedInstructionPointerRegisterValue: TDbgPtr;
-begin
-  Result := GetInstructionPointerRegisterValue;
-end;
-
 function TDbgThread.GetCurrentStackFrameInfo: TDbgStackFrameInfo;
 begin
   Result := TDbgStackFrameInfo.Create(Self);
@@ -4615,7 +4453,7 @@ begin
   inherited Destroy;
 end;
 
-function TFpDbgBreakpointBase.IsValidHit(AThread: TDbgThread): Boolean;
+function TFpDbgBreakpointBase.IsValidHit(const AThreadID: Integer): Boolean;
 var
   Context: TFpDbgSymbolScope;
   PasExpr: TFpPascalExpression;
@@ -4623,8 +4461,7 @@ begin
   Result := True;
   if FCondition <> '' then begin
     // TODO: parse expression when breakpoint is created
-    Process.FNeedInternalThreadsClearCallStack := True;
-    Context := Process.FindSymbolScope(AThread.ID, 0);
+    Context := Process.FindSymbolScope(AThreadID, 0);
     if Context <> nil then begin
       PasExpr := nil;
       try
@@ -4640,25 +4477,11 @@ begin
       end;
     end;
   end;
-
-  if Result and (FOn_Thread_CheckHit <> nil) then
-    FOn_Thread_CheckHit(Self, AThread, Result);
 end;
 
 procedure TFpDbgBreakpointBase.SetCondition(ANewCondition: String);
 begin
   FCondition := ANewCondition;
-end;
-
-function TFpDbgBreakpointBase.GetCondition: String;
-begin
-  // Report a condition queued by SetAutoUpdateCondition, which is not applied
-  // to FCondition until the loop runs ProcessAutoUpdate. Same approach as
-  // GetEnabled, which reports a pending SetAutoDisable.
-  if bufNewCondition in FUpdateFlags then
-    Result := FNewCondition
-  else
-    Result := FCondition;
 end;
 
 function TFpDbgBreakpointBase.__FpDbgBrk: TFpDbgBreakpointBase;
@@ -4674,26 +4497,6 @@ end;
 procedure TFpDbgBreakpointBase.SetOn_Thread_StateChange(AValue: TFpDbgBreakpointStateChangeEvent);
 begin
   FOn_Thread_StateChange := AValue;
-end;
-
-function TFpDbgBreakpointBase.GetOn_Thread_CheckHit: TFpDbgBreakpointCheckHitEvent;
-begin
-  Result := FOn_Thread_CheckHit;
-end;
-
-procedure TFpDbgBreakpointBase.SetOn_Thread_CheckHit(AValue: TFpDbgBreakpointCheckHitEvent);
-begin
-  FOn_Thread_CheckHit := AValue;
-end;
-
-function TFpDbgBreakpointBase.GetOwnerData: Pointer;
-begin
-  Result := FOwnerData;
-end;
-
-procedure TFpDbgBreakpointBase.SetOwnerData(AValue: Pointer);
-begin
-  FOwnerData := AValue;
 end;
 
 function TFpDbgBreakpointBase.GetEnabled: boolean;
@@ -5121,10 +4924,7 @@ begin
   if FSymInstance <> nil then // Can not be the newly created ...
     exit;
 
-  (* The flags the breakpoint was created with. Before they were kept, this
-     path searched a library with the defaults, so an AIgnoreCase given at
-     Create did not apply to libraries loaded later. *)
-  Process.FindNamedProcSymbol(FFuncName, AProcList, ALib, FSearchFlags);
+  Process.FindProcSymbol(FFuncName, ALib, AProcList);
   SetLength(a, Length(AProcList));
   for i := 0 to Length(AProcList) - 1 do begin
     a[i] := AProcList[i].Address.Address;
@@ -5136,7 +4936,7 @@ end;
 
 constructor TFpInternalBreakpointAtSymbol.Create(const AProcess: TDbgProcess;
   const AFuncName: String; AnEnabled: Boolean; ASymInstance: TDbgInstance;
-  AFlags: TFpProcSearchFlags);
+  AIgnoreCase: Boolean);
 var
   a: TDBGPtrArray;
   AProcList: TFpSymbolArray;
@@ -5144,9 +4944,8 @@ var
 begin
   FFuncName := AFuncName;
   FSymInstance := ASymInstance;
-  FSearchFlags := AFlags;
 
-  AProcess.FindNamedProcSymbol(AFuncName, AProcList, ASymInstance, AFlags);
+  AProcess.FindProcSymbol(AFuncName, ASymInstance, AProcList, AIgnoreCase);
   SetLength(a, Length(AProcList));
   for i := 0 to Length(AProcList) - 1 do begin
     a[i] := AProcList[i].Address.Address;
@@ -5298,7 +5097,7 @@ begin
   inherited Destroy;
 end;
 
-function TFpInternalWatchpoint.IsValidHit(AThread: TDbgThread): Boolean;
+function TFpInternalWatchpoint.IsValidHit(const AThreadID: Integer): Boolean;
 var
   buf: array of byte;
 begin
@@ -5312,7 +5111,7 @@ begin
   end;
 
   if Result then
-    Result := inherited IsValidHit(AThread);
+    Result := inherited IsValidHit(AThreadID);
 end;
 
 procedure TFpInternalWatchpoint.SetBreak;

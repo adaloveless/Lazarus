@@ -35,7 +35,7 @@ uses
   // IdeIntf
   ComponentEditors, PropEdits,
   // DateTimeCtrls
-  DateTimePicker, DBDateTimePicker, DTCtrlsStrConsts;
+  DateTimePicker, DBDateTimePicker;
 
 implementation
 
@@ -232,11 +232,10 @@ begin
     else
       DateTimePicker1.SelectDate;
 
-    Caption := lisDateTimePickerEditor;
-    Label1.Caption := lisDateTime;
+    Label1.Caption := 'Date / Time:';
     LabelMax.Caption := 'MaxDate:';
     LabelMin.Caption := 'MinDate:';
-    LabelNull.Caption := lisPressNToSetToNULL;
+    LabelNull.Caption := '(Press N to set to NULL)';
 
     DateTimePickerMin.DateTime := CallerDateTimePicker.MinDate;
     DateTimePickerMax.DateTime := CallerDateTimePicker.MaxDate;
@@ -335,6 +334,7 @@ begin
   SetBounds(-8000, -8000, 4, 5);
   BorderStyle := bsDialog;
   BorderIcons := [biSystemMenu];
+  Caption := 'DateTimePicker Editor';
 
   DateTimePickerMax := TDateTimePicker.Create(Self);
   DateTimePickerMin := TDateTimePicker.Create(Self);

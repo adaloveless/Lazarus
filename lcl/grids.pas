@@ -28,6 +28,7 @@ unit Grids;
 
 {$mode objfpc}{$H+}
 {$modeswitch nestedprocvars}
+{$define NewCols}
 
 interface
 
@@ -123,7 +124,9 @@ type
     goScrollToLastRow,   // Allow scrolling to last row (so that last row can be TopRow)
     goEditorParentColor, // Set editor's ParentColor to True
     goEditorParentFont,  // Set editor's ParentFont to True
-    goCopyWithoutTrailingLinebreak  // Copy to clipboard without trailing linebreak
+    goCopyWithoutTrailingLinebreak,  // Copy to clipboard without trailing linebreak
+    goFixedColClick,     // Issue OnClick if clicked on FixedCol area
+    goFixedRowClick      // Issue OnClick if clicked on FixedRow area
   );
   TGridOptions2 = set of TGridOption2;
 
@@ -6534,44 +6537,77 @@ end;
 
 function TCustomGrid.MouseToGridZone(X, Y: Integer): TGridZone;
 var
-  aBorderWidth: Integer;
+  aBorderWidth, FlippedX: Integer;
   aCol, aRow: Longint;
+  XMaybeOverFixedCols, YMaybeOverFixedRows: Boolean;
 begin
-  aBorderWidth := GetBorderWidth;
-  if FlipX(X)<FGCache.FixedWidth+aBorderWidth then begin
-    // in fixedwidth zone
-    if Y<FGcache.FixedHeight+aBorderWidth then
+  {$ifdef dbgGrid}
+  debugln(['TCustomGrid.MouseToGridZone: X=',X,', Y=',Y,', FGCache.FixedWidth=',FGCache.FixedWidth,', FGCache.FixedHeight=',FGCache.FixedHeight]);
+  {$endif}
+  aBorderWidth:=GetBorderWidth;
+  FlippedX:=FlipX(X);
+  XMaybeOverFixedCols:=(FlippedX<FGCache.FixedWidth+aBorderWidth);
+  YMaybeOverFixedRows:=(Y<FGCache.FixedHeight+aBorderWidth);
+
+  //Always give the same result if a grid is fixed.
+  if FixedGrid then begin
+    if AllowOutBoundEvents then
+      Result := gzFixedCells
+    else begin
+      if XMaybeOverFixedCols and YMaybeOverFixedRows then
+        Result := gzFixedCells
+      else begin // check if we're outside the grid
+        MouseToCell(X,Y,aCol,aRow);
+      if (aRow<0) or (aCol<0)  then
+        Result := gzInvalid
+      else
+        Result := gzFixedCells;
+      end;
+    end;
+    Exit;
+  end;
+
+  if XMaybeOverFixedCols then begin
+    // in fixedwidth zone: either a fixedcol or a fixedcell
+    if YMaybeOverFixedRows then
       Result:= gzFixedCells
     else begin
-      OffsetToColRow(False, True, Y, aRow, aCol);
-      if (aRow<0) or (RowCount<=FixedRows) then
-        Result := gzInvalid
-      else
-        Result := gzFixedRows;
+      if AllowOutboundEvents then
+        Result := gzFixedCols
+      else begin
+        OffSetToColRow(False, True, Y, aRow, aCol);
+        if (aRow<0) then
+          Result := gzInvalid
+        else
+          Result := gzFixedCols;
+      end;
     end;
-  end
-  else if Y<FGCache.FixedHeight+aBorderWidth then begin
-    // if fixedheight zone
-    if FlipX(X)<FGCache.FixedWidth+aBorderWidth then
-      Result:=gzFixedCells
-    else begin
-      OffsetToColRow(True, True, X, aCol, aRow);
-      if (aCol<0) or (ColCount<=FixedCols) then
-        Result := gzInvalid
+  end // XMaybeOverFixedCols
+  else begin  // Not in a fixedwidth zone
+    if YMaybeOverFixedRows then
+    begin
+      // maybe in fixedheight zone: either a fixedrow or a fixedcell or outside the gridcells
+      if AllowOutboundEvents then
+        Result := gzFixedRows
+      else begin
+        OffSetToColRow(True, True, X, aCol, aRow);
+        if (aCol<0) then
+          Result := gzInvalid
+        else
+          Result := gzFixedRows;
+      end;
+    end
+    else begin // must be over a normal cell or outside the gridcells
+      MouseToCell(x, y, aCol, aRow);
+      if (aCol<0) or (aRow<0) then
+        result := gzInvalid
       else
-        Result := gzFixedCols;
+        result := gzNormal;
     end;
-  end
-  else if not FixedGrid then begin
-    // in normal cell zone (though, might be outbounds)
-    MouseToCell(x, y, aCol, aRow);
-    if (aCol<0) or (aRow<0) then
-      result := gzInvalid
-    else
-      result := gzNormal;
-  end
-  else
-    result := gzInvalid;
+  end;
+  {$ifdef dbgGrid}
+  debugln(['TCustomGrid.MouseToGridZone: Result=',Dbgs(Result)]);
+  {$endif}
 end;
 
 function TCustomGrid.CellToGridZone(aCol, aRow: Integer): TGridZone;
@@ -6583,17 +6619,16 @@ begin
     if aRow<FFixedRows then
       Result:= gzFixedCells
     else
-      Result:= gzFixedRows
+      Result:= gzFixedCols
   else
   if (aRow<FFixedRows) then
     if aCol<FFixedCols then
       Result:= gzFixedCells
     else
-      Result:= gzFixedCols
+      Result:= gzFixedRows
   else
     Result := gzNormal;
 end;
-
 
 procedure TCustomGrid.DoOPExchangeColRow(IsColumn: Boolean; index, WithIndex: Integer);
 var
@@ -6903,35 +6938,40 @@ begin
 
     gzFixedCols:
       begin
-        if (goColSizing in Options) and (FCursorState=gcsColWidthChanging) then begin
-          fGridState:= gsColSizing;
+        if (goRowSizing in Options) and (FCursorState=gcsRowHeightChanging) then begin
+          fGridState:= gsRowSizing;
           FGCache.OldMaxTopLeft := FGCache.MaxTopLeft;
         end
         else begin
-          // ColMoving or Clicking
-          if fGridState<>gsColMoving then begin
-            fGridState:=gsColMoving;
+          // RowMoving or Clicking
+          if fGridState<>gsRowMoving then begin
+            fGridState:=gsRowMoving;
             ResetLastMove;
           end;
 
           if ((goHeaderPushedLook in Options) and
               (FGCache.HotGridZone in FHeaderPushZones)) then
             DoPushCell;
+          if (goFixedColClick in Options2) then
+            FIgnoreClick := False;
         end;
       end;
 
     gzFixedRows:
-      if (goRowSizing in Options) and (FCursorState=gcsRowHeightChanging) then
-        fGridState:= gsRowSizing
-      else begin
-        // RowMoving or Clicking
-        fGridState:=gsRowMoving;
-        ResetLastMove;
-        if ((goHeaderPushedLook in Options) and
-            (FGCache.HotGridZone in FHeaderPushZones)) then
-          DoPushCell;
+      begin
+        if (goColSizing in Options) and (FCursorState=gcsColWidthChanging) then
+          fGridState:= gsColSizing
+        else begin
+          // ColMoving or Clicking
+          fGridState:=gsColMoving;
+          ResetLastMove;
+          if ((goHeaderPushedLook in Options) and
+              (FGCache.HotGridZone in FHeaderPushZones)) then
+            DoPushCell;
+          if (goFixedRowClick in Options2) then
+            FIgnoreClick := False;
+        end;
       end;
-
     gzNormal:
       begin
         LockEditor;
@@ -7915,11 +7955,11 @@ begin
   Gz:=MouseToGridZone(Mouse.x, Mouse.y);
   Result:=MouseToCell(Mouse);
   if gz<>gzNormal then begin
-    if (gz=gzFixedRows)or(gz=gzFixedCells) then begin
+    if (gz=gzFixedCols)or(gz=gzFixedCells) then begin
       Result.x:= fTopLeft.x-1;
       if Result.x<FFixedCols then Result.x:=FFixedCols;
     end;
-    if (gz=gzFixedCols)or(gz=gzFixedCells) then begin
+    if (gz=gzFixedRows)or(gz=gzFixedCells) then begin
       Result.y:=fTopleft.y-1;
       if Result.y<fFixedRows then Result.y:=FFixedRows;
     end;
@@ -9210,9 +9250,15 @@ end;
 
 function TCustomGrid.GridColumnFromColumnIndex(ColumnIndex: Integer): Integer;
 begin
+  {$ifdef NewCols}
   result := ColumnIndex + FirstGridColumn;
   if Result>ColCount-1 then
     Result := -1;
+  {$else}
+  result := Columns.VisibleIndex(ColumnIndex);
+  if result>=0 then
+    result := result + FixedCols;
+  {$endif}
 end;
 
 procedure TCustomGrid.GridMouseWheel(Shift: TShiftState; Delta: Integer);
@@ -12807,8 +12853,10 @@ function TGridColumn.GetWidth: Integer;
 var
   tmpGrid: TCustomGrid;
 begin
+  {$ifdef newcols}
   if not Visible then
     exit(0);
+  {$endif}
   if FWidth=nil then
     result := GetDefaultWidth
   else
@@ -13291,8 +13339,19 @@ begin
 end;
 
 function TGridColumns.GetVisibleCount: Integer;
+{$ifNdef newcols}
+var
+  i: Integer;
+{$endif}
 begin
+  {$ifdef newcols}
   result := Count;
+  {$else}
+  result := 0;
+  for i:=0 to Count-1 do
+    if Items[i].Visible then
+      inc(result);
+  {$endif}
 end;
 
 function TGridColumns.GetOwner: TPersistent;
@@ -13412,11 +13471,29 @@ begin
 end;
 
 function TGridColumns.RealIndex(Index: Integer): Integer;
+{$ifNdef NewCols}
+var
+  i: Integer;
+{$endif}
 begin
+  {$ifdef NewCols}
   if Index>Count-1 then
     result := -1
   else
     result := Index;
+  {$else}
+  result := -1;
+  if Index>=0 then
+    for i:=0 to Count-1 do begin
+      if Items[i].Visible then begin
+        Dec(index);
+        if Index<0 then begin
+          result := i;
+          exit;
+        end;
+      end;
+    end;
+  {$endif}
 end;
 
 function TGridColumns.IndexOf(Column: TGridColumn): Integer;

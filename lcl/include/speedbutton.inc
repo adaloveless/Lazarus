@@ -206,15 +206,6 @@ begin
   Invalidate;
 end;
 
-procedure TCustomSpeedButton.SetGlyphImageLayout(Value: TGlyphImageLayout);
-begin
-  if FGlyph.GlyphImageLayout <> Value then
-  begin
-    FGlyph.GlyphImageLayout := Value;
-    Invalidate;
-  end;
-end;
-
 {------------------------------------------------------------------------------
   Method: TCustomSpeedButton.SetGroupIndex
   Params: Value:
@@ -518,11 +509,6 @@ end;
 function TCustomSpeedButton.GetGlyph : TBitmap;
 begin
   Result := FGlyph.Glyph;
-end;
-
-function TCustomSpeedButton.GetGlyphImageLayout: TGlyphImageLayout;
-begin
-  Result := FGlyph.GlyphImageLayout;
 end;
 
 function TCustomSpeedButton.IsGlyphStored: Boolean;

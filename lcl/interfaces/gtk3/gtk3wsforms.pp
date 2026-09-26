@@ -264,6 +264,7 @@ class function TGtk3WSCustomForm.GetDefaultClientRect(
 var
   AWindow: TGtk3Window;
   Alloc: TGtkAllocation;
+  MenuH: Integer;
 begin
   Result := False;
   if AWinControl.HandleAllocated then
@@ -274,6 +275,16 @@ begin
       exit;
   end;
   aClientRect := Rect(0, 0, aWidth, aHeight);
+  if (AWinControl is TCustomForm) and (TCustomForm(AWinControl).Menu <> nil) then
+  begin
+    MenuH := Gtk3WidgetSet.GetSystemMetrics(SM_CYMENU);
+    if MenuH > 0 then
+    begin
+      Dec(aClientRect.Bottom, MenuH);
+      if aClientRect.Bottom < 0 then
+        aClientRect.Bottom := 0;
+    end;
+  end;
   Result := True;
 end;
 
@@ -352,7 +363,7 @@ begin
   gdk_seat_ungrab(Seat);
 end;
 
-function ModalFilter(xevent: PGdkXEvent; event: PGdkEvent; data: gpointer): TGdkFilterReturn; cdecl;
+function ModalFilter(xevent: PGdkXEvent; event: PGdkEvent; data: gpointer): TGdkFilterReturn;
 const
   X11_ButtonPress = 4;
   X11_ButtonRelease = 5;
@@ -364,43 +375,6 @@ begin
     Result := GDK_FILTER_REMOVE
   else
     Result := GDK_FILTER_CONTINUE;
-end;
-
-procedure Gtk3SetModalFormsNativeModality(AEnable: Boolean);
-var
-  I: Integer;
-  F: TCustomForm;
-  W: PGtkWindow;
-begin
-  if Screen = nil then
-    Exit;
-  for I := 0 to Screen.CustomFormCount - 1 do
-  begin
-    F := Screen.CustomForms[I];
-    if (fsModal in F.FormState) and F.HandleAllocated then
-    begin
-      W := PGtkWindow(TGtk3Window(F.Handle).Widget);
-      if Gtk3IsGtkWindow(W) then
-      begin
-        if Gtk3WidgetSet.IsWayland then
-        begin
-          W^.set_modal(AEnable);
-          if Gtk3IsGdkWindow(W^.window) then
-            W^.window^.set_modal_hint(AEnable);
-        end
-        else
-        if AEnable then
-          gtk_grab_add(PGtkWidget(W))
-        else
-          gtk_grab_remove(PGtkWidget(W));
-      end;
-    end;
-  end;
-end;
-
-procedure Gtk3WaylandGrabPrepare(seat: PGdkSeat; window: PGdkWindow; user_data: gpointer); cdecl;
-begin
-  gtk_widget_show(PGtkWidget(user_data));
 end;
 
 class procedure TGtk3WSCustomForm.ShowHide(const AWinControl: TWinControl);
@@ -417,12 +391,9 @@ var
   LCLCanFocus: boolean;
   ATime: guint32;
   NeedSizeProtect: boolean;
-  MsgAct: TLMActivate;
-  MsgSF: TLMessage;
   SplashClock: PGdkFrameClock;
   SplashFrame: gint64;
   SplashDeadline: QWord;
-  ASeat: PGdkSeat;
 
   procedure CheckAndFixGeometry;
   const
@@ -695,30 +666,13 @@ begin
     AWindow^.window^.set_events(GDK_ALL_EVENTS_MASK);
     if not IsFormDesign(AForm) then
     begin
-      if (AForm.BorderStyle = bsNone) and LCLCanFocus and (Application.ModalLevel > 0) then
-      begin
-        Gtk3SetModalFormsNativeModality(False);
-        if Gtk3WidgetSet.IsWayland and (AWindow^.get_window_type = GTK_WINDOW_POPUP)
-          and AWindow^.get_accept_focus and Gtk3IsGdkWindow(AWindow^.window) then
-        begin
-          ASeat := gdk_display_get_default_seat(gdk_window_get_display(AWindow^.window));
-          if Assigned(ASeat) then
-          begin
-            gtk_widget_hide(PGtkWidget(AWindow));
-            gdk_seat_grab(ASeat, AWindow^.window,
-              [GDK_SEAT_CAPABILITY_POINTER, GDK_SEAT_CAPABILITY_TABLET_STYLUS,
-               GDK_SEAT_CAPABILITY_KEYBOARD], True, nil, nil,
-              @Gtk3WaylandGrabPrepare, AWindow);
-          end;
-        end;
-      end;
       //If LM_NCHITTEST=true, do not attack WM
       if not AWindow^.window^.get_pass_through and (AForm.BorderStyle <> bsNone) then
       begin
         ATime := gtk_get_current_event_time;
         if ATime = 0 then
           ATime := Gtk3WidgetSet.LastUserEventTime;
-        if (ATime <> 0) or not Gtk3WidgetSet.IsWayland then
+        if ATime <> 0 then
           AWindow^.present_with_time(ATime);
       end;
 
@@ -727,34 +681,8 @@ begin
       begin
         //wayland, add grab
         //TODO: gdk_display_device_is_grabbed
-        gtk_grab_add(PGtkWidget(AWindow));
-        if (AGtk3Widget is TGtk3Window) and not AForm.Active and
-          (Gtk3WidgetSet.MsgActivationLevel = 0) then
-        begin
-          Gtk3WidgetSet.MsgActivationLevel := Gtk3WidgetSet.MsgActivationLevel + 1;
-          try
-            OtherForm := Screen.ActiveCustomForm;
-            if Assigned(OtherForm) and (OtherForm <> AForm) and
-              OtherForm.Active and OtherForm.HandleAllocated then
-            begin
-              FillChar(MsgAct{%H-}, SizeOf(MsgAct), 0);
-              MsgAct.Msg := LM_ACTIVATE;
-              MsgAct.Active := WA_INACTIVE;
-              MsgAct.ActiveWindow := HWND(AForm.Handle);
-              TGtk3Widget(OtherForm.Handle).DeliverMessage(MsgAct);
-            end;
-            FillChar(MsgAct{%H-}, SizeOf(MsgAct), 0);
-            MsgAct.Msg := LM_ACTIVATE;
-            MsgAct.Active := WA_ACTIVE;
-            MsgAct.ActiveWindow := HWND(AForm.Handle);
-            AGtk3Widget.DeliverMessage(MsgAct);
-            FillChar(MsgSF{%H-}, SizeOf(MsgSF), 0);
-            MsgSF.Msg := LM_SETFOCUS;
-            AGtk3Widget.DeliverMessage(MsgSF);
-          finally
-            Gtk3WidgetSet.MsgActivationLevel := Gtk3WidgetSet.MsgActivationLevel - 1;
-          end;
-        end;
+        gtk_device_grab_add(PGtkWidget(AWindow),
+          gdk_seat_get_keyboard(gdk_display_get_default_seat(gdk_display_get_default)), False);
       end;
     end;
   end else
@@ -767,28 +695,13 @@ begin
         //wayland, remove grab
         if Gtk3WidgetSet.IsWayland and (AWindow^.get_window_type = GTK_WINDOW_POPUP) and AWindow^.get_accept_focus
           and not AWindow^.window^.get_pass_through and LCLCanFocus then
-            gtk_grab_remove(PGtkWidget(AWindow));
-        if (AForm.BorderStyle = bsNone) and LCLCanFocus then
-        begin
-          if Gtk3WidgetSet.IsWayland and Gtk3IsGdkWindow(AWindow^.window) then
-          begin
-            ASeat := gdk_display_get_default_seat(gdk_window_get_display(AWindow^.window));
-            if Assigned(ASeat) then
-              gdk_seat_ungrab(ASeat);
-          end;
-          Gtk3SetModalFormsNativeModality(True);
-        end;
+            gtk_device_grab_remove(PGtkWidget(AWindow),
+              gdk_seat_get_keyboard(gdk_display_get_default_seat(gdk_display_get_default)));
         if AWindow^.transient_for <> nil then
         begin
           if (fsModal in AForm.FormState) and Gtk3IsGdkWindow(AWindow^.transient_for^.window) then
             gdk_window_remove_filter(AWindow^.transient_for^.window, TGdkFilterFunc(@ModalFilter), AGtk3Widget);
           AWindow^.set_transient_for(nil);
-        end;
-        if fsModal in AForm.FormState then
-        begin
-          AWindow^.set_modal(False);
-          if Gtk3IsGdkWindow(AWindow^.window) then
-            AWindow^.window^.set_modal_hint(false);
         end;
       end;
     end;
@@ -1252,51 +1165,9 @@ begin
   Result := TLCLHandle(TGtk3HintWindow.Create(AWinControl, AParams));
 end;
 
-// issue #42541
-procedure Gtk3HintWindowCheckResizeAfter(AContainer: PGtkContainer; AData: gpointer); cdecl;
-var
-  AWidget: PGtkWidget;
-  AWinControl: TWinControl;
-  AAnchorRect: TGdkRectangle;
-begin
-  AWidget := PGtkWidget(AContainer);
-  if AWidget^.get_mapped or
-    not GTK3WidgetSet.IsWayland or
-    (gtk_grab_get_current <> nil) or
-    (PGtkWindow(AWidget)^.get_transient_for = nil) or
-    not Gtk3IsGdkWindow(AWidget^.window) then
-    exit;
-  AWinControl := TWinControl(TGtk3Widget(AData).LCLObject);
-  if AWinControl = nil then
-    exit;
-  AAnchorRect.x := AWinControl.Left;
-  AAnchorRect.y := AWinControl.Top;
-  AAnchorRect.width := 1;
-  AAnchorRect.height := 1;
-  AWidget^.window^.move_to_rect(@AAnchorRect, GDK_GRAVITY_NORTH_WEST,
-    GDK_GRAVITY_NORTH_WEST, GDK_ANCHOR_SLIDE, 0, 0);
-end;
-
 class procedure TGtk3WSHintWindow.ShowHide(const AWinControl: TWinControl);
 var
   AWidget: PGtkWidget;
-  AGrabWidget: PGtkWidget;
-  ATransient: PGtkWindow;
-
-  function NonPopupToplevel(AWin: PGtkWindow): PGtkWindow;
-  begin
-    Result := AWin;
-    while (Result <> nil) and
-      (Result^.get_window_type = GTK_WINDOW_POPUP) and
-      (Result^.get_transient_for <> nil) do
-      Result := Result^.get_transient_for;
-    if (Result <> nil) and
-      ((Result^.get_window_type = GTK_WINDOW_POPUP) or
-       (PGtkWidget(Result) = AWidget) or
-       not PGtkWidget(Result)^.get_mapped) then
-      Result := nil;
-  end;
-
   procedure SetPassThroughRecursive(AGdkWindow: PGdkWindow);
   var
     AChildren: PGList;
@@ -1319,26 +1190,7 @@ begin
   begin
     AWidget := TGtk3HintWindow(AWinControl.Handle).Widget;
     if GTK3WidgetSet.IsWayland then // ref.to #42033, X11 not need this (it lead to incorrect positioning)
-    begin
-      ATransient := nil;
-      AGrabWidget := gtk_grab_get_current;
-      if (AGrabWidget <> nil) and AGrabWidget^.get_toplevel^.is_toplevel then
-        ATransient := NonPopupToplevel(PGtkWindow(AGrabWidget^.get_toplevel));
-      if ATransient = nil then
-        ATransient := NonPopupToplevel(GetActiveGtkWindow);
-      PGtkWindow(AWidget)^.set_transient_for(ATransient);
-
-      // issue #42541
-      if g_object_get_data(PGObject(AWidget), 'lcl_hint_move_to_rect') = nil then
-      begin
-        g_object_set_data(PGObject(AWidget), 'lcl_hint_move_to_rect', AWidget);
-        g_signal_connect_data(AWidget, 'check-resize',
-          TGCallback(@Gtk3HintWindowCheckResizeAfter),
-          TGtk3HintWindow(AWinControl.Handle), nil, [G_CONNECT_AFTER]);
-      end;
-      if (AGrabWidget <> nil) and Gtk3IsGdkWindow(AWidget^.window) then
-        AWidget^.window^.move(AWinControl.Left, AWinControl.Top);
-    end;
+      PGtkWindow(AWidget)^.set_transient_for(GetActiveGtkWindow);
 
     AWidget^.show_all;
 

@@ -1002,15 +1002,7 @@ begin
       end;
     end else
     begin
-      AMaskRowStride := PtrUInt(WorkMask.bytesPerLine);
-      if AMaskRowStride <> GetBytesPerLine(Width, 1, rileDWordBoundary) then
-      begin
-        if AMaskRowStride = GetBytesPerLine(Width, 1, rileWordBoundary) then
-          Desc.MaskLineEnd := rileWordBoundary
-        else
-          Desc.MaskLineEnd := rileByteBoundary;
-      end;
-      ARawImage.MaskSize := AMaskRowStride * PtrUInt(Height);
+      ARawImage.MaskSize := WorkMask.numBytes;
       ReAllocMem(ARawImage.Mask, ARawImage.MaskSize);
       if (ARawImage.MaskSize > 0) and (WorkMask.bits <> nil) and (ARawImage.Mask <> nil) then
         Move(WorkMask.bits^, ARawImage.Mask^, ARawImage.MaskSize);

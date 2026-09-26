@@ -164,7 +164,7 @@ end;
 
 procedure TOpenFileFavToolButton.RefreshMenu(Sender: TObject);
 var
-  xM, xSep, xHeader: TMenuItem;
+  xM, xSep: TMenuItem;
   xFavoriteFile: string;
   xMI, xAddToFav: TFileNameMenuItem;
   xProj: TLazProject;
@@ -210,15 +210,10 @@ begin
 
   if xMIndex > 0 then
   begin
-    // separator
     xSep := TMenuItem.Create(Self);
-    xSep.Caption := cLineCaption;
+    xSep.Caption := '-';
     xM.Insert(xMIndex, xSep);
-    // header
-    xHeader := TMenuItem.Create(Self);
-    xHeader.Caption := sFavoritesHeaderS;
-    xHeader.Enabled := false;
-    xM.Insert(0, xHeader);
+    Inc(xMIndex);
   end;
 end;
 

@@ -333,7 +333,7 @@ type
           itmRunMenuAddBpWatchPoint: TIDEMenuCommand;
 
     // packages menu
-    //mnuPackage: TIDEMenuSection;
+    //mnuComponents: TIDEMenuSection;
       //itmPkgOpening: TIDEMenuSection;
         itmPkgNewPackage: TIDEMenuCommand;
         itmPkgOpenLoadedPackage: TIDEMenuCommand;

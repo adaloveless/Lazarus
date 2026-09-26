@@ -12,20 +12,6 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Generator: Poedit 2.2.1\n"
 
-#: heaptrcview.brkfailedtoopenfile
-msgid "Failed to open file"
-msgstr ""
-
-#: heaptrcview.brkfailedtoopens
-#, object-pascal-format
-msgid "Failed to open \"%s\"."
-msgstr ""
-
-#: heaptrcview.brkfailedtoopensjumptocurren
-#, object-pascal-format
-msgid "Failed to open \"%s\". Jump to appropriate line in current editor instead?"
-msgstr ""
-
 #: heaptrcview.rsdtimes
 #, object-pascal-format
 msgid " (%d times)"
@@ -72,10 +58,13 @@ msgid "Select file with trace log"
 msgstr "Choisir le fichier contenant un journal d'exécution"
 
 #: heaptrcview.slbltrace
-#, fuzzy
-#| msgid ".trc file"
-msgid "Trace file"
+msgid ".trc file"
 msgstr "Fichier .trc"
+
+#: heaptrcview.stacklineformat
+#, object-pascal-format
+msgid "%s"
+msgstr "%s"
 
 #: heaptrcview.stacklineformatwithfile
 #, object-pascal-format

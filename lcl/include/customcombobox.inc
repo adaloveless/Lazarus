@@ -886,7 +886,7 @@ begin
   fCompStyle := csComboBox;
   with GetControlClassDefaultSize do
     SetInitialBounds(0, 0, CX, CY);
-  FItems := TStringList.Create;
+  FItems := TStringListUTF8Fast.Create;
   FItemIndex := -1;
   FItemWidth := 0;
   FMaxLength := 0;

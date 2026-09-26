@@ -30,9 +30,6 @@ uses
 
 type
   GType = TGType;
-
-  TGtk3WindowStateFlag = (wwiActivating, wwiDeactivating);
-  TGtk3WindowStateFlags = set of TGtk3WindowStateFlag;
 {$IFDEF UNIX}
   PPChildSignalEventHandler = ^PChildSignalEventHandler;
   PChildSignalEventHandler = ^TChildSignalEventHandler;
@@ -326,8 +323,6 @@ function Gtk3SafeWindowRootOrigin(AWindow: PGdkWindow; X, Y: Pgint): Boolean;
 function Gtk3IsGdkPixbuf(AWidget: PGObject): GBoolean;
 function Gtk3IsGdkVisual(AVisual: PGObject): GBoolean;
 
-procedure Gtk3ClearLCLWidgetData(AWidget: PGObject);
-
 function Gtk3WidgetIsA(AWidget: PGtkWidget; AType: TGType): boolean;
 function Get3WidgetClassName(AWidget: PGtkWidget): string;
 
@@ -339,7 +334,6 @@ function Gtk3ScrollTypeToScrollCode(ScrollType: TGtkScrollType): LongWord;
 
 function TGdkRGBAToTColor(const value : TGdkRGBA; IgnoreAlpha: Boolean = True) : TColor;
 function TColortoTGdkRGBA(const value : TColor; IgnoreAlpha: Boolean = True) : TGdkRGBA;
-function CompositeRGBAOverBg(const AFg, ABg: TGdkRGBA): TColor;
 function ColorToCairoRGB(AColor: TColor; out ARed, AGreen, ABlue: Double): Boolean;
 function RectFromGtkAllocation(AGtkAllocation: TGtkAllocation): TRect;
 function RectFromGdkRect(AGdkRect: TGdkRectangle): TRect;
@@ -449,10 +443,6 @@ procedure Gtk3IMCommitCB({%H-}context: PGtkIMContext; str: Pgchar; data: gpointe
 
 implementation
 uses LCLProc, gtk3objects, gtk3widgets, gtk3int, LazLogger, Math;
-
-var
-  Gtk3ActiveMainList: TFPList = nil;
-  Gtk3ActiveFixList: TFPList = nil;
 
 procedure Gtk3IMCommitCB({%H-}context: PGtkIMContext; str: Pgchar; data: gpointer); cdecl;
 begin
@@ -928,14 +918,6 @@ end;
 function Gtk3IsGdkVisual(AVisual: PGObject): GBoolean;
 begin
   Result := (AVisual <> nil) and  g_type_check_instance_is_a(PGTypeInstance(AVisual), gdk_visual_get_type);
-end;
-
-procedure Gtk3ClearLCLWidgetData(AWidget: PGObject);
-begin
-  // removes the back reference to the TGtk3Widget, so that
-  // Gtk3WidgetFromGtkWidget() cannot return a dangling object
-  if Gtk3IsWidget(AWidget) then
-    g_object_set_data(AWidget, 'lclwidget', nil);
 end;
 
 function Gtk3WidgetIsA(AWidget: PGtkWidget; AType: TGType): boolean;
@@ -1794,8 +1776,7 @@ begin
       UpdateSysColorMap(StyleObject^.Widget, lgs);
     end else
     begin
-      Dispose(StyleObject);
-      Result := nil;
+      // DebugLn('BUG: GetStyleWithName() created style is not GtkWidget ',WName);
     end;
   end;
 end;
@@ -2295,6 +2276,9 @@ var
   I: Integer;
   P: PGtk3PendingSize;
 begin
+  // Called from TGtk3Widget.DestroyWidget to prevent the drain from accessing
+  // a freed TWinControl. The control may be destroyed between the time its
+  // size-allocate signal queued an entry and the next AppProcessMessages call.
   FWidgetsResized.Remove(ALCLObject);
   FFixWidgetsResized.Remove(ALCLObject);
   for I := FPendingOuterSizes.Count - 1 downto 0 do
@@ -2307,14 +2291,6 @@ begin
       Break;
     end;
   end;
-  if Assigned(Gtk3ActiveMainList) then
-    for I := 0 to Gtk3ActiveMainList.Count - 1 do
-      if Gtk3ActiveMainList[I] = Pointer(ALCLObject) then
-        Gtk3ActiveMainList[I] := nil;
-  if Assigned(Gtk3ActiveFixList) then
-    for I := 0 to Gtk3ActiveFixList.Count - 1 do
-      if Gtk3ActiveFixList[I] = Pointer(ALCLObject) then
-        Gtk3ActiveFixList[I] := nil;
 end;
 
 function Gtk3DrainResizeIdleCB({%H-}AData: gpointer): gboolean; cdecl;
@@ -2340,6 +2316,7 @@ var
 begin
   if Gtk3DrainInProgress then Exit;
   if (FWidgetsResized.Count = 0) and (FFixWidgetsResized.Count = 0) then Exit;
+  // Snapshot and clear before processing to handle re-entrant additions cleanly.
   Gtk3DrainInProgress := True;
   MainList := TFPList.Create;
   FixList  := TFPList.Create;
@@ -2349,12 +2326,11 @@ begin
     FWidgetsResized.Clear;
     FFixWidgetsResized.Clear;
 
-    Gtk3ActiveMainList := MainList;
-    Gtk3ActiveFixList := FixList;
-
+    //Parent-first order. Matches GTK2 deferred semantics.
     MainList.Sort(@Gtk3CompareLCLDepth);
     FixList.Sort(@Gtk3CompareLCLDepth);
 
+    // Phase 1: Invalidate client rect caches for layout/client widgets.
     for I := 0 to FixList.Count - 1 do
     begin
       ACtl := TWinControl(FixList[I]);
@@ -2365,6 +2341,11 @@ begin
       end;
     end;
 
+    // Phase 2: Deliver LM_SIZE for outer/main widgets.
+    // LM_SIZE -> WMSize -> SetBounds -> AlignControls.
+    // Skip controls that are currently inside BeginUpdate/EndUpdate (InUpdate=True)
+    // — they are already being processed by SetBounds; delivering LM_SIZE again
+    // would cause a redundant re-layout.
     for I := 0 to MainList.Count - 1 do
     begin
       ACtl := TWinControl(MainList[I]);
@@ -2372,7 +2353,6 @@ begin
       begin
         Widget := TGtk3Widget(ACtl.Handle);
         if Widget.InUpdate then Continue;
-
         FillChar(SizeMsg{%H-}, SizeOf(SizeMsg), 0);
         SizeMsg.Msg      := LM_SIZE;
         SizeMsg.SizeType := SIZE_RESTORED;
@@ -2410,6 +2390,10 @@ begin
       end;
     end;
 
+    // Phase 3: DoAdjustClientRectChange for layout/client widgets (after LM_SIZE).
+    // Skip controls that are also in MainList — for those, DoAdjustClientRectChange
+    // is already triggered via WMSize -> AlignControls. Skipping avoids a duplicate
+    // Resize/LayoutButtons call.
     for I := 0 to FixList.Count - 1 do
     begin
       ACtl := TWinControl(FixList[I]);
@@ -2422,8 +2406,6 @@ begin
     end;
 
   finally
-    Gtk3ActiveMainList := nil;
-    Gtk3ActiveFixList := nil;
     MainList.Free;
     FixList.Free;
     Gtk3DrainInProgress := False;

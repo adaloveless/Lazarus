@@ -39,7 +39,7 @@ interface
 //    the uses clause of the XXXintf.pp
 ////////////////////////////////////////////////////
 uses
-  Classes, SysUtils, LazLoggerBase;
+  Classes, SysUtils, LCLProc, LazLoggerBase;
 
 type
   { TWSPrivate }

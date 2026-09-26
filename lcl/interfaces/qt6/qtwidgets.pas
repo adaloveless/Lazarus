@@ -3737,22 +3737,10 @@ begin
       ' UnicodeLen ',UnicodeOutLen);
     writeln('   sending QEventKeyPress');
     {$ENDIF}
-    i:=1;
-    while i<=Length(WStr) do
+    for i:=1 to Length(WStr) do
     begin
-      if (i<Length(WStr)) and
-        (Word(WStr[i]) >= $D800) and (Word(WStr[i]) <= $DBFF) and
-        (Word(WStr[i+1]) >= $DC00) and (Word(WStr[i+1]) <= $DFFF) then
-      begin
-        UnicodeChar := $10000 + ((Word(WStr[i]) - $D800) shl 10) + (Word(WStr[i+1]) - $DC00);
-        temps:=Copy(WStr, i, 2);
-        inc(i, 2);
-      end else
-      begin
-        UnicodeChar := PWord(@WStr[i])^;
-        temps:=WStr[i];
-        inc(i);
-      end;
+      UnicodeChar := PWord(@WStr[i])^;
+      temps:=WStr[i];
       KeyEvent := QKeyEvent_create(QEventKeyPress, PtrInt(UnicodeChar), QGUIApplication_keyboardModifiers, @temps);
       try
         // do not send it to queue, just pass it to SlotKey
@@ -7879,7 +7867,6 @@ var
   AState: QtWindowStates;
   AOldState: QtWindowStates;
   CanSendEvent: Boolean;
-  AAppMinimize: Boolean;
   {$IFDEF MSWINDOWS}
   i: Integer;
   AForm: TCustomForm;
@@ -8017,7 +8004,6 @@ begin
         end;
 
         CanSendEvent := True;
-        AAppMinimize := False;
         {$warning fixme Qt6}
         {$IFDEF HASX11}
         // for X11 we must ask state of each modified window.
@@ -8062,7 +8048,7 @@ begin
               end;
             end;
             {$ENDIF}
-            AAppMinimize := True;
+            Application.IntfAppMinimize;
           end
           else
           if (AOldState and QtWindowMinimized <> 0) or
@@ -8127,8 +8113,6 @@ begin
           {$ENDIF}
           SlotWindowStateChange;
         end;
-        if AAppMinimize then
-          Application.IntfAppMinimize;
       end;
       QEventDrop,
       QEventDragMove,
@@ -14397,13 +14381,6 @@ begin
       inherited signalSelectionChanged();
     end;
   end else
-  if (QEvent_type(Event) = QEventKeyPress) and
-    (QKeyEvent_key(QKeyEventH(Event)) = QtKey_Space) and
-    (QKeyEvent_modifiers(QKeyEventH(Event)) and QtControlModifier = 0) then
-  begin
-    inherited EventFilter(Sender, Event);
-    Result := True;
-  end else
   if (QEvent_type(Event) = QEventMouseButtonDblClick) then
     // issue #25089
   else
@@ -18984,8 +18961,6 @@ var
   Pt: TQtPoint;
   ScreenNumber: integer;
   ASibling: QScreenH;
-  AWindow: QWindowH;
-  AActiveWidget: QWidgetH;
 begin
   // must use ClassType comparision here since qt is buggy about hints.#16551
   if AVisible and
@@ -19035,15 +19010,6 @@ begin
       Types.OffsetRect(R, D.Right-R.Right, 0);
     if (R.Bottom > D.Bottom) then
       Types.OffsetRect(R, 0, D.Bottom-R.Bottom);
-
-    AActiveWidget := QApplication_activeWindow;
-    if (AActiveWidget <> nil) and (AActiveWidget <> Widget) then
-    begin
-      QWidget_createWinId(Widget);
-      AWindow := QWidget_windowHandle(Widget);
-      if (AWindow <> nil) and (QWindow_transientParent(AWindow) = nil) then
-        QWindow_setTransientParent(AWindow, QWidget_windowHandle(AActiveWidget));
-    end;
 
     move(R.Left, R.Top);
   end;

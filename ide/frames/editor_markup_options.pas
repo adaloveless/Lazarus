@@ -447,6 +447,7 @@ end;
 procedure TEditorMarkupOptionsFrame.UpdatePreviews;
 var
   a: Integer;
+  Syn: TSynPasSyn;
 begin
   with GeneralPage do
     for a := Low(PreviewEdits) to High(PreviewEdits) do
@@ -484,8 +485,7 @@ begin
   BracketCombo.Items.Add(dlgNoBracketHighlight);
   BracketCombo.Items.Add(dlgHighlightLeftOfCursor);
   BracketCombo.Items.Add(dlgHighlightRightOfCursor);
-  BracketCombo.Items.Add(dlgHighlightBothSidesOfCursorLeft);
-  BracketCombo.Items.Add(dlgHighlightBothSidesOfCursorRight);
+  BracketCombo.Items.Add(gldHighlightBothSidesOfCursor);
 
   LanguageLabel.Caption := dlgLang;
   divKeyWordGroups.Caption := dlgPasKeywordsMatches;

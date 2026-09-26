@@ -7,18 +7,18 @@ interface
 uses
   Classes, SysUtils, System.UITypes,
   // LCL
-  Forms, LCLClasses,
+  Forms,
   // LazUtils
   FileUtil, LazFileUtils, LazFileCache, LazUtilities, Maps, Laz2_XMLCfg, LazLoggerBase,
   // CodeTools
   CodeToolsConfig, ExprEval, DefineTemplates, BasicCodeTools,
   LinkScanner, CodeToolManager, CodeCache, StdCodeTools,
   // BuildIntf
-  ProjectIntf, PackageIntf, LazMsgWorker, IDEOptionsIntf,
+  ProjectIntf, PackageIntf, LazMsgWorker,
   // IdeConfig
   ProjectBuildMode, IdeXmlConfigProcs, RecentListProcs, IdeConfStrConsts,
   // IDEIntf
-  EditorSyntaxHighlighterDef, SrcEditorIntf, IDEOptEditorIntf, SynHighlighterSQL,
+  EditorSyntaxHighlighterDef, SrcEditorIntf,
   // IdeProject
   Project, ProjectDefs, IdeBookmark, RunParamOptions, IdeProjectStrConsts;
 
@@ -141,7 +141,6 @@ type
     constructor Create(ACodeBuffer: TCodeBuffer); override;
     destructor Destroy; override;
     procedure Clear; override;
-    procedure ClearModifieds; override;
     function HasOpenEditors: boolean; override;
     // At any time, any TEditableUnitInfo has at least one EditorInfo
     function EditorInfoCount: Integer;
@@ -154,9 +153,9 @@ type
     procedure DeleteBookmark(ID: integer);
     //
     procedure LoadFromXMLConfig(XMLConfig: TXMLConfig; const Path: string;
-        FromLPI, NewFile, IsPartOfProjectDefValue: boolean; FileVersion: integer); override;
+        Merge, IsExternalSessionFile: boolean; FileVersion: integer); override;
     procedure SaveToXMLConfig(XMLConfig: TXMLConfig; const Path: string;
-        SaveData, SaveSession, IsPartOfProjectDefValue: boolean; UsePathDelim: TPathDelimSwitch); override;
+        SaveData, SaveSession, IsExternalSessionFile: boolean; UsePathDelim: TPathDelimSwitch); override;
     procedure SetSourceText(const SourceText: string; Beautify: boolean = false); override;
   public
     property Bookmarks: TFileBookmarkList read FBookmarks write FBookmarks;
@@ -165,6 +164,8 @@ type
     property OpenEditorInfo[Index: Integer]: TUnitEditorInfo read GetOpenEditorInfo;
     property EditableProject: TEditableProject read GetEditableProject;
   end;
+
+  TArrayOfTEditableUnitInfo = array of TEditableUnitInfo;
 
   { TEditableProject }
 
@@ -176,8 +177,6 @@ type
     FBookmarks: TProjectBookmarkList;
     FHistoryLists: THistoryLists;
     FJumpHistory: TProjectJumpHistory;
-    FOverrideGlobalSqlDialect: Boolean;
-    FSQLDialect: TSQLDialect;
     function GetAllEditorsInfo(Index: Integer): TUnitEditorInfo;
     function GetFirstUnitWithEditorIndex: TEditableUnitInfo;
     function GetMainUnitInfo: TEditableUnitInfo;
@@ -194,7 +193,6 @@ type
     procedure LoadDefaultSession; override;
     procedure SaveSessionInfo(const Path: string); override;
     procedure SaveToSession; override;
-    procedure DoFlagsChanged; override;
   public
     constructor Create(ProjectDescription: TProjectDescriptor); override;
     destructor Destroy; override;
@@ -226,43 +224,12 @@ type
     property JumpHistory: TProjectJumpHistory read FJumpHistory write FJumpHistory;
     property MainUnitInfo: TEditableUnitInfo read GetMainUnitInfo;
     property Units[Index: integer]: TEditableUnitInfo read GetUnits;
-  published
-    property SQLDialect: TSQLDialect read FSQLDialect write FSQLDialect default sqlStandard;
-    property OverrideGlobalSqlDialect: Boolean read FOverrideGlobalSqlDialect write FOverrideGlobalSqlDialect default False;
   end;
 
-
-function GetEditableProject1: TEditableProject; inline;
-procedure SetEditableProject1(AProject: TEditableProject); inline;
-property EditableProject1: TEditableProject read GetEditableProject1 write SetEditableProject1;// the main project
+var
+  EditableProject1: TEditableProject absolute LazProject1;// the main project
 
 implementation
-
-type
-
-  { TProjectModifiedCallback }
-
-  TProjectModifiedCallback = class
-  public
-    procedure DoNewProject(ASender: TLazProject);
-  end;
-
-{ TProjectModifiedCallback }
-
-procedure TProjectModifiedCallback.DoNewProject(ASender: TLazProject);
-begin
-  LCL_SaveBackwardCompatibleLfm := (LazProject1 <> nil) and (pfCompatibilityMode in LazProject1.Flags);
-end;
-
-function GetEditableProject1: TEditableProject;
-begin
-  Result := TEditableProject(LazProject1);
-end;
-
-procedure SetEditableProject1(AProject: TEditableProject);
-begin
-  LazProject1 := AProject;
-end;
 
 { TUnitEditorInfo }
 
@@ -632,18 +599,6 @@ begin
   FEditorInfoList.ClearEachInfo;
 end;
 
-procedure TEditableUnitInfo.ClearModifieds;
-var
-  SE: TSourceEditorInterface;
-begin
-  inherited ClearModifieds;
-  if EditorInfoCount > 0 then begin
-    SE := EditorInfo[0].FEditorComponent;
-    if Assigned(SE) then
-      SE.Modified:=false;
-  end;
-end;
-
 function TEditableUnitInfo.GetEditorInfo(Index: Integer): TUnitEditorInfo;
 begin
   Result := FEditorInfoList[Index];
@@ -773,12 +728,12 @@ begin
   EditableProject1.DeleteBookmark(ID);
 end;
 
-procedure TEditableUnitInfo.LoadFromXMLConfig(XMLConfig: TXMLConfig; const Path: string; FromLPI,
-  NewFile, IsPartOfProjectDefValue: boolean; FileVersion: integer);
+procedure TEditableUnitInfo.LoadFromXMLConfig(XMLConfig: TXMLConfig;
+  const Path: string; Merge, IsExternalSessionFile: boolean; FileVersion: integer);
 var
   c, i: Integer;
 begin
-  inherited LoadFromXMLConfig(XMLConfig, Path, FromLPI, NewFile, IsPartOfProjectDefValue, FileVersion);
+  inherited LoadFromXMLConfig(XMLConfig, Path, Merge, IsExternalSessionFile, FileVersion);
   FComponentState := TWindowState(XMLConfig.GetValue(Path+'ComponentState/Value',0));
   FEditorInfoList.Clear;
   FEditorInfoList.NewEditorInfo;
@@ -790,14 +745,14 @@ begin
   FBookmarks.LoadFromXMLConfig(XMLConfig,Path+'Bookmarks/');
 end;
 
-procedure TEditableUnitInfo.SaveToXMLConfig(XMLConfig: TXMLConfig; const Path: string; SaveData, SaveSession, IsPartOfProjectDefValue: boolean;
+procedure TEditableUnitInfo.SaveToXMLConfig(XMLConfig: TXMLConfig; const Path: string; SaveData, SaveSession, IsExternalSessionFile: boolean;
   UsePathDelim: TPathDelimSwitch);
 var
   i, X, Y, L, T: Integer;
   BM: TFileBookmark;
   ProjBM: TProjectBookmark;
 begin
-  inherited SaveToXMLConfig(XMLConfig, Path, SaveData, SaveSession, IsPartOfProjectDefValue, UsePathDelim);
+  inherited SaveToXMLConfig(XMLConfig, Path, SaveData, SaveSession, IsExternalSessionFile, UsePathDelim);
   if SaveSession then
   begin
     XMLConfig.SetDeleteValue(Path+'ComponentState/Value',Ord(FComponentState),0);
@@ -852,8 +807,6 @@ end;
 
 destructor TEditableProject.Destroy;
 begin
-  if LazProject1 = Self then
-    LazProject1 := nil;
   FreeAndNil(FAllEditorsInfoMap);
   inherited Destroy;
   FreeAndNil(FAllEditorsInfoList);
@@ -867,9 +820,6 @@ begin
   FActiveWindowIndexAtStart := -1;
   FJumpHistory.Clear;
   FBookmarks.Clear;
-
-  FSQLDialect := sqlStandard;
-  FOverrideGlobalSqlDialect := False;
   inherited Clear;
 end;
 
@@ -1027,7 +977,7 @@ begin
   and Assigned(FJumpHistory) then begin
     if (pfSaveJumpHistory in Flags) then begin
       FJumpHistory.DeleteInvalidPositions;
-      FJumpHistory.SaveToXMLConfig(FXMLConfig,Path);
+      FJumpHistory.SaveToXMLConfig(FXMLConfig,Path,UseLegacyLists);
     end
     else
       FXMLConfig.DeletePath(Path+'JumpHistory');
@@ -1048,10 +998,10 @@ begin
   FXMLConfig.SetValue(Path+'Version/Value',ProjectInfoFileVersion);
 
   // Save the session build modes
-  BuildModes.SaveSessionOptsToXMLConfig(FXMLConfig, Path, True);
+  BuildModes.SaveSessionOptsToXMLConfig(FXMLConfig, Path, True, UseLegacyLists);
   BuildModes.SaveSessionData(Path);
   // save all units
-  SaveUnits(Path,false,true,false);
+  SaveUnits(Path,true,true);
 
   if Assigned(FDebuggerLink) then
     FDebuggerLink.SaveToSession(FXMLConfig, Path);
@@ -1061,19 +1011,13 @@ begin
   // save session info
   SaveSessionInfo(Path);
   // save the Run and Build parameter options
-  RunParameterOptions.Save(FXMLConfig,Path+'RunParams/',fCurStorePathDelim,rpsLPS);
+  RunParameterOptions.Save(FXMLConfig,Path+'RunParams/',fCurStorePathDelim,rpsLPS, UseLegacyLists);
   // save history lists
-  FHistoryLists.SaveToXMLConfig(FXMLConfig,Path+'HistoryLists/');
+  FHistoryLists.SaveToXMLConfig(FXMLConfig,Path+'HistoryLists/', UseLegacyLists);
 
   // Notifiy hooks
   if Assigned(OnSaveProjectInfo) then
     OnSaveProjectInfo(Self,FXMLConfig,FProjectWriteFlags+[pwfSkipProjectInfo]);
-end;
-
-procedure TEditableProject.DoFlagsChanged;
-begin
-  inherited DoFlagsChanged;
-  TProjectModifiedCallback(nil).DoNewProject(nil);
 end;
 
 function TEditableProject.AllEditorsInfoCount: Integer;
@@ -1204,10 +1148,5 @@ begin
   SessionModified := true;
 end;
 
-initialization
-  RegisterIDEOptionsGroup(GroupProject, TProjectIDEOptions);
-  RegisterIDEOptionsGroup(GroupCompiler, TProjectCompilerOptions);
-
-  GlobalLazProjectHooks.RegisterNewProjectHandler(@TProjectModifiedCallback(nil).DoNewProject);
 end.
 

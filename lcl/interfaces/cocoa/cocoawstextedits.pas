@@ -164,14 +164,10 @@ var
 begin
   if (field.respondsToSelector(ObjCSelector('cell'))) and Assigned(field.cell) then
   begin
-    if NOT field.isKindOfClass(NSSecureTextField) then begin
-      cell:= TCocoaVertAlignTextFieldCell.new;
-      cell.vertAlignment:= edit.Layout;
-      field.setCell( cell );
-      cell.release;
-    end else begin
-      cell:= field.cell;
-    end;
+    cell:= TCocoaVertAlignTextFieldCell.new;
+    cell.vertAlignment:= edit.Layout;
+    field.setCell( cell );
+    cell.release;
     cell.setWraps(false);
     cell.setScrollable(true);
   end;

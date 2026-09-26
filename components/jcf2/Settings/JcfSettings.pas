@@ -476,7 +476,11 @@ end;
 
 procedure TFormattingSettings.MakeConsistent;
 begin
-  //
+  { one consistency check so far
+    - if linebreaking is off, then "remove returns in expressions" must also be off }
+
+  if Returns.RebreakLines = rbOff then
+    Returns.RemoveExpressionReturns := False;
 end;
 
 finalization

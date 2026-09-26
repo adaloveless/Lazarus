@@ -407,9 +407,7 @@ type
   
 const
   pupAllAuto = [pupAsNeeded,pupOnRebuildingAll];
-
-  DefaultPackageFlags = [lpfCompatibilityMode];
-
+  
 type
   TPkgOutputDirWritable = (
     podwUnknown,
@@ -535,6 +533,7 @@ type
     function GetFiles(Index: integer): TPkgFile;
     function GetIDEOptions: TPackageIDEOptions;
     function GetSourceDirectories: TFileReferenceList;
+    function GetUseLegacyLists: Boolean;
     procedure SetAddToProjectUsesSection(const AValue: boolean);
     procedure SetAuthor(const AValue: string);
     procedure SetAutoIncrementVersionOnBuild(const AValue: boolean);
@@ -555,6 +554,7 @@ type
     procedure SetRegistered(const AValue: boolean);
     procedure SetPackageType(const AValue: TLazPackageType);
     procedure SetStorePathDelim(const AValue: TPathDelimSwitch);
+    procedure SetUseLegacyLists(const AUseLegacyLists: Boolean);
     procedure SetUserReadOnly(const AValue: boolean);
     procedure MacroListSubstitution({%H-}TheMacro: TTransferMacro;
       const MacroName: string; var s: string;
@@ -660,7 +660,6 @@ type
     procedure RemoveFileSilently(PkgFile: TPkgFile);
     procedure RemoveFile(PkgFile: TPkgFile); // move file to removed file list
     procedure UnremovePkgFile(PkgFile: TPkgFile); // move file back to file list
-    procedure UpdateEditor; virtual;
     // True if something changed. Param is ignored here, just to match with interface.
     function RemoveNonExistingFiles({%H-}RemoveFromUsesSection: boolean = true): boolean;
     function GetFileDialogInitialDir(const DefaultDirectory: string): string;
@@ -756,6 +755,7 @@ type
     property TopologicalLevel: integer read FTopologicalLevel write FTopologicalLevel;
     property Translated: string read FTranslated write FTranslated;
     property UsageOptions: TPkgAdditionalCompilerOptions read FUsageOptions;
+    property UseLegacyLists: Boolean read GetUseLegacyLists write SetUseLegacyLists;
     property UserReadOnly: boolean read FUserReadOnly write SetUserReadOnly;
     property UserIgnoreChangeStamp: integer read FUserIgnoreChangeStamp
                                             write FUserIgnoreChangeStamp;
@@ -767,7 +767,7 @@ type
 
 
 const
-  LazPkgXMLFileVersion = 6;
+  LazPkgXMLFileVersion = 5;
 
 var
   // All TPkgDependency are added to this AVL tree (sorted for names, not version!)
@@ -805,7 +805,7 @@ procedure LoadPkgDependencyList(XMLConfig: TXMLConfig; const ThePath: string;
   HoldPackages, SortList: boolean);
 procedure SavePkgDependencyList(XMLConfig: TXMLConfig; const ThePath: string;
   First: TPkgDependency; ListType: TPkgDependencyDirection;
-  UsePathDelim: TPathDelimSwitch);
+  UsePathDelim: TPathDelimSwitch;LegacyLists:Boolean);
 procedure ListPkgIDToDependencyList(ListOfTLazPackageID: TObjectList;
   var First: TPkgDependency; ListType: TPkgDependencyDirection; Owner: TObject;
   HoldPackages: boolean);
@@ -958,8 +958,9 @@ begin
   List.Free;
 end;
 
-procedure SavePkgDependencyList(XMLConfig: TXMLConfig; const ThePath: string; First: TPkgDependency; ListType: TPkgDependencyDirection;
-  UsePathDelim: TPathDelimSwitch);
+procedure SavePkgDependencyList(XMLConfig: TXMLConfig; const ThePath: string;
+  First: TPkgDependency; ListType: TPkgDependencyDirection;
+  UsePathDelim: TPathDelimSwitch; LegacyLists: Boolean);
 var
   i: Integer;
   Dependency: TPkgDependency;
@@ -968,11 +969,12 @@ begin
   i:=0;
   Dependency:=First;
   while Dependency<>nil do begin
-    SubPath:=ThePath+XMLConfig.GetListItemXPath('Item', i)+'/';
+    SubPath:=ThePath+XMLConfig.GetListItemXPath('Item', i, LegacyLists, True)+'/';
     Dependency.SaveToXMLConfig(XMLConfig,SubPath,UsePathDelim);
     Dependency:=Dependency.NextDependency[ListType];
     inc(i);
   end;
+  XMLConfig.SetListItemCount(ThePath, i, LegacyLists);
 end;
 
 procedure ListPkgIDToDependencyList(ListOfTLazPackageID: TObjectList;
@@ -2567,6 +2569,16 @@ begin
   FStorePathDelim:=AValue;
 end;
 
+procedure TLazPackage.SetUseLegacyLists(const AUseLegacyLists: Boolean);
+begin
+  if AUseLegacyLists=UseLegacyLists then exit;
+  if AUseLegacyLists then
+    Include(FFlags, lpfCompatibilityMode)
+  else
+    Exclude(FFlags, lpfCompatibilityMode);
+  Modified:=true;
+end;
+
 constructor TLazPackage.Create;
 var
   pod: TPkgOutputDir;
@@ -2592,7 +2604,6 @@ begin
   for pod in TPkgOutputDir do
     LastCompile[pod]:=TPkgLastCompileStats.Create;
   FUsageOptions.ParsedOpts.InvalidateParseOnChange:=true;
-  FFlags:=DefaultPackageFlags;
 end;
 
 constructor TLazPackage.CreateAndClear;
@@ -2849,12 +2860,13 @@ var
       Include(FFlags,lpfAutoIncrementVersionOnBuild)
     else
       Exclude(FFlags,lpfAutoIncrementVersionOnBuild);
-    if FileVersion<6 then begin
-      // force CompatibilityMode flag for legacy projects
+    if FileVersion<=4 then begin
+      // set CompatibilityMode flag for legacy projects (this flag was added in FileVersion=5 that changed
+      // item format so that LPK cannot be opened in legacy Lazarus unless lpfCompatibilityMode is set)
       Include(FFlags,lpfCompatibilityMode);
     end else
     begin
-      if XMLConfig.GetValue(ThePath+'CompatibilityMode/Value',True) then
+      if XMLConfig.GetValue(ThePath+'CompatibilityMode/Value',false) then
         Include(FFlags,lpfCompatibilityMode)
       else
         Exclude(FFlags,lpfCompatibilityMode);
@@ -2949,9 +2961,10 @@ var
     PkgFile: TPkgFile;
     SubPath: string;
   begin
+    XMLConfig.SetListItemCount(ThePath, List.Count, UseLegacyLists);
     for i:=0 to List.Count-1 do begin
       PkgFile:=TPkgFile(List[i]);
-      SubPath := ThePath+XMLConfig.GetListItemXPath('Item', i)+'/';
+      SubPath := ThePath+XMLConfig.GetListItemXPath('Item', i, UseLegacyLists, True)+'/';
       PkgFile.SaveToXMLConfig(XMLConfig,SubPath,UsePathDelim);
     end;
   end;
@@ -2961,13 +2974,12 @@ var
     XMLConfig.SetDeleteValue(ThePath+'AutoIncrementVersionOnBuild/Value',
       AutoIncrementVersionOnBuild,true);
     XMLConfig.SetDeleteValue(ThePath+'CompatibilityMode/Value',
-      lpfCompatibilityMode in Flags,true);
+      UseLegacyLists,false);
   end;
 
 begin
   UsePathDelim:=StorePathDelim;
   XMLConfig.SetValue(Path+'Version',LazPkgXMLFileVersion);
-  SaveFlags(Path);
   XMLConfig.SetDeleteValue(Path+'PathDelim/Value',PathDelimSwitchToDelim[UsePathDelim],'/');
   XMLConfig.SetDeleteValue(Path+'Name/Value',Name,'');
   XMLConfig.SetDeleteValue(Path+'Type/Value',LazPackageTypeIdents[FPackageType],
@@ -2984,6 +2996,7 @@ begin
   XMLConfig.SetDeleteValue(Path+'License/Value',FLicense,'');
   PkgVersionSaveToXMLConfig(FVersion,XMLConfig,Path+'Version/');
   SaveFiles(Path+'Files/',FFiles);
+  SaveFlags(Path);
   XMLConfig.SetDeleteValue(Path+'IconFile/Value',f(FIconFile),'');
   XMLConfig.SetDeleteValue(Path+'OutputStateFile/Value',f(OutputStateFile),'');
   XMLConfig.SetDeleteValue(Path+'LazDoc/Paths',f(FFPDocPaths),'');
@@ -2994,7 +3007,7 @@ begin
   XMLConfig.SetDeleteValue(Path+'i18n/EnableI18NForLFM/Value', EnableI18NForLFM, false);
 
   SavePkgDependencyList(XMLConfig,Path+'RequiredPkgs/',
-                        FFirstRequiredDependency,pddRequires,UsePathDelim);
+                        FFirstRequiredDependency,pddRequires,UsePathDelim,UseLegacyLists);
   FUsageOptions.SaveToXMLConfig(XMLConfig,Path+'UsageOptions/',UsePathDelim);
   fPublishOptions.SaveToXMLConfig(XMLConfig,Path+'PublishOptions/',UsePathDelim);
   SaveStringList(XMLConfig,FProvides,Path+'Provides/');
@@ -3465,11 +3478,6 @@ begin
   PkgFile.Removed:=false;
 end;
 
-procedure TLazPackage.UpdateEditor;
-begin
-  ;
-end;
-
 function TLazPackage.RemoveNonExistingFiles(RemoveFromUsesSection: boolean): boolean;
 // Param is ignored here, it is just to match with interface.
 var
@@ -3916,6 +3924,11 @@ end;
 function TLazPackage.GetUnitPath(RelativeToBaseDir: boolean): string;
 begin
   Result:=CompilerOptions.GetUnitPath(RelativeToBaseDir);
+end;
+
+function TLazPackage.GetUseLegacyLists: Boolean;
+begin
+  Result:=lpfCompatibilityMode in Flags;
 end;
 
 function TLazPackage.GetIncludePath(RelativeToBaseDir: boolean): string;

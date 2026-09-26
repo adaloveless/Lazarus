@@ -15,9 +15,9 @@ uses
   fpwebNewHTMLInputUnit, fpwebNewHTMLListUnit, fpWebNewHtmlTableUnit, 
   fpWebNewHtmlTagPreUnit, fpwebNewHtmlTagTDUnit, fpwebNewHtmlTagTRUnit, 
   fpWebSelectOptionsUnit, fpWebSelectTagUnit, fpWebStrConsts, fpWebToolsUnit, 
-  frmnewhttpapp, frmrpcmoduleoptions, HTMLDefs, htmlelements, htmlwriter, 
-  HTTPDefs, iniwebsession, lazweb, sqldbwebdata, webjsonrpc, WebLazIDEIntf, 
-  webutil, LazarusPackageIntf;
+  frmnewhttpapp, HTMLDefs, htmlelements, htmlwriter, HTTPDefs, lazweb, 
+  sqldbwebdata, webjsonrpc, WebLazIDEIntf, webutil, frmrpcmoduleoptions, 
+  iniwebsession, LazarusPackageIntf;
 
 implementation
 
@@ -30,3 +30,4 @@ end;
 initialization
   RegisterPackage('weblaz', @Register);
 end.
+

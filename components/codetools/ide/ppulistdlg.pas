@@ -98,7 +98,6 @@ type
 
   TPPUListDialog = class(TForm)
     ButtonPanel1: TButtonPanel;
-    FilterEdit: TEdit;
     LinkedFilesTreeView: TTreeView;
     PageControl1: TPageControl;
     UnitsTabSheet: TTabSheet;
@@ -119,14 +118,13 @@ type
     UnitGroupBox: TGroupBox;
     UnitPageControl: TPageControl;
     UnitsStringGrid: TStringGrid;
-    procedure FilterEditChange(Sender: TObject);
     procedure FormClose(Sender: TObject; var {%H-}CloseAction: TCloseAction);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure LinkedFilesTreeViewDblClick(Sender: TObject);
-    procedure UnitsStringGridHeaderClick(Sender: TObject; IsColumn: Boolean;
-      Index: Integer);
+    procedure UnitsStringGridMouseDown(Sender: TObject; {%H-}Button: TMouseButton;
+      Shift: TShiftState; X, Y: Integer);
     procedure UnitsStringGridSelectCell(Sender: TObject; {%H-}aCol, aRow: Integer;
       var {%H-}CanSelect: Boolean);
     procedure UnitStringGridMouseDown(Sender: TObject;
@@ -155,11 +153,6 @@ type
     procedure UpdateAll;
 
     // units grid
-    function GetUnitsFilter: string;
-    function GridColumnToSortCategory(aCol: integer;
-      out Category: TPPUListSort): boolean;
-    procedure SortUnitsGridFor(Category: TPPUListSort; ToggleDirection: boolean);
-    procedure UpdateUnitsGridHeader;
     procedure UpdateUnitsGrid;
     function CompareUnits({%H-}Tree: TAvlTree; Data1, Data2: Pointer): integer;
     procedure JumpToUnit(TheUnitName: string);
@@ -277,10 +270,16 @@ begin
 
   UnitsTabSheet.Caption:=crsUnits;
 
-  FilterEdit.TextHint:=crsFilter;
-
   // UnitsStringGrid header
-  UpdateUnitsGridHeader;
+  with UnitsStringGrid do
+  begin
+    Columns[0].Title.Caption:=crsUnit;
+    Columns[1].Title.Caption:=crsSizeOfPpuFile;
+    Columns[2].Title.Caption:=crsSizeOfOFile;
+    Columns[3].Title.Caption:=crsUses;
+    Columns[4].Title.Caption:=crsUsedBy;
+    Columns[5].Title.Caption:=crsPackage;
+  end;
 
   InfoTabSheet.Caption:=crsCOGeneral;
 
@@ -341,17 +340,42 @@ begin
       JumpToUnit(Node.Text);
 end;
 
-procedure TPPUListDialog.UnitsStringGridHeaderClick(Sender: TObject;
-  IsColumn: Boolean; Index: Integer);
+procedure TPPUListDialog.UnitsStringGridMouseDown(Sender: TObject;
+  Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var
-  Category: TPPUListSort;
+  Col: Longint;
+  Row: Longint;
+  s: TPPUListSort;
+  i: Integer;
+  l: Integer;
 begin
   if FItems=nil then exit;
-  if not IsColumn then exit;
-  if not GridColumnToSortCategory(Index,Category) then exit;
-  // single click on a column header => sort for this column,
-  // clicking the same column again toggles ascending/descending
-  SortUnitsGridFor(Category,true);
+  UnitsStringGrid.MouseToCell(X,Y,Col,Row);
+  if (Row<UnitsStringGrid.FixedRows) and (Shift=[ssLeft,ssDouble]) then begin
+    // double left click => sort
+    case Col of
+    0: s:=plsName;
+    1: s:=plsPPUSize;
+    2: s:=plsOSize;
+    3: s:=plsUsesCount;
+    4: s:=plsUsedByCount;
+    5: s:=plsPackage;
+    else exit;
+    end;
+    l:=low(FColumnSortPrior);
+    if FColumnSortPrior[l].Category=s then begin
+      // reverse direction
+      FColumnSortPrior[l].Reverse:=not FColumnSortPrior[l].Reverse;
+    end else begin
+      // new primary sort
+      i:=l;
+      while (i<=High(FColumnSortPrior)) and (FColumnSortPrior[i].Category<>s) do inc(i);
+      System.Move(FColumnSortPrior[l],FColumnSortPrior[succ(l)],(i-l)*SizeOf(FColumnSortPrior[l]));
+      FColumnSortPrior[l].Category:=s;
+      FColumnSortPrior[l].Reverse:=false;
+    end;
+    UpdateUnitsGrid;
+  end;
 end;
 
 procedure TPPUListDialog.UnitsStringGridSelectCell(Sender: TObject; aCol,
@@ -381,13 +405,6 @@ begin
       if Col=0 then
         JumpToUnit(Grid.Cells[0,Row]);
   end;
-end;
-
-procedure TPPUListDialog.FilterEditChange(Sender: TObject);
-begin
-  if FItems=nil then exit;
-  UpdateUnitsGrid;
-  UpdateUnitsInfo;
 end;
 
 procedure TPPUListDialog.HelpButtonClick(Sender: TObject);
@@ -545,93 +562,6 @@ begin
   IdleConnected:=true;
 end;
 
-function TPPUListDialog.GetUnitsFilter: string;
-begin
-  Result:=UTF8LowerCase(Trim(FilterEdit.Text));
-end;
-
-function TPPUListDialog.GridColumnToSortCategory(aCol: integer; out
-  Category: TPPUListSort): boolean;
-begin
-  Result:=true;
-  case aCol of
-  0: Category:=plsName;
-  1: Category:=plsPPUSize;
-  2: Category:=plsOSize;
-  3: Category:=plsUsesCount;
-  4: Category:=plsUsedByCount;
-  5: Category:=plsPackage;
-  else
-    Category:=plsName;
-    Result:=false;
-  end;
-end;
-
-procedure TPPUListDialog.SortUnitsGridFor(Category: TPPUListSort;
-  ToggleDirection: boolean);
-var
-  l: Integer;
-  i: Integer;
-begin
-  l:=low(FColumnSortPrior);
-  if FColumnSortPrior[l].Category=Category then begin
-    // already the primary category => reverse direction
-    if ToggleDirection then
-      FColumnSortPrior[l].Reverse:=not FColumnSortPrior[l].Reverse;
-  end else begin
-    // new primary sort, the other categories keep their relative order
-    i:=l;
-    while (i<=High(FColumnSortPrior)) and (FColumnSortPrior[i].Category<>Category) do inc(i);
-    if i>High(FColumnSortPrior) then exit;
-    System.Move(FColumnSortPrior[l],FColumnSortPrior[succ(l)],(i-l)*SizeOf(FColumnSortPrior[l]));
-    FColumnSortPrior[l].Category:=Category;
-    FColumnSortPrior[l].Reverse:=false;
-  end;
-  UpdateUnitsGridHeader;
-  UpdateUnitsGrid;
-  UpdateUnitsInfo;
-end;
-
-procedure TPPUListDialog.UpdateUnitsGridHeader;
-{ Show the column captions and mark the primary sort column with an arrow }
-const
-  UpArrow = #$E2#$96#$B2; // Unicode black up-pointing triangle
-  DownArrow = #$E2#$96#$BC; // Unicode black down-pointing triangle
-
-  function SortsAscending(Category: TPPUListSort; Reverse: boolean): boolean;
-  begin
-    // names are sorted ascending by default, numbers descending
-    if Category in [plsName,plsPackage] then
-      Result:=not Reverse
-    else
-      Result:=Reverse;
-  end;
-
-var
-  Captions: array[0..5] of string;
-  i: Integer;
-  Category: TPPUListSort;
-  s: String;
-begin
-  Captions[0]:=crsUnit;
-  Captions[1]:=crsSizeOfPpuFile;
-  Captions[2]:=crsSizeOfOFile;
-  Captions[3]:=crsUses;
-  Captions[4]:=crsUsedBy;
-  Captions[5]:=crsPackage;
-  for i:=low(Captions) to High(Captions) do begin
-    s:=Captions[i];
-    if GridColumnToSortCategory(i,Category)
-    and (FColumnSortPrior[low(FColumnSortPrior)].Category=Category) then begin
-      if SortsAscending(Category,FColumnSortPrior[low(FColumnSortPrior)].Reverse) then
-        s:=s+' '+UpArrow
-      else
-        s:=s+' '+DownArrow;
-    end;
-    UnitsStringGrid.Columns[i].Title.Caption:=s;
-  end;
-end;
-
 procedure TPPUListDialog.UpdateUnitsGrid;
   //
   function BytesToStr(aBytes: double): string;
@@ -659,14 +589,6 @@ procedure TPPUListDialog.UpdateUnitsGrid;
     Result := FloatToStrF(100.0*d,ffFixed,3,2)+'%';
   end;
   //
-  function Percentage(TheBytes, AllBytes: int64): double; inline;
-  begin
-    if AllBytes>0 then
-      Result:=double(TheBytes)/AllBytes
-    else
-      Result:=0.0;
-  end;
-  //
   function SizeToStr(TheBytes: int64; ThePercent: double): string; inline;
   begin
     Result:=BytesToStr(TheBytes)+' / '+DoubleAsPercentage(ThePercent);
@@ -676,45 +598,33 @@ var
   Node: TAvlTreeNode;
   Item: TPPUDlgListItem;
   Row: Integer;
-  s, Filter: String;
+  s: String;
   TotalPPUBytes, TotalOBytes: int64;
-  ShownPPUBytes, ShownOBytes: int64;
   SortedItems: TAvlTree;
 begin
   UnitsStringGrid.BeginUpdate;
 
-  Filter:=GetUnitsFilter;
   SortedItems:=TAvlTree.CreateObjectCompare(@CompareUnits);
   try
     Node:=FItems.FindLowest;
     TotalPPUBytes:=0;
     TotalOBytes:=0;
-    ShownPPUBytes:=0;
-    ShownOBytes:=0;
     while Node<>nil do begin
       Item:=TPPUDlgListItem(Node.Data);
       if Item.PPUFileSize>0 then
         inc(TotalPPUBytes,Item.PPUFileSize);
       if Item.OFileSize>0 then
         inc(TotalOBytes,Item.OFileSize);
-      if (Filter='')
-      or (Pos(Filter,UTF8LowerCase(Item.TheUnitName))>0)
-      or (Pos(Filter,UTF8LowerCase(Item.PackageName))>0) then begin
-        if Item.PPUFileSize>0 then
-          inc(ShownPPUBytes,Item.PPUFileSize);
-        if Item.OFileSize>0 then
-          inc(ShownOBytes,Item.OFileSize);
-        SortedItems.Add(Item);
-      end;
+      SortedItems.Add(Item);
       Node:=FItems.FindSuccessor(Node);
     end;
 
     UnitsStringGrid.RowCount:=UnitsStringGrid.FixedRows+SortedItems.Count;
 
-    // total of the shown units
+    // total
     UnitsStringGrid.Cells[0,1]:=crsTotal;
-    UnitsStringGrid.Cells[1,1]:=SizeToStr(ShownPPUBytes,Percentage(ShownPPUBytes,TotalPPUBytes));
-    UnitsStringGrid.Cells[2,1]:=SizeToStr(ShownOBytes,Percentage(ShownOBytes,TotalOBytes));
+    UnitsStringGrid.Cells[1,1]:=SizeToStr(TotalPPUBytes,1.0);
+    UnitsStringGrid.Cells[2,1]:=SizeToStr(TotalOBytes,1.0);
     UnitsStringGrid.Cells[3,1]:=IntToStr(SortedItems.Count);
     UnitsStringGrid.Cells[4,1]:='';
     UnitsStringGrid.Cells[5,1]:='';
@@ -733,7 +643,7 @@ begin
       else if Item.PPUFile=PPUFileNotFound then
         s:=crsMissing
       else
-        s:=SizeToStr(Item.PPUFileSize,Percentage(Item.PPUFileSize,TotalPPUBytes));
+        s:=SizeToStr(Item.PPUFileSize,double(Item.PPUFileSize)/TotalPPUBytes);
       UnitsStringGrid.Cells[1,Row]:=s;
 
       // .o size
@@ -743,7 +653,7 @@ begin
       else if Item.OFile=PPUFileNotFound then
         s:=crsMissing
       else
-        s:=SizeToStr(Item.OFileSize,Percentage(Item.OFileSize,TotalOBytes));
+        s:=SizeToStr(Item.OFileSize,double(Item.OFileSize)/TotalOBytes);
       UnitsStringGrid.Cells[2,Row]:=s;
 
       // uses
@@ -836,29 +746,17 @@ begin
 end;
 
 procedure TPPUListDialog.JumpToUnit(TheUnitName: string);
-
-  function SelectInGrid: boolean;
-  var
-    i: Integer;
-  begin
-    with UnitsStringGrid do
-      for i:=FixedRows to RowCount-1 do
-        if CompareText(Cells[0,i],TheUnitName)=0 then begin
-          PageControl1.PageIndex:=0;
-          Row:=i;
-          Col:=0;
-          exit(true);
-        end;
-    Result:=false;
-  end;
-
+var
+  i: Integer;
 begin
-  if SelectInGrid then exit;
-  if GetUnitsFilter='' then exit;
-  // the unit is hidden by the filter -> clear the filter and try again
-  FilterEdit.Text:='';
-  UpdateUnitsGrid;
-  SelectInGrid;
+  with UnitsStringGrid do
+    for i:=FixedRows to RowCount-1 do
+      if CompareText(Cells[0,i],TheUnitName)=0 then begin
+        PageControl1.PageIndex:=0;
+        Row:=i;
+        Col:=0;
+        exit;
+      end;
 end;
 
 procedure TPPUListDialog.UpdateUnitsInfo;

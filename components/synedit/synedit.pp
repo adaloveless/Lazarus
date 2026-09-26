@@ -125,7 +125,7 @@ uses
   Types, SysUtils, Classes,
   // LCL
   LCLIntf, LCLType, LMessages, LResources, Messages, Controls, Graphics,
-  Forms, StdCtrls, ExtCtrls, Menus, Clipbrd, StdActns, LCLClasses,
+  Forms, StdCtrls, ExtCtrls, Menus, Clipbrd, StdActns,
   // LazUtils
   LazUtilities, LazMethodList, LazLoggerBase, LazTracer, LazUTF8,
   // SynEdit
@@ -153,7 +153,7 @@ const
   SynDefaultFontHeight:  Integer      = 13;
   SynDefaultFontSize:    Integer      = 14;
   SynDefaultFontPitch   = fpFixed;
-  SynDefaultFontQuality = fqDefault;
+  SynDefaultFontQuality = fqNonAntialiased;
 
   // maximum scroll range
   MAX_SCROLL = 32767;
@@ -229,7 +229,6 @@ type
   TSynStateFlag = (sfCaretChanged, sfHideCursor,
     sfEnsureCursorPos, sfEnsureCursorPosAtResize, sfEnsureCursorPosForEditRight, sfEnsureCursorPosForEditLeft,
     sfExplicitTopLine, sfExplicitLeftChar,  // when doing EnsureCursorPos keep top/Left, if they where set explicitly after the caret (only applies before handle creation)
-    sfExplicitTopLineForFoldState,
     sfCheckScrollRangeVert, sfCheckScrollRangeHoriz,  // Call TopView:=TopView / Ensure they are in MAX-scrollRange
     sfRecalculateScrollOnEdit,
     sfPreventScrollAfterSelect,
@@ -1831,35 +1830,24 @@ begin
 end;
 
 procedure InitSynDefaultFont;
-  procedure CheckFont(f: String);
-  begin
-    if SynDefaultFontName <> '' then exit;
-    if Screen.Fonts.IndexOf(f) >= 0 then
-      SynDefaultFontName  := f;
-  end;
 begin
   if SynDefaultFontName <> '' then exit;
-  {$IFDEF WINDOWS}
-    CheckFont('Consolas');
-    CheckFont('Cascadia Mono');
-    CheckFont('Courier New');
-    CheckFont('DejaVu Sans Mono');
-    CheckFont('Lucida Console');
+  Screen.Fonts;
+  {$UNDEF SynDefaultFont}
+  {$IFDEF LCLgtk}
+    SynDefaultFontName   := '-adobe-courier-medium-r-normal-*-*-140-*-*-*-*-iso10646-1';
+    SynDefaultFontHeight := 14;
+    {$DEFINE SynDefaultFont}
   {$ENDIF}
   {$IFDEF LCLcarbon}
-    // Note: carbon is case sensitive
-    CheckFont('SF Mono');
-    CheckFont('Menlo');
-    CheckFont('Monaco'); // Note: carbon is case sensitive
-    CheckFont('DejaVu Sans Mono');
+    SynDefaultFontName   := 'Monaco'; // Note: carbon is case sensitive
+    SynDefaultFontHeight := 12;
+    {$DEFINE SynDefaultFont}
   {$ENDIF}
   {$IFDEF LCLcocoa}
-    // Note: carbon is case sensitive
-    CheckFont('SF Mono');
-    CheckFont('Menlo');
-    CheckFont('Monaco');
-    CheckFont('Andale Mono');
-    CheckFont('DejaVu Sans Mono');
+    SynDefaultFontName   := 'Andale Mono'; // Note: cocoa is case sensitive
+    SynDefaultFontHeight := 10;
+    {$DEFINE SynDefaultFont}
   {$ENDIF}
   {$IFDEF MSWINDOWS}
     SynDefaultFontName   := 'Consolas';
@@ -2367,7 +2355,6 @@ end;
 
 function TCustomSynEdit.GetKeyStrokesStored: Boolean;
 begin
-  if LCL_SaveBackwardCompatibleLfm then exit(True);
   Result := FKeyStrokes.IsModified or FKeyStrokes.ForceSaveToLfm;
 end;
 
@@ -6233,8 +6220,6 @@ begin
 
   if WaitingForInitialSize then
     Include(fStateFlags, sfExplicitTopLine);
-  if FPendingFoldState <> '' then
-    Include(fStateFlags, sfExplicitTopLineForFoldState);
 
   (* ToDo: FFoldedLinesView.TopLine := AValue;
     Required, if "TopView := TopView" or "TopLine := TopLine" is called,
@@ -6580,8 +6565,6 @@ begin
 end;
 
 procedure TCustomSynEdit.SetFoldState(const AValue: String);
-var
-  tl: integer;
 begin
   if assigned(fHighlighter) then begin
     fHighlighter.CurrentLines := FTheLinesView;
@@ -6594,16 +6577,10 @@ begin
     FPendingFoldState := AValue;
     exit;
   end;
-  if sfExplicitTopLineForFoldState in fStateFlags then
-    tl := TopLine;
   FFoldedLinesView.Lock;
   FFoldedLinesView.ApplyFoldDescription(0, 0, -1, -1, PChar(AValue), length(AValue), True);
   FFoldedLinesView.UnLock;
   FPendingFoldState := '';
-  if sfExplicitTopLineForFoldState in fStateFlags then begin
-    TopLine := tl;
-    Exclude(fStateFlags, sfExplicitTopLineForFoldState);
-  end;
 end;
 
 procedure TCustomSynEdit.SetHiddenCodeLineColor(AValue: TLazEditHighlighterAttributesModifier);

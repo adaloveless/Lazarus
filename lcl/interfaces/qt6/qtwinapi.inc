@@ -247,7 +247,15 @@ begin
       QRegion_xored(RSrc1, RDest, RSrc2);
   end;
 
-  Result := TQtRegion(Dest).GetRegionType;
+  if QRegion_isEmpty(RDest) then
+    Result := NULLREGION
+  else
+  begin
+    if TQtRegion(Dest).IsPolyRegion or (TQtRegion(Dest).numRects > 0) then
+      Result := COMPLEXREGION
+    else
+      Result := SIMPLEREGION;
+  end;
 end;
 
 {------------------------------------------------------------------------------
@@ -2175,25 +2183,11 @@ var
 
   procedure DoDrawCharByChar(const AClipped: Boolean);
   var
-    CurX, CharLen, ClusterBytes, ClusterDx, NextLen: Integer;
+    CurX, CharLen: Integer;
     CurCount: LongInt;
     CurDx: PInteger;
     CurStr: PChar;
     W: WideString;
-
-    function IsRegionalIndicator(P: PChar; Len: Integer): Boolean;
-    var
-      cp, cpLen: Integer;
-    begin
-      if Len <> 4 then
-        Result := False
-      else
-      begin
-        cp := UTF8CodepointToUnicode(P, cpLen);
-        Result := LazCpIsRegionalIndicator(cp);
-      end;
-    end;
-
   begin
     CurDx := Dx;
     CurStr := Str;
@@ -2202,28 +2196,16 @@ var
     while CurCount > 0 do
     begin
       CharLen := UTF8CodepointSize(CurStr);
-      ClusterBytes := CharLen;
-      ClusterDx := CurDx^;
-      if IsRegionalIndicator(CurStr, CharLen) then
-        while ClusterBytes < CurCount do
-        begin
-          NextLen := UTF8CodepointSize(CurStr + ClusterBytes);
-          if not IsRegionalIndicator(CurStr + ClusterBytes, NextLen) then
-            Break;
-          inc(CurDx);
-          inc(ClusterDx, CurDx^);
-          inc(ClusterBytes, NextLen);
-        end;
-      W := {%H-}Copy(CurStr, 1, ClusterBytes);
+      W := {%H-}Copy(CurStr, 1, CharLen);
       if AClipped then
         QtDC.drawText(CurX, Y, Rect^.Right - Rect^.Left, Rect^.Bottom - Rect^.Top,
           QtTextDontClip, @W)
       else
         QtDC.drawText(CurX, Y, @W);
-      inc(CurX, ClusterDx);
+      inc(CurX, CurDx^);
       inc(CurDx);
-      inc(CurStr, ClusterBytes);
-      dec(CurCount, ClusterBytes);
+      inc(CurStr, CharLen);
+      dec(CurCount, CharLen);
     end;
   end;
 
@@ -2362,9 +2344,8 @@ begin
     if HasClipping then
       QPainter_clipRegion(QtDC.Widget, OldRgn.FHandle);
 
-    if TQtRegion(RegionHnd).GetRegionType <> ERROR then
+    if SelectClipRgn(DC, RegionHnd) <> ERROR then
     begin
-      QtDC.setClipRegion(TQtRegion(RegionHnd).FHandle);
       if TQtRegion(RegionHnd).IsPolyRegion then
       begin
         APath := QPainterPath_create();
@@ -2382,7 +2363,7 @@ begin
         QtDC.fillRect(@R, TQtBrush(hbr).FHandle);
       end;
       if HasClipping then
-        QtDC.setClipRegion(OldRgn.FHandle);
+        SelectClipRgn(DC, HRGN(OldRgn));
       Result := True;
     end;
   finally
@@ -3466,7 +3447,13 @@ begin
     if not (Result in [ERROR, NULLREGION]) and (lpRect <> nil) then
     begin
       R := TQtRegion(RGN).getBoundingRect;
-      lpRect^ := R;
+      with lpRect^ do
+      begin
+        Left   := R.Left;
+        Top    := R.Top;
+        Right  := R.Left + R.Right;
+        Bottom := R.Top + R.Bottom;
+      end;
     end;
   end;
 end;
@@ -5839,7 +5826,6 @@ function TQtWidgetSet.SelectClipRGN(DC: hDC; RGN: HRGN): Longint;
 var
   QtDC: TQtDeviceContext;
   EmptyRegion: QRegionH;
-  TransRegion: QRegionH;
   P: TPoint;
 begin
   Result := ERROR;
@@ -5852,13 +5838,8 @@ begin
       // RGN is in Device coordinates. Qt expects logical coordinates
       // so we need to convert RGN coords.
       GetWindowOrgEx(DC, @P);
-      TransRegion := QRegion_create;
-      try
-        QRegion_translated(TQtRegion(Rgn).FHandle, TransRegion, P.X, P.Y);
-        QtDC.setClipRegion(TransRegion);
-      finally
-        QRegion_destroy(TransRegion);
-      end;
+      TQtRegion(Rgn).translate(P.X, P.Y);
+      QtDC.setClipRegion(TQtRegion(Rgn).FHandle);
     end else
     begin
       EmptyRegion := QRegion_create;

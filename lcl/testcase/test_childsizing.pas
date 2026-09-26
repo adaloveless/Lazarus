@@ -347,7 +347,6 @@ begin
   inherited TearDown;
   FreeAndNil(FContainer);
   FreeAndNil(FTestForm);
-  Application.ProcessMessages; // when running real WS
 end;
 
 procedure TTestChildSizing.TestAnchorAlign;

@@ -103,13 +103,10 @@ begin
     lcPrev := pt.PriorTokenWithExclusions(NotSolidTokens);
     if not (lcPrev.TokenType in [ttSemiColon, ttBegin]) then
     begin
-      exit(True);
+      Result := True;
+      exit;
     end else
-    begin
-      if pt.PriorSolidTokenType = ttMultiWordOperator then
-        exit(True);
       exit(FormattingSettings.Spaces.SpaceBeforeSemicolon=eNever);
-    end;
   end;
 
   { hat (dereference) in expression is unary postfix operator - so no space before it }

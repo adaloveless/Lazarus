@@ -2659,7 +2659,7 @@ var
   NodeData: TPENodeData;
   Item: TObject;
   i, j: Integer;
-  SelFileCount, SelDepCount, SelUnitCount, SelDirCount, SelHasLFMCount, SelVirtualCount: Integer;
+  SelFileCount, SelDepCount, SelUnitCount, SelDirCount, SelHasLFMCount: Integer;
   FileCount, HasRegisterProcCount, AddToUsesPkgSectionCount: integer;
   SelHasRegisterProc, SelAddToUsesPkgSection, SelDisableI18NForLFM: TMultiBool;
   aVisible, OnlyFilesWithUnitsSelected, SingleSelectedRemoved: Boolean;
@@ -2681,7 +2681,6 @@ begin
   SelDisableI18NForLFM:=mubNone;
   SelUnitCount:=0;
   SelHasLFMCount:=0;
-  SelVirtualCount:=0;
   SelDirCount:=0;
   for i:=0 to ItemsTreeView.SelectionCount-1 do begin
     TVNode:=ItemsTreeView.Selections[i];
@@ -2705,9 +2704,7 @@ begin
               inc(SelHasLFMCount);
               MergeMultiBool(SelDisableI18NForLFM,CurFile.DisableI18NForLFM);
             end;
-          end
-          else   // pftVirtualUnit
-            Inc(SelVirtualCount);
+          end;
           // fetch all registered plugins
           for j:=0 to CurFile.ComponentCount-1 do begin
             CurComponent:=CurFile.Components[j];
@@ -2754,10 +2751,6 @@ begin
     // Min/Max version of dependency (only single selection)
     FPropGui.ControlVisible := SingleSelectedDep<>nil;
     FPropGui.SetMinMaxVisibility;
-
-    // Virtual unit
-    FPropGui.ControlVisible := OnlyFilesWithUnitsSelected and (SelVirtualCount>0);
-    FPropGui.SetVirtualUnit;
 
     // disable i18n for lfm
     FPropGui.ControlVisible := OnlyFilesWithUnitsSelected and (SelHasLFMCount>0)
@@ -3120,14 +3113,14 @@ end;
 
 procedure TPackageEditorForm.FilterEditAfterFilter(Sender: TObject);
 var
-  Pkg: TIDEPackage;
+  LPackage: TIDEPackage;
 begin
-  if (SourceEditorManagerIntf=nil) or (SourceEditorManagerIntf.ActiveEditor=nil)
-  or (PackageEditingInterface=nil) then
-    exit;
-  PackageEditingInterface.GetPackageOfSourceEditor(Pkg, SourceEditorManagerIntf.ActiveEditor);
-  if (Pkg is TEditablePackage) and (TEditablePackage(Pkg).Editor = Self) then
-    SelectFileNode(SourceEditorManagerIntf.ActiveEditor.FileName);
+  if Assigned(SourceEditorManagerIntf) and Assigned(PackageEditingInterface) and Assigned(SourceEditorManagerIntf.ActiveEditor) then
+  begin
+    PackageEditingInterface.GetPackageOfSourceEditor(LPackage, SourceEditorManagerIntf.ActiveEditor);
+    if (LPackage is TEditablePackage) and (TEditablePackage(LPackage).Editor = Self) then
+      SelectFileNode(SourceEditorManagerIntf.ActiveEditor.FileName);
+  end;
 end;
 
 function TPackageEditorForm.FirstRequiredDependency: TPkgDependency;
@@ -3165,10 +3158,10 @@ begin
       and (LazPackage.PackageType=lptDesignTime) then
   begin
     MsgResult:=IDEQuestionDialog(dlgMsgWinColorUrgentWarning,
-        Format(lisPackageIsDesigntimeOnlySoItShouldOnlyBeCompiledInt,
-          [LazPackage.Name, #13]),
-          mtWarning, [mrYes, lisCompileWithProjectSettings,
-                      mrYesToAll, lisCompileAndDoNotAskAgain, mrCancel]);
+        Format(lisPackageIsDesigntimeOnlySoItShouldOnlyBeCompiledInt, [
+          LazPackage.Name, #13]),
+        mtWarning, [mrYes, lisCompileWithProjectSettings,
+        mrYesToAll, lisCompileAndDoNotAskAgain, mrCancel]);
     case MsgResult of
     mrYes: ;
     mrYesToAll:

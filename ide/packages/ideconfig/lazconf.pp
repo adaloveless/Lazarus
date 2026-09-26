@@ -84,7 +84,7 @@ procedure GetDefaultTestBuildDirs(List: TStrings);
 // create a pascal file, which can be used to test the compiler
 function CreateCompilerTestPascalFilename: string;
 
-function FindDefaultExecutablePath(const Executable: string; SearchInCurDir: boolean = false): string;
+function FindDefaultExecutablePath(const Executable: string): string;
 function FindDefaultMakePath: string; // full path of "make"
 procedure GetDefaultMakeFilenames(List: TStrings); // list of standard paths of "make" on various distributions
 function GetDefaultFPCSrcDirectories: TStringList;
@@ -176,19 +176,14 @@ begin
   Result:='';
 end;
 
-function FindDefaultExecutablePath(const Executable: string; SearchInCurDir: boolean): string;
-var
-  Flags: TSearchFileInPathFlags;
+function FindDefaultExecutablePath(const Executable: string): string;
 begin
   if FilenameIsAbsolute(Executable) then
     Result:=Executable
-  else begin
-    Flags:=sffFindProgramInPath;
-    if SearchInCurDir then Exclude(flags,sffDontSearchInBasePath);
+  else
     Result:=SearchFileInPath(Executable,'',
                              GetEnvironmentVariableUTF8('PATH'),PathSeparator,
-                             Flags);
-  end;
+                             sffFindProgramInPath);
   Result:=TrimFilename(Result);
 end;
 
@@ -321,9 +316,9 @@ begin
   if NewExpValue=PrimaryConfigPath then exit;
   if ConsoleVerbosity>=0 then
     if NewValue=NewExpValue then
-      debugln('Hint: (lazarus) SetPrimaryConfigPath NewValue="',UTF8ToConsole(NewExpValue),'"')
+      debugln('SetPrimaryConfigPath NewValue="',UTF8ToConsole(NewExpValue),'"')
     else
-      debugln('Hint: (lazarus) SetPrimaryConfigPath NewValue="',UTF8ToConsole(NewValue),'" expanded to "',UTF8ToConsole(NewExpValue),'"');
+      debugln('SetPrimaryConfigPath NewValue="',UTF8ToConsole(NewValue),'" expanded to "',UTF8ToConsole(NewExpValue),'"');
   PrimaryConfigPath := NewExpValue;
 end;
 
@@ -338,9 +333,9 @@ begin
   if NewExpValue=SecondaryConfigPath then exit;
   if ConsoleVerbosity>=0 then
     if NewValue=NewExpValue then
-      debugln('Hint: (lazarus) SetSecondaryConfigPath NewValue="',UTF8ToConsole(NewExpValue),'"')
+      debugln('SetSecondaryConfigPath NewValue="',UTF8ToConsole(NewExpValue),'"')
     else
-      debugln('Hint: (lazarus) SetSecondaryConfigPath NewValue="',UTF8ToConsole(NewValue),'" expanded to "',UTF8ToConsole(NewExpValue),'"');
+      debugln('SetSecondaryConfigPath NewValue="',UTF8ToConsole(NewValue),'" expanded to "',UTF8ToConsole(NewExpValue),'"');
   SecondaryConfigPath := NewExpValue;
 end;
 

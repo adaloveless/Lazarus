@@ -943,7 +943,6 @@ object EditorIndentOptionsFrame: TEditorIndentOptionsFrame
       end
       object lbStringAlignPattern: TLabel
         AnchorSideLeft.Control = tbString
-        AnchorSideTop.Control = edStringAlignPattern
         AnchorSideTop.Side = asrCenter
         Left = 6
         Height = 15

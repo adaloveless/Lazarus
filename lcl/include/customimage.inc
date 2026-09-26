@@ -48,7 +48,8 @@ begin
     // make a new bitmap to draw on
     TempBitmap := TBitmap.Create;
     try
-      TempBitmap.SetSize(Width, Height);
+      TempBitmap.Width := Width;
+      TempBitmap.Height := Height;
       FPicture.Graphic := TempBitmap;
     finally
       TempBitmap.Free;

@@ -66,8 +66,6 @@ begin
 
   if pt = nil then
     exit;
-  if (pt.TokenType = ttMultiWordOperator) and (pt.NextSolidTokenType = ttSemicolon) then
-    Exit(True);
 
   if (pt.TokenType in operators) and pt.HasParentNode(nIdentifier,1) then //operator orverloading identifier;
     Exit(True);

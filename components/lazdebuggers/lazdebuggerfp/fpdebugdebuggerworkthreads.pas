@@ -1597,8 +1597,7 @@ begin
         end;
       end;
     end;
-    if FInternalBreakpoint <> nil then
-      FInternalBreakpoint.SetCondition(Condition);
+    FInternalBreakpoint.SetCondition(Condition);
 
     if InterlockedExchange(FResetBreakPoint, 0) = 1 then begin
       if (FInternalBreakpoint <> nil) then begin

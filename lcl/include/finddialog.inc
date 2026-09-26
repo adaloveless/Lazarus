@@ -87,7 +87,10 @@ begin
 
   FindLabel := TLabel.Create(Self);
   with FindLabel do begin
-    SetBounds(6, 15, 77, 17);
+    Left := 6;
+    Height := 17;
+    Top := 15;
+    Width := 77;
     BorderSpacing.Right := 8;
     Caption := 'Text to find';
     FocusControl := EditFind;
@@ -96,8 +99,11 @@ begin
   end;
   EditFind := TEdit.Create(Self);
   with EditFind do begin
-    SetBounds(85, 10, 303, 27);
+    Left := 85;
+    Height := 27;
+    Top := 10;
     BorderSpacing.Top := 8;
+    Width := 303;
     TabOrder := 0;
     Text := 'EditFind';
     Parent := Self;
@@ -105,7 +111,10 @@ begin
 
   FlagsPanel := TPanel.Create(Self);
   With FlagsPanel do begin
-    SetBounds(6, 43, 143, 82);
+    Left := 6;
+    Height := 82;
+    Top := 43;
+    Width := 143;
     AutoSize := True;
     BorderSpacing.Around := 6;
     BorderSpacing.Top := 4;
@@ -122,21 +131,30 @@ begin
   // Flags Panel Objects
     WholeWordsOnlyCheckBox := TCheckBox.Create(Self);
     with WholeWordsOnlyCheckBox do begin
-      SetBounds(0, 0, 142, 23);
+      Left := 0;
+      Height := 23;
+      Top := 0;
+      Width := 142;
       Caption := 'Whole words only';
       TabOrder := 0;
       Parent := FlagsPanel;
     end;
     CaseSensitiveCheckBox := TCheckBox.Create(Self);
     with CaseSensitiveCheckBox do begin
-      SetBounds(0, 29, 142, 23);
+      Left := 0;
+      Height := 23;
+      Top := 29;
+      Width := 142;
       Caption := 'Case sensitive';
       TabOrder := 1;
       Parent := FlagsPanel;
     end;
     EntireScopeCheckBox := TCheckBox.Create(Self);
     with EntireScopeCheckBox do begin
-      SetBounds(0, 58, 142, 23);
+      Left := 0;
+      Height := 23;
+      Top := 58;
+      Width := 142;
       Caption := 'Search entire file';
       TabOrder := 2;
       Parent := FlagsPanel;
@@ -145,7 +163,10 @@ begin
 
   DirectionRadioGroup := TRadioGroup.Create(Self);
   with DirectionRadioGroup do begin
-    SetBounds(155, 49, 227, 45);
+    Left := 155;
+    Height := 45;
+    Top := 49;
+    Width := 227;
     AutoFill := True;
     AutoSize := True;
     BorderSpacing.Left := 12;
@@ -171,7 +192,10 @@ begin
 
   BtnPanel := TPanel.Create(Self);
   with BtnPanel do begin
-    SetBounds(388, 0, 92, 132);
+    Left := 388;
+    Height := 132;
+    Top := 0;
+    Width := 92;
     Align := alRight;
     AutoSize := True;
     BevelOuter := bvNone;
@@ -186,7 +210,10 @@ begin
   // BtnPanel Objects
     FindButton := TButton.Create(Self);
     with FindButton do begin
-      SetBounds(6, 6, 80, 26);
+      Left := 6;
+      Height := 26;
+      Top := 6;
+      Width := 80;
       AutoSize := True;
       Caption := 'Find more';
       Constraints.MinWidth := 80;
@@ -196,7 +223,10 @@ begin
     end;
     CancelButton := TButton.Create(Self);
     with CancelButton do begin
-      SetBounds(6, 64, 80, 26);
+      Left := 6;
+      Height := 26;
+      Top := 64;
+      Width := 80;
       AutoSize := True;
       BorderSpacing.Bottom := 10;
       Cancel := True;
@@ -208,7 +238,10 @@ begin
     end;
     HelpButton := TButton.Create(Self);
     with HelpButton do begin
-      SetBounds(6, 100, 80, 26);
+      Left := 6;
+      Height := 26;
+      Top := 100;
+      Width := 80;
       AutoSize := True;
       Caption := 'Help';
       Constraints.MinWidth := 80;
@@ -230,7 +263,10 @@ begin
     ClientWidth := 447;
     AutoSize := False;
     with BtnPanel do begin
-      SetBounds(0, 131, 447, 38);
+      Left := 0;
+      Height := 38;
+      Top := 131;
+      Width := 447;
       ClientHeight := 38;
       ClientWidth := 447;
       Align := alBottom;

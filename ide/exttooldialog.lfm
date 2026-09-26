@@ -1,17 +1,15 @@
 object ExternalToolDialog: TExternalToolDialog
   Left = 334
-  Height = 350
+  Height = 347
   Top = 226
-  Width = 550
-  ActiveControl = lvTools
+  Width = 451
+  ActiveControl = ListBox
   BorderIcons = [biSystemMenu]
   Caption = 'ExternalToolDialog'
   ClientHeight = 347
   ClientWidth = 451
-  KeyPreview = True
   Position = poScreenCenter
   LCLVersion = '1.5'
-  OnKeyDown = FormKeyDown
   object ToolBar: TToolBar
     Left = 0
     Height = 94
@@ -83,41 +81,16 @@ object ExternalToolDialog: TExternalToolDialog
       DropdownMenu = PopupDropdownMenu
     end
   end
-  object lvTools: TListView
+  object ListBox: TListBox
     Left = 0
     Height = 215
     Top = 94
     Width = 451
     Align = alClient
     BorderSpacing.Bottom = 6
-    Columns = <    
-      item
-        Caption = 'Title'
-        MinWidth = 100
-        Width = 110
-      end    
-      item
-        Caption = 'Executable'
-        MinWidth = 100
-        Width = 110
-      end    
-      item
-        Caption = 'Parameters'
-        MinWidth = 100
-        Width = 200
-      end    
-      item
-        Caption = 'Shortcut'
-        MaxWidth = 120
-        MinWidth = 80
-        Width = 120
-      end>
-    ReadOnly = True
-    RowSelect = True
-    OnDblClick = lvToolsDblClick
-    OnSelectItem = lvToolsSelectItem
+    ItemHeight = 0
+    OnClick = ListboxClick
     TabOrder = 1
-    ViewStyle = vsReport
   end
   object ButtonPanel: TButtonPanel
     Left = 6

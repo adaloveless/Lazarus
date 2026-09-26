@@ -535,7 +535,6 @@ end;
 
 procedure TCharacterMapForm.SetDropDownCount(AValue: Integer);
 begin
-  CbUniScripts.DropDownCount := AValue;
   CbUniRange.DropDownCount := AValue;
   CbCodePage.DropDownCount := AValue;
 end;

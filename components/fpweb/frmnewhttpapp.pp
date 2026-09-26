@@ -12,7 +12,7 @@ type
 
   { TNewHTTPApplicationForm }
   TServeFiles = (sfNoFiles, sfSingleRoute, sfDefaultRoute);
-  TStandardModule = (smHTTPRoute,smWeb,smHTML,smFile,smRPC,smWebData,smExtDirect);
+  TStandardModule = (smNone,smWeb,smHTTP,smFile,smRPC,smWebData, smExtDirect);
 
   TNewHTTPApplicationForm = class(TForm)
     ButtonPanel1: TButtonPanel;
@@ -28,7 +28,6 @@ type
     RBDefaultRoute: TRadioButton;
     RBNoFiles: TRadioButton;
     SEPort: TSpinEdit;
-    procedure cbStandardModuleChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure RBNoFilesChange(Sender: TObject);
   private
@@ -39,7 +38,9 @@ type
     function GetSM: TStandardModule;
     function GetT: Boolean;
     procedure LocalizeForm;
+    { private declarations }
   public
+    { public declarations }
     Property ServeFiles : TServeFiles Read GetS;
     Property FileRoute : String Read GetR;
     Property Directory : String Read GetD;
@@ -60,11 +61,12 @@ uses fpWebStrConsts;
 {$R *.lfm}
 
 Function StandardModuleToString(aModule : TStandardModule) : String;
+
 begin
   case aModule of
-    smHTTPRoute : Result:=rsNoModule;
+    smNone : Result:=rsNoModule;
     smWeb  : Result:=rsWebModule;
-    smHTML : Result:=rsHTMLWebModul;
+    smHTTP : Result:=rsHTMLWebModul;
     smFile : Result:=rsFileModule;
     smRPC :  Result:=rsWebJSONRPCMo;
     smWebData : Result:=rsWebDataProvi;
@@ -85,14 +87,6 @@ begin
   LocalizeForm;
   For SM in TStandardModule do
     cbStandardModule.Items.Add(StandardModuleToString(SM));
-  cbStandardModule.ItemIndex:=0;
-  cbStandardModuleChange(cbStandardModule);
-end;
-
-procedure TNewHTTPApplicationForm.cbStandardModuleChange(Sender: TObject);
-begin
-  // Disable competing file route when using smHTTPRoute.
-  RBDefaultRoute.Enabled:=(Sender as TComboBox).ItemIndex<>0;
 end;
 
 procedure TNewHTTPApplicationForm.RBNoFilesChange(Sender: TObject);
@@ -106,9 +100,12 @@ begin
   DEDocumentRoot.Enabled:=(Sf<>sfNoFiles);
   if not DEDocumentRoot.Enabled then
     DEDocumentRoot.Directory:='';
+
 end;
 
+
 procedure TNewHTTPApplicationForm.LocalizeForm;
+
 begin
   Caption:=sNewHTTPApp;
   GBFileServing.Caption:=sFileServing;
@@ -148,9 +145,12 @@ end;
 
 function TNewHTTPApplicationForm.GetSM: TStandardModule;
 begin
-  Assert(cbStandardModule.ItemIndex>=0, 'TNewHTTPApplicationForm.GetSM: ItemIndex<0');
-  Result:=TStandardModule(cbStandardModule.ItemIndex);
+  if cbStandardModule.ItemIndex<0 then
+    Result:=smNone
+  else
+    Result:=TStandardModule(cbStandardModule.ItemIndex);
 end;
+
 
 function TNewHTTPApplicationForm.GetT: Boolean;
 begin

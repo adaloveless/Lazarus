@@ -537,7 +537,7 @@ begin
     Result := tkMeasurementUnit
   else
   if KeyComp('deg') then
-    Result := tkMeasurementUnit
+    Result := tkKey
   else
     Result := tkIdentifier;
 end;
@@ -566,7 +566,7 @@ begin
     Result := tkMeasurementUnit
   else
   if  KeyComp('rad') then
-    Result := tkMeasurementUnit
+    Result := tkKey
   else
     Result := tkIdentifier;
 end;
@@ -600,7 +600,7 @@ end;
 function TSynCssSyn.Func30: TtkTokenKind;
 begin
   if KeyComp('grad') then
-    Result := tkMeasurementUnit
+    Result := tkKey
   else
     Result := tkIdentifier;
 end;

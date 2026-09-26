@@ -57,16 +57,6 @@ type
     idedrfMessages // show output in Messages window
     );
   TIDEDirRunFlags = set of TIDEDirRunFlag;
-
-  TJumpToCodePosFlag = (
-    jfAddJumpPoint,
-    jfFocusEditor,
-    jfMarkLine,
-    jfMapLineFromDebug,
-    jfSearchVirtualFullPath
-  );
-  TJumpToCodePosFlags = set of TJumpToCodePosFlag;
-
 const
   IDEDirectiveNames: array[TIDEDirective] of string = (
     '',
@@ -357,11 +347,6 @@ type
                               Flags: TOpenFlags): TModalResult; virtual; abstract;
     function DoOpenFileAndJumpToIdentifier(const AFilename, AnIdentifier: string;
                        PageIndex, WindowIndex: integer; Flags: TOpenFlags): TModalResult; virtual; abstract;
-    function DoJumpToCodePosition(
-                        ActiveSrcEdit: TSourceEditorInterface;
-                        NewX, NewY, NewTopLine,
-                        BlockTopLine, BlockBottomLine: integer;
-                        Flags: TJumpToCodePosFlags = [jfFocusEditor]): TModalResult; virtual; abstract;
     function DoOpenFileAndJumpToPos(const AFilename: string;
                        const CursorPosition: TPoint; TopLine: integer;
                        PageIndex, WindowIndex: integer; Flags: TOpenFlags): TModalResult; overload;
@@ -453,9 +438,7 @@ type
                               ): boolean; virtual; abstract;
     procedure DoJumpToNextCompilerMessage(aMinUrgency: TMessageLineUrgency; DirectionDown: boolean); virtual; abstract;
     procedure DoJumpToNextError(DirectionDown: boolean);
-    procedure DoShowMessagesView; virtual; abstract;
-    procedure DoShowMessagesView(BringToFront: boolean); // Deprecated in Lazarus 4.99, August 2026.
-      deprecated 'Use without parameters. BringToFront is taken from environment options.';
+    procedure DoShowMessagesView(BringToFront: boolean = true); virtual; abstract;
     function DoCheckFilesOnDisk(Instantaneous: boolean = false): TModalResult; virtual; abstract;
     // call this after changing TargetOS/TargetCPU of the ActiveProject
     procedure PrepareBuildTarget(Quiet: boolean;
@@ -815,11 +798,6 @@ end;
 procedure TLazIDEInterface.DoJumpToNextError(DirectionDown: boolean);
 begin
   DoJumpToNextCompilerMessage(mluError, DirectionDown);
-end;
-
-procedure TLazIDEInterface.DoShowMessagesView(BringToFront: boolean);
-begin
-  DoShowMessagesView;  // Ignore the parameter.
 end;
 
 constructor TLazIDEInterface.Create(TheOwner: TComponent);

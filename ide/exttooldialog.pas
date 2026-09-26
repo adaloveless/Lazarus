@@ -40,7 +40,7 @@ uses
   {$ENDIF}
   Classes, SysUtils,
   // LCL
-  Controls, Forms, StdCtrls, ComCtrls, Dialogs, ButtonPanel, Menus, LCLStrConsts, LCLType, LCLProc,
+  Controls, Forms, StdCtrls, ComCtrls, Dialogs, ButtonPanel, Menus, LCLStrConsts,
   // LazUtils
   FileUtil,
   // IdeIntf
@@ -59,7 +59,7 @@ type
 
   TExternalToolDialog = class(TForm)
     ButtonPanel: TButtonPanel;
-    lvTools: TListView;
+    ListBox: TListBox;
     MenuItemImport: TMenuItem;
     MenuItemExport: TMenuItem;
     MenuItemSeparator: TMenuItem;
@@ -76,25 +76,20 @@ type
     MoveDownButton: TToolButton;
     tbSeparator2: TToolButton;
     ExtraButton: TToolButton;
-    procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure AddButtonClick(Sender: TObject);
     procedure MenuItemCloneClick(Sender: TObject);
     procedure MenuItemExportClick(Sender: TObject);
     procedure MenuItemImportClick(Sender: TObject);
     procedure RemoveButtonClick(Sender: TObject);
     procedure EditButtonClick(Sender: TObject);
-    procedure Move(aOld, aNew: integer);
     procedure MoveUpButtonClick(Sender: TObject);
     procedure MoveDownButtonClick(Sender: TObject);
-    procedure lvToolsSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
-    procedure lvToolsDblClick(Sender: TObject);
+    procedure ListboxClick(Sender: TObject);
   private
     fExtToolList: TExternalUserTools;
-    procedure SelectItem(i: integer);
-    procedure SetItem(aItem: TListItem; aTool: TExternalUserTool);
-    procedure AddTool(aTool: TExternalUserTool; aIndex: integer = -1);
     procedure Load;
     procedure SetExtToolList(NewExtToolList: TExternalUserTools);
+    function ToolDescription(Index: integer): string;
     procedure EnableButtons;
   public
     constructor Create(AnOwner: TComponent); override;
@@ -133,11 +128,6 @@ begin
   Caption:=lisExtToolExternalTools;
   ToolBar.Images := IDEImages.Images_16;
 
-  lvTools.Columns[0].Caption:=dlgPOTitle;
-  lvTools.Columns[1].Caption:=lisEdtExtToolProgramExecutable;
-  lvTools.Columns[2].Caption:=lisEdtExtToolParameters;
-  lvTools.Columns[3].Caption:=lisEdtExtToolKey;
-
   AddButton.Caption:=lisAdd;
   RemoveButton.Caption:=lisRemove;
   EditButton.Caption:=lisEdit;
@@ -175,49 +165,24 @@ begin
   Load;
 end;
 
+function TExternalToolDialog.ToolDescription(Index: integer): string;
+begin
+  Result:=fExtToolList[Index].Title;
+  if Result='' then
+    Result:=ExtractFilename(fExtToolList[Index].Filename);
+  //DebugLn(['TExternalToolDialog.ToolDescription Index=',Index,' Result=',Result,' Cmd="',fExtToolList[Index].Filename,' ',fExtToolList[Index].CmdLineParams,'"']);
+end;
+
 procedure TExternalToolDialog.Load;
 var
   i: integer;
 begin
-  lvTools.Items.BeginUpdate;
-  lvTools.Items.Clear;
+  Listbox.Items.BeginUpdate;
+  Listbox.Items.Clear;
   for i:=0 to fExtToolList.Count-1 do 
-    SetItem(lvTools.Items.Add,fExtToolList[i]);
-  lvTools.Items.EndUpdate;
+    Listbox.Items.Add(ToolDescription(i));
+  Listbox.Items.EndUpdate;
   EnableButtons;
-end;
-
-procedure TExternalToolDialog.SelectItem(i: integer);
-begin
-  lvTools.ItemIndex:=i;
-  lvTools.ItemFocused:=lvTools.Selected;
-  lvTools.Selected.MakeVisible(false);
-end;
-
-procedure TExternalToolDialog.SetItem(aItem: TListItem; aTool: TExternalUserTool);
-begin
-  aItem.Caption:=aTool.Title;
-  aItem.SubItems.Clear;
-  aItem.SubItems.Add(aTool.Filename);
-  aItem.SubItems.Add(aTool.CmdLineParams);
-  if aTool.Key<>0 then
-    aItem.SubItems.Add(ShortCutToText(ShortCut(aTool.Key,aTool.Shift)));
-end;
-
-procedure TExternalToolDialog.AddTool(aTool: TExternalUserTool; aIndex: integer = -1);
-var
-  lItem: TListItem;
-begin
-  // add
-  fExtToolList.Add(aTool);
-  lItem:=lvTools.Items.Add;
-  // caption
-  SetItem(lItem,aTool);
-  // move next to original
-  if aIndex>=0 then
-    Move(lvTools.Items.Count-1,aIndex);
-  // select
-  SelectItem(lItem.Index);
 end;
 
 procedure TExternalToolDialog.AddButtonClick(Sender: TObject);
@@ -235,78 +200,28 @@ begin
   NewTool.HasParser[SubToolDefault]:=True;
   MsgResult:=ShowExtToolOptionDlg(NewTool);
   if MsgResult=mrOk then
-    AddTool(NewTool)
-  else
+  begin
+    fExtToolList.Add(NewTool);
+    Listbox.Items.Add(ToolDescription(fExtToolList.Count-1));
+  end else begin
     NewTool.Free;
+  end;
   EnableButtons;
-end;
-
-procedure TExternalToolDialog.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
-begin
-  // dialog
-  if (Key = VK_ESCAPE) and (Shift = []) then
-  begin
-    ModalResult := mrCancel;
-    Key := 0;
-  end
-  else if (Key = VK_LCL_ENTER) and (Shift = [ssCtrl]) then
-  begin
-    ModalResult := mrOK;
-    Key := 0;
-  end
-  // add/remove
-  else if (Key = VK_N) and (Shift = [ssCtrl]) then
-  begin
-    AddButtonClick(nil);
-    Key := 0;
-  end
-  else if (Key = VK_C) and (Shift = [ssCtrl, ssAlt]) then
-  begin
-    MenuItemCloneClick(nil);
-    Key := 0;
-  end
-  else if (Key = VK_DELETE) and (Shift = []) then
-  begin
-    RemoveButtonClick(nil);
-    Key := 0;
-  end
-  // edit
-  else if (Key = VK_LCL_ENTER) and (Shift = []) then
-  begin
-    EditButtonClick(nil);
-    Key := 0;
-  end
-  // move
-  else if (Key = VK_DOWN) and (Shift = [ssCtrl, ssShift]) then
-  begin
-    MoveDownButtonClick(nil);
-    Key := 0;
-  end
-  else if (Key = VK_UP) and (Shift = [ssCtrl, ssShift]) then
-  begin
-    MoveUpButtonClick(nil);
-    Key := 0;
-  end
 end;
 
 procedure TExternalToolDialog.MenuItemCloneClick(Sender: TObject);
 var
   NewTool, OldTool: TExternalUserTool;
 begin
-  If lvTools.ItemIndex <> -1 Then Begin
-    if fExtToolList.Count>=MaxExtTools then begin
-      IDEMessageDialog(lisExtToolMaximumToolsReached,Format(lisExtToolThereIsAMaximumOfTools,
-        [IntToStr(MaxExtTools)]),mtInformation,[mbCancel]);
-      exit;
-    end;
-    OldTool := fExtToolList.Items[lvTools.ItemIndex];
+  If Listbox.ItemIndex <> -1 Then Begin
+    OldTool := fExtToolList.Items[Listbox.ItemIndex];
     If Assigned(OldTool) Then Begin
       NewTool:=TExternalUserTool.Create(nil);
       NewTool.Assign(OldTool);
-      AddTool(NewTool,lvTools.ItemIndex+1); // paste next to original
+      fExtToolList.Add(NewTool);
+      Listbox.Items.Add(ToolDescription(fExtToolList.Count-1));
     end;
   end;
-  EnableButtons;
 end;
 
 procedure TExternalToolDialog.MenuItemExportClick(Sender: TObject);
@@ -342,25 +257,16 @@ begin
 end;
 
 procedure TExternalToolDialog.RemoveButtonClick(Sender: TObject);
-var
-  i: integer;
 begin
-  i := lvTools.ItemIndex;
-  if i < 0 then exit;
-  // confirm
-  if IDEMessageDialog(rsMtConfirmation, Format(lisExtToolConfirmRemoving, [lvTools.Items[i].Caption]),
+  if Listbox.ItemIndex<0 then
+    exit;
+  if IDEMessageDialog(rsMtConfirmation, Format(lisExtToolConfirmRemoving, [Listbox.Items[Listbox.ItemIndex]]),
     mtConfirmation, mbYesNoCancel) <> mrYes
   then
     exit;
-  // delete
-  fExtToolList.Delete(i);
-  lvTools.Items.Delete(i);
-  // select
-  if i < lvTools.Items.Count then
-    SelectItem(i)
-  else if lvTools.Items.Count > 0 then
-    SelectItem(lvTools.Items.Count - 1);
-  // update buttons
+
+  fExtToolList.Delete(Listbox.ItemIndex);
+  ListBox.Items.Delete(Listbox.ItemIndex);
   EnableButtons;
 end;
 
@@ -368,58 +274,54 @@ procedure TExternalToolDialog.EditButtonClick(Sender: TObject);
 var
   i: LongInt;
 begin
-  i:=lvTools.ItemIndex;
+  i:=Listbox.ItemIndex;
   if i<0 then exit;
   if ShowExtToolOptionDlg(fExtToolList[i])=mrOk
   then begin
-    SetItem(lvTools.Items[i],fExtToolList[i]);
+    Listbox.Items[i]:=ToolDescription(i);
     EnableButtons;
   end;
 end;
 
-procedure TExternalToolDialog.Move(aOld, aNew: integer);
+procedure TExternalToolDialog.MoveUpButtonClick(Sender: TObject);
+var
+  i: integer;
 begin
-  if aOld < 0 then exit;
-  if aNew < 0 then exit;
-  if aNew >= lvTools.Items.Count then exit;
-  fExtToolList.Move(aOld, aNew);
-  lvTools.Items.Move(aOld, aNew);
-  lvTools.ItemIndex := aNew;
+  i:=Listbox.ItemIndex;
+  if i<1 then exit;
+  fExtToolList.Move(i,i-1);
+  Listbox.Items.Move(i,i-1);
+  Listbox.ItemIndex:=i-1;
   EnableButtons;
 end;
 
-procedure TExternalToolDialog.MoveUpButtonClick(Sender: TObject);
-begin
-  Move(lvTools.ItemIndex, lvTools.ItemIndex - 1);
-end;
-
 procedure TExternalToolDialog.MoveDownButtonClick(Sender: TObject);
+var
+  i: integer;
 begin
-  Move(lvTools.ItemIndex, lvTools.ItemIndex + 1);
+  i:=Listbox.ItemIndex;
+  if (i<0) or (i>=Listbox.Items.Count-1) then exit;
+  fExtToolList.Move(i,i+1);
+  Listbox.Items.Move(i,i+1);
+  Listbox.ItemIndex:=i+1;
+  EnableButtons;
 end;
 
 procedure TExternalToolDialog.EnableButtons;
 var
   i: integer;
 begin
-  i:=lvTools.ItemIndex;
+  i:=Listbox.ItemIndex;
   AddButton.Enabled:=fExtToolList.Count<MaxExtTools;
-  MenuItemClone.Enabled:=(i>=0) and (fExtToolList.Count<MaxExtTools);
   RemoveButton.Enabled:=(i>=0);
   EditButton.Enabled:=(i>=0);
   MoveUpButton.Enabled:=(i>0);
   MoveDownButton.Enabled:=(i>=0) and (i<fExtToolList.Count-1);
-  MenuItemExport.Enabled:=(fExtToolList.Count>0);
 end;
 
-procedure TExternalToolDialog.lvToolsSelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+procedure TExternalToolDialog.ListboxClick(Sender: TObject);
 begin
   EnableButtons;
-end;
-
-procedure TExternalToolDialog.lvToolsDblClick(Sender: TObject);
-begin
-  EditButtonClick(Sender);
 end;
 
 end.

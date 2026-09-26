@@ -35,7 +35,7 @@ program lrstolfm;
 {$mode objfpc}{$H+}
 
 uses
-  Classes, SysUtils, ProjResConvert;
+  Classes, SysUtils, LResources;
   
 procedure FindResourceInLRS(List: TStrings; var ResourceName: string; var Index: Integer; out ResType: String);
 const
@@ -183,7 +183,6 @@ begin
 
     // write to stdout
     TextResource.Position := 0;
-    ResText:='';
     SetLength(ResText, TextResource.Size);
     TextResource.Read(ResText[1], Length(ResText));
     Write(ResText);

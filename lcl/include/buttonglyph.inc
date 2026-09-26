@@ -194,18 +194,20 @@ begin
   FOriginal.OnChange := nil;
   FOriginal.Assign(Value);
   FOriginal.OnChange := @GlyphChanged;
+  FNumGlyphs := 1;
   if not FOriginal.Empty then
     ClearLCLGlyph;
-  Refresh;
-end;
-
-procedure TButtonGlyph.SetImageLayout(Value: TGlyphImageLayout);
-begin
-  if FImageLayout <> Value then
+  if FOriginal.Height > 0 then
   begin
-    FImageLayout := Value;
-    Refresh;
+    if FOriginal.Width mod FOriginal.Height = 0 then
+    begin
+      GlyphCount := FOriginal.Width div FOriginal.Height;
+      if GlyphCount > High(TNumGlyphs) then
+        GlyphCount := Low(TNumGlyphs);
+      FNumGlyphs := TNumGlyphs(GlyphCount);
+    end;
   end;
+  Refresh;
 end;
 
 procedure TButtonGlyph.SetLCLGlyphName(const ALCLGlyphName: string);
@@ -272,7 +274,7 @@ begin
   begin
     FImagesCache := GetImageListCache;
     FImagesCache.RegisterListener(Self);
-    FImagesCache.RegisterBitmap(Self, FOriginal, NumGlyphs, FImageLayout=gilHorizontal);
+    FImagesCache.RegisterBitmap(Self, FOriginal, NumGlyphs);
     //ResetExternalImageIndexes;
     FExternalImages := nil;
     ClearLCLGlyph;
@@ -337,6 +339,9 @@ procedure TButtonGlyph.SetExternalImageIndex(AState: TButtonState;
 begin
   if FExternalImageIndexes[AState] = AExternalImageIndex then Exit;
   FExternalImageIndexes[AState] := AExternalImageIndex;
+  if FExternalImageIndexes[AState] >= 0 then
+    ClearLCLGlyph;
+  FOriginal.Clear;
   DoChange;
 end;
 
@@ -345,6 +350,9 @@ procedure TButtonGlyph.SetExternalImages(const AExternalImages: TCustomImageList
 begin
   if FExternalImages = AExternalImages then Exit;
   FExternalImages := AExternalImages;
+  if FExternalImages<>nil then
+    ClearLCLGlyph;
+  FOriginal.Clear;
   DoChange;
 end;
 

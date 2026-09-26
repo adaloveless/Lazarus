@@ -326,14 +326,9 @@ procedure WriteComponentStates(aComponent: TComponent; Recursive: boolean;
   const Prefix: string);
 var
   i: Integer;
-  S: String;
 begin
   if aComponent=nil then exit;
-  if aComponent is TControl then
-    S:=' Parent='+DbgSName(TControl(aComponent).Parent)
-  else
-    S:='';
-  debugln(Prefix,DbgSName(aComponent),' ',dbgs(aComponent.ComponentState),S);
+  debugln([Prefix,DbgSName(aComponent),' ',dbgs(aComponent.ComponentState)]);
   if Recursive then begin
     for i:=0 to aComponent.ComponentCount-1 do
       WriteComponentStates(aComponent.Components[i],true,Prefix+'  ');
@@ -396,7 +391,7 @@ begin
       InvisibleClasses.Add(TAction);
     end;
     // Optimization: search class types from list first.
-    if InvisibleClasses.IndexOf(AComponent.ClassType) >= 0 then
+    if InvisibleClasses.IndexOf(AComponent.ClassType) > -1 then
       Exit(True);
     Assert(Assigned(IDEComponentPalette), 'ComponentIsInvisible: IDEComponentPalette=Nil');
     RegComp:=IDEComponentPalette.FindRegComponent(AComponent.ClassType);
@@ -410,18 +405,20 @@ end;
 
 function ComponentIsNonVisual(AComponent: TComponent): boolean;
 begin
-  Result:=not ( (AComponent=nil)
-             or (AComponent is TControl)
-             or ComponentIsInvisible(AComponent) );
+  Result:=(AComponent<>nil)
+          and (not (AComponent is TControl))
+          and (not ComponentIsInvisible(AComponent));
 end;
 
 function ComponentBoundsDesignable(AComponent: TComponent): boolean;
 begin
   Result:=(not ComponentIsInvisible(AComponent));
-  if Result and (AComponent is TControl)
-  and ([csDesignFixedBounds,csNoDesignVisible]*TControl(AComponent).ControlStyle<>[])
-  then
-    Result:=false;
+  if Result and (AComponent is TControl) then begin
+    if [csDesignFixedBounds,csNoDesignVisible]*TControl(AComponent).ControlStyle
+      <>[]
+    then
+      Result:=false;
+  end;
 end;
 
 

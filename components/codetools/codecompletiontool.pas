@@ -1222,7 +1222,7 @@ function TCodeCompletionCodeTool.AddLocalVariable(CleanCursorPos: integer;
   end;
 
 var
-  VarSectionNode, VarNode: TCodeTreeNode;
+  CursorNode, VarSectionNode, VarNode: TCodeTreeNode;
   Indent, InsertPos: integer;
   InsertTxt: string;
   OldCodePos: TCodePosition;
@@ -1232,7 +1232,6 @@ var
   HeaderNode: TCodeTreeNode;
   Beauty: TBeautifyCodeOptions;
   VarTypeNode: TCodeTreeNode;
-  BeginBlockNode: TCodeTreeNode;
   InsertVarLineStart: integer;
   InsertVarLineEnd: integer;
   InsertAsNewLine: Boolean;
@@ -1248,21 +1247,20 @@ begin
 
   // find the level and find sections in front
   Node:=Tree.Root;
+  CursorNode:=nil;
   VarSectionNode:=nil;
   OtherSectionNode:=nil;
   HeaderNode:=nil;
   ParentNode:=nil;
   while Node<>nil do begin
     if Node.StartPos>CleanCursorPos then break;
+    CursorNode:=Node;
     if Node.Desc in [ctnProcedureHead,ctnUsesSection] then
       HeaderNode:=Node
     else if Node.Desc=ctnVarSection then
       VarSectionNode:=Node
     else if Node.Desc in AllDefinitionSections then
-      OtherSectionNode:=Node
-    else if (Node.Desc in [ctnBeginBlock,ctnAsmBlock]) and (Node.Parent<>nil) and (Node.Parent=ParentNode) then
-      BeginBlockNode:=Node;
-
+      OtherSectionNode:=Node;
     if (Node.StartPos<=CleanLevelPos)
     and ((Node.EndPos>CleanLevelPos)
       or ((Node.EndPos=CleanLevelPos)
@@ -1275,7 +1273,6 @@ begin
         VarSectionNode:=nil;
         OtherSectionNode:=nil;
         HeaderNode:=nil;
-        BeginBlockNode:=nil;
         ParentNode:=Node;
       end else if Node.Desc in [ctnUnit,ctnInitialization,ctnFinalization] then begin
         // the grand children can have a var section
@@ -1287,8 +1284,7 @@ begin
             break;
           ParentNode:=Node;
         end;
-      end else
-      if not(cmsAnonymousFunctions in FLastCompilerModeSwitches) then begin // do not break if cmsAnonymousFunctions is enabled - keep searching for a valid Anonymous Function in the function block
+      end else begin
         break;
       end;
       Node:=Node.FirstChild;
@@ -1402,10 +1398,10 @@ begin
       if (HeaderNode=nil) then
         HeaderNode:=FindUsesNode(ParentNode);
 
-      if BeginBlockNode<>nil then begin
+      if CursorNode.Desc in [ctnBeginBlock,ctnAsmBlock] then begin
         // add the var section directly in front of the begin
         //debugln(['TCodeCompletionCodeTool.AddLocalVariable start a new var section in front of begin block']);
-        InsertPos:=BeginBlockNode.StartPos;
+        InsertPos:=CursorNode.StartPos;
         Indent:=Beauty.GetLineIndent(Src,InsertPos);
       end else if HeaderNode<>nil then begin
         // put the var section below the header
@@ -1918,8 +1914,8 @@ var
   Params: TFindDeclarationParams;
   ExprType: TExpressionType;
   MissingUnit, NewName: String;
-  ResExprContext, OrigExprContext, EntryContext: TFindContext;
-  ProcNode, ClassNode, FuncResultNode: TCodeTreeNode;
+  ResExprContext, OrigExprContext : TFindContext;
+  ProcNode, ClassNode: TCodeTreeNode;
   CCOptions: TCodeCreationDlgResult;
   AddSourceName: boolean;
 
@@ -2057,13 +2053,7 @@ begin
     NewType:=FindTermTypeAsString(TermAtom,Params,ExprType);
     if NewType='' then
       RaiseException(20170421201534,'CompleteLocalVariableAssignment Internal error: NewType=""');
-    EntryContext.Node:=Params.NewNode;
-    EntryContext.Tool:=Params.NewCodeTool;
 
-    if NodeIsFunction(EntryContext.Node) then
-      FuncResultNode:=GetProcResultNode(EntryContext.Node)
-    else
-      FuncResultNode:=nil;
     // check if there is another NewType in context of CursorNode
     if (ExprType.Desc = xtContext) and (ExprType.Context.Tool <> nil) then
     begin
@@ -2083,37 +2073,15 @@ begin
         if FindIdentifierInContext(Params) then begin
           AddSourceName:= (ResExprContext.Node<>ExprType.Context.Node) or
                           (ResExprContext.Tool<>OrigExprContext.Tool);
-          if AddSourceName then begin
-          // check if found now declaration is within nested classes => class path is enough
-            if not OrigExprContext.Node.HasAsParent(FindClassNode(Params.NewNode)) and
-            Params.NewNode.HasAsParent(FindClassNode(OrigExprContext.Node))
-            then begin
-              // declaration is shadowed by that in nested class => use type from outer class
-              AddSourceName:=false;
-              NewType:=ExtractClassPath(FindClassNode(OrigExprContext.Node))+'.'+NewType;
-            end;
-
-            if AddSourceName then
-            if ((Params.NewNode.Desc=ctnTypeDefinition) and
-            (ExprType.Context.Node.Desc=ctnTypeDefinition) and
-            (Params.NewNode=ExprType.Context.Node))
-            or
-            ((Params.NewNode.Desc=ctnTypeDefinition) and
-            (ExprType.Context.Node.Desc in AllClasses) and
-            (Params.NewNode.FirstChild=ExprType.Context.Node))
-            or // declaration is within class/object/ ..
-            ((Params.NewNode.Desc=ctnTypeDefinition) and
-            (EntryContext.Node.HasAsParent(Params.NewNode)))
-            or // declaration is function result type (and fits to EntryContext.Node)
-            ((Params.NewNode.Desc=ctnTypeDefinition) and
-            (FuncResultNode<>nil) and
-            (FuncResultNode.Desc=ctnIdentifier) and
-            (CompareDottedIdentifiers(Pchar(NewType),
-              PChar(@EntryContext.Tool.Src[FuncResultNode.StartPos]))=0)) // simplified
-            then
-            // the same decl nodes =  not shadowed, may be located in other unit
-              AddSourceName:=false;
-          end;
+          if ((Params.NewNode.Desc=ctnTypeDefinition) and
+          (ExprType.Context.Node.Desc=ctnTypeDefinition) and
+          (Params.NewNode=ExprType.Context.Node))
+          or
+          ((Params.NewNode.Desc=ctnTypeDefinition) and
+          (ExprType.Context.Node.Desc in AllClasses) and
+          (Params.NewNode.FirstChild=ExprType.Context.Node)) then
+          // the same decl nodes =  not shadowed, may be located in other unit
+            AddSourceName:=false;
         end else
           AddSourceName:=false;
         if AddSourceName and (self=ResExprContext.Tool) then begin
@@ -10107,31 +10075,15 @@ function TCodeCompletionCodeTool.CompleteCode(CursorPos: TCodeXYPosition;
         end;
         cafWord: // stop on keywords
           if UpAtomIs('BEGIN') or UpAtomIs('END')
-          or ((UpAtomIs('TRY') or UpAtomIs('EXCEPT') or UpAtomIs('DO'))
-            and not IsTryExpressionAtom(CurPos.StartPos))
-          or UpAtomIs('FINALLY')
-          or UpAtomIs('FOR') or UpAtomIs('TO')
+          or UpAtomIs('TRY') or UpAtomIs('FINALLY') or UpAtomIs('EXCEPT')
+          or UpAtomIs('FOR') or UpAtomIs('TO') or UpAtomIs('DO')
           or UpAtomIs('REPEAT') or UpAtomIs('UNTIL') or UpAtomIs('WHILE')
           or UpAtomIs('IF') or UpAtomIs('THEN') or UpAtomIs('CASE')
           or UpAtomIs('MATCH') or UpAtomIs('ELSE')
           then
-            break
-          else if (UpAtomIs('IF') or UpAtomIs('THEN') or UpAtomIs('ELSE'))
-          and not IsIfExpressionKeyword(CurPos.StartPos)
-          and not (UpAtomIs('ELSE') and (IsCaseExpressionAtom(CurPos.StartPos)
-                                         or IsTryExpressionAtom(CurPos.StartPos)))
-          then
-            // statement if, not an if-, case- or try-except-expression
             break;
-        cafEND:
-          // skip case- or try-except-expression, e.g. v := case a of 1: 2 else 3 end + 4
-          if IsCaseExpressionAtom(CurPos.StartPos)
-          or IsTryExpressionAtom(CurPos.StartPos) then
-            ReadBackTilBlockStart;
         cafSemicolon:
-          if not (IsCaseExpressionAtom(CurPos.StartPos)
-                  or IsTryExpressionAtom(CurPos.StartPos)) then
-            break; // stop on semicolon
+          break; // stop on semicolon
       end;
     end;
   end;

@@ -377,7 +377,7 @@ else
 ifeq ($(OS_TARGET),darwin)
 LCL_PLATFORM=cocoa
 else
-LCL_PLATFORM=gtk3
+LCL_PLATFORM=gtk2
 endif
 endif
 endif

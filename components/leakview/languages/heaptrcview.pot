@@ -1,20 +1,6 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
-#: heaptrcview.brkfailedtoopenfile
-msgid "Failed to open file"
-msgstr ""
-
-#: heaptrcview.brkfailedtoopens
-#, object-pascal-format
-msgid "Failed to open \"%s\"."
-msgstr ""
-
-#: heaptrcview.brkfailedtoopensjumptocurren
-#, object-pascal-format
-msgid "Failed to open \"%s\". Jump to appropriate line in current editor instead?"
-msgstr ""
-
 #: heaptrcview.rsdtimes
 #, object-pascal-format
 msgid " (%d times)"
@@ -61,7 +47,12 @@ msgid "Select file with trace log"
 msgstr ""
 
 #: heaptrcview.slbltrace
-msgid "Trace file"
+msgid ".trc file"
+msgstr ""
+
+#: heaptrcview.stacklineformat
+#, object-pascal-format
+msgid "%s"
 msgstr ""
 
 #: heaptrcview.stacklineformatwithfile

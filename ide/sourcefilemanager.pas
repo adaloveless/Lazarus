@@ -2291,7 +2291,7 @@ function FileExistsInIDE(const Filename: string;
   SearchFlags: TProjectFileSearchFlags): boolean;
 begin
   Result:=FileExistsCached(Filename)
-    or ((Project1<>nil) and (Project1.UnitWithFilename(Filename,SearchFlags)<>nil));
+    or ((Project1<>nil) and (Project1.UnitInfoWithFilename(Filename,SearchFlags)<>nil));
 end;
 
 function BeautifySrc(const s: string): string;
@@ -2480,7 +2480,7 @@ begin
       Include(SearchFlags,pfsfOnlyProjectFiles);
     if NewUnitInfo.IsVirtual then
       Include(SearchFlags,pfsfOnlyVirtualFiles);
-    if (AProject.UnitWithFilename(LFMFilename,SearchFlags)<>nil) then begin
+    if (AProject.UnitInfoWithFilename(LFMFilename,SearchFlags)<>nil) then begin
       //debugln('NewFile no HasResources ',NewUnitInfo.Filename,' ResourceFile exists');
       NewUnitInfo.HasResources:=true;
     end;
@@ -2976,10 +2976,13 @@ var
 begin
   UserResources:=Project1.ProjResources.UserResources;
   for i:=0 to UserResources.Count-1 do
-    if CompareFilenames(UserResources.GetRealFileName(i),OldFilename)=0 then
-      // Names are kept absolute and are made relative again when the lpi is
-      // written. Note: an entry written with IDE macros loses them here.
-      UserResources.SetFileName(i,NewFilename);
+    if CompareFilenames(UserResources.GetRealFileName(i),OldFilename)=0 then begin
+      // keep the stored path relative if it was relative
+      if FilenameIsAbsolute(UserResources[i].FileName) then
+        UserResources.SetFileName(i,NewFilename)
+      else
+        UserResources.SetFileName(i,CreateRelativePath(NewFilename,Project1.Directory));
+    end;
 end;
 
 function RenameIDEFile(OldFilename, NewFilename: string; Flags: TSaveFlags): TModalResult;
@@ -3052,7 +3055,7 @@ begin
   end;
 
   // rename in the project
-  AnUnitInfo:=Project1.UnitWithFilename(OldFilename);
+  AnUnitInfo:=Project1.UnitInfoWithFilename(OldFilename);
   IsPartOfProject:=(AnUnitInfo<>nil) and AnUnitInfo.IsPartOfProject;
   if AnUnitInfo<>nil then begin
     AnUnitInfo.Filename:=NewFilename;
@@ -3360,7 +3363,7 @@ begin
     and FileIsInPath(AFilename,BaseDir) then
     begin
       Result:=CreateRelativePath(AFilename,BaseDir);
-      if (Project1<>nil) and (Project1.UnitWithFilename(Result)<>nil) then
+      if (Project1<>nil) and (Project1.UnitInfoWithFilename(Result)<>nil) then
         exit;
     end;
   end;
@@ -4120,12 +4123,12 @@ begin
     Project1.BeginUpdate(true);
     try
       // create files
-      if ProjectDesc.CreateStartFiles(Project1)<>mrOk then
+      if ProjectDesc.CreateStartFiles(Project1)<>mrOk then begin
         debugln('InitNewProject ProjectDesc.CreateStartFiles failed');
+      end;
       if (Project1.MainUnitInfo<>nil)
-      and ( (EditableProject1.FirstUnitWithEditorIndex=nil)
-         or ([pfMainUnitHasCreateFormStatements,pfMainUnitHasTitleStatement,
-              pfMainUnitHasScaledStatement]*Project1.Flags=[]) )
+      and ((EditableProject1.FirstUnitWithEditorIndex=nil)
+       or ([pfMainUnitHasCreateFormStatements,pfMainUnitHasTitleStatement,pfMainUnitHasScaledStatement]*Project1.Flags=[]))
       then begin
         // the project has not created any secondary files
         // or the project main source is not auto updated by the IDE
@@ -4158,53 +4161,6 @@ begin
   end;
 end;
 
-procedure CheckProjectCompilerPathTrust(AProject: TProject);
-// When opening a project the IDE reads the compiler executable path from the .lpi and uses
-// it for building and for background codetools. A custom compiler path is a code execution
-// vector, so if the project's active build mode points at a compiler that is neither the
-// default macro $(CompPath) nor the IDE-configured default, neutralize it to $(CompPath) and
-// ask the user whether they trust it. On trust the original path is restored; otherwise the
-// safe default is kept (in memory only, the .lpi on disk is left untouched).
-// This runs only in the IDE; lazbuild does not use InitOpenedProjectFile and always trusts.
-var
-  Opts: TProjectCompilerOptions;
-  UnparsedPath: string;
-  WasModified: Boolean;
-begin
-  Opts:=AProject.CompilerOptions; // active build mode's compiler options
-
-  if not CompilerPathNeedsTrust(Opts,UnparsedPath) then exit;
-
-  // custom compiler: neutralize BEFORE asking so nothing (e.g. codetools) uses it while the
-  // dialog is open. Preserve the project's modified state so declining does not trigger a
-  // spurious "save project?" prompt and the next open asks again.
-  WasModified:=AProject.Modified;
-  Opts.CompilerPath:=DefaultCompilerPath;
-  case IDEQuestionDialog(lisTrustCompilerCaption,
-       Format(lisTheProjectWantsToUseTheCompiler,
-              [AProject.GetTitleOrName,
-               LineEnding+LineEnding, UnparsedPath, LineEnding+LineEnding,
-               LineEnding+LineEnding]),
-       mtConfirmation,
-       [mrYes, lisTrustCompilerThisTime,
-        mrAll, lisTrustCompilerAlways,
-        mrNo, lisDoNotTrustCompiler], '') of
-    mrYes:
-      begin
-        Opts.CompilerPath:=UnparsedPath; // trust for this project session only
-        EnvironmentOptions.AddSessionTrustedCompiler(UnparsedPath); // don't ask again until project close
-      end;
-    mrAll:
-      begin
-        Opts.CompilerPath:=UnparsedPath; // trust and remember
-        EnvironmentOptions.AddTrustedCompiler(UnparsedPath);
-        EnvironmentOptions.Save(False); // persist the trusted list immediately
-      end;
-    // mrNo / closed: keep DefaultCompilerPath
-  end;
-  AProject.Modified:=WasModified;
-end;
-
 function InitOpenedProjectFile(AFileName: string; Flags: TOpenFlags): TModalResult;
 var
   EditorInfoIndex, i, j: Integer;
@@ -4229,7 +4185,6 @@ begin
     {$IFDEF IDE_MEM_CHECK}CheckHeapWrtMemCnt('InitOpenedProjectFile B3');{$ENDIF}
     Project1.ReadProject(AFilename, EnvironmentOptions.BuildMatrixOptions, True);
     {$IFDEF IDE_MEM_CHECK}CheckHeapWrtMemCnt('InitOpenedProjectFile B4');{$ENDIF}
-    CheckProjectCompilerPathTrust(Project1);
     Result:=CompleteLoadingProjectInfo;
     {$IFDEF IDE_MEM_CHECK}CheckHeapWrtMemCnt('InitOpenedProjectFile B5');{$ENDIF}
     if Result<>mrOk then exit;
@@ -4368,9 +4323,6 @@ begin
       IDETabMaster.EndUpdate;
   end;
   if Result=mrAbort then exit;
-  if Result=mrOk then
-    // apply project specific highlighter settings (e.g. SQL dialect) to the shared highlighter instances
-    MainIDE.UpdateHighlighters(True);
   //debugln('InitOpenedProjectFile end  CodeToolBoss.ConsistencyCheck=',IntToStr(CodeToolBoss.ConsistencyCheck));
   {$IFDEF IDE_MEM_CHECK}CheckHeapWrtMemCnt('InitOpenedProjectFile end');{$ENDIF}
 end;
@@ -4649,9 +4601,7 @@ begin
   // close Project
   if ProjInspector<>nil then
     ProjInspector.LazProject:=nil;
-  Project1.Free;
-  EnvironmentOptions.ClearSessionTrustedCompilers; // forget "Trust this time" choices
-  EnvironmentOptions.ClearSessionTrustedCommands;
+  FreeThenNil(Project1);
   if IDEMessagesWindow<>nil then IDEMessagesWindow.Clear;
 
   MainIDE.UpdateCaption;
@@ -5159,7 +5109,7 @@ begin
     if (IdeSyntaxHighlighters.GetLazSyntaxHighlighterType(SrcEdit.SyntaxHighlighterId) {%H-}in [lshFreePascal, lshDelphi]) then
       SaveAsFileExt:=PascalExtension[EnvironmentOptions.PascalFileExtension]
     else
-      SaveAsFileExt:=EditorOpts.HighlighterList.GetDefaultFileExtension(
+      SaveAsFileExt:=EditorOpts.HighlighterList.GetDefaultFilextension(
                          SrcEdit.SyntaxHighlighterId);
   end;
   if FilenameIsPascalSource(AFilename) then begin
@@ -6337,7 +6287,7 @@ begin
     and (SourceEditorManager.ActiveEditor<>nil)
     then begin
       SrcEdit:=SourceEditorManager.ActiveEditor;
-      LFMUnitInfo:=Project1.UnitWithFilename(SrcEdit.FileName);
+      LFMUnitInfo:=Project1.UnitInfoWithFilename(SrcEdit.FileName);
     end;
   end;
 
@@ -6387,7 +6337,7 @@ begin
   Assert(Assigned(MessagesView), 'MessagesView=Nil');
   MessagesView.Clear;
   if EnvironmentGuiOpts.MsgViewShowAutomatically <> mwsaNever then
-    MainIDE.DoShowMessagesView;
+    MainIDE.DoShowMessagesView(false);
   SourceEditorManager.ClearErrorLines;
 
   // parse the LFM file and the pascal unit
@@ -7135,7 +7085,7 @@ begin
   // try to find a unit name without expanding the path. this is required if unit is virtual
   // in other case file name will be expanded with the wrong path
   AFilename:=UnitFilename;
-  AnUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(AFilename));
+  AnUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(AFilename));
   if AnUnitInfo = nil then
   begin
     AFilename:=TrimAndExpandFilename(UnitFilename);
@@ -7143,7 +7093,7 @@ begin
       DebugLn(['OpenComponent file not found ',AFilename]);
       exit(mrCancel);
     end;
-    AnUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(AFilename));
+    AnUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(AFilename));
   end;
   if (not (ofRevert in OpenFlags))
   and (AnUnitInfo<>nil) and (AnUnitInfo.Component<>nil) then begin
@@ -7406,7 +7356,7 @@ var
     TheModalResult:=mrCancel;
     if not FilenameIsPascalUnit(UnitFilename) then exit;
 
-    CurUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(UnitFilename));
+    CurUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(UnitFilename));
     if (CurUnitInfo=nil) or (CurUnitInfo.Component=nil) then exit;
     // unit with loaded component found -> check if it is the right one
     //DebugLn(['SearchComponentClass unit with a component found CurUnitInfo=',CurUnitInfo.Filename,' ',dbgsName(CurUnitInfo.Component)]);
@@ -7518,7 +7468,7 @@ var
   procedure StoreComponentClassDeclaration(UnitFilename: string);
   begin
     // The Unit declaring AComponentClassName was located, save UnitInfo for return regardless of AComponentClass instance
-    ComponentUnitInfo:= TEditableUnitInfo(Project1.UnitWithFilename(UnitFilename));
+    ComponentUnitInfo:= TEditableUnitInfo(Project1.UnitInfoWithFilename(UnitFilename));
     if not Assigned(ComponentUnitInfo) then begin
       // File was not previously loaded, add reference to project (without loading source for now)
       ComponentUnitInfo:=TEditableUnitInfo.Create(nil);
@@ -7835,10 +7785,10 @@ function LoadComponentDependencyHidden(AnUnitInfo: TUnitInfo;
     end;
     // check if the unit component is already loaded
     UnitFilename:=ChangeFileExt(LFMFilename,'.pas');
-    CurUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(UnitFilename));
+    CurUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(UnitFilename));
     if CurUnitInfo=nil then begin
       UnitFilename:=ChangeFileExt(LFMFilename,'.pp');
-      CurUnitInfo:=TEditableUnitInfo(Project1.UnitWithFilename(UnitFilename));
+      CurUnitInfo:=TEditableUnitInfo(Project1.UnitInfoWithFilename(UnitFilename));
     end;
     ReadLFMHeader(LFMCode.Source,LFMClassName,LFMType);
     if CurUnitInfo=nil then
@@ -7969,7 +7919,7 @@ function LoadIDECodeBuffer(var ACodeBuffer: TCodeBuffer;
   const AFilename: string; Flags: TLoadBufferFlags; ShowAbort: boolean): TModalResult;
 begin
   if (Project1<>nil)
-  and (Project1.UnitWithFilename(AFilename,[pfsfOnlyEditorFiles])<>nil) then
+  and (Project1.UnitInfoWithFilename(AFilename,[pfsfOnlyEditorFiles])<>nil) then
     Exclude(Flags,lbfUpdateFromDisk);
   Result:=LoadCodeBuffer(ACodeBuffer,AFilename,Flags,ShowAbort);
 end;

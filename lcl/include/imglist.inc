@@ -2430,11 +2430,6 @@ begin
     AResolution := nil;
 end;
 
-procedure TCustomImageList.SetSize(AWidth, AHeight: Integer);
-begin
-  SetWidthHeight(AWidth, AHeight);
-end;
-
 function TCustomImageList.GetBestIconIndexForSize(AIcon: TCustomIcon;
   AWidth: Integer): Integer;
 var

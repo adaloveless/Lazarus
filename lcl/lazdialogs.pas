@@ -122,7 +122,10 @@ begin
 
   ButtonPanel := TButtonPanel.Create(Self);
   ButtonPanel.Parent := Self;
-  ButtonPanel.SetBounds(0, Height - ButtonPanel.Height, Width, 20);
+  ButtonPanel.Left := 0;
+  ButtonPanel.Height := 20;
+  ButtonPanel.Top := Height - ButtonPanel.Height;
+  ButtonPanel.Width := Width;
   ButtonPanel.Align := alBottom;
   ButtonPanel.ShowButtons := [pbOK, pbCancel];
   ButtonPanel.OKButton.OnClick := @HandleOkClick;
@@ -133,14 +136,20 @@ begin
     // Add the ShellTreeView to the dialog
     ShellTreeView := TShellTreeView.Create(Self);
     ShellTreeView.Parent := Self;
-    ShellTreeView.SetBounds(0, 0, Width, 100);
+    ShellTreeView.Left := 0;
+    ShellTreeView.Top := 0;
+    ShellTreeView.Width := Width;
+    ShellTreeView.Height := 100;
     ShellTreeView.HideSelection := false;
     ShellTreeView.Align := alTop;
 
     // Add the ShellListView to the dialog
     ShellListView := TShellListView.Create(Self);
     ShellListView.Parent := Self;
-    ShellListView.SetBounds(0, ShellTreeView.Height, Width, Height - ShellTreeView.Height - ButtonPanel.Height);
+    ShellListView.Left := 0;
+    ShellListView.Top := ShellTreeView.Height;
+    ShellListView.Width := Width;
+    ShellListView.Height := Height - ShellTreeView.Height - ButtonPanel.Height;
     ShellListView.Align := alClient;
     ShellListView.HideSelection := false;
     ShellListView.ShellTreeView := ShellTreeView;
@@ -152,7 +161,10 @@ begin
     begin
       SaveEdit := TEdit.Create(Self);
       SaveEdit.Parent := Self;
-      SaveEdit.SetBounds(0, Height - ButtonPanel.Height - SaveEdit.Height, Width, 20);
+      SaveEdit.Left := 0;
+      SaveEdit.Height := 20;
+      SaveEdit.Top := Height - ButtonPanel.Height - SaveEdit.Height;
+      SaveEdit.Width := Width;
       SaveEdit.Align := alBottom;
       SaveEdit.Text := SysUtils.ExtractFileName(FFileName);
       SaveEdit.OnChange := @HandleEditChange;
@@ -161,10 +173,12 @@ begin
     // TFilterComboBox
     FilterComboBox := TFilterComboBox.Create(Self);
     FilterComboBox.Parent := Self;
+    FilterComboBox.Left := 0;
+    FilterComboBox.Height := 20;
+    FilterComboBox.Top := Height - ButtonPanel.Height - FilterComboBox.Height;
     if SaveEdit <> nil then
-      FilterComboBox.SetBounds(0, Height - ButtonPanel.Height - FilterComboBox.Height - SaveEdit.Height, Width, 20)
-    else
-      FilterComboBox.SetBounds(0, Height - ButtonPanel.Height - FilterComboBox.Height, Width, 20);
+      FilterComboBox.Top := FilterComboBox.Top - SaveEdit.Height;
+    FilterComboBox.Width := Width;
     FilterComboBox.Align := alBottom;
     SetFilter(FFilter);
     FilterComboBox.ShellListView := ShellListView;
@@ -488,7 +502,10 @@ begin
   FormStyle:= fsStayOnTop;
   Position:= poMainFormCenter;
   Image1 := TImage.Create(Self);
-  Image1.SetBounds(10, 10, 48, 48);
+  Image1.Top:= 10;
+  Image1.Left:= 10;
+  Image1.Width:= 48;
+  Image1.Height:= 48;
   Label1 := TLabel.Create(Self);
   Label1.Top:= Image1.Top;
   Label1.Left:= Image1.Left + Image1.Width + 10;

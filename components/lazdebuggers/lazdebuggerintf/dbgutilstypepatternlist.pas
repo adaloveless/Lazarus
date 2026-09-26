@@ -240,7 +240,7 @@ end;
 procedure TDbgTypePatternList.Put(Index: Integer; const S: string);
 var
   p: TDbgTypePattern;
-  wasInheritMatch: Boolean;
+  wasInheritMatch, wasNameMatch, wasExpressionMatch: Boolean;
   i: Integer;
 begin
   inherited Put(Index, S);
@@ -250,6 +250,8 @@ begin
     Objects[Index] := p;
   end;
   wasInheritMatch := p.MatchesInheritedTypes;
+  wasNameMatch := p.MatchesName;
+  wasExpressionMatch := p.MatchesExpression;
   p.SetPattern(S);
 
   if p.MatchesInheritedTypes then begin

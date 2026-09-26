@@ -748,7 +748,8 @@ begin
   try
     // First copy the source rectangle to another bitmap
     // So that we don't have to iterate in pixels which wont be used changing the color
-    lPaintedBitmap.SetSize(lSrcWidth, lSrcHeight);
+    lPaintedBitmap.Width := lSrcWidth;
+    lPaintedBitmap.Height := lSrcHeight;
     lPaintedBitmap.Canvas.Draw(-ASourceRect.Left, -ASourceRect.Top, ABitmap);
 
     // Next copy the bitmap to a intfimage to be able to make the color change

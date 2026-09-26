@@ -15,25 +15,25 @@ msgstr ""
 #, object-pascal-format
 msgctxt "lazutilsstrconsts.lrsadirectorycomponentindoesnotexistorisadanglingsyml"
 msgid "a directory component in %s does not exist or is a dangling symlink"
-msgstr "eine Verzeichniskomponente in %s ist nicht vorhanden oder ist ein offener symbolischer Link"
+msgstr ""
 
 #: lazutilsstrconsts.lrsadirectorycomponentindoesnotexistorisadanglingsyml2
 #, object-pascal-format
 msgctxt "lazutilsstrconsts.lrsadirectorycomponentindoesnotexistorisadanglingsyml2"
 msgid "a directory component in %s does not exist or is a dangling symlink"
-msgstr "eine Verzeichniskomponente in %s ist nicht vorhanden oder ist ein offener symbolischer Link"
+msgstr ""
 
 #: lazutilsstrconsts.lrsadirectorycomponentinisnotadirectory
 #, object-pascal-format
 msgctxt "lazutilsstrconsts.lrsadirectorycomponentinisnotadirectory"
 msgid "a directory component in %s is not a directory"
-msgstr "eine Verzeichniskomponente in %s ist kein Verzeichnis"
+msgstr ""
 
 #: lazutilsstrconsts.lrsadirectorycomponentinisnotadirectory2
 #, object-pascal-format
 msgctxt "lazutilsstrconsts.lrsadirectorycomponentinisnotadirectory2"
 msgid "a directory component in %s is not a directory"
-msgstr "eine Verzeichniskomponente in %s ist kein Verzeichnis"
+msgstr ""
 
 #: lazutilsstrconsts.lrsboolean
 msgid "boolean"
@@ -46,11 +46,11 @@ msgstr "kann %s nicht ausführen"
 
 #: lazutilsstrconsts.lrscreatinggdbcatchableerror
 msgid "Creating gdb catchable error:"
-msgstr "Erzeuge einen Fehler, der von gdb abgefangen wird:"
+msgstr ""
 
 #: lazutilsstrconsts.lrserrorincode
 msgid "ERROR in code: "
-msgstr "FEHLER im Code: "
+msgstr ""
 
 #: lazutilsstrconsts.lrsevalinvalidargcount
 msgid "Invalid number of function arguments"
@@ -79,7 +79,7 @@ msgstr "\"%s\" ist ein Verzeichnis und keine ausführbare Datei"
 #: lazutilsstrconsts.lrshasacircularsymboliclink
 #, object-pascal-format
 msgid "%s has a circular symbolic link"
-msgstr "%s hat einen zirkulären symbolischen Link"
+msgstr ""
 
 #: lazutilsstrconsts.lrsinsufficientmemory
 msgid "insufficient memory"
@@ -99,12 +99,12 @@ msgstr "%s ist nicht ausführbar"
 #, object-pascal-format
 msgctxt "lazutilsstrconsts.lrslistindexexceedsbounds"
 msgid "List index exceeds bounds (%d)"
-msgstr "Listindex überschreitet Grenzen (%d)"
+msgstr ""
 
 #: lazutilsstrconsts.lrslistmustbeempty
 msgctxt "lazutilsstrconsts.lrslistmustbeempty"
 msgid "List must be empty"
-msgstr "Liste muss leer sein"
+msgstr ""
 
 #: lazutilsstrconsts.lrsmodified
 msgctxt "lazutilsstrconsts.lrsmodified"
@@ -113,7 +113,7 @@ msgstr " geändert "
 
 #: lazutilsstrconsts.lrsnodeset
 msgid "node set"
-msgstr "Knoten-Satz"
+msgstr ""
 
 #: lazutilsstrconsts.lrsnumber
 msgid "number"
@@ -121,35 +121,35 @@ msgstr "Anzahl"
 
 #: lazutilsstrconsts.lrsparserbadaxisname
 msgid "Invalid axis name"
-msgstr "Ungültiger Achsename"
+msgstr ""
 
 #: lazutilsstrconsts.lrsparserbadnodetype
 msgid "Invalid node type"
-msgstr "Ungültiger Knotentyp"
+msgstr ""
 
 #: lazutilsstrconsts.lrsparserexpectedleftbracket
 msgid "Expected \"(\""
-msgstr "\"(\" erwartet"
+msgstr ""
 
 #: lazutilsstrconsts.lrsparserexpectedrightbracket
 msgid "Expected \")\""
-msgstr "\")\" erwartet"
+msgstr ""
 
 #: lazutilsstrconsts.lrsparserexpectedrightsquarebracket
 msgid "Expected \"]\" after predicate"
-msgstr "Nach dem Prädikat \"]\" erwartet"
+msgstr ""
 
 #: lazutilsstrconsts.lrsparsergarbageafterexpression
 msgid "Unrecognized input after expression"
-msgstr "Nicht erkannte Eingabe nach dem Ausdruck"
+msgstr ""
 
 #: lazutilsstrconsts.lrsparserinvalidnodetest
 msgid "Invalid node test (syntax error)"
-msgstr "Ungültiger Knotentest (Syntaxfehler)"
+msgstr ""
 
 #: lazutilsstrconsts.lrsparserinvalidprimexpr
 msgid "Invalid primary expression"
-msgstr "Ungültiger primärer Ausdruck"
+msgstr ""
 
 #: lazutilsstrconsts.lrsprogramfilenotfound
 #, object-pascal-format
@@ -171,11 +171,11 @@ msgstr "Ungültiges Zeichen"
 
 #: lazutilsstrconsts.lrsscannermalformedqname
 msgid "Expected \"*\" or local part after colon"
-msgstr "\"*\" or lokalen Teil nach einem Doppelpunkt erwartet"
+msgstr ""
 
 #: lazutilsstrconsts.lrsscannerunclosedstring
 msgid "String literal was not closed"
-msgstr "Zeichenkette wurde nicht geschlossen"
+msgstr ""
 
 #: lazutilsstrconsts.lrssize
 msgctxt "lazutilsstrconsts.lrssize"
@@ -184,7 +184,7 @@ msgstr " Größe "
 
 #: lazutilsstrconsts.lrsstring
 msgid "string"
-msgstr "Zeichenkette"
+msgstr ""
 
 #: lazutilsstrconsts.lrsunabletocreateconfigdirectorys
 #, object-pascal-format
@@ -198,34 +198,34 @@ msgstr "Konvertierung von %s nach %s ist nicht möglich"
 
 #: lazutilsstrconsts.rsincompletemask
 msgid "Reached end of mask, but missing close/escape sequence."
-msgstr "Ende der Maske erreicht, aber Close/Escape-Sequenz fehlt."
+msgstr ""
 
 #: lazutilsstrconsts.rsinternalerror
 #, object-pascal-format
 msgid "Internal error in %s."
-msgstr "Interner Fehler in %s."
+msgstr ""
 
 #: lazutilsstrconsts.rsinvalidcharmask
 #, object-pascal-format
 msgid "Invalid character \"%s\" in mask."
-msgstr "Ungültiges Zeichen \"%s\" in Maske."
+msgstr ""
 
 #: lazutilsstrconsts.rsinvalidcharmaskat
 #, object-pascal-format
 msgid "Invalid character \"%s\" in mask (offset %d)."
-msgstr "Ungültiges Zeichen \"%s\" in Maske (Offset %d)."
+msgstr ""
 
 #: lazutilsstrconsts.rsinvalidescapechar
 msgid "Escape character must be ASCII <= 127."
-msgstr "Escape-Zeichen muss ein ASCII-Code <= 127 sein."
+msgstr ""
 
 #: lazutilsstrconsts.rsmissingclosecharmask
 #, object-pascal-format
 msgid "Missing closing character \"%s\" in mask."
-msgstr "Schließendes Zeichen \"%s\" fehlt in Maske."
+msgstr ""
 
 #: lazutilsstrconsts.rsmissingclosecharmaskat
 #, object-pascal-format
 msgid "Missing closing character \"%s\" in mask (offset %d)."
-msgstr "Schließendes Zeichen \"%s\" fehlt in Maske (Offset %d)"
+msgstr ""
 

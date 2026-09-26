@@ -67,8 +67,7 @@ type
     ResType: TUserResourceType;
     ResName: String;
     procedure ReadFromProjectFile(AConfig: TXMLConfig; const Path: String);
-    procedure WriteToProjectFile(AConfig: TXMLConfig; const Path: String;
-                                 const AStoredFileName: String);
+    procedure WriteToProjectFile(AConfig: TXMLConfig; const Path: String);
     function CreateResource(const ProjectDirectory: String): TAbstractResource;
     function GetRealFileName(const ProjectDirectory: String): String;
   end;
@@ -90,11 +89,6 @@ type
   TProjectUserResources = class(TAbstractProjectUserResources)
   private
     FList: TResourceList;
-    // Brings a filename into the in memory form: absolute, unless it contains
-    // IDE macros or the project has no directory yet (virtual project).
-    function ToAbsoluteFileName(const AFileName: string): string;
-    // Converts an in memory filename into the form stored in the lpi.
-    function ToLPIFileName(const AFileName: string): string;
   protected
     function GetCount: integer; override;
     function GetInfo(AIndex: integer): TProjectUserResourceInfo; override;
@@ -136,10 +130,9 @@ begin
   ResName := AConfig.GetValue(Path + 'ResourceName', '');
 end;
 
-procedure TResourceItem.WriteToProjectFile(AConfig: TXMLConfig;
-  const Path: String; const AStoredFileName: String);
+procedure TResourceItem.WriteToProjectFile(AConfig: TXMLConfig; const Path: String);
 begin
-  AConfig.SetValue(Path + 'FileName', AStoredFileName);
+  AConfig.SetValue(Path + 'FileName', FileName);
   AConfig.SetValue(Path + 'Type', ResourceTypeToStr[ResType]);
   AConfig.SetValue(Path + 'ResourceName', ResName);
 end;
@@ -274,26 +267,6 @@ begin
   Data.ResName := ResName;
 end;
 
-function TProjectUserResources.ToAbsoluteFileName(const AFileName: string): string;
-begin
-  Result := AFileName;
-  if Result = '' then
-    Exit;
-  if (IDEMacros <> nil) and IDEMacros.StrHasMacros(Result) then
-    Exit;
-  LoadSaveFilename(Result, True);
-end;
-
-function TProjectUserResources.ToLPIFileName(const AFileName: string): string;
-begin
-  Result := AFileName;
-  if Result = '' then
-    Exit;
-  if (IDEMacros <> nil) and IDEMacros.StrHasMacros(Result) then
-    Exit;
-  LoadSaveFilename(Result, False);
-end;
-
 function TProjectUserResources.UpdateResources(AResources: TAbstractProjectResources; const MainFilename: string): Boolean;
 var
   I: Integer;
@@ -316,25 +289,17 @@ var
 begin
   AConfig.SetDeleteValue(Path+'General/Resources/Count', List.Count, 0);
   for I := 0 to List.Count - 1 do
-    List[I].WriteToProjectFile(AConfig,
-      Path + 'General/Resources/Resource_' + IntToStr(I) + '/',
-      ToLPIFileName(List[I].FileName));
+    List[I].WriteToProjectFile(TXMLConfig(AConfig), Path + 'General/Resources/Resource_' + IntToStr(I) + '/')
 end;
 
 procedure TProjectUserResources.ReadFromProjectFile(AConfig: TXMLConfig; const Path: String);
 var
   I, ACount: Integer;
-  Item: TResourceItem;
 begin
   List.Clear;
   ACount := AConfig.GetValue(Path+'General/Resources/Count', 0);
   for I := 0 to ACount - 1 do
-  begin
-    Item := List.AddItem;
-    Item.ReadFromProjectFile(AConfig, Path + 'General/Resources/Resource_' + IntToStr(I) + '/');
-    // Assign the field directly, so that loading does not set Modified.
-    Item.FileName := ToAbsoluteFileName(Item.FileName);
-  end;
+    List.AddItem.ReadFromProjectFile(TXMLConfig(AConfig), Path + 'General/Resources/Resource_' + IntToStr(I) + '/')
 end;
 
 constructor TProjectUserResources.Create;
@@ -363,7 +328,7 @@ end;
 
 function TProjectUserResources.IndexOfFileName(const AFileName: string): integer;
 begin
-  Result := FList.IndexOfFileName(ToAbsoluteFileName(AFileName));
+  Result := FList.IndexOfFileName(AFileName);
 end;
 
 function TProjectUserResources.IndexOfResName(const AResName: string): integer;
@@ -376,14 +341,9 @@ end;
 
 function TProjectUserResources.AddFile(const AFileName: string;
   AResType: TUserResourceType; const AResName: string): integer;
-var
-  NewFileName: String;
 begin
-  // Normalize first, so that the duplicate check and its error message use the
-  // same form as the stored names.
-  NewFileName := ToAbsoluteFileName(AFileName);
-  CheckCanAdd(NewFileName, AResName);   // raises EProjectUserResourceError on collision
-  FList.AddResource(NewFileName, AResType, AResName);
+  CheckCanAdd(AFileName, AResName);   // raises EProjectUserResourceError on collision
+  FList.AddResource(AFileName, AResType, AResName);
   Result := FList.Count - 1;
   Changed;
 end;
@@ -398,7 +358,7 @@ function TProjectUserResources.RemoveFile(const AFileName: string): boolean;
 var
   I: Integer;
 begin
-  I := IndexOfFileName(AFileName);   // normalizes AFileName
+  I := FList.IndexOfFileName(AFileName);
   Result := I >= 0;
   if Result then
     Delete(I);
@@ -417,13 +377,10 @@ begin
 end;
 
 procedure TProjectUserResources.SetFileName(AIndex: integer; const ANewFileName: string);
-var
-  NewFileName: String;
 begin
-  NewFileName := ToAbsoluteFileName(ANewFileName);
-  if CompareFilenames(FList[AIndex].FileName, NewFileName) = 0 then
+  if CompareFilenames(FList[AIndex].FileName, ANewFileName) = 0 then
     Exit;
-  FList[AIndex].FileName := NewFileName; // content cache self-invalidates on next build
+  FList[AIndex].FileName := ANewFileName; // content cache self-invalidates on next build
   Changed;
 end;
 

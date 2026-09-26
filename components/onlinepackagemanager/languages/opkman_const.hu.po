@@ -1389,10 +1389,6 @@ msgctxt "opkman_const.rsmainfrm_vsttext_version"
 msgid "Version"
 msgstr "Változat"
 
-#: opkman_const.rsmainfrm_vsttext_versionerror
-msgid "(Version error)"
-msgstr ""
-
 #: opkman_const.rsmenulazaruspackagemanager
 msgid "Online Package Manager ..."
 msgstr ""
@@ -2055,8 +2051,8 @@ msgid "Repository details"
 msgstr "Tároló részletei"
 
 #: opkman_const.rsrepositorydetailsfrm_edaddress_hint
-msgid "Enter the repository address (e.g.: \"https://example-repo.tld/packages/\")"
-msgstr "Adja meg a tároló címét (pl. \"https://example-repo.tld/packages/\")"
+msgid "Enter the repository address (e.g.: \"http://localhost/packages/\")"
+msgstr "Adja meg a tároló címét (pl. \"http://localhost/packages/\")"
 
 #: opkman_const.rsrepositorydetailsfrm_edname_hint
 msgid "Enter the repository name"

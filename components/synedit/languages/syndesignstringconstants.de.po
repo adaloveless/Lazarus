@@ -1,15 +1,14 @@
 msgid ""
 msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
 "Project-Id-Version: \n"
 "POT-Creation-Date: \n"
 "PO-Revision-Date: \n"
-"Last-Translator: Karl-Michael Schindler <tonne1.schindler@web.de>\n"
+"Last-Translator: Swen Heinig <swen@heinig.email>\n"
 "Language-Team: \n"
-"Language: de\n"
 "MIME-Version: 1.0\n"
-"Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Poedit 3.9\n"
+"X-Generator: Poedit 1.5.4\n"
 
 #: syndesignstringconstants.syndsbookmarks
 msgid "Bookmarks"
@@ -21,7 +20,7 @@ msgstr "Änderungskennzeichen"
 
 #: syndesignstringconstants.syndsclearkeystrokes
 msgid "Clear KeyStrokes"
-msgstr "Tastatureingaben löschen"
+msgstr ""
 
 #: syndesignstringconstants.syndscodefolding
 msgid "Code Folding"
@@ -37,7 +36,7 @@ msgstr "Zeilenübersicht"
 
 #: syndesignstringconstants.syndsresetkeystrokes
 msgid "Reset KeyStrokes"
-msgstr "Tastatureingaben zurücksetzen"
+msgstr ""
 
 #: syndesignstringconstants.syndsresetmouseactions
 msgid "Reset mouse actions"

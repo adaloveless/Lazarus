@@ -442,7 +442,7 @@ end;
 
 class procedure TJcfIdeMain.ShowIdeMessages;
 begin
-  LazarusIDE.DoShowMessagesView;
+  LazarusIDE.DoShowMessagesView({PutOnTop} True);
 end;
 
 procedure TJcfIdeMain.DoRegistrySettings(Sender: TObject);

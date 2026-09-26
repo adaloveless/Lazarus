@@ -87,45 +87,39 @@ var
 begin
   Result := False;
 
-  if data = nil then
+  if (data = nil) or not PGtkWidget(data)^.get_mapped then
     exit;
 
-  try
-    if not Gtk3IsWidget(PGObject(data)) or not PGtkWidget(data)^.get_mapped then
-      exit;
+  TopLevel := PGtkWidget(data)^.get_toplevel;
+  if not Gtk3IsGtkWindow(TopLevel) then
+    exit;
 
-    TopLevel := PGtkWidget(data)^.get_toplevel;
-    if not Gtk3IsGtkWindow(TopLevel) then
-      exit;
+  GdkWin := TopLevel^.get_window;
 
-    GdkWin := TopLevel^.get_window;
+  if GdkWin = nil then
+    exit;
 
-    if GdkWin = nil then
-      exit;
+  TopLevel^.get_preferred_width(@tlMinW, @tlNatW);
+  TopLevel^.get_preferred_height(@tlMinH, @tlNatH);
 
-    TopLevel^.get_preferred_width(@tlMinW, @tlNatW);
-    TopLevel^.get_preferred_height(@tlMinH, @tlNatH);
-
-    Display := GdkWin^.get_display;
-    if Display <> nil then
+  Display := GdkWin^.get_display;
+  if Display <> nil then
+  begin
+    Monitor := Display^.get_monitor_at_window(GdkWin);
+    if Monitor <> nil then
     begin
-      Monitor := Display^.get_monitor_at_window(GdkWin);
-      if Monitor <> nil then
-      begin
-        //fit to monitor if natural size is bigger than workarea
-        Monitor^.get_workarea(@WorkArea);
-        if (WorkArea.width > 0) and (tlNatW > WorkArea.width) then
-          tlNatW := WorkArea.width;
-        if (WorkArea.height > 0) and (tlNatH > WorkArea.height) then
-          tlNatH := WorkArea.height;
-      end;
+      //fit to monitor if natural size is bigger than workarea
+      Monitor^.get_workarea(@WorkArea);
+      if (WorkArea.width > 0) and (tlNatW > WorkArea.width) then
+        tlNatW := WorkArea.width;
+      if (WorkArea.height > 0) and (tlNatH > WorkArea.height) then
+        tlNatH := WorkArea.height;
     end;
-
-    PGtkWindow(TopLevel)^.resize(tlNatW, tlNatH);
-    GdkWin^.resize(tlNatW, tlNatH);
-  finally
-    g_object_unref(PGObject(data));
   end;
+
+  PGtkWindow(TopLevel)^.resize(tlNatW, tlNatH);
+  GdkWin^.resize(tlNatW, tlNatH);
+
 end;
 
 procedure Gtk3MenuPopupSizeFix(widget: PGtkWidget;
@@ -146,7 +140,6 @@ begin
      ((alloc^.height < NatH) or (alloc^.width < NatW)) then
   begin
     g_object_set_data(PGObject(widget), 'lcl-popup-szfixed', widget);
-    g_object_ref(PGObject(widget));
     g_idle_add(@Gtk3MenuPopupRepositionIdle, widget);
   end;
 end;
@@ -459,24 +452,11 @@ end;
 
 function gtkWSPopupDelayedClose(Data: Pointer): gboolean; cdecl;
 var
-  AGtk3Widget: TGtk3Widget;
-  PopupMenu: TMenu;
+  PopupMenu: TMenu absolute Data;
 begin
   Result := False;
-  if Data = nil then
-    exit;
-  try
-    if not Gtk3IsWidget(PGObject(Data)) then
-      exit;
-    AGtk3Widget := Gtk3WidgetFromGtkWidget(PGtkWidget(Data));
-    if not (AGtk3Widget is TGtk3Menu) then
-      exit;
-    PopupMenu := TGtk3Menu(AGtk3Widget).MenuObject;
-    if PopupMenu is TPopupMenu then
-      TPopupMenu(PopupMenu).Close;
-  finally
-    g_object_unref(PGObject(Data));
-  end;
+  if PopupMenu is TPopupMenu then
+    TPopupMenu(PopupMenu).Close;
 end;
 
 procedure gtkWSPopupMenuDeactivate(widget: PGtkWidget; data: gPointer); cdecl;
@@ -484,10 +464,7 @@ begin
   if widget = MenuWidget then
     MenuWidget := nil;
   if data <> nil then
-  begin
-    g_object_ref(PGObject(TGtk3Menu(data).Widget));
-    g_idle_add(@gtkWSPopupDelayedClose, TGtk3Menu(data).Widget);
-  end;
+    g_idle_add(@gtkWSPopupDelayedClose, TGtk3Menu(data).MenuObject);
 end;
 
 function gtkWSPopupMenuButtonPress(widget: PGtkWidget; event: PGdkEventButton;
@@ -590,11 +567,6 @@ begin
     ASourceWin := TWinControl(ASource);
   if (ASourceWin = nil) or not ASourceWin.HandleAllocated then
     ASourceWin := FindLCLWindow(Point(X, Y));
-
-  if ARightDown and (ASourceWin <> nil) and ASourceWin.HandleAllocated and
-    (TGtk3Widget(ASourceWin.Handle) is TGtk3NoteBook) and
-    TGtk3NoteBook(ASourceWin.Handle).RightClickUpPending then
-    ARightDown := False;
 
   {$IFDEF GTK3DEBUGMENUS}
   DebugLn('TGtk3WSPopupMenu.Popup X=',dbgs(X),' Y=',dbgs(Y));

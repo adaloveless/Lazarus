@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CONFIG>
   <ProjectOptions>
-    <Version Value="13"/>
+    <Version Value="12"/>
     <PathDelim Value="\"/>
     <General>
       <Flags>
@@ -112,29 +112,14 @@
         <IsPartOfProject Value="True"/>
       </Unit>
       <Unit>
-        <Filename Value="testbase.pas"/>
-        <IsPartOfProject Value="True"/>
-        <UnitName Value="TestBase"/>
-      </Unit>
-      <Unit>
-        <Filename Value="test_dpiscaling.pas"/>
-        <IsPartOfProject Value="True"/>
-        <UnitName Value="Test_DpiScaling"/>
-      </Unit>
-      <Unit>
         <Filename Value="test_childsizing.pas"/>
         <IsPartOfProject Value="True"/>
         <UnitName Value="Test_ChildSizing"/>
       </Unit>
       <Unit>
-        <Filename Value="test_anchors.pas"/>
+        <Filename Value="test_dpiscaling.pas"/>
         <IsPartOfProject Value="True"/>
-        <UnitName Value="Test_Anchors"/>
-      </Unit>
-      <Unit>
-        <Filename Value="test_parentsizing.pas"/>
-        <IsPartOfProject Value="True"/>
-        <UnitName Value="Test_ParentSizing"/>
+        <UnitName Value="Test_DpiScaling"/>
       </Unit>
       <Unit>
         <Filename Value="testnotebook.pas"/>
@@ -181,7 +166,13 @@
   <Debugging>
     <Exceptions>
       <Item>
-        <Name Value="EListError"/>
+        <Name Value="EAbort"/>
+      </Item>
+      <Item>
+        <Name Value="ECodetoolError"/>
+      </Item>
+      <Item>
+        <Name Value="EFOpenError"/>
       </Item>
     </Exceptions>
   </Debugging>

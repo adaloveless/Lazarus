@@ -37,7 +37,7 @@ uses
   LCLStrConsts,
   // LazUtils
   LazConfigStorage, FPCAdds, DynQueue, LazUTF8, LazLoggerBase, LazTracer,
-  LazUtilities, ProjResProc, ProjResConvert;
+  LazUtilities, ProjResProc;
 
 {$DEFINE UseLRS}
 {$DEFINE UseRES}
@@ -431,9 +431,9 @@ type
   TLRSStreamOriginalFormat = (sofUnknown, sofBinary, sofText);
   
 // Deprecated in Lazarus 4.99 in April 2026.
-procedure LRSObjectBinaryToText(Input, Output: TStream); deprecated 'Use from unit ProjResConvert instead.';
+procedure LRSObjectBinaryToText(Input, Output: TStream); deprecated 'Use from unit ProjResProc instead.';
 procedure LRSObjectTextToBinary(Input, Output: TStream;
-  Links: TLRPositionLinks = nil); deprecated 'Use from unit ProjResConvert instead.';
+  Links: TLRPositionLinks = nil); deprecated 'Use from unit ProjResProc instead.';
 
 procedure LRSObjectToText(Input, Output: TStream;
   var OriginalFormat: TLRSStreamOriginalFormat);
@@ -901,7 +901,7 @@ begin
     BinStream:=TMemoryStream.Create;
     WriteComponentAsBinaryToStream(BinStream,AComponent);
     BinStream.Position:=0;
-    ProjResConvert.LRSObjectBinaryToText(BinStream,AStream);
+    ProjResProc.LRSObjectBinaryToText(BinStream,AStream);
   finally
     BinStream.Free;
   end;
@@ -917,7 +917,7 @@ begin
   BinStream:=nil;
   try
     BinStream:=TMemoryStream.Create;
-    ProjResConvert.LRSObjectTextToBinary(AStream,BinStream);
+    ProjResProc.LRSObjectTextToBinary(AStream,BinStream);
     BinStream.Position:=0;
     ReadComponentFromBinaryStream(BinStream,RootComponent,OnFindComponentClass,
                                   TheOwner,Parent);
@@ -942,7 +942,7 @@ begin
     // convert it to human readable text format
     BinStream.Position:=0;
     TxtStream:=TMemoryStream.Create;
-    ProjResConvert.LRSObjectBinaryToText(BinStream,TxtStream);
+    ProjResProc.LRSObjectBinaryToText(BinStream,TxtStream);
     // convert stream to string
     SetLength(s,TxtStream.Size);
     TxtStream.Position:=0;
@@ -1102,7 +1102,7 @@ begin
     FormClassName:=ProjResProc.FindLFMClassName(LFMStream);
     BinStream:=TMemoryStream.Create;
     try
-      ProjResConvert.LRSObjectTextToBinary(LFMStream,BinStream);
+      ProjResProc.LRSObjectTextToBinary(LFMStream,BinStream);
       BinStream.Position:=0;
       ProjResProc.BinaryToLazarusResourceCode(BinStream,LRSStream,FormClassName,'FORMDATA');
     finally
@@ -1853,7 +1853,7 @@ begin
     try
       // transform binary to text
       BinStream.Position:=0;
-      ProjResConvert.LRSObjectBinaryToText(BinStream,LFMStream);
+      ProjResProc.LRSObjectBinaryToText(BinStream,LFMStream);
     except
       Result:=-2;
       exit;
@@ -1967,12 +1967,12 @@ end;
 
 procedure LRSObjectBinaryToText(Input, Output: TStream);
 begin
-  ProjResConvert.LRSObjectBinaryToText(Input, Output);
+  ProjResProc.LRSObjectBinaryToText(Input, Output);
 end;
 
 procedure LRSObjectTextToBinary(Input, Output: TStream; Links: TLRPositionLinks);
 begin
-  ProjResConvert.LRSObjectTextToBinary(Input, Output, Links);
+  ProjResProc.LRSObjectTextToBinary(Input, Output, Links);
 end;
 
 procedure LRSObjectToText(Input, Output: TStream;
@@ -2022,7 +2022,7 @@ begin
   end else
     raise EInvalidImage.Create(SInvalidImage);
 
-  ProjResConvert.LRSObjectBinaryToText(Input, Output);
+  ProjResProc.LRSObjectBinaryToText(Input, Output);
 end;
 
 procedure FormDataToText(FormStream, TextStream: TStream; aFormat: TLRSStreamOriginalFormat);

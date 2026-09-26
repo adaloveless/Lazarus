@@ -72,7 +72,6 @@ function GetCaretRespondToFocus(handle: HWND; var ShowHideOnFocus: boolean): Boo
 function GetClientBounds(handle : HWND; var ARect: TRect) : Boolean; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 function GetCmdLineParamDescForInterface: TStringList; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 function GetControlConstraints(Constraints: TObject): boolean; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
-function GetDCOpacity(DC: HDC): Byte; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 function GetDCOriginRelativeToWindow(PaintDC: HDC; WindowHandle: HWND; var OriginDiff: TPoint): boolean; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 function GetDesignerDC(WindowHandle: HWND): HDC; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 function GetDeviceSize(DC: HDC; var p: TPoint): boolean; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
@@ -114,7 +113,6 @@ procedure SendCachedLCLMessages; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 procedure SetCanvasScaleFactor(DC: HDC; const AScaleFactor: double); {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 function SetCaretRespondToFocus(handle: HWND; ShowHideOnFocus: boolean): Boolean; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 function SetComboMinDropDownSize(Handle: HWND; MinItemsWidth, MinItemsHeight, MinItemCount: integer): boolean; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
-procedure SetDCOpacity(DC: HDC; AOpacity: Byte); {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 procedure SetEventHandlerFlags(AHandler: PEventHandler; NewFlags: dword); {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 procedure SetRubberBandRect(const ARubberBand: HWND; const ARect: TRect); {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}
 function SetWindowContentScale(Handle: HWND; const AScale: Double): Boolean; {$IFDEF IF_BASE_MEMBER}virtual;{$ENDIF}

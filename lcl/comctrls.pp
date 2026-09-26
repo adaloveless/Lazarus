@@ -754,8 +754,6 @@ type
     procedure MouseLeave; override;
     function GetPopupMenu: TPopupMenu; override;
     class procedure WSRegisterClass; override;
-  public
-    constructor Create(TheOwner: TComponent); override;
   end;
   TNoteBookStringsTabControlClass = class of TNoteBookStringsTabControl;
 

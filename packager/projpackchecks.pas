@@ -459,7 +459,7 @@ var
 begin
   Result:=mrCancel;
   // check if file is already part of project
-  NewFile:=AProject.UnitWithFilename(AFilename);
+  NewFile:=AProject.UnitInfoWithFilename(AFilename);
   if (NewFile<>nil) and NewFile.IsPartOfProject then
     exit(mrIgnore);
   // check unit name

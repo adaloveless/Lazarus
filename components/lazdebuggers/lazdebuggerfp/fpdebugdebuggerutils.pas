@@ -97,10 +97,7 @@ type
   end;
 
   TFpInt3DebugBreakOption = (
-    dboIgnoreAll,
-    dboIgnoreNtdllDebugBreak, // Windows only
-    dboIgnoreInt3,   // Intel: single byte / no space
-    dboIgnoreInt_3   // Intel: two byte / with space
+    dboIgnoreAll //, dboIgnoreDLL, dboIgnoreNtdllNoneDebug, dboIgnoreNtdllDebug
   );
   TFpInt3DebugBreakOptions = set of TFpInt3DebugBreakOption;
 

@@ -40,7 +40,6 @@ begin
   // 90 should be LCL default, so we see at least two numbers with default font.
   if AControl.LCLWidth = 0 then
   begin
-    if not Assigned(AControl.LCLObject) then Exit;
     min_width^ := Max(min_width^ div 2, AControl.LCLObject.Width);
     nat_width^ := Max(min_width^, AControl.LCLObject.Width);
   end else
@@ -85,12 +84,11 @@ begin
   end;
 
  // we respect ws height if autosize is true.
-  if Assigned(AControl.LCLObject) and AControl.LCLObject.AutoSize then
+  if AControl.LCLObject.AutoSize then
     exit;
 
   if AControl.LCLHeight = 0 then
   begin
-    if not Assigned(AControl.LCLObject) then Exit;
     min_height^ := Max(min_height^ div 2, AControl.LCLObject.Height);
     nat_height^ := Max(min_height^, AControl.LCLObject.Height);
   end else

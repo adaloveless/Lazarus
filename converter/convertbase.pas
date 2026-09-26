@@ -341,7 +341,7 @@ type
   protected
     procedure DoFileFound; override;
   public
-    constructor Create(aConverter: TConvertDelphiPBase); reintroduce;
+    constructor Create(aConverter: TConvertDelphiPBase);
   end;
 
 { TUnitsSearcher }

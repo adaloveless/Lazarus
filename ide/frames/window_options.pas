@@ -95,16 +95,15 @@ begin
     NewCaption := Format(lisLazarusEditorV, [LazarusVersionStr]);
 
   CustomCaption := EdTitleBar.Text;
-  if CustomCaption <> '' then
-    try
-      OldMarkUnhandledMacros := GlobalMacroList.MarkUnhandledMacros;
-      GlobalMacroList.MarkUnhandledMacros := false;
-      GlobalMacroList.SubstituteStr(CustomCaption, 0, 0, True);
-      if CustomCaption <> '' then
-        NewCaption := AddToCaption(NewCaption, CustomCaption);
-    finally
-      GlobalMacroList.MarkUnhandledMacros := OldMarkUnhandledMacros;
+  if CustomCaption <> '' then begin
+    OldMarkUnhandledMacros := GlobalMacroList.MarkUnhandledMacros;
+    GlobalMacroList.MarkUnhandledMacros := false;
+    GlobalMacroList.SubstituteStr(CustomCaption, 0, 0, True);
+    if CustomCaption <> '' then begin
+      NewCaption := AddToCaption(NewCaption, CustomCaption);
     end;
+    GlobalMacroList.MarkUnhandledMacros := OldMarkUnhandledMacros;
+  end;
 
   lbTitlePreview.Caption := NewCaption;
 end;

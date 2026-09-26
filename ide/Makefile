@@ -4705,9 +4705,47 @@ makefiles: fpc_makefiles
 ifneq ($(wildcard fpcmake.loc),)
 include fpcmake.loc
 endif
-.PHONY: ide lazbuilder all clean cleanide purge
+.PHONY: ide bigide starter lazbuilder all clean cleanide purge
+idepackages:
+	$(MAKE) -C packages/ideconfig
+	$(MAKE) -C packages/ideutils
+	$(MAKE) -C packages/idepackager
+	$(MAKE) -C packages/ideproject
+	$(MAKE) -C packages/idedebugger
+#-----------------------------------------------------------------------------
+# Generate ide/revision.inc, which ide/lazarus.pp includes UNCONDITIONALLY at
+# line 93 ({$I revision.inc}). That file is .gitignored and is in neither this
+# fork nor upstream, so on a fresh clone `make ide` / `make bigide` cannot work.
+#
+# RESTORED by Lars, c660 2026-09-11, after measuring BOTH failures in a pristine
+# worktree: without any rule at all make aborts in under a second with "No rule
+# to make target 'revisioninc'", and bypassing that it compiles the entire IDE
+# and then dies at the final unit with "Fatal: (2013) Cannot open include file
+# revision.inc". The generator (tools/svn2revisioninc) already existed and works
+# -- nothing invoked it. USESVN2REVISIONINC=0 is honoured because ../Makefile.fpc
+# still advertises it in the help text; it had no implementation behind it.
+#
+# The `cd ..` is load-bearing, not style. TVCSScout resolves the repository from
+# the PROCESS working directory, not from the sourcedir argument it is handed, so
+# running the tool from ide/ writes RevisionStr = 'Unknown' no matter what path
+# you pass it. Measured both ways in BOTH a git worktree (.git is a file) and the
+# ordinary checkout (.git is a directory): from ide/ -> 'Unknown', from the tree
+# root -> the real describe string. The worktree is NOT the variable; the cwd is.
+ifneq ($(USESVN2REVISIONINC),0)
+revisioninc:
+	$(MAKE) -C ../tools svn2revisioninc
+	cd .. && tools/svn2revisioninc$(SRCEXEEXT) . ide/revision.inc
+else
+revisioninc:
+endif
+
 ide: $(COMPILER_UNITTARGETDIR) revisioninc
 	$(MAKE) --assume-new=lazarus.pp lazarus$(EXEEXT) OPT='$(DEFAULT_IDE_OPTIONS) $(LAZARUS_OPT) $(OPT)'
+bigide: $(COMPILER_UNITTARGETDIR) revisioninc
+	-$(DEL) $(COMPILER_UNITTARGETDIR)/pkgmanager$(PPUEXT)
+	$(MAKE) --assume-new=lazarus.pp lazarus$(EXEEXT) OPT='$(BIG_IDE_OPTIONS) $(LAZARUS_OPT) $(OPT)'
+starter: $(COMPILER_UNITTARGETDIR)
+	$(MAKE) --assume-new=startlazarus.lpr startlazarus$(EXEEXT) OPT='$(DEFAULT_IDE_OPTIONS) $(LAZARUS_OPT) $(OPT)'
 lazbuilder: $(COMPILER_UNITTARGETDIR)
 	$(MAKE) --assume-new=lazbuild.lpr lazbuild$(EXEEXT) OPT='$(LAZBUILD_OPT) $(OPT)'
 all: lazbuilder ide starter
@@ -4715,6 +4753,10 @@ cleanide:
 	-$(DEL) $(wildcard *$(OEXT))
 	-$(DEL) $(wildcard *$(PPUEXT))
 	-$(DEL) $(wildcard *$(RSTEXT))
+	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*$(OEXT))
+	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*$(PPUEXT))
+	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*$(RSTEXT))
+	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*.lfm)
 	-$(DEL) $(wildcard ../*$(OEXT))
 	-$(DEL) $(wildcard ../*$(PPUEXT))
 	-$(DEL) $(wildcard ../designer/*$(OEXT))
@@ -4727,14 +4769,16 @@ cleanide:
 	-$(DEL) $(wildcard ../converter/*$(PPUEXT))
 	-$(DEL) $(wildcard ../doceditor/*$(OEXT))
 	-$(DEL) $(wildcard ../doceditor/*$(PPUEXT))
+ifneq ($(findstring $(OS_TARGET),win32 win64),)
+	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*.or)
+	-$(DEL) $(wildcard $(COMPILER_UNITTARGETDIR)/*.res)
+endif
 cleanlaz: clean cleanide
-	$(DELTREE) packages/ideconfig/lib/*
-	$(DELTREE) packages/idepackager/lib/*
-	$(DELTREE) packages/ideproject/lib/*
-	$(DELTREE) packages/ideutils/lib/*
-	$(DELTREE) packages/idedebugger/lib/*
-	$(DELTREE) packages/idesynedit/lib/*
-	$(DELTREE) packages/idehelputils/lib/*
+	$(MAKE) -C packages/ideconfig clean
+	$(MAKE) -C packages/idepackager clean
+	$(MAKE) -C packages/ideproject clean
+	$(MAKE) -C packages/ideutils clean
+	$(MAKE) -C packages/idedebugger clean
 	${DELTREE} ../units/*
 purge: cleanlaz
 distclean: cleanlaz

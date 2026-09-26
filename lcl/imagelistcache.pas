@@ -73,8 +73,7 @@ type
     
     function RegisterListener(AListener: IImageCacheListener): Integer;
     procedure UnregisterListener(AListener: IImageCacheListener);
-    procedure RegisterBitmap(AListener: IImageCacheListener; ABitmap: TBitmap;
-      ABitmapCount: Integer = 1; AHorizontalLayout: Boolean = true);
+    procedure RegisterBitmap(AListener: IImageCacheListener; ABitmap: TBitmap; ABitmapCount: Integer = 1);
     procedure Rebuild;
   end;
   
@@ -193,8 +192,7 @@ begin
   end;
 end;
 
-procedure TImageListCache.RegisterBitmap(AListener: IImageCacheListener; ABitmap: TBitmap;
-  ABitmapCount: Integer = 1; AHorizontalLayout: Boolean = true);
+procedure TImageListCache.RegisterBitmap(AListener: IImageCacheListener; ABitmap: TBitmap; ABitmapCount: Integer = 1);
 var
   i, AStart, OldLen: Integer;
   Item: PImageCacheItem;
@@ -209,21 +207,11 @@ begin
     if Item = nil then
     begin
       Item := FItems.GetNew;
-      if AHorizontalLayout then
-        // Horizontal strip
-        Item^.FImageList := GetImageListFor(ABitmap.Width div ABitmapCount, ABitmap.Height)
-      else
-        // Vertical strip
-        Item^.FImageList := GetImageListFor(ABitmap.Width, ABitmap.Height div ABitmapCount);
+      Item^.FImageList := GetImageListFor(ABitmap.Width div ABitmapCount, ABitmap.Height);
       Item^.FListener := AListener;
     end;
 
-    if AHorizontalLayout then
-      // Horizontal strip
-      AStart := Item^.FImageList.AddSliced(ABitmap, ABitmapCount, 1)
-    else
-      // Vertical strip
-      AStart := Item^.FImageList.AddSliced(ABitmap, 1, ABitmapCount);
+    AStart := Item^.FImageList.AddSliced(ABitmap, ABitmapCount, 1);
     AListener.CacheSetImageList(Item^.FImageList);
     OldLen := Length(Item^.FImageIndexes);
     SetLength(Item^.FImageIndexes, OldLen + Item^.FImageList.Count - AStart);

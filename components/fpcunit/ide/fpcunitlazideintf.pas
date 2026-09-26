@@ -133,8 +133,9 @@ end;
 
 function TFPCUnitApplicationDescriptor.InitProject(AProject: TLazProject): TModalResult;
 var
+  le: string;
+  NewSource: String;
   MainFile: TLazProjectFile;
-  l: TStringList;
 begin
   inherited InitProject(AProject);
 
@@ -147,25 +148,21 @@ begin
   AProject.LoadDefaultIcon;
 
   // create program source
-  l := TStringList.Create;
-  try
-    l.Add('program FPCUnitProject1;');
-    l.Add('');
-    l.Add('{$mode objfpc}{$H+}');
-    l.Add('');
-    l.Add('uses');
-    l.Add('  Interfaces, Forms, GuiTestRunner;');
-    l.Add('');
-    l.Add('begin');
-    l.Add('  Application.Initialize;');
-    l.Add('  Application.CreateForm(TGuiTestRunner, TestRunner);');
-    l.Add('  Application.Run;');
-    l.Add('end.');
-    l.Add('');
-    AProject.MainFile.SetSourceText(l.Text);
-  finally
-    FreeAndNil(l);
-  end;
+  le:=LineEnding;
+  NewSource:='program FPCUnitProject1;'+le
+    +le
+    +'{$mode objfpc}{$H+}'+le
+    +le
+    +'uses'+le
+    +'  Interfaces, Forms, GuiTestRunner;'+le
+    +le
+    +'begin'+le
+    +'  Application.Initialize;'+le
+    +'  Application.CreateForm(TGuiTestRunner, TestRunner);'+le
+    +'  Application.Run;'+le
+    +'end.'+le
+    +le;
+  AProject.MainFile.SetSourceText(NewSource);
 
   // add
   AProject.AddPackageDependency('FCL');
@@ -200,10 +197,11 @@ end;
 function TFileDescPascalUnitFPCUnitTestCase.CreateSource(const Filename,
   SourceName, ResourceName: string): string;
 var
-  l: TStringList;
+  LE: string;
 begin
   CreateSetup := false;
   CreateTeardown := false;
+  LE:=LineEnding;
   with TTestCaseOptionsForm.Create(nil) do
   try
     edDefaultName.Text := 'T' + SourceName;
@@ -223,31 +221,28 @@ begin
   finally
     Free;
   end;
-  l := TStringList.Create;
-  try
-    l.Add('unit '+SourceName+';');
-    l.Add('');
-    l.Add('{$mode objfpc}{$H+}');
-    l.Add('');
-    l.Add('interface');
-    l.Add('');
-    l.Add('uses');
-    l.Add('  '+GetInterfaceUsesSection+';');
-    l.Add('');
-    l.Add(GetInterfaceSource(Filename,SourceName,ResourceName)); // already includes LE
-    l.Add('implementation');
-    l.Add('');
-    l.Add(GetImplementationSource(Filename,SourceName,ResourceName)+'end.'); // no need for extra LE
-    l.Add('');
-    result := l.Text;
-  finally
-    FreeAndNil(l);
-  end;
+  Result:=
+     'unit '+SourceName+';'+LE
+    +LE
+    +'{$mode objfpc}{$H+}'+LE
+    +LE
+    +'interface'+LE
+    +LE
+    +'uses'+LE
+    +'  '+GetInterfaceUsesSection+';'+LE
+    +LE
+    +GetInterfaceSource(Filename,SourceName,ResourceName)
+    +'implementation'+LE
+    +LE
+    +GetImplementationSource(Filename,SourceName,ResourceName)
+    +'end.'+LE
+    +LE;
 end;
 
 function TFileDescPascalUnitFPCUnitTestCase.GetInterfaceUsesSection: string;
 begin
-  Result:=inherited+', FPCUnit, TestRegistry';
+  Result:=inherited GetInterfaceUsesSection;
+  Result:=Result+', fpcunit, testregistry';
 end;
 
 function TFileDescPascalUnitFPCUnitTestCase.GetLocalizedName: string;
@@ -263,61 +258,60 @@ end;
 function TFileDescPascalUnitFPCUnitTestCase.GetInterfaceSource(const Filename,
   SourceName, ResourceName: string): string;
 var
-  l: TStringList;
+  le: string;
+  setupMethod: string;
+  teardownMethod: string;
+  protectedSection: string;
 begin
-  l := TStringList.Create;
-  try
-    l.Add('type');
-    l.Add('  '+TestCaseName+' = class(TTestCase)');
-    if CreateSetup or CreateTeardown then
-      l.Add('  protected');
-    if CreateSetup then
-      l.Add('    procedure SetUp; override;');
-    if CreateTeardown then
-      l.Add('    procedure TearDown; override;');
-    l.Add('  published');
-    l.Add('    procedure Test1;');
-    l.Add('  end;');
-    result := l.Text;
-  finally
-    FreeAndNil(l);
-  end;
+  le:=System.LineEnding;
+  if CreateSetup or CreateTeardown then
+    protectedSection := '  protected' + le;
+  if CreateSetup then
+    setupMethod := '    procedure SetUp; override;' + le;
+  if CreateTeardown then
+    teardownMethod := '    procedure TearDown; override;' + le;
+  Result := 'type' + le
+    + le
+    +'  '+TestCaseName+'= class(TTestCase)'+le
+    + protectedSection
+    + setupMethod
+    + teardownMethod
+    +'  published'+le
+    +'    procedure TestHookUp;'+le
+    +'  end;'+le+le;
 end;
 
 function TFileDescPascalUnitFPCUnitTestCase.GetImplementationSource(
   const Filename, SourceName, ResourceName: string): string;
 var
-  l: TStringList;
+  le: string;
+  setupMethod: string;
+  teardownMethod: string;
 begin
-  l := TStringList.Create;
-  try
-    if CreateSetup then
-    begin
-      l.Add('procedure '+TestCaseName+'.SetUp;');
-      l.Add('begin');
-      l.Add('');
-      l.Add('end;');
-      l.Add('');
-    end;
-    if CreateTeardown then
-    begin
-      l.Add('procedure '+TestCaseName+'.TearDown;');
-      l.Add('begin');
-      l.Add('');
-      l.Add('end;');
-      l.Add('');
-    end;
-    l.Add('procedure '+TestCaseName+'.Test1;');
-    l.Add('begin');
-    l.Add('  Fail('''+sWriteYourOwnTest+''');');
-    l.Add('end;');
-    l.Add('');
-    l.Add('initialization');
-    l.Add('  RegisterTest('+TestCaseName+');');
-    result := l.Text;
-  finally
-    FreeAndNil(l);
-  end;
+  le:=System.LineEnding;
+  if CreateSetup then
+  setupMethod :=  'procedure '+TestCaseName+'.SetUp;'+le
+                  +'begin'+le
+                  +le
+                  +'end;'+le;
+  if CreateTeardown then
+  teardownMethod := 'procedure '+TestCaseName+'.TearDown;'+le
+                   +'begin'+le
+                   +le
+                   +'end;'+le;
+  Result:='procedure '+TestCaseName+'.TestHookUp;'+le
+    +'begin'+le
+    +'  Fail('+QuotedStr(sWriteYourOwnTest)+');'+le
+    +'end;'+le
+    +le
+    +setupMethod
+    +le
+    +teardownMethod
+    +le
+    +'Initialization'+le
+    +le
+    +'  RegisterTest('+TestCaseName+');'
+    +le;
 end;
 
 { TFPCUnitConsoleApplicationDescriptor }
@@ -388,14 +382,14 @@ begin
   else
     Exit;
   end;
-  Result:='DefaultFormat := '+Result;
+  Result:='DefaultFormat:='+Result;
 end;
 
 function TFPCUnitConsoleApplicationDescriptor.CreateSource : String;
 
 var
   S : TStrings;
-  Line : String;
+  Prefix,Line : String;
 
 
 begin
@@ -408,15 +402,18 @@ begin
       Add('{$mode objfpc}{$H+}');
       Add('');
       Add('uses');
-      Line:='Classes, ConsoleTestRunner';
+      Line:='Classes, consoletestrunner';
       if (coTestInsight in FOptions) then
-        Line:=Line+', FPCUnitTestInsight, JsonParser';
+        Line:=Line+', fpcunittestinsight';
       Add('  '+Line+';');
       Add('');
       Add('type');
+      Add('');
+      Add('  { TMyTestRunner }');
+      Add('');
       Add('  TMyTestRunner = class(TTestRunner)');
       Add('  protected');
-      Add('    // override protected methods for customization');
+      Add('  // override the protected methods of TTestRunner to customize its behavior');
       Add('  end;');
       Add('');
       Add('var');
@@ -425,23 +422,26 @@ begin
       Add('begin');
       if (coTestInsight in FOptions) then
         begin
-        Add('  if IsTestInsightListening() then');
-        Add('  begin');
-        Add('    RunRegisteredTests();');
-        Add('    exit;');
-        Add('  end;');
-        end;
+        add('  if IsTestInsightListening() then');
+        add('    RunRegisteredTests('''','''')');
+        add('  else');
+        add('    begin');
+        Prefix:='    ';
+        end
+      else
+        Prefix:='  ';
       if coRunAllTests in FOptions then
-        Add('  DefaultRunAllTests := true;');
+        Add(Prefix+'DefaultRunAllTests:=True;');
       if FDefaultFormat<>dfDefault  then
-        Add('  '+GetDefaultformatSource+';');
-      Add('  Application := TMyTestRunner.Create(nil);');
-      Add('  Application.Initialize;');
-      Add('  Application.Title := ''FPCUnit console test runner'';');
-      Add('  Application.Run;');
-      Add('  Application.Free;');
+        Add(Prefix+GetDefaultformatSource+';');
+      Add(Prefix+'Application := TMyTestRunner.Create(nil);');
+      Add(Prefix+'Application.Initialize;');
+      Add(Prefix+'Application.Title := ''FPCUnit Console test runner'';');
+      Add(Prefix+'Application.Run;');
+      Add(Prefix+'Application.Free;');
+      if (coTestInsight in FOptions) then
+        Add(Prefix+'end;');
       Add('end.');
-      Add('');
       end;
     Result:=S.Text;
   finally

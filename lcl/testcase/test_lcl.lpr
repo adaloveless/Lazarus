@@ -7,12 +7,9 @@ uses
   // FPCUnit
   consoletestrunner,
   // LCL
-  Interfaces, Forms, TestBase,
+  Interfaces, Forms,
   // (test suites - common)
-  Test_ChildSizing,  (* Test TWinControl.ChildSizing - grid layout for children *)
-  Test_DpiScaling,   (* Test DPI scaling *)
-  Test_Anchors,      (* Test akLeft/Right/Top/Bottom - with/without AnchorSides *)
-  Test_ParentSizing, (* Test AutoSizing/AutoScrolling based on children *)
+  Test_ChildSizing, Test_DpiScaling,
   // (test suites - components)
   TestNotebook;
 

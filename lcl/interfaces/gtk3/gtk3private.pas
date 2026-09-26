@@ -742,7 +742,6 @@ begin
   gtk_text_view_scroll_to_mark(AStrings.FGtkText, TextMark, 0, True, 0, 1);
 
   AStrings.FQueueCursorMove := 0;
-  AStrings.FTimerMove := 0;
 end;
 
 function UpdateMemoSelLengthCB(AStrings: TGtk3MemoStrings): gboolean; cdecl;
@@ -764,7 +763,6 @@ begin
   gtk_text_buffer_select_range(AStrings.FGtkBuf, @StartIter, @EndIter);
 
   AStrings.FQueueSelLength := -1;
-  AStrings.FTimerSel := 0;
 end;
 
 function TGtk3MemoStrings.GetTextStr: string;
@@ -827,10 +825,8 @@ end;
 
 destructor TGtk3MemoStrings.Destroy;
 begin
-  if FTimerSel <> 0 then
-    g_source_remove(FTimerSel);
-  if FTimerMove <> 0 then
-    g_source_remove(FTimerMove);
+  // gtk_timeout_remove(FTimerSel);
+  // gtk_timeout_remove(FTimerMove);
   // don't destroy the widgets
   inherited Destroy;
 end;

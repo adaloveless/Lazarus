@@ -57,9 +57,7 @@ function LazEndsStr(const ASubText, AText: string): Boolean;
 function LazStartsText(const ASubText, AText: string): Boolean;
 function LazEndsText(const ASubText, AText: string): Boolean;
 function PosI(const SubStr, S: string): integer;
-function IsNumeric(const s: String): Boolean;
-function IsLower(const s: String): Boolean;
-function IsUpper(const s: String): Boolean;
+function IsNumeric(s: String): Boolean;
 
 // Functions for line endings
 function LineEndingCount(const Txt: string; var LengthOfLastLine: integer): integer;
@@ -219,42 +217,14 @@ begin
   end;
 end;
 
-function IsNumeric(const s: String): Boolean;
+function IsNumeric(s: String): Boolean;
 var
   i: Integer;
 begin
   i := Length(s);
   if i > 0 then
   begin
-    while (i > 0) and (s[i] in ['0'..'9']) do
-      dec(i);
-    Result := i = 0;
-  end else
-    Result := false;
-end;
-
-function IsLower(const s: String): Boolean;
-var
-  i: Integer;
-begin
-  i := Length(s);
-  if i > 0 then
-  begin
-    while (i > 0) and not (s[i] in ['A'..'Z']) do
-      dec(i);
-    Result := i = 0;
-  end else
-    Result := false;
-end;
-
-function IsUpper(const s: String): Boolean;
-var
-  i: Integer;
-begin
-  i := Length(s);
-  if i > 0 then
-  begin
-    while (i > 0) and not (s[i] in ['a'..'z']) do
+    while (i >= 1) and (s[i] in ['0'..'9']) do
       dec(i);
     Result := i = 0;
   end else

@@ -202,9 +202,9 @@ begin
   LineW  := Max(1.0, Size / 5.0 / Sqrt(2.0));
   cairo_save(Cr);
   cairo_set_line_width(Cr, LineW);
-  cairo_set_line_join(Cr, CAIRO_LINE_JOIN_MITER);
+  cairo_set_line_join(Cr, CAIRO_LINE_JOIN_ROUND);
   cairo_set_line_cap(Cr, CAIRO_LINE_CAP_ROUND);
-  cairo_translate(Cr, X + HalfSz + 0.5, Y + HalfSz + 0.5);
+  cairo_translate(Cr, X + HalfSz, Y + HalfSz);
   cairo_rotate(Cr, Angle - Pi);
   cairo_move_to(Cr, -HalfSz, -Size / 4.0);
   cairo_line_to(Cr,       0,  Size / 4.0);
@@ -1306,11 +1306,9 @@ begin
   bs := sett^.get_string('color-scheme');
   sett^.unref;
   if bs <> '' then
-    if Pos('prefer-dark', bs) > 0 then
-      exit(true); // if exists it is conclusive
-  // not every dark theme has the 'prefer-dark'
-  // -> guess from colors
-  Result := inherited IsDarkTheme;
+    Result := Pos('prefer-dark', bs) > 0
+  else
+    Result := inherited IsDarkTheme;
 end;
 
 end.

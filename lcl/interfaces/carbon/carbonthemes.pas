@@ -427,7 +427,7 @@ begin
   HIThemeGetWindowShape(BtnRect, WindowDrawInfo, WindowRegion, WindowShape);
   HIShapeGetBounds(WindowShape, BtnRect);
   Offset := CGRectToRect(BtnRect).TopLeft;
-  Types.OffsetRect(R, -Offset.X, -Offset.Y);
+  OffsetRect(R, -Offset.X, -Offset.Y);
   BtnRect := RectToCGRect(R);
   OSError(
     HIThemeDrawTitleBarWidget(BtnRect, WindowWidgetDrawInfo, DC.CGContext,
@@ -435,7 +435,7 @@ begin
     Self, 'DrawTreeviewElement', 'HIThemeDrawButton');
 
   Result := CGRectToRect(BtnRect);
-  Types.OffsetRect(Result, Offset.X, Offset.Y);
+  OffsetRect(Result, Offset.X, Offset.Y);
 end;
 
 {------------------------------------------------------------------------------

@@ -16,9 +16,7 @@ msgid "Apache Module"
 msgstr "Módulo Apache"
 
 #: fpwebstrconsts.rsapachemodule2
-#, fuzzy
-#| msgid "An Apache loadable module in Free Pascal using webmodules. The main library file is automatically maintained by Lazarus."
-msgid "An Apache loadable module in Free Pascal using webmodules."
+msgid "An Apache loadable module in Free Pascal using webmodules. The main library file is automatically maintained by Lazarus."
 msgstr "Um módulo Apache carregável no Free Pascal usando módulos web. O arquivo biblioteca principal é mantido automaticamente pelo Lazarus."
 
 #: fpwebstrconsts.rscgiapplicati
@@ -78,9 +76,7 @@ msgid "Complete HTTP Server program in Free Pascal using webmodules."
 msgstr "Programa servidor HTTP completo em Free Pascal usando módulos web."
 
 #: fpwebstrconsts.rsnomodule
-#, fuzzy
-#| msgid "Do not create a web module"
-msgid "No module, use HTTPRoute instead"
+msgid "Do not create a web module"
 msgstr "Não criar um módulo web"
 
 #: fpwebstrconsts.rswebdataprovi

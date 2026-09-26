@@ -360,17 +360,18 @@ const
   MAXBUFSIZE = 512;
 
 var
-  BufSize: DWORD;
+  PrtCount: DWORD;
   IntRes: Integer;
   GetDefPrnFunc: function(buffer: LPTSTR; var bufSize: DWORD): BOOL; stdcall;
   SpoolerHandle: HINST;
   AName: widestring;
 begin
+  // retrieve default printer using ms blessed method, see
+  // see: http://support.microsoft.com/default.aspx?scid=kb;en-us;246772
   Result := '';
   if Win32MajorVersion >=5 then
   begin
     // for Windows 2000 or later, use api GetDefaultPrinter
-    //https://learn.microsoft.com/en-us/windows/win32/printdocs/getdefaultprinter
     SpoolerHandle := LoadLibrary(LibWinSpool);
     if SpoolerHandle = 0 then
       Exit;
@@ -380,13 +381,11 @@ begin
       FreeLibrary(SpoolerHandle);
       Exit;
     end;
-    BufSize := 0;
-    //will return False if first param is nil, and retrun correct value for BufSize, but only if GetLastOSError = ERROR_INSUFFICIENT_BUFFER
-    //if no default printer is present GetLastOSError = ERROR_FILE_NOT_FOUND  (Issue #42422)
-    GetDefPrnFunc(nil, BufSize);
-    if (GetLastOSError = ERROR_INSUFFICIENT_BUFFER) and (BufSize>0) then begin
-      SetLength(AName, BufSize-1); // this includes the #0 terminator
-      GetDefPrnFunc(@AName[1], BufSize);
+    GetDefPrnFunc(nil, PrtCount);
+    result := '';
+    if (prtcount>0) then begin
+      SetLength(AName, PrtCount-1); // this includes the #0 terminator
+      GetDefPrnFunc(@AName[1], prtCount);
       result := UTF8Encode(AName);
     end;
     FreeLibrary(SpoolerHandle);

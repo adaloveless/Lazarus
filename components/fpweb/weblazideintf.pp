@@ -497,8 +497,8 @@ function TFileDescWebDataModule.GetInterfaceUsesSection: string;
 begin
   Result:='SysUtils, Classes';
   if GetResourceType = rtLRS then
-    Result:=Result+', LResources';
-  Result:=Result+', HTTPDefs, FpHTTP, FpWeb';
+    Result :=  Result+ ', LResources, ';
+  Result:=Result+',httpdefs, fpHTTP,fpWeb';
 end;
 
 function TFileDescWebDataModule.GetLocalizedName: string;
@@ -534,8 +534,8 @@ function TFileDescFileDataModule.GetInterfaceUsesSection: string;
 begin
   Result:='SysUtils, Classes';
   if GetResourceType = rtLRS then
-    Result:=Result+', LResources';
-  Result:=Result+', HTTPDefs, FpHTTP, FpWeb, fpWebFile';
+    Result :=  Result+ ', LResources, ';
+  Result:=Result+',httpdefs, fpHTTP, fpWeb, fpWebFile';
 end;
 
 function TFileDescFileDataModule.GetLocalizedName: string;
@@ -569,10 +569,10 @@ end;
 
 function TFileDescHTMLModule.GetInterfaceUsesSection: string;
 begin
-  Result:='SysUtils, Classes';
+  Result:='SysUtils, Classes ';
   if (GetResourceType = rtLRS) then
-    Result:=Result+', LResources';
-  Result:=Result+', HTTPDefs, WebSession, FpHTTP, HTMLWriter, HTMLElements, FpHTML';
+    Result :=  Result+ ', LResources, ';
+  Result:=Result+',HTTPDefs,websession,fpHTTP,htmlwriter,htmlelements,fphtml';
 end;
 
 function TFileDescHTMLModule.GetLocalizedName: string;
@@ -586,6 +586,7 @@ begin
 end;
 
 function TFileDescHTMLModule.GetImplementationSource(const Filename, SourceName, ResourceName: string): string;
+
 begin
   Result:=Inherited GetImplementationSource(FileName,SourceName,ResourceName);
   if GetResourceType = rtRes then
@@ -862,6 +863,7 @@ begin
 end;
 
 function THTTPApplicationDescriptor.GetOptions : TModalResult;
+
 begin
   With TNewHTTPApplicationForm.Create(Application) do
     try
@@ -882,11 +884,15 @@ begin
       Free;
     end;
 end;
+function THTTPApplicationDescriptor.InitProject(AProject: TLazProject
+  ): TModalResult;
 
-function THTTPApplicationDescriptor.InitProject(AProject: TLazProject): TModalResult;
 Var
-  S, le, UsesUnits, NewSource: String;
+  S : string;
+  le: string;
+  NewSource: String;
   MainFile: TLazProjectFile;
+
 begin
   inherited InitProject(AProject);
   MainFile:=AProject.CreateProjectFile('httpproject1.lpr');
@@ -895,31 +901,17 @@ begin
   AProject.MainFileID:=0;
   // create program source
   le:=LineEnding;
-  UsesUnits:='FpHTTPApp';
-  if FStandardModule=smHTTPRoute then
-    UsesUnits:=UsesUnits+', HTTPDefs, HTTPRoute';
-  if FServeFiles<>sfNoFiles then
-    UsesUnits:=UsesUnits+', fpwebfile';
-  NewSource:='program HttpProject1;'+le
+  NewSource:='program httpproject1;'+le
     +le
     +'{$mode objfpc}{$H+}'+le
     +le
-    +'uses'+le
-    +'  '+UsesUnits+';'+le
-    +le;
-
-  if FStandardModule=smHTTPRoute then
-  begin
-    S:='procedure DoHello(ARequest: TRequest; AResponse: TResponse);'+le;
-    S:=S+'begin'+le;
-    S:=S+'  AResponse.Content:=''<html><body><h1>Hello,World!</h1></body></html>'''+le;
-    S:=S+'end;'+le;
-    NewSource:=NewSource+S+le;
-  end;
-
-  NewSource:=NewSource+'begin'+le;
-  if FStandardModule=smHTTPRoute then
-    NewSource:=NewSource+'  HTTPRouter.RegisterRoute(''*'', @DoHello);'+le;
+    +'uses'+le;
+  if FServeFiles<>sfNoFiles then
+    NewSource:=NewSource+'  fpwebfile,'+le;
+  NewSource:=NewSource
+    +'  fphttpapp;'+le
+    +le
+    +'begin'+le;
   Case FServeFiles of
   sfSingleRoute:
     begin
@@ -956,18 +948,22 @@ begin
   Result:= mrOK;
 end;
 
-function THTTPApplicationDescriptor.CreateStartFiles(AProject: TLazProject): TModalResult;
+function THTTPApplicationDescriptor.CreateStartFiles(AProject: TLazProject
+  ): TModalResult;
+
 Var
   Desc :TProjectFileDescriptor ;
+
 begin
   Case FStandardModule of
-    smHTTPRoute : Desc:=Nil;  // No module.
-    smWeb :  Desc:=FileDescriptorWebModule;
-    smHTML : Desc:=FileDescriptorHTMLModule;
-    smFile : Desc:=FileDescriptorFileDataModule;
-    smRPC :  Desc:=FileDescriptorJSONRPCModule;
-    smWebData : Desc:=FileDescriptorWebProviderDataModule;
+    smWeb : Desc:=FileDescriptorWebModule;
+    smHTTP : Desc:=FileDescriptorHTMLModule;
+    smFile: Desc:=FileDescriptorFileDataModule;
     smExtDirect : Desc:=FileDescriptorExtDirectModule;
+    smRPC : Desc:=FileDescriptorJSONRPCModule;
+    smWebData : Desc:=FileDescriptorWebProviderDataModule;
+  else
+    Desc:=Nil;
   end;
   if Desc<>Nil then
   LazarusIDE.DoNewEditorFile(Desc,'','',
@@ -988,7 +984,7 @@ end;
 function TFileDescWebProviderDataModule.GetInterfaceUsesSection: string;
 begin
   Result:=inherited GetInterfaceUsesSection;
-  Result:=Result+', HTTPDefs, WebSession, FpHTTP, FpWeb, FpWebData';
+  Result:=Result+', HTTPDefs, websession, fpHTTP, fpWeb, fpwebdata';
 end;
 
 function TFileDescWebProviderDataModule.GetLocalizedName: string;
@@ -1011,6 +1007,7 @@ begin
 end;
 
 
+
 { TFileDescWebJSONFPCModule }
 
 constructor TFileDescWebJSONRPCModule.Create;
@@ -1024,7 +1021,7 @@ end;
 function TFileDescWebJSONRPCModule.GetInterfaceUsesSection: string;
 begin
   Result:=inherited GetInterfaceUsesSection;
-  Result:=Result+', HTTPDefs, WebSession, FpHTTP, FpWeb, FpJSONRPC, WebJSONRPC';
+  Result:=Result+', HTTPDefs, websession, fpHTTP, fpWeb, fpjsonrpc, webjsonrpc';
 end;
 
 function TFileDescWebJSONRPCModule.GetLocalizedName: string;
@@ -1083,7 +1080,7 @@ end;
 function TFileDescExtDirectModule.GetInterfaceUsesSection: string;
 begin
   Result:=inherited GetInterfaceUsesSection;
-  Result:=Result+', HTTPDefs, WebSession, FpHTTP, FpWeb, FpJSONRPC, WebJSONRPC, FpExtDirect';
+  Result:=Result+', HTTPDefs, websession, fpHTTP, fpWeb, fpjsonrpc, webjsonrpc, fpextdirect';
 end;
 
 function TFileDescExtDirectModule.GetLocalizedName: string;
@@ -1131,6 +1128,7 @@ end;
 
 { TJSSyntaxChecker }
 
+
 procedure TJSSyntaxChecker.ShowMessage(const Msg: String);
 begin
   IDEMessagesWindow.AddCustomMessage(mluImportant,Msg,SourceFileName);
@@ -1175,7 +1173,8 @@ begin
   end;
 end;
 
-function TJSSyntaxChecker.CheckSource(Sender: TObject; var Handled: boolean): TModalResult;
+function TJSSyntaxChecker.CheckSource(Sender: TObject; var Handled: boolean
+  ): TModalResult;
 
 Var
   AE : TSourceEditorInterface;

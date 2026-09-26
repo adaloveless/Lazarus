@@ -13,111 +13,107 @@ msgstr ""
 
 #: fpwebstrconsts.rsapachemodule
 msgid "Apache Module"
-msgstr "Apache-Modul"
+msgstr ""
 
 #: fpwebstrconsts.rsapachemodule2
-#, fuzzy
-#| msgid "An Apache loadable module in Free Pascal using webmodules. The main library file is automatically maintained by Lazarus."
-msgid "An Apache loadable module in Free Pascal using webmodules."
-msgstr "Ein Apache-ladbares Modul in Free Pascal mit Hilfe von Webmodulen. Die Main-Bibliotheksdatei wird automatisch von Lazarus erstellt."
+msgid "An Apache loadable module in Free Pascal using webmodules. The main library file is automatically maintained by Lazarus."
+msgstr ""
 
 #: fpwebstrconsts.rscgiapplicati
 msgid "CGI Application"
-msgstr "CGI-Anwendung"
+msgstr ""
 
 #: fpwebstrconsts.rscgiapplicati2
 msgid "A CGI (Common Gateway Interface) program in Free Pascal using webmodules."
-msgstr "Eine CGI-Anwendung (Common Gateway Interface) in Free Pascal mit Hilfe von Webmodulen."
+msgstr ""
 
 #: fpwebstrconsts.rscustomcgiapp
 msgid "Custom CGI Application"
-msgstr "Benutzerdefinierte CGI-Anwendung"
+msgstr ""
 
 #: fpwebstrconsts.rscustomcgiapp2
 msgid "A CGI (Common Gateway Interface) program in Free Pascal."
-msgstr "Eine CGI-Anwendung (Common Gateway Interface) in Free Pascal."
+msgstr ""
 
 #: fpwebstrconsts.rscustomfastcg
 msgid "Custom FastCGI Application"
-msgstr "Benutzerdefinierte FastCGI-Anwendung"
+msgstr ""
 
 #: fpwebstrconsts.rscustomfastcg2
 msgid "A FastCGI (Common Gateway Interface) program in Free Pascal."
-msgstr "Eine FastCGI-Anwendung (Common Gateway Interface) in Free Pascal."
+msgstr ""
 
 #: fpwebstrconsts.rsfastcgiappli
 msgid "FastCGI Application"
-msgstr "FastCGI-Anwendung"
+msgstr ""
 
 #: fpwebstrconsts.rsfastcgiappli2
 msgid "A FastCGI (Common Gateway Interface) program in Free Pascal using webmodules."
-msgstr "Eine FastCGI-Anwendung (Common Gateway Interface) in Free Pascal mit Hilfe von Webmodulen."
+msgstr ""
 
 #: fpwebstrconsts.rsfilemodule
 msgid "File serving Module"
-msgstr "Dateiserver-Modul"
+msgstr ""
 
 #: fpwebstrconsts.rsfilemodule2
 msgid "A datamodule to help serving files from the filesystem in WEB (HTTP) applications."
-msgstr "Ein Datenmodul, das Dateien des Dateisystems in WEB (HTTP)-Anwendungen zur Verfügung stellt."
+msgstr ""
 
 #: fpwebstrconsts.rshtmlwebmodul
 msgid "HTML Web Module"
-msgstr "HTML-Web-Modul"
+msgstr ""
 
 #: fpwebstrconsts.rshtmlwebmodul2
 msgid "A Web datamodule for producing strict HTML."
-msgstr "Ein WEB-Datenmodul für die Erzeugung von striktem HTML."
+msgstr ""
 
 #: fpwebstrconsts.rshttpappli
 msgid "HTTP server Application"
-msgstr "HTTP-Serveranwendung"
+msgstr ""
 
 #: fpwebstrconsts.rshttpappli2
 msgid "Complete HTTP Server program in Free Pascal using webmodules."
-msgstr "Vollständige HTTP-Server-Anwendung in Free Pascal mit Hilfe von Webmodulen."
+msgstr ""
 
 #: fpwebstrconsts.rsnomodule
-#, fuzzy
-#| msgid "Do not create a web module"
-msgid "No module, use HTTPRoute instead"
-msgstr "Kein Webmodul erzeugen"
+msgid "Do not create a web module"
+msgstr ""
 
 #: fpwebstrconsts.rswebdataprovi
 msgid "Web DataProvider Module"
-msgstr "Web-DataProvider-Modul"
+msgstr ""
 
 #: fpwebstrconsts.rswebdataprovi2
 msgid "A datamodule to handle data requests for WEB (HTTP) applications using WebDataProvider components."
-msgstr "Ein Datenmodul für die Behandlung von Datenanforderungen für WEB (HTTP)-Anwendungen mit Hilfe von WebDataProvider-Komponenten."
+msgstr ""
 
 #: fpwebstrconsts.rswebextdirect
 msgid "Web Ext.Direct Module"
-msgstr "Web-Ext.Direct-Modul"
+msgstr ""
 
 #: fpwebstrconsts.rswebextdirect2
 msgid "A datamodule to dispatch Ext.Direct requests in WEB (HTTP) applications using TJSONRPCHandler components."
-msgstr "Ein Datenmodul für die Abfertigung von Ext.Direct-Requests für WEB (HTTP)-Anwendungen mit Hilfe von TJSONRPCHandler-Komponenten."
+msgstr ""
 
 #: fpwebstrconsts.rswebjsonrpcmo
 msgid "Web JSON-RPC Module"
-msgstr "Web-JSON-RPC-Modul"
+msgstr ""
 
 #: fpwebstrconsts.rswebjsonrpcmo2
 msgid "A datamodule to dispatch JSON-RPC requests in WEB (HTTP) applications using TJSONRPCHandler components."
-msgstr "Ein Datenmodul für die Abfertigung von JSON-RPC-Requests für WEB (HTTP)-Anwendungen mit Hilfe von TJSONRPCHandler-Komponenten."
+msgstr ""
 
 #: fpwebstrconsts.rswebmodule
 msgid "Web Module"
-msgstr "Web-Modul"
+msgstr ""
 
 #: fpwebstrconsts.rswebmoduleada
 msgid "A datamodule for WEB (HTTP) applications."
-msgstr "Ein Datenmodul für WEB (HTTP)-Anwendungen."
+msgstr ""
 
 #: fpwebstrconsts.scaption
 msgid "Create a new JSON-RPC module"
-msgstr "Neues JSON-RPC-Modul erzeugen"
+msgstr "Erzeuge ein neues JSON-RPC Modul"
 
 #: fpwebstrconsts.scssfile
 msgctxt "fpwebstrconsts.scssfile"
@@ -127,15 +123,15 @@ msgstr "CSS-Datei"
 #: fpwebstrconsts.scssfiledesc
 msgctxt "fpwebstrconsts.scssfiledesc"
 msgid "Create new CSS file ..."
-msgstr "Neue CSS-Datei erzeugen ..."
+msgstr "Erzeuge neue CSS-Datei..."
 
 #: fpwebstrconsts.scsssource
 msgid "Enter your classes/style definitions here"
-msgstr "Klassen/Stil-Definitionen hier eingeben"
+msgstr ""
 
 #: fpwebstrconsts.sdefaultrouteservesfiles
 msgid "Serve files from default location"
-msgstr "Dateien vom Standardpfad bereitstellen"
+msgstr ""
 
 #: fpwebstrconsts.sdocumentroot
 msgid "&Directory"
@@ -144,15 +140,15 @@ msgstr "Verzeichnis"
 #: fpwebstrconsts.senteryoutext
 msgctxt "fpwebstrconsts.senteryoutext"
 msgid "Enter your text ..."
-msgstr "Text eingeben ..."
+msgstr ""
 
 #: fpwebstrconsts.sfileserving
 msgid "File serving"
-msgstr "Datei bereitstellen"
+msgstr ""
 
 #: fpwebstrconsts.shtmlautor
 msgid "Html &author - <meta name=\"author\">"
-msgstr "Html &author - <meta name=\"author\">"
+msgstr ""
 
 #: fpwebstrconsts.shtmlcharset
 msgid "HTML chars&et"
@@ -160,7 +156,7 @@ msgstr "HTML-Zeich&ensatz"
 
 #: fpwebstrconsts.shtmlcopyright
 msgid "Html cop&yright - meta name=\"copyright\">"
-msgstr "Html cop&yright - meta name=\"copyright\">"
+msgstr ""
 
 #: fpwebstrconsts.shtmlcssfile
 msgid "&CSS file"
@@ -169,7 +165,7 @@ msgstr "&CSS-Datei"
 #: fpwebstrconsts.shtmldesign
 msgctxt "fpwebstrconsts.shtmldesign"
 msgid "HTML design"
-msgstr "HTML-Design"
+msgstr "HTML Design"
 
 #: fpwebstrconsts.shtmlfile
 msgctxt "fpwebstrconsts.shtmlfile"
@@ -179,23 +175,23 @@ msgstr "HTML-Datei"
 #: fpwebstrconsts.shtmlfiledesc
 msgctxt "fpwebstrconsts.shtmlfiledesc"
 msgid "Create new HTML file ..."
-msgstr "Neue HTML-Datei erzeugen ..."
+msgstr "Erzeuge neue HTML-Datei ..."
 
 #: fpwebstrconsts.shtmlinputformaccesskey
 msgid "Access key"
-msgstr "Zugangsschlüssel"
+msgstr ""
 
 #: fpwebstrconsts.shtmlinputformalign
 msgid "Align"
-msgstr "Ausrichten"
+msgstr ""
 
 #: fpwebstrconsts.shtmlinputformalt
 msgid "Alt"
-msgstr "Alt"
+msgstr ""
 
 #: fpwebstrconsts.shtmlinputformcaption
 msgid "Tag property: INPUT"
-msgstr "Tag-Eigenschaft: INPUT"
+msgstr ""
 
 #: fpwebstrconsts.shtmlinputformimagesrc
 msgid "Image src"
@@ -215,7 +211,7 @@ msgstr "Größe"
 
 #: fpwebstrconsts.shtmlinputformtabindex
 msgid "Tab Index"
-msgstr "Tabulatorindex"
+msgstr ""
 
 #: fpwebstrconsts.shtmlinputformtype
 msgid "Type"
@@ -232,7 +228,7 @@ msgstr "&Javascript-Datei"
 #: fpwebstrconsts.shtmltableformborderwidth
 msgctxt "fpwebstrconsts.shtmltableformborderwidth"
 msgid "Border width"
-msgstr "Randbreite"
+msgstr ""
 
 #: fpwebstrconsts.shtmltableformcaption
 msgctxt "fpwebstrconsts.shtmltableformcaption"
@@ -241,31 +237,31 @@ msgstr "Neue HTML-Tabelle ..."
 
 #: fpwebstrconsts.shtmltableformcellpadding
 msgid "Cell padding"
-msgstr "Zellen-Padding"
+msgstr ""
 
 #: fpwebstrconsts.shtmltableformcellspacing
 msgid "Cell spacing"
-msgstr "Zellenabstand"
+msgstr ""
 
 #: fpwebstrconsts.shtmltableformcolumncount
 msgctxt "fpwebstrconsts.shtmltableformcolumncount"
 msgid "Column count"
-msgstr "Spaltenanzahl"
+msgstr ""
 
 #: fpwebstrconsts.shtmltableformheaderbgcolor
 msgctxt "fpwebstrconsts.shtmltableformheaderbgcolor"
 msgid "Header bg color"
-msgstr "Header-Hintergrundfarbe"
+msgstr ""
 
 #: fpwebstrconsts.shtmltableformrowcount
 msgctxt "fpwebstrconsts.shtmltableformrowcount"
 msgid "Row count"
-msgstr "Zeilenanzahl"
+msgstr ""
 
 #: fpwebstrconsts.shtmltableformuseheader
 msgctxt "fpwebstrconsts.shtmltableformuseheader"
 msgid "Use header row"
-msgstr "Header-Spalte nutzen"
+msgstr ""
 
 #: fpwebstrconsts.shtmltableformwidth
 msgctxt "fpwebstrconsts.shtmltableformwidth"
@@ -275,17 +271,17 @@ msgstr "Breite"
 #: fpwebstrconsts.shtmltagcaptionreset
 msgctxt "fpwebstrconsts.shtmltagcaptionreset"
 msgid "Reset"
-msgstr "Zurücksetzen"
+msgstr ""
 
 #: fpwebstrconsts.shtmltagcaptionsubmit
 msgctxt "fpwebstrconsts.shtmltagcaptionsubmit"
 msgid "Submit"
-msgstr "Abschicken"
+msgstr ""
 
 #: fpwebstrconsts.shtmltagproperty
 #, object-pascal-format
 msgid "Tag property: %s"
-msgstr "Tag-Eigenschaft: %s"
+msgstr ""
 
 #: fpwebstrconsts.shtmltitle
 msgid "Html &title - <title>"
@@ -293,11 +289,11 @@ msgstr "HTML-&Titel"
 
 #: fpwebstrconsts.shttppath
 msgid "HTTP Path"
-msgstr "HTTP-Pfad"
+msgstr "HTTP Pfad"
 
 #: fpwebstrconsts.shttpport
 msgid "&Port to listen for requests:"
-msgstr "&Port für eingehende Anfragen:"
+msgstr ""
 
 #: fpwebstrconsts.sjsfile
 msgid "Javascript file"
@@ -305,15 +301,15 @@ msgstr "Javascript-Datei"
 
 #: fpwebstrconsts.sjsfiledesc
 msgid "Create new javascript file ..."
-msgstr "Neue Javascript-Datei erzeugen..."
+msgstr "Erzeuge neue Javascript-Datei ..."
 
 #: fpwebstrconsts.sjsonclass
 msgid "JSON-RPC class"
-msgstr "JSON-RPC-Klasse"
+msgstr "JSON-RPC Klasse"
 
 #: fpwebstrconsts.sjssource
 msgid "Enter your javascript code here"
-msgstr "Javascript-Code hier eingeben"
+msgstr "Geben Sie ihren Javascript-Code hier ein"
 
 #: fpwebstrconsts.smihtmleditor
 msgctxt "fpwebstrconsts.smihtmleditor"
@@ -330,11 +326,11 @@ msgstr "Checkbox einfügen"
 
 #: fpwebstrconsts.smihtmlformfieldset
 msgid "Insert HTML FIELDSET tag"
-msgstr "HTML-Tag FIELDSET einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlformlegend
 msgid "Insert HTML LEGEND tag"
-msgstr "HTML-Tag LEGEND einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlformradiobtn
 msgid "Insert RadioBtn control"
@@ -347,15 +343,15 @@ msgstr "Formulare"
 
 #: fpwebstrconsts.smihtmlformselect
 msgid "Insert Select control"
-msgstr "\"Steuerelement auswählen\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlformselectopt
 msgid "Insert Select options"
-msgstr "\"Einstellungen auswählen\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlformselectoptwd
 msgid "Insert Select options with dialog"
-msgstr "\"Einstellungen mit Dialog auswählen\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertbr
 msgctxt "fpwebstrconsts.smihtmlinsertbr"
@@ -374,12 +370,12 @@ msgstr "HTML-Kommentar einfügen"
 
 #: fpwebstrconsts.smihtmlinsertdivblock
 msgid "Insert HTML DIV tag"
-msgstr "HTML-Tag DIV einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertform
 msgctxt "fpwebstrconsts.smihtmlinsertform"
 msgid "Insert HTML Form"
-msgstr "HTML-Formular einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertheader1level
 msgid "Insert HTML level 1 header"
@@ -414,19 +410,19 @@ msgstr "Bild einfügen"
 #: fpwebstrconsts.smihtmlinsertinput
 msgctxt "fpwebstrconsts.smihtmlinsertinput"
 msgid "Insert HTML INPUT tag"
-msgstr "HTML-Tag INPUT einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertinputreset
 msgid "Insert \"Reset\" button"
-msgstr "\"Reset\"-Button einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertinputsubmit
 msgid "Insert \"Submit\" button "
-msgstr "\"Submit\"-Button einfügen "
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertlink
 msgid "Insert link (HREF)"
-msgstr "Link (HREF) einfügen"
+msgstr "Link (href) einfügen"
 
 #: fpwebstrconsts.smihtmlinsertlist
 msgctxt "fpwebstrconsts.smihtmlinsertlist"
@@ -436,23 +432,23 @@ msgstr "HTML-Liste einfügen"
 #: fpwebstrconsts.smihtmlinsertnbsp
 msgctxt "fpwebstrconsts.smihtmlinsertnbsp"
 msgid "Insert Non Breaking Space"
-msgstr "Geschütztes Leerzeichen einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertpre
 msgid "Insert HTML PRE tag"
-msgstr "HTML-Tag PRE einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertspantext
 msgid "Insert HTML SPAN tag"
-msgstr "HTML-Tag SPAN einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertsub
 msgid "Insert Subscript"
-msgstr "\"Tiefgestellt\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinsertsuper
 msgid "Insert Superscript"
-msgstr "\"Hochgestellt\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinserttable
 msgctxt "fpwebstrconsts.smihtmlinserttable"
@@ -462,22 +458,22 @@ msgstr "HTML-Tabelle einfügen"
 #: fpwebstrconsts.smihtmlinserttabledata
 msgctxt "fpwebstrconsts.smihtmlinserttabledata"
 msgid "Insert HTML table data"
-msgstr "\"HTML table data\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinserttabledatawd
 msgctxt "fpwebstrconsts.smihtmlinserttabledatawd"
 msgid "Insert HTML table data with dialog"
-msgstr "\"HTML table data mit Dialog\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinserttablerow
 msgctxt "fpwebstrconsts.smihtmlinserttablerow"
 msgid "Insert HTML table row"
-msgstr "\"HTML table row\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlinserttablerowwd
 msgctxt "fpwebstrconsts.smihtmlinserttablerowwd"
 msgid "Insert HTML table row with dialog"
-msgstr "\"HTML table row mit Dialog\" einfügen"
+msgstr ""
 
 #: fpwebstrconsts.smihtmllists
 msgctxt "fpwebstrconsts.smihtmllists"
@@ -487,12 +483,12 @@ msgstr "Listen"
 #: fpwebstrconsts.smihtmlother
 msgctxt "fpwebstrconsts.smihtmlother"
 msgid "Other"
-msgstr "Anderes"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlstandard
 msgctxt "fpwebstrconsts.smihtmlstandard"
 msgid "Standard"
-msgstr "Standard"
+msgstr ""
 
 #: fpwebstrconsts.smihtmlstyle
 msgctxt "fpwebstrconsts.smihtmlstyle"
@@ -507,12 +503,12 @@ msgstr "Tabellen"
 #: fpwebstrconsts.smihtmltextaligncenter
 msgctxt "fpwebstrconsts.smihtmltextaligncenter"
 msgid "Text align center"
-msgstr "Text zentriert"
+msgstr "Text zentrieren"
 
 #: fpwebstrconsts.smihtmltextalignjustify
 msgctxt "fpwebstrconsts.smihtmltextalignjustify"
 msgid "Text align justify"
-msgstr "Text im Blocksatz ausrichten"
+msgstr ""
 
 #: fpwebstrconsts.smihtmltextalignleft
 msgctxt "fpwebstrconsts.smihtmltextalignleft"
@@ -554,25 +550,25 @@ msgstr "Neue HTTP-Anwendung"
 
 #: fpwebstrconsts.snofiles
 msgid "Do not serve files"
-msgstr "Keine Dateien bereitstellen"
+msgstr ""
 
 #: fpwebstrconsts.sregisterfiles
 msgid "&Register location to serve files from"
-msgstr "Pfad zum Bereitstellen von Dateien &registrieren"
+msgstr ""
 
 #: fpwebstrconsts.sregisterjson
 msgid "Register JSON-RPC handlers in factory"
-msgstr "JSON-RPC-Handler in Factory registrieren"
+msgstr ""
 
 #: fpwebstrconsts.sregisterwebm
 msgid "Register web module"
-msgstr "Registriere Web-Modul"
+msgstr "Registriere Web Modul"
 
 #: fpwebstrconsts.sstandardmodule
 msgid "Web module to create:"
-msgstr "Zu erzeugendes Webmodul:"
+msgstr ""
 
 #: fpwebstrconsts.susethreads
 msgid "Use &threads to serve requests in"
-msgstr "&Threads zum Bearbeiten von Anfragen verwenden in"
+msgstr ""
 

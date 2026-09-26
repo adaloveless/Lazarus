@@ -439,30 +439,15 @@ begin
   Result := TLCLHandle(AListView);
 end;
 
-procedure Gtk3_ItemCheckedChanged({%H-}renderer: PGtkCellRendererToggle; PathStr: Pgchar; aData: gPointer);cdecl;
+procedure Gtk3_ItemCheckedChanged(renderer: PGtkCellRendererToggle; PathStr: Pgchar; aData: gPointer);cdecl;
 var
   LV: TLVHack;
   Index: Integer;
   ListItem: TLVItemHack;
-  AEvent: PGdkEvent;
-  SkipToggle: Boolean;
-  TreeView: PGtkTreeView;
-  Path: PGtkTreePath;
-  ARect: TGdkRectangle;
-  Alloc: TGtkAllocation;
-  AX, AY: gint;
+  R: TRect;
+  x, y, cellw, cellh: gint;
+  AMinSize, ANaturalSize: TGtkRequisition;
 begin
-  AEvent := gtk_get_current_event;
-  if AEvent <> nil then
-  begin
-    SkipToggle := (AEvent^.type_ = GDK_KEY_PRESS) and
-      ((AEvent^.key.keyval = GDK_KEY_Return) or
-       (AEvent^.key.keyval = GDK_KEY_KP_Enter) or
-       (AEvent^.key.keyval = GDK_KEY_ISO_Enter));
-    gdk_event_free(AEvent);
-    if SkipToggle then
-      Exit;
-  end;
   LV := TLVHack(TGtk3ListView(aData).LCLObject);
   Index := StrToInt(PathStr);
   ListItem := TLVItemHack(LV.Items.Item[Index]);
@@ -472,17 +457,15 @@ begin
     if Assigned(LV.OnItemChecked) then
       LV.OnItemChecked(TGtk3ListView(aData).LCLObject, LV.Items.Item[Index]);
 
-    TreeView := PGtkTreeView(TGtk3ListView(aData).getContainerWidget);
-    Path := gtk_tree_path_new_from_string(PathStr);
-    if Path <> nil then
-    begin
-      TreeView^.get_background_area(Path, nil, @ARect);
-      TreeView^.convert_bin_window_to_widget_coords(0, ARect.y, @AX, @AY);
-      PGtkWidget(TreeView)^.get_allocation(@Alloc);
-      gtk_widget_queue_draw_area(PGtkWidget(TreeView), 0, AY, Alloc.width, ARect.height);
-      gtk_tree_path_free(Path);
-    end else
-      gtk_widget_queue_draw(PGtkWidget(TreeView));
+    // we must update renderer row, otherwise visually it looks different
+    // if we change toggle state by keyboard (eg. pressing Space key)
+    R := ListItem.DisplayRect(drBounds);
+    // ARect := GdkRectFromRect(R);
+
+    gtk_cell_renderer_get_preferred_size(PGtkCellRenderer(renderer), TGtk3ListView(aData).getContainerWidget,
+      @AMinSize, @ANaturalSize);
+    with R do
+      gtk_widget_queue_draw_area(TGtk3ListView(aData).getContainerWidget, Left, Top, ANaturalSize.width, ANaturalSize.height);
   end;
 end;
 
@@ -567,9 +550,6 @@ begin
     if ColumnIndex -1 <= ListItem.SubItems.Count-1 then
       ImageIndex := ListItem.SubItemImages[ColumnIndex-1];
 
-  if (Images <> nil) and (ImageIndex > Images.Count - 1) then
-    TGtk3ListView(aData).SyncImages;
-
   if (ImageList <> nil) and
     (ImageIndex > -1) and (ImageIndex <= ImageList.Count-1) then
   begin
@@ -584,7 +564,6 @@ begin
         g_value_init(@PixbufValue, gdk_pixbuf_get_type());
         g_value_set_object(@PixbufValue, pixbuf);
         g_object_set_property(PGObject(cell), PChar('pixbuf'), @PixbufValue);
-        pixbuf^.unref;
       end;
     finally
       Bmp.Free;
@@ -1172,10 +1151,12 @@ begin
     Exit;
   if TGtk3ListView(ALV.Handle).IsTreeView then
   begin
-    PGtkTreeView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.convert_widget_to_bin_window_coords(x, y, @cx, @cy);
+    //PGtkTreeView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.get_bin_window^.get_position(@cx, @cy);
+    //Dec(x, cx);
+    //Dec(y, cy);
     ItemPath := nil;
     Column := nil;
-    if PGtkTreeView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.get_path_at_pos(cx, cy, @ItemPath, @Column, nil, nil) then
+    if PGtkTreeView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.get_path_at_pos(x, y, @ItemPath, @Column, nil, nil) then
     begin
       if ItemPath <> nil then
       begin
@@ -1185,8 +1166,7 @@ begin
     end;
   end else
   begin
-    PGtkIconView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.convert_widget_to_bin_window_coords(x, y, @cx, @cy);
-    ItemPath := PGtkIconView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.get_path_at_pos(cx, cy);
+    ItemPath := PGtkIconView(TGtk3ListView(ALV.Handle).GetContainerWidget)^.get_path_at_pos(x, y);
     if ItemPath <> nil then
     begin
       Result := gtk_tree_path_get_indices(ItemPath)^;
@@ -1861,15 +1841,12 @@ end;
 
 class function TGtk3WSCustomTabControl.GetNotebookMinTabHeight(
   const AWinControl: TWinControl): integer;
-var
-  R: TRect;
 begin
   Result := TWSCustomTabControl.GetNotebookMinTabHeight(AWinControl);
-  if not (AWinControl is TTabControl) then
+  if AWinControl.HandleAllocated then
   begin
-    R := MeasureClientRect(AWinControl, 0, 0, 300, 200);
-    if (R.Height > 0) and (R.Height < 200) then
-      Result := 200 - R.Height;
+    if not (AWinControl is TTabControl) then
+      Result := TGtk3Notebook(AWinControl.Handle).GetTabSize(AWinControl);
   end;
 end;
 

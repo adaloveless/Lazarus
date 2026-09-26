@@ -126,7 +126,7 @@ type
   TWatcheEvaluateFlags = set of TWatcheEvaluateFlag;
 
   TDBGTypeBase = class(TObject)
-  end deprecated 'to be removed / use IDbgWatchDataIntf / to be removed in 5.99';
+  end;
 
   TLzDbgToken = QWord;
   {$If SizeOf(TLzDbgToken) < SizeOf(Pointer)} {$Error 'TLzDbgToken must be able to store pointers'} {$EndIf}

@@ -8,11 +8,12 @@
         <MainUnitHasTitleStatement Value="False"/>
         <MainUnitHasScaledStatement Value="False"/>
         <LRSInOutputDirectory Value="False"/>
+        <CompatibilityMode Value="True"/>
       </Flags>
       <SessionStorage Value="InProjectDir"/>
     </General>
-    <BuildModes>
-      <Item Name="default" Default="True"/>
+    <BuildModes Count="1">
+      <Item1 Name="default" Default="True"/>
     </BuildModes>
     <PublishOptions>
       <Version Value="2"/>
@@ -23,29 +24,29 @@
         <LaunchingApplication PathPlusParams="/usr/X11R6/bin/xterm -T &apos;Lazarus Run Output&apos; -e $(LazarusDir)/tools/runwait.sh $(TargetCmdLine)"/>
       </local>
       <FormatVersion Value="2"/>
-      <Modes>
-        <Mode Name="default">
+      <Modes Count="1">
+        <Mode0 Name="default">
           <local>
             <CommandLineParams Value=". ../ide/revision.inc"/>
             <LaunchingApplication PathPlusParams="/usr/X11R6/bin/xterm -T &apos;Lazarus Run Output&apos; -e $(LazarusDir)/tools/runwait.sh $(TargetCmdLine)"/>
           </local>
-        </Mode>
+        </Mode0>
       </Modes>
     </RunParams>
-    <RequiredPackages>
-      <Item>
+    <RequiredPackages Count="2">
+      <Item1>
         <PackageName Value="LazUtils"/>
-      </Item>
-      <Item>
+      </Item1>
+      <Item2>
         <PackageName Value="FCL"/>
-      </Item>
+      </Item2>
     </RequiredPackages>
-    <Units>
-      <Unit>
+    <Units Count="1">
+      <Unit0>
         <Filename Value="svn2revisioninc.pas"/>
         <IsPartOfProject Value="True"/>
         <UnitName Value="Svn2RevisionInc"/>
-      </Unit>
+      </Unit0>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

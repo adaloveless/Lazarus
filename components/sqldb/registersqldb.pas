@@ -631,7 +631,6 @@ var
   Strings  :TStrings;
   Query    :TSQLQuery;
 begin
-  Query := nil;
   Strings := TStrings(GetObjectValue);
 
   TheDialog := CreateEnhancedDlg(Strings);
@@ -649,11 +648,6 @@ begin
       begin
       Strings.Text := TheDialog.SQLEditor.Text;
       Modified;
-      if Query <> nil then
-        begin
-        UpdateListPropertyEditors(Query);
-        PropertyHook.RefreshPropertyValues;
-        end;
       end;
   finally
     FreeAndNil(TheDialog);
@@ -664,7 +658,6 @@ procedure TSQLStringsPropertyEditor.Edit;
 begin
   try
     EditSQL;
-    PropertyHook.Modified(Self, 'Params');
   except
     on E:EDatabaseError do
     begin

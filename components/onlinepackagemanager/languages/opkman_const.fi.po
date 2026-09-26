@@ -1412,10 +1412,6 @@ msgctxt "opkman_const.rsmainfrm_vsttext_version"
 msgid "Version"
 msgstr "Versio"
 
-#: opkman_const.rsmainfrm_vsttext_versionerror
-msgid "(Version error)"
-msgstr ""
-
 #: opkman_const.rsmenulazaruspackagemanager
 msgid "Online Package Manager ..."
 msgstr ""
@@ -2078,8 +2074,8 @@ msgid "Repository details"
 msgstr "Säilön yksityiskohdat"
 
 #: opkman_const.rsrepositorydetailsfrm_edaddress_hint
-msgid "Enter the repository address (e.g.: \"https://example-repo.tld/packages/\")"
-msgstr "Anna säilön osoite (esim.: \"https://example-repo.tld/packages/\")"
+msgid "Enter the repository address (e.g.: \"http://localhost/packages/\")"
+msgstr "Anna säilön osoite (esim.: \"http://localhost/packages/\")"
 
 #: opkman_const.rsrepositorydetailsfrm_edname_hint
 msgid "Enter the repository name"

@@ -46,8 +46,10 @@ uses
   // LCL
   Forms, Controls, Dialogs, LResources,
   //LazUtils
-  AvgLvlTree, LazUtilities, LazStringUtils, LazMemManager, ProjResConvert,
+  AvgLvlTree, LazUtilities, LazStringUtils, LazMemManager, ProjResProc,
   LazLoggerBase, LazTracer,
+  // CodeTools
+  BasicCodeTools,
   // BuildIntf
   UnitResourceIntf, PackageDependencyIntf,
   // IdePackager
@@ -672,7 +674,8 @@ begin
   Result := Result+'}';
 end;
 
-function GetJITMethod(const aMethod: TMethod; out aJITMethod: TJITMethod): boolean;
+function GetJITMethod(const aMethod: TMethod; out aJITMethod: TJITMethod
+  ): boolean;
 begin
   if IsJITMethod(aMethod) then begin
     Result:=true;
@@ -800,7 +803,8 @@ begin
   FreeJITClass(OldClass);
 end;
 
-function TJITComponentList.FindComponentByClassName(const AClassName:shortstring):integer;
+function TJITComponentList.FindComponentByClassName(
+  const AClassName:shortstring):integer;
 begin
   Result:=FJITComponents.Count-1;
   while (Result>=0)
@@ -808,14 +812,15 @@ begin
     dec(Result);
 end;
 
-function TJITComponentList.FindComponentByClass(AClass: TComponentClass): integer;
+function TJITComponentList.FindComponentByClass(AClass: TComponentClass
+  ): integer;
 begin
   Result:=FJITComponents.Count-1;
   while (Result>=0) and (Items[Result].ClassType<>AClass) do
     dec(Result);
 end;
 
-function TJITComponentList.FindComponentByName(const AName:shortstring): integer;
+function TJITComponentList.FindComponentByName(const AName:shortstring):integer;
 begin
   Result:=FJITComponents.Count-1;
   while (Result>=0)
@@ -874,7 +879,7 @@ function TJITComponentList.AddJITComponentFromStream(BinStream: TStream;
     DestroyDriver: Boolean;
   begin
     {$IFDEF VerboseJITForms}
-    debugln('[TJITComponentList.AddJITComponentFromStream] Init Reading ...');
+    debugln('[TJITComponentList.AddJITComponentFromStream] InitReading ...');
     {$ENDIF}
     FCurReadStreamClass:=StreamClass;
     DestroyDriver:=false;
@@ -1006,9 +1011,7 @@ begin
   // The other components are done at the end via GlobalFixupReferences.
   // So, there is nothing left to do here.
   Result := nil;
-  {$IFDEF VerboseJITForms}
-  DebugLn('[FindGlobalComponent] ', dbgsName(CurReadJITComponent), ' FIND ', AName, ' ', dbgsName(Result));
-  {$ENDIF}
+  //DebugLn(dbgsName(CurReadJITComponent), ' FIND global component ', AName, ' ', dbgsName(Result));
 end;
 
 procedure TJITComponentList.InitReading;
@@ -1359,9 +1362,9 @@ var
   Action: TModalResult;
 begin
   if IndexOf(JITOwnerComponent)<0 then
-    RaiseGDBException('TJITComponentList.AddJITChildComponentsFromStream');
+    RaiseGDBException('TJITComponentList.AddJITChildComponentFromStream');
   {$IFDEF VerboseJITForms}
-  debugln('[TJITComponentList.AddJITChildComponentsFromStream] A');
+  debugln('[TJITComponentList.AddJITChildComponentFromStream] A');
   {$ENDIF}
   FCurReadJITComponent:=nil;
   FCurReadClass:=nil;
@@ -1372,7 +1375,7 @@ begin
     InitReading;
     CreateReader(BinStream,LFMUnitResourcefileFormat, Reader,DestroyDriver);
     {$IFDEF VerboseJITForms}
-    debugln('[TJITComponentList.AddJITChildComponentsFromStream] B');
+    debugln('[TJITComponentList.AddJITChildComponentFromStream] B');
     {$ENDIF}
     fReadComponents:=NewComponents;
     try
@@ -1382,13 +1385,13 @@ begin
 
       FFlags:=FFlags+[jclAutoRenameComponents];
       {$IFDEF VerboseJITForms}
-      debugln('[TJITComponentList.AddJITChildComponentsFromStream] C1 ',ComponentClass.ClassName);
+      debugln('[TJITComponentList.AddJITChildComponentFromStream] C1 ',ComponentClass.ClassName);
       {$ENDIF}
       Reader.ReadComponents(FCurReadJITComponent,ParentControl,@ReadComponentsProc);
 
       {$IFDEF VerboseJITForms}
-      DebugLn('[TJITComponentList.AddJITChildComponentsFromStream] C6 ');
-      debugln('[TJITComponentList.AddJITChildComponentsFromStream] D');
+      DebugLn('[TJITComponentList.AddJITChildComponentFromStream] C6 ');
+      debugln('[TJITComponentList.AddJITChildComponentFromStream] D');
       {$ENDIF}
       DoFinishReading;
     finally
@@ -1400,7 +1403,7 @@ begin
     end;
   except
     on E: Exception do begin
-      HandleException(E,'[TJITComponentList.AddJITChildComponentsFromStream] ERROR reading form stream'
+      HandleException(E,'[TJITComponentList.AddJITChildComponentFromStream] ERROR reading form stream'
           +' of Class "'+ComponentClass.ClassName+'"',Action);
     end;
   end;
@@ -1980,6 +1983,9 @@ end;
 procedure TJITComponentList.ReaderCreateComponent(Reader: TReader;
   ComponentClass: TComponentClass; var Component: TComponent);
 begin
+  fCurReadChild:=Component;
+  fCurReadChildClass:=ComponentClass;
+  
   ReadInlineComponent(Component,ComponentClass,Reader.Owner);
   //debugln(['[TJITComponentList.ReaderCreateComponent] Class=',ComponentClass.ClassName,' Component=',dbgsName(Component)]);
 end;

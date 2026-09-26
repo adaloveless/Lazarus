@@ -146,7 +146,7 @@ var
   AHints: TGdkWindowHints;
   AFixedWidthHeight: Boolean;
   AForm: TCustomForm;
-  AShadowW, AShadowH, MenuH: Integer;
+  AShadowW, AShadowH: Integer;
 begin
   {$IFDEF GTK3DEBUGCORE}
   DebugLn('TGtk3WSWinControl.ConstraintsChange');
@@ -168,43 +168,27 @@ begin
     AShadowH := TGtk3Window(AWidget).CSDShadowH;
   end;
 
-  MenuH := 0;
-  if not Assigned(AForm.Parent) and (AForm.FormStyle <> fsMDIChild) then
-    MenuH := TGtk3Window(AWidget).GetMenuBarHeight;
-
   FillChar(Geometry, SizeOf(Geometry), 0);
   with Geometry do
   begin
     if not AFixedWidthHeight and (AForm.Constraints.MinWidth > 0) then
       min_width := AForm.Constraints.MinWidth + AShadowW
     else
-    if AFixedWidthHeight then
-      min_width := AForm.Width
-    else
-      min_width := 1;
+      min_width := AForm.Width;
     if not AFixedWidthHeight and (AForm.Constraints.MaxWidth > 0) then
       max_width := AForm.Constraints.MaxWidth + AShadowW
     else
-    if AFixedWidthHeight then
-      max_width := AForm.Width
-    else
-      max_width := 32767;
+      max_width := AForm.Width;
     if not AFixedWidthHeight and (AForm.Constraints.MinHeight > 0) then
-      min_height := AForm.Constraints.MinHeight + AShadowH + MenuH
+      min_height := AForm.Constraints.MinHeight + AShadowH
     else
-    if AFixedWidthHeight then
-      min_height := AForm.Height + MenuH
-    else
-      min_height := 1;
+      min_height := AForm.Height;
     if not AFixedWidthHeight and (AForm.Constraints.MaxHeight > 0) then
-      max_height := AForm.Constraints.MaxHeight + AShadowH + MenuH
+      max_height := AForm.Constraints.MaxHeight + AShadowH
     else
-    if AFixedWidthHeight then
-      max_height := AForm.Height + MenuH
-    else
-      max_height := 32767;
+      max_height := AForm.Height;
     base_width  := AForm.Width;
-    base_height := AForm.Height + MenuH;
+    base_height := AForm.Height;
     width_inc   := 1;
     height_inc  := 1;
     min_aspect  := 0;
@@ -218,14 +202,9 @@ begin
     begin
       if Gtk3WidgetSet.IsWayland then
       begin
-        //issue #42460
         Geometry.min_width := PGtkWidget(AWidget.Widget)^.get_allocated_width;
-        if Geometry.min_width < AForm.Width + AShadowW then
-          Geometry.min_width := AForm.Width + AShadowW;
         Geometry.max_width := Geometry.min_width;
         Geometry.min_height := PGtkWidget(AWidget.Widget)^.get_allocated_height;
-        if Geometry.min_height < AForm.Height + MenuH + AShadowH then
-          Geometry.min_height := AForm.Height + MenuH + AShadowH;
         Geometry.max_height := Geometry.min_height;
         Geometry.base_width := Geometry.min_width;
         Geometry.base_height := Geometry.min_height;
@@ -506,8 +485,6 @@ begin
   {$IFDEF GTK3DEBUGCORE}
   DebugLn('TGtk3WSWinControl.SetBorderStyle');
   {$ENDIF}
-  if TObject(AWinControl.Handle) is TGtk3Entry then
-    TGtk3Entry(AWinControl.Handle).SetFrame(ABorderStyle <> bsNone);
 end;
 
 class procedure TGtk3WSWinControl.SetChildZPosition(

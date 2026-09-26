@@ -191,7 +191,6 @@ resourcestring
   lisHexASCII = 'Hex + ASCII';
   lisLineLimit = 'Line limit';
   lisRawOutput = 'Raw Output';
-  lisConsoleLocalEcho = 'Echo typed input';
 
   // Call Stack Dialog
   lisCurrent = 'Select as context';
@@ -328,7 +327,7 @@ resourcestring
   lisGroupSetNone = 'Clear group(s)';
   lisGroupEmptyDelete = 'No more breakpoints are assigned to group "%s", delete it?';
   lisGroupEmptyDeleteMore = '%sThere are %d more empty groups, delete all?';
-  lisMenuViewBreakPointsAndExceptions = 'Breakpoints/Exceptions';
+  lisMenuViewBreakPointsAndExceptions = 'BreakPoints/Exceptions';
   lisBrkPointState = 'State';
   lisBrkPointAction = 'Action';
 
@@ -378,17 +377,6 @@ resourcestring
   lisDisAssGotoAddress = 'Goto Address';
   lisDisAssGotoAddressHint = 'Goto Address';
   lisDisAssGotoAddrEditTextHint = '($address)';
-
-  // Debug console window plug-ins
-  lisDebugConsoleBuiltInName = 'IDE Debug Console';
-  dlgDebugConsoleWindowOptions = 'Debug Console Window';
-  dlgDebugConsoleWindowSelectDiv = 'Select provider for IDE console window';
-  dlgDebugConsoleWindowEditDiv = 'Edit IDE console provider';
-  dlgDebugConsoleWindowNone = 'No console window is available.';
-  dlgDebugConsoleWindowChangeTakesEffect = 'A change takes effect when the next debug session starts.';
-  dlgDebugConsoleWindowRunParamsHint = 'Selects the default Console for showing the target''s StdIn/Out in the IDE.' + LineEnding +
-                                       'Project can override this in their "Run Parameters". The default there is "use IDE default".';
-  dlgDebugConsoleWindowEditing = 'Currently editing %s';
 
   // Feedback
   lisDebuggerFeedbackInformation = 'Debugger Information';
@@ -490,7 +478,6 @@ resourcestring
   DispFormatDlgBtnArray     = 'Array';
   DispFormatDlgBtnAdrFormat = 'Address';
   DispFormatDlgBtnOptions   = 'Options';
-  DispFormatDlgBtnAdrFormatData = 'Data-address';
 
   DispFormatDlgCaptionShowChar = '(Show Char)';
   DispFormatDlgCaptionAddress  = '(Address)';
@@ -552,8 +539,6 @@ resourcestring
   DispFormatPointerDerefOn       = 'Show deref data';
   DispFormatPointerDerefOnly     = 'Only deref data';
   DispFormatDlgIndent            = 'Multiline';
-  DispFormatDlgNumPrefix         = 'Number marker';
-  DispFormatDlgAddrPrefix        = 'Address marker';
   DispFormatIndentMaxWrap        = 'Max multiline level';
   DispFormatForceSingleLineToggle    = 'Keep singleline, if ...';
   DispFormatForceSingleLineArrayLen  = 'Max len';
@@ -651,12 +636,6 @@ resourcestring
   DbgValueNotEvaluated = 'Not evaluated';
   DbgValueInvalid = 'Invalid';
   DbgValueError = 'Error: %s';
-  brkHandleIgnoreBreakpoints = 'Handle/Ignore breakpoints';
-  brkHandleIgnoreExceptions = 'Handle/Ignore exceptions';
-  brkShowBreakpointsAndWatchpo = 'Show breakpoints and watchpoints';
-  brkShowExceptionFilter = 'Show exception-filter';
-  brkShowBreakWatchpointsAndEx = 'Show break/watchpoints and exception-filter';
-  mnuConsoleInOutputWindow = 'Console In/Output (Lazarus)';
 
 implementation
 

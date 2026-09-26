@@ -53,7 +53,7 @@ uses
   LazDebuggerIntf, LazDebuggerIntfBaseTypes,
   // IdeDebugger
   BaseDebugManager, Debugger, IdeDebuggerWatchResPrinter, IdeDebuggerWatchResult, IdeDebuggerOpts,
-  WatchInspectToolbar, DebuggerDlg, IdeDebuggerStringConstants,
+  IdeDebuggerBackendValueConv, WatchInspectToolbar, DebuggerDlg, IdeDebuggerStringConstants,
   IdeDebuggerBase, EnvDebuggerOptions, IdeDebuggerDisplayFormats, ProjectDebugLink;
 
 type
