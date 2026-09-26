@@ -896,6 +896,9 @@ function TGtk2WidgetSet.SetWindowContentScale(Handle: HWND;
         TWSWinControlClass(C.WidgetSetClass).SetBounds(C, C.Left, C.Top,
           C.Width, C.Height);
         TWSWinControlClass(C.WidgetSetClass).SetFont(C, C.Font);
+        gtk_widget_queue_draw(PGtkWidget(C.Handle));
+        if GetFixedWidget(PGtkWidget(C.Handle)) <> Pointer(C.Handle) then
+          gtk_widget_queue_draw(PGtkWidget(GetFixedWidget(PGtkWidget(C.Handle))));
         Relayout(C);
       end;
   end;

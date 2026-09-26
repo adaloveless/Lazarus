@@ -5,16 +5,19 @@ program TestGtk2DesignerZoom;
 // Run on Linux: lazbuild --ws=gtk2 testgtk2designerzoom.lpi
 uses
   Interfaces, Classes, SysUtils, Types, Math, Forms, Controls, StdCtrls,
-  ExtCtrls, Graphics, LCLIntf, LCLType, Gtk2;
+  ExtCtrls, Graphics, LCLIntf, LCLType, Gtk2, Gdk2, Gtk2Proc;
 
 type
   TPaintSurface = class(TCustomControl)
+  public
+    LastClip: TRect;
   protected
     procedure Paint; override;
   end;
 
 procedure TPaintSurface.Paint;
 begin
+  GetClipBox(Canvas.Handle, @LastClip);
   Canvas.Brush.Color := $00332211;
   Canvas.FillRect(ClientRect);
 end;
@@ -62,7 +65,9 @@ var
   Surface: TPaintSurface;
   Original: RawByteString;
   P, Q: TPoint;
+  PaintRect: TRect;
   W, H, X, Y, I: Integer;
+  NativeW, NativeH: Integer;
   Scale: Double;
 const
   Scales: array[0..7] of Double = (0.5, 1.25, 0.9, 2, 0.25, 4, 0.99999, 1);
@@ -126,6 +131,26 @@ begin
         Q := Button.ScreenToClient(P);
         Check((Abs(Q.X - 40) <= Ceil(1 / Scale)) and
           (Abs(Q.Y - 20) <= Ceil(1 / Scale)), 'coordinate round trip');
+        if (Scale >= 0.5) and (Scale <= 1.25) then
+        begin
+          Check(PGtkWidget(GetFixedWidget(PGtkWidget(Surface.Handle)))^.allocation.width =
+            Round(Surface.ClientWidth * Scale),
+            'scaled client widget has wrong native width: ' +
+            IntToStr(PGtkWidget(GetFixedWidget(PGtkWidget(Surface.Handle)))^.allocation.width));
+          gdk_window_get_size(GetControlWindow(PGtkWidget(GetFixedWidget(
+            PGtkWidget(Surface.Handle)))), @NativeW, @NativeH);
+          Check(NativeW = Round(Surface.ClientWidth * Scale),
+            'scaled client window has wrong native width: ' + IntToStr(NativeW));
+          PaintRect := Rect(0, 0, Surface.ClientWidth, Surface.ClientHeight);
+          Surface.LastClip := Rect(0, 0, 0, 0);
+          LCLIntf.InvalidateRect(Surface.Handle, @PaintRect, False);
+          Application.ProcessMessages;
+          Check((Surface.LastClip.Right >= Surface.ClientWidth - 1) and
+            (Surface.LastClip.Bottom >= Surface.ClientHeight - 1),
+            'scaled logical paint clip missed client edge at ' +
+            FloatToStr(Scale) + ': ' + IntToStr(Surface.LastClip.Right) + 'x' +
+            IntToStr(Surface.LastClip.Bottom));
+        end;
       end;
       Check(SetWindowContentScale(Container.Handle, 0.5), 'edit scale rejected');
       Button.SetBounds(111, 113, 121, 61);

@@ -129,6 +129,8 @@ begin
     Inc(Info^.PaintDepth);
   PS.hDC:=GetDC(Handle);
   DC:=TGtkDeviceContext(PS.hDC);
+  // PaintRectangle stays in GDK device pixels. GetClipBox/DPtoLP maps it back
+  // to logical coordinates for a content-scaled canvas.
   DC.PaintRectangle:=PS.rcPaint;
 
   Result := PS.hDC;
@@ -6550,6 +6552,8 @@ var
   r: TRect;
   Adjustment: PGtkAdjustment;
   Pt: TPoint;
+  Scale: Double;
+  LogicalRect: Boolean;
 begin
   //  DebugLn(format('Rect = %d,%d,%d,%d',[rect^.left,rect^.top,rect^.Right,rect^.Bottom]));
   Widget:={%H-}PGtkWidget(aHandle);
@@ -6577,6 +6581,7 @@ begin
   Result := True;
   PaintWidget:=GetFixedWidget(Widget);
   if PaintWidget=nil then PaintWidget:=Widget;
+  LogicalRect := Rect <> nil;
 
   if Rect = nil then
   begin
@@ -6606,6 +6611,14 @@ begin
   gdkRect.Y := Rect^.Top;
   gdkRect.Width := (Rect^.Right - Rect^.Left);
   gdkRect.Height := (Rect^.Bottom - Rect^.Top);
+  Scale := Gtk2HandleEffectiveScale(aHandle);
+  if LogicalRect and (Scale <> 1.0) then
+  begin
+    gdkRect.X := Round(gdkRect.X * Scale);
+    gdkRect.Y := Round(gdkRect.Y * Scale);
+    gdkRect.Width := Max(1, Round(gdkRect.Width * Scale));
+    gdkRect.Height := Max(1, Round(gdkRect.Height * Scale));
+  end;
 
   if (PaintWidget<>nil) and GTK_WIDGET_NO_WINDOW(PaintWidget) and (Rect<>nil) and
     (not GtkWidgetIsA(PGTKWidget(PaintWidget),GTKAPIWidget_GetType)) then

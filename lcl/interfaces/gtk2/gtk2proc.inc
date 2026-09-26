@@ -6993,7 +6993,9 @@ var
 begin
   Result := 1.0;
   if AHandle = 0 then Exit;
-  Obj := GetLCLObject(PGtkWidget(AHandle));
+  // Painting and invalidation commonly use a control's internal GtkFixed
+  // rather than its public handle. Resolve through that internal widget too.
+  Obj := GetNearestLCLObject(PGtkWidget(AHandle));
   if Obj is TControl then
     Result := Gtk2EffectiveScale(TControl(Obj));
 end;
