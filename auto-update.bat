@@ -6,7 +6,7 @@ REM Usage: auto-update.bat [options]
 REM   -Check          Check for updates only (no pull, no build)
 REM   -NoBuild        Pull updates but skip rebuild
 REM   -Release        Also build release tarballs
-REM   -UpstreamOnly   Only sync upstream Lazarus (skip VibePascal)
+REM   -UpstreamOnly   Only sync Lazarus origin/main (skip VibePascal)
 REM   -Setup          Configure Lazarus IDE to use VibePascal compiler
 REM   -FixLpi         Scan and fix .lpi files
 REM   -ForceRebuild   Force rebuild even if no updates are available (always closes the IDE first)
@@ -14,7 +14,7 @@ REM   -ResetConfig    Wipe %%LOCALAPPDATA%%\lazarus and re-run -Setup
 REM   -Doctor         Diagnose toolchain + IDE config (read-only)
 REM   -VPDir <path>   Path to VibePascal source
 REM   -NoLaunch       Do not launch the IDE after a successful rebuild
-REM   -AllowPush      Opt-in: push post-upstream-merge to origin/main
+REM   -AllowPush      Obsolete; publishing is manual
 REM   -KeepLocal      Preserve uncommitted changes and untracked files
 REM   -Help           Show full ps1 help
 

@@ -1020,7 +1020,26 @@ env_opt_value() {
     printf '%s' "${line#*Value=\"}" | sed 's/"$//'
 }
 
+# The GUI must use the same units as the command-line rebuild. FPC reads
+# ~/.fpc.cfg ahead of PPC_CONFIG_PATH, so an old bundle config wins unless we
+# explicitly select the generated config. Keep that choice with the executable
+# configured in the IDE; GUI launches do not inherit shell environment variables.
+configure_darwin_compiler() {
+    [ "$LAZ_OS_TARGET" = "darwin" ] || return 0
+    [ -f "$DARWIN_CFG" ] || { log_err "Missing compiler config: $DARWIN_CFG"; return 1; }
+    local wrapper="$LAZARUS_DIR/.vpcompiler/fpc"
+    [ "$VP_COMPILER" = "$wrapper" ] && return 0
+    mkdir -p "$(dirname "$wrapper")"
+    {
+        printf '#!/bin/bash\n'
+        printf 'exec %q -n @%q "$@"\n' "$VP_COMPILER" "$DARWIN_CFG"
+    } > "$wrapper"
+    chmod +x "$wrapper"
+    VP_COMPILER="$wrapper"
+}
+
 configure_environment() {
+    configure_darwin_compiler
     log_header "Configuring Lazarus IDE for VibePascal"
 
     local env_dir="$HOME/.lazarus"

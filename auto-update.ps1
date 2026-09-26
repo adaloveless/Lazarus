@@ -31,7 +31,7 @@ if ($Help) {
     Write-Host "  -Check          Check for updates only (no pull, no build)"
     Write-Host "  -NoBuild        Pull updates but skip rebuild"
     Write-Host "  -Release        Also rebuild release tarballs after updating"
-    Write-Host "  -UpstreamOnly   Only sync upstream Lazarus (skip VibePascal)"
+    Write-Host "  -UpstreamOnly   Only sync Lazarus origin/main (legacy name; skips VibePascal)"
     Write-Host "  -Setup          Configure Lazarus IDE to use VibePascal compiler"
     Write-Host "  -FixLpi         Scan and fix .lpi files (set UnitOutputDirectory to 'lib')"
     Write-Host "  -ForceRebuild   Force rebuild even if no updates are available"
@@ -39,10 +39,7 @@ if ($Help) {
     Write-Host "  -Doctor         Diagnose toolchain + IDE config; report problems without changing state"
     Write-Host "  -VPDir <path>   Path to VibePascal source (auto-detected if omitted)"
     Write-Host "  -NoLaunch       Do not launch the IDE after a successful update/rebuild"
-    Write-Host "  -AllowPush      Opt-in: push the post-upstream-merge result to origin/main."
-    Write-Host "                  Default is no-push (per GOD directive 2026-05-16) -- merge stays local"
-    Write-Host "                  to avoid background-process credential-prompt hangs and accidental"
-    Write-Host "                  pushes from end-user boxes. BuildMaster ships releases, not clients."
+    Write-Host "  -AllowPush      Obsolete; upstream integration and publishing are manual."
     Write-Host "  -KeepLocal      Preserve uncommitted changes and untracked files in both repos."
     Write-Host "                  Use this when developing or testing updater changes so they are"
     Write-Host "                  not wiped by the pristine-test-env reset."
@@ -984,34 +981,6 @@ function Pull-VP {
     Log-Ok "VibePascal pulled successfully"
 }
 
-function Check-LazarusUpstream {
-    Log-Header "Checking Lazarus upstream (fpc/Lazarus)"
-
-    $behind = Get-GitCount -WorkDir $LazarusDir -Range "HEAD..upstream/main"
-    if ("$behind" -eq "UNKNOWN") {
-        Log-Err "Lazarus: cannot count HEAD..upstream/main in $LazarusDir (not a git repository, or upstream/main missing) -- verdict UNKNOWN, not 'in sync'"
-        $script:CheckFailed = $true
-        $script:UpstreamUnknown = $true   # c722 -- so the summary says UNKNOWN too, instead of "no changes"
-        return
-    }
-
-    $localCommits = Get-GitCount -WorkDir $LazarusDir -Range "upstream/main..HEAD"
-    if ("$localCommits" -eq "UNKNOWN") { $localCommits = 0 }   # informational line only; the update path re-measures
-
-    if ([int]$behind -gt 0) {
-        Log-Warn "Lazarus: $behind new upstream commit(s)"
-        $log = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("log", "--oneline", "HEAD..upstream/main")
-        Write-Host $log
-        $script:UpstreamUpdated = $true
-    } else {
-        Log-Ok "Lazarus: upstream in sync"
-    }
-
-    if ([int]$localCommits -gt 0) {
-        Log-Info "Lazarus: $localCommits local commit(s) ahead of upstream"
-    }
-}
-
 function Check-LazarusOrigin {
     Log-Header "Checking Lazarus origin (adaloveless/Lazarus)"
 
@@ -1043,59 +1012,6 @@ function Check-LazarusOrigin {
     } else {
         Log-Ok "Lazarus origin: up to date"
     }
-}
-
-function Pull-LazarusUpstream {
-    if (-not $script:UpstreamUpdated) { return }
-
-    Log-Header "Merging Lazarus upstream"
-
-    $localCommits = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("rev-list", "--count", "upstream/main..HEAD")
-    if (-not $localCommits) { $localCommits = "0" }
-
-    if ([int]$localCommits -eq 0) {
-        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "--ff-only", "upstream/main")
-        if ($result.ExitCode -ne 0) {
-            Log-Err "Fast-forward merge failed: $($result.Error)"
-            return
-        }
-        Log-Ok "Fast-forward merge from upstream"
-    } else {
-        if (-not $AllowPush) {
-            # Update/user mode: this box tracks adaloveless/origin -- the curated fork that
-            # Lars periodically merges fpc/upstream into and resolves. Re-merging fpc/upstream
-            # here re-does those resolved merges and CONFLICTS ($localCommits fork commit(s)
-            # diverge from upstream), leaving conflict markers that the missing-binary
-            # force-rebuild then compiles (Finn/ZENBOOK r23 win64 smoke 2026-07-03:
-            # components/codetools/stdcodetools.pas <<<<<<< HEAD -> exit 1). The origin pull
-            # below brings in whatever upstream commits adaloveless has already curated.
-            Log-Ok "Skipping fpc/upstream merge in update mode ($localCommits fork commit(s) diverge from upstream); tracking adaloveless/origin only. Re-run with -AllowPush to merge upstream as a maintainer."
-            return
-        }
-        Log-Info "Merging upstream/main ($localCommits local commit(s) ahead)..."
-        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "-m", "Merge upstream/main", "upstream/main")
-        if ($result.ExitCode -ne 0) {
-            Log-Err "Merge failed: $($result.Error)"
-            Log-Warn "Aborting the conflicted merge so the working tree stays clean (never rebuild a tree with conflict markers)."
-            Invoke-Git -WorkDir $LazarusDir -GitArgs @("merge", "--abort") | Out-Null
-            Log-Err "Resolve conflicts manually (or pull adaloveless/origin), then re-run."
-            return
-        }
-        Log-Ok "Merge from upstream complete"
-    }
-
-    if ($AllowPush) {
-        Log-Info "Pushing to origin..."
-        $result = Invoke-Git -WorkDir $LazarusDir -GitArgs @("push", "origin", "main")
-        if ($result.ExitCode -ne 0) {
-            Log-Warn "Push failed (non-critical): $($result.Error)"
-        } else {
-            Log-Ok "Pushed to adaloveless/Lazarus"
-        }
-    } else {
-        Log-Info "Skipping push to origin/main (use -AllowPush to enable; merge stays local per GOD directive)"
-    }
-    $script:LazarusUpdated = $true
 }
 
 function Pull-LazarusOrigin {
@@ -2232,23 +2148,8 @@ function Print-Summary {
     } else {
         $applyHint = "the pull did NOT land -- see the [ERROR]/[WARN] lines above."
     }
-    # The upstream merge and the origin pull move the SAME HEAD, so the mid-point stamp is
-    # what keeps the two lines attributable. On the -Check path it is $null (neither ran) and
-    # both lines correctly compare against the run's starting HEAD.
-    if ($script:LazarusHeadAfterUpstream) { $lazMid = $script:LazarusHeadAfterUpstream } else { $lazMid = $lazNow }
-    if ($script:LazarusHeadAfterUpstream) { $originBefore = $script:LazarusHeadAfterUpstream } else { $originBefore = $script:LazarusHeadBefore }
-
-    if (-not $script:UpstreamConfigured) {
-        $upstreamState = "not-configured"
-    } elseif ($script:UpstreamUnknown) {
-        $upstreamState = "unknown"
-    } else {
-        $upstreamState = "checked"
-    }
-
     Report-RepoOutcome -Label "VibePascal" -Available $script:VPUpdated -Before $script:VPHeadBefore -After $vpNow -Detail $applyHint
-    Report-RepoOutcome -Label "Lazarus upstream" -Available $script:UpstreamUpdated -Before $script:LazarusHeadBefore -After $lazMid -Detail $applyHint -State $upstreamState
-    Report-RepoOutcome -Label "Lazarus" -Available $script:LazarusUpdated -Before $originBefore -After $lazNow -Detail $applyHint
+    Report-RepoOutcome -Label "Lazarus" -Available $script:LazarusUpdated -Before $script:LazarusHeadBefore -After $lazNow -Detail $applyHint
     if ($script:LazarusMergeFailed) {
         Write-Host "  [X] Lazarus : MERGE FAILED -- origin/main could not be merged into $LazarusDir; the source is STALE and the IDE was NOT rebuilt. Fix the merge (git -C `"$LazarusDir`" merge origin/main), then re-run." -ForegroundColor Red
     }
@@ -2265,14 +2166,9 @@ function Print-Summary {
     if ($script:CheckFailed) {
         Write-Host ""
         Log-ErrDetail "Verdict UNKNOWN: a repository could not be read or refreshed (see the [ERROR]/[WARN] lines above). This is NOT 'up to date'."
-    } elseif (-not $script:VPUpdated -and -not $script:UpstreamUpdated -and -not $script:LazarusUpdated -and -not $script:BuildProductsWereMissing) {
+    } elseif (-not $script:VPUpdated -and -not $script:LazarusUpdated -and -not $script:BuildProductsWereMissing) {
         Write-Host ""
-        if ($script:UpstreamConfigured) {
-            Log-Ok "Everything is up to date. Nothing to do."
-        } else {
-            # c722 -- bound the claim by what was actually checked. Upstream was skipped.
-            Log-Ok "Everything that was checked is up to date. Nothing to do. (Upstream fpc/Lazarus was NOT among them -- see the line above.)"
-        }
+        Log-Ok "Both origin/main checkouts are up to date. Nothing to do."
     }
 
     Write-Host ""
@@ -3144,15 +3040,7 @@ if ($FixLpi) {
 }
 
 
-$upstreamRemote = Get-GitOutput -WorkDir $LazarusDir -GitArgs @("remote", "get-url", "upstream")
-$script:UpstreamConfigured = [bool]$upstreamRemote   # c722 -- so the summary can say NOT CHECKED instead of "no changes"
-if ($upstreamRemote) {
-    Invoke-Git -WorkDir $LazarusDir -GitArgs @("fetch", "upstream") | Out-Null
-} else {
-    Log-Warn "No 'upstream' remote configured -- skipping upstream Lazarus (fpc/Lazarus) checks"
-    Log-Info "To add it: git remote add upstream https://github.com/fpc/Lazarus.git"
-}
-
+# Only the published fork is an update source. Upstream integration is manual.
 # c719 -- take HEAD BEFORE anything can move it, so Print-Summary can tell "updated" from
 # "an update is available". Nothing above this point pulls: the fetches move remote-tracking
 # refs only, and Wipe-LocalChanges (reset --hard HEAD) does not move HEAD either.
@@ -3162,9 +3050,6 @@ $script:VPVersionBefore = Get-VPDistVersion   # c720 -- same instant as the HEAD
 
 if (-not $UpstreamOnly) {
     Check-VPUpdates
-}
-if ($upstreamRemote) {
-    Check-LazarusUpstream
 }
 Check-LazarusOrigin
 
@@ -3215,14 +3100,12 @@ if (-not $UpstreamOnly) {
         Extract-VPBinaries
     }
 }
-Ensure-LazarusOnMain   # c730: main only -- BEFORE the upstream merge and the origin pull, which both move HEAD
-Pull-LazarusUpstream
-$script:LazarusHeadAfterUpstream = Get-HeadStamp -WorkDir $LazarusDir   # c719: splits the upstream merge from the origin pull, which move the same HEAD
+Ensure-LazarusOnMain   # main only, before pulling origin
 Pull-LazarusOrigin
 
 Relaunch-IfUpdated -PreHash $scriptPreHash
 
-$anyUpdated = $script:VPUpdated -or $script:LazarusUpdated -or $script:UpstreamUpdated
+$anyUpdated = $script:VPUpdated -or $script:LazarusUpdated
 
 $missingBuildProducts = @()
 foreach ($buildProduct in @("lazbuild.exe", "lazarus.exe")) {
