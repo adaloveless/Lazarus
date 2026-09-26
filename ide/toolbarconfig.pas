@@ -509,6 +509,10 @@ var
   B: TIDEToolButton;
 begin
   B := ACommand.ToolButtonClass.Create(FToolBar);
+  // Captions are opt-in per button.  A specialized button can enable the
+  // toolbar's caption layout without turning every ordinary toolbar icon into
+  // a text button.
+  B.ShowCaption := False;
   B.Hint := ACommand.GetHintOrCaptionWithShortCut;
   B.Enabled := ACommand.Enabled;
   // If we have a image, use it. Otherwise supply a default.
@@ -578,4 +582,3 @@ begin
 end;
 
 end.
-

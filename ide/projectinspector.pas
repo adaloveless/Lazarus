@@ -2167,6 +2167,11 @@ begin
 
   DropdownMenu := TBuildModeMenu.Create(Self);
   Style := tbsDropDown;
+  if Parent is TToolBar then
+  begin
+    TToolBar(Parent).List := True;
+    TToolBar(Parent).ShowCaptions := True;
+  end;
   ShowCaption := True;
   AutoSize := True;
   UpdateDisplay;
