@@ -833,6 +833,18 @@ ide_binary_staleness() {
     behind=$(git -C "$LAZARUS_DIR" rev-list --count --since="@$bin_epoch" HEAD 2>/dev/null || true)
     [ -n "$behind" ] || behind='?'
     printf '%s|%s|%s' "$bin_epoch" "$head_epoch" "$behind"
+    local stamp="$LAZARUS_DIR/.vpcompiler/ide-build-source" built_commit built_hash
+    if [ -f "$stamp" ]; then
+        { read -r built_commit; read -r built_hash; } < "$stamp"
+        if git -C "$LAZARUS_DIR" cat-file -e "$built_commit^{commit}" 2>/dev/null; then
+            # Bind the source record to this binary, including across pristine cleans.
+            # Updater-only changes do not alter the compiled IDE.
+            [ "$built_hash" = "$(sha256_of "$exe")" ] || return 1
+            git -C "$LAZARUS_DIR" diff --quiet "$built_commit" -- . \
+                ':(exclude)auto-update*' ':(exclude)AGENTS.md'
+            return $?
+        fi
+    fi
     [ "$bin_epoch" -ge "$head_epoch" ] && return 0
     return 1
 }
@@ -845,7 +857,7 @@ report_ide_binary_staleness() {
     head_when=$(fmt_epoch "$(printf '%s' "$info" | cut -d'|' -f2)")
     behind=$(printf '%s' "$info" | cut -d'|' -f3)
     case "$rc" in
-        0) log_ok "IDE binary is newer than every commit in this checkout (lazarus built $bin_when)" ;;
+        0) log_ok "IDE binary matches the source check (lazarus built $bin_when)" ;;
         1) # --no-build/--check asked for exactly this outcome, so it is a FINDING, not a
            # failure of the run: same sentence, WARN severity, no exit-1 contribution.
            if [ "${NO_BUILD:-0}" = "1" ] || [ "${CHECK_ONLY:-0}" = "1" ]; then
@@ -1821,6 +1833,11 @@ rebuild_ide() {
         log_err "Cannot verify the commonx components (no IDE binary or no commonx tree) -- treating as NOT installed"
         return 1
     fi
+    [ "$dock_rc" -eq 0 ] && [ "$mds_rc" -eq 0 ] || return 1
+    {
+        git -C "$LAZARUS_DIR" rev-parse HEAD
+        sha256_of "$LAZARUS_DIR/lazarus"
+    } > "$LAZARUS_DIR/.vpcompiler/ide-build-source"
 }
 
 test_ide_package_lpk_consistency() {
@@ -2092,6 +2109,16 @@ fi
 if [ "$NO_BUILD" -eq 0 ] && { [ ! -f "$LAZARUS_DIR/lazbuild" ] || { [ "$BUILD_IDE" -eq 1 ] && [ ! -f "$LAZARUS_DIR/lazarus" ]; }; }; then
     log_warn "No lazbuild/lazarus binary in $LAZARUS_DIR -- building"
     ANY_UPDATED=1
+fi
+
+# A previous failed build can leave current sources beside an older IDE.
+if [ "$ANY_UPDATED" -eq 0 ] && [ "$NO_BUILD" -eq 0 ] && [ "$BUILD_IDE" -eq 1 ]; then
+    ide_stale_rc=0
+    ide_binary_staleness >/dev/null || ide_stale_rc=$?
+    if [ "$ide_stale_rc" -eq 1 ]; then
+        log_warn "IDE binary does not match the current source -- rebuilding"
+        ANY_UPDATED=1
+    fi
 fi
 
 if [ "$FORCE_REBUILD" -eq 1 ]; then
