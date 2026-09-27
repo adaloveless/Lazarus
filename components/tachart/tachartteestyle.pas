@@ -60,7 +60,7 @@ interface
 uses
   Classes, SysUtils, Graphics, Math,
   TAChartUtils, TADrawUtils, TAGraph, TALegend, TASeries, TASources, TAStyles,
-  TAChartTeeChart;
+  TARadialSeries, TAChartTeeChart;
 
 type
   { One stacked band: its legend title and its fill colour. }
@@ -131,7 +131,44 @@ function SetupStackedBandSeries(AChart: TChart;
   not match the bands, because a short list otherwise plots a truncated stack
   that looks exactly like real data. }
 procedure AddStackedBandPoint(const ABandChart: TStackedBandChart;
-  AX: Double; const AValues: array of Double);
+  AX: Double; const AValues: array of Double); overload;
+
+{ Same, plus the bar's category label (a book name, a month...). The category
+  axis reads its marks from the band source (see SetupStackedBandSeries), so
+  this label is what the axis shows beside the bar -- without it the axis only
+  shows AX. }
+procedure AddStackedBandPoint(const ABandChart: TStackedBandChart;
+  AX: Double; const AValues: array of Double; const ALabel: String); overload;
+
+{ Makes a chart read as a pie chart instead of a pie inside an XY plot. A
+  TChart draws its axes whether or not any series uses them, so a pie gets an
+  empty value scale and a 0..1 category scale around it: SetupPieChart hides
+  every axis. It also gives the legend one row per slice (lmPoint: the default
+  lmSingle shows only the series title, so no colour can be matched to a
+  meaning) and marks every slice "Label  12%", with the count in the legend. }
+procedure SetupPieChart(AChart: TChart; ASeries: TCustomPieSeries);
+
+{ Replaces the slices, largest first. A long tail otherwise turns into hundreds
+  of unlabelled slivers that carry no information, so two rules fold items into
+  one grey "Other (n)" slice: with AMaxSlices > 0, everything past the
+  AMaxSlices-1 largest; and every item under AMinShare of the total (default 2%,
+  where a slice is too thin to label). AColors gives one colour per INPUT item
+  (it follows the item through the sort); pass an empty array for
+  PIE_PALETTE, which has no grey so "Other" is never confused with a slice.
+  ALabels is UnicodeString because the callers are delphiunicode forms and an
+  open array does not convert implicitly; TAChart stores the labels UTF-8. }
+procedure SetPieSlices(ASeries: TCustomPieSeries; const ALabels: array of UnicodeString;
+  const AValues: array of Double; const AColors: array of TColor;
+  AMaxSlices: Integer = 0; AMinShare: Double = 0.02);
+
+const
+  { Qualitative palette for pie slices (Tableau 10 minus its grey), as TColor
+    ($00BBGGRR). Distinct hues, none of them red-first, so the largest slice
+    does not read as an error. }
+  PIE_PALETTE: array[0..8] of TColor = (
+    $B4771F, $0E7FFF, $2CA02C, $2827D6, $BD6794, $4B568C, $C277E3, $22BDBC,
+    $CFBE17);
+  PIE_OTHER_COLOR = $7F7F7F;
 
 { Clears the band data -- the VCLTee "clear the chart data" idiom. The band
   specs, colours and legend styling survive. }
@@ -144,7 +181,7 @@ function AttachThreeRingFrame(AChart: TChart): TThreeRingPieFramer;
 implementation
 
 uses
-  TARadialSeries;
+  TAChartAxis, TAChartAxisUtils, TATextElements;
 
 type
   { TCustomPieSeries.Radius is protected. A descendant declared here may read
@@ -276,6 +313,7 @@ function SetupStackedBandSeries(AChart: TChart;
 var
   i: Integer;
   style: TChartStyle;
+  cat, val: TChartAxis;
 begin
   Result.BandCount := Length(ABands);
 
@@ -303,6 +341,39 @@ begin
   // single most visible way this differs from the VCLTee original.
   Result.Series.Legend.Multiplicity := lmStyle;
   AChart.AddSeries(Result.Series);
+
+  // The category axis (the series' X axis -- the LEFT one for a horizontal
+  // bar) takes its marks from the band source: one mark per bar, showing the
+  // label given to AddStackedBandPoint. Otherwise the axis generates numeric
+  // ticks (0, 2, 4...) that name nothing.
+  cat := AChart.AxisList.GetAxisByAlign(calLeft);
+  if (Result.Series.AxisIndexX >= 0) and (Result.Series.AxisIndexX < AChart.AxisList.Count) then
+    cat := AChart.AxisList[Result.Series.AxisIndexX];
+  if cat <> nil then begin
+    cat.Marks.Source := Result.Source;
+    cat.Marks.Style := smsLabel;
+    cat.Marks.AtDataOnly := true;
+    // A vertical axis positions source marks by their Y value (TChartAxis
+    // FUseY = IsVertical xor SourceExchangeXY). For a horizontal bar the
+    // category is X and Y is the first band's value, so without this each
+    // label lands at that value -- all but the ones whose first band happens
+    // to fall inside the category range vanish, and those carry the wrong name.
+    cat.Marks.SourceExchangeXY := cat.IsVertical;
+    cat.Grid.Visible := false;
+  end;
+  // The value axis: thousands separators, and neighbouring marks that would
+  // overlap are hidden instead of being printed on top of each other.
+  val := AChart.AxisList.GetAxisByAlign(calBottom);
+  if (Result.Series.AxisIndexY >= 0) and (Result.Series.AxisIndexY < AChart.AxisList.Count) then
+    val := AChart.AxisList[Result.Series.AxisIndexY];
+  if val <> nil then begin
+    val.Marks.Format := '%0:.0n';
+    val.Marks.OverlapPolicy := opHideNeighbour;
+    // "1,000,000" is ~60 px; the 10 px default minimum step prints them edge
+    // to edge. Ask for steps at least one label wide.
+    val.Intervals.MinLength := 80;
+    val.Intervals.MaxLength := 160;
+  end;
 end;
 
 procedure AddStackedBandPoint(const ABandChart: TStackedBandChart;
@@ -313,6 +384,104 @@ begin
       'AddStackedBandPoint: %d value(s) for %d band(s)',
       [Length(AValues), ABandChart.BandCount]);
   ABandChart.Source.AddXYList(AX, AValues);
+end;
+
+procedure AddStackedBandPoint(const ABandChart: TStackedBandChart;
+  AX: Double; const AValues: array of Double; const ALabel: String);
+begin
+  if Length(AValues) <> ABandChart.BandCount then
+    raise EChartError.CreateFmt(
+      'AddStackedBandPoint: %d value(s) for %d band(s)',
+      [Length(AValues), ABandChart.BandCount]);
+  ABandChart.Source.AddXYList(AX, AValues, ALabel);
+end;
+
+procedure SetupPieChart(AChart: TChart; ASeries: TCustomPieSeries);
+var
+  i: Integer;
+begin
+  for i := 0 to AChart.AxisList.Count - 1 do
+    AChart.AxisList[i].Visible := false;
+  AChart.Frame.Visible := false;
+
+  // One legend row per slice: "Verified  28,700". Format args are the mark
+  // args -- 0 value, 1 percent, 2 label, 3 total.
+  ASeries.Legend.Multiplicity := lmPoint;
+  ASeries.Legend.Format := '%2:s  %0:.0n';
+  // Under the pie, not beside it: a legend on the right takes the width of a
+  // narrow chart and the pie shrinks to fit what is left.
+  AChart.Legend.Alignment := laBottomCenter;
+
+  // On the pie: label and share. The count lives in the legend, so the marks
+  // stay short enough to sit beside small slices.
+  ASeries.Marks.Visible := true;
+  ASeries.Marks.Style := smsCustom;           // before Format: Style overwrites it
+  ASeries.Marks.Format := '%2:s  %1:.0f%%';
+  ASeries.Marks.OverlapPolicy := opHideNeighbour;
+  ASeries.Marks.LabelFont.Color := clWhite;
+  ASeries.Marks.LabelBrush.Color := clBlack;
+  ASeries.Marks.LinkPen.Color := clSilver;
+  ASeries.Marks.Frame.Color := clGray;
+  ASeries.MarkPositions := pmpAround;
+end;
+
+procedure SetPieSlices(ASeries: TCustomPieSeries; const ALabels: array of UnicodeString;
+  const AValues: array of Double; const AColors: array of TColor;
+  AMaxSlices: Integer; AMinShare: Double);
+var
+  order: array of Integer;
+  i, j, t, n, keep: Integer;
+  total, other: Double;
+  c: TColor;
+begin
+  n := Min(Length(ALabels), Length(AValues));
+  SetLength(order, n);
+  total := 0;
+  for i := 0 to n - 1 do begin
+    order[i] := i;
+    total := total + AValues[i];
+  end;
+  // Largest first. Insertion sort: slice counts are small, and genre-sized
+  // inputs (hundreds) are still trivial.
+  for i := 1 to n - 1 do begin
+    t := order[i];
+    j := i - 1;
+    while (j >= 0) and (AValues[order[j]] < AValues[t]) do begin
+      order[j + 1] := order[j];
+      Dec(j);
+    end;
+    order[j + 1] := t;
+  end;
+
+  keep := n;
+  if (AMaxSlices > 0) and (n > AMaxSlices) then
+    keep := AMaxSlices - 1;       // the last slot is "Other"
+  // sorted descending, so the first slice under the share ends the kept run
+  while (keep > 0) and (total > 0) and (AValues[order[keep - 1]] < AMinShare * total) do
+    Dec(keep);
+  // folding ONE item into "Other" only renames it: keep it as itself
+  if keep = n - 1 then
+    keep := n;
+
+  ASeries.BeginUpdate;
+  try
+    ASeries.Clear;
+    for i := 0 to keep - 1 do begin
+      if order[i] < Length(AColors) then
+        c := AColors[order[i]]
+      else
+        c := PIE_PALETTE[i mod Length(PIE_PALETTE)];
+      ASeries.Add(AValues[order[i]], UTF8Encode(ALabels[order[i]]), c);
+    end;
+    if keep < n then begin
+      other := 0;
+      for i := keep to n - 1 do
+        other := other + AValues[order[i]];
+      ASeries.Add(other, Format('Other (%d)', [n - keep]), PIE_OTHER_COLOR);
+    end;
+  finally
+    ASeries.EndUpdate;
+  end;
 end;
 
 procedure ClearBandSeries(const ABandChart: TStackedBandChart);
