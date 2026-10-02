@@ -353,6 +353,7 @@ type
     procedure ClearRows;
     function GetCurrentEditValue: string;
     procedure SetActiveControl(const AControl: TWinControl);
+    function CanFocusEditorOnRowChange: Boolean;
     procedure SetCheckboxState(NewValue: string);
     procedure SetColumn(const AValue: TOICustomPropertyGridColumn);
     procedure SetCurrentEditValue(const NewValue: string);
@@ -1941,6 +1942,7 @@ begin
       if (FDragging=false) and FCurrentEdit.Showing and FCurrentEdit.Enabled
       and (not NewRow.IsReadOnly) and CanFocus and (Column=oipgcValue)
       and not (pgsFocusPropertyEditorDisabled in FStates)
+      and CanFocusEditorOnRowChange
       then
         SetActiveControl(FCurrentEdit);
     end;
@@ -3361,6 +3363,26 @@ begin
   F := GetParentForm(Self);
   if F <> nil then
     F.ActiveControl := AControl;
+end;
+
+function TOICustomPropertyGrid.CanFocusEditorOnRowChange: Boolean;
+// Selecting a row makes its value editor the ActiveControl of the top form.
+// With the docked IDE the Object Inspector shares that form with the designer,
+// so every selection change made in the designer (Cut, Delete, a click on an
+// interactive control) would move the keyboard focus into the inspector and
+// Ctrl/Cmd+V would paste text there. Only take the focus when it already is
+// inside the inspector, or when the top form is not the active window.
+var
+  TopForm, OIForm: TCustomForm;
+  FocusedCtl: TWinControl;
+begin
+  TopForm := GetParentForm(Self);
+  if (TopForm = nil) or (TopForm <> Screen.ActiveCustomForm) then
+    Exit(True);
+  FocusedCtl := Screen.ActiveControl;
+  OIForm := GetParentForm(Self, False);
+  Result := (FocusedCtl = nil) or (OIForm = nil) or (FocusedCtl = OIForm)
+    or OIForm.ContainsControl(FocusedCtl);
 end;
 
 procedure TOICustomPropertyGrid.SetColumn(const AValue: TOICustomPropertyGridColumn);
