@@ -2979,6 +2979,10 @@ resourcestring
     +'class "%s" has created the error:%s"%s"';
   fdInvalidMultiselectionText='Multiselected components must be of a single form.';
   lisInvalidDelete = 'Invalid delete';
+  lisInvalidPasteParent = 'Invalid paste parent';
+  lisPastedComponentsNeedAParentComponent = 'The pasted components %s did '
+    +'not accept the selected component as parent and were removed.%s'
+    +'Select a component that can contain them and paste again.';
   lisTheComponentIsInheritedFromToDeleteAnInheritedComp = 'The component %s '
     +'is inherited from %s.%sTo delete an inherited component open the '
     +'ancestor and delete it there.';

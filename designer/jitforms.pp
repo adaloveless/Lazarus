@@ -211,7 +211,7 @@ type
     // child components
     procedure AddJITChildComponentsFromStream(JITOwnerComponent: TComponent;
                             BinStream: TStream; ComponentClass: TComponentClass;
-                            ParentControl: TWinControl; NewComponents: TFPList);
+                            ParentComponent: TComponent; NewComponents: TFPList);
     procedure ReadInlineJITChildComponent(Component: TComponent);
   public
     property OnReaderError: TJITReaderErrorEvent
@@ -1354,7 +1354,7 @@ end;
 
 procedure TJITComponentList.AddJITChildComponentsFromStream(
   JITOwnerComponent: TComponent; BinStream: TStream;
-  ComponentClass: TComponentClass; ParentControl: TWinControl;
+  ComponentClass: TComponentClass; ParentComponent: TComponent;
   NewComponents: TFPList);
 var
   Reader: TReader;
@@ -1387,7 +1387,7 @@ begin
       {$IFDEF VerboseJITForms}
       debugln('[TJITComponentList.AddJITChildComponentFromStream] C1 ',ComponentClass.ClassName);
       {$ENDIF}
-      Reader.ReadComponents(FCurReadJITComponent,ParentControl,@ReadComponentsProc);
+      Reader.ReadComponents(FCurReadJITComponent,ParentComponent,@ReadComponentsProc);
 
       {$IFDEF VerboseJITForms}
       DebugLn('[TJITComponentList.AddJITChildComponentFromStream] C6 ');

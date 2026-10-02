@@ -64,7 +64,7 @@ type
   TOnSetDesigning = procedure(Sender: TObject; Component: TComponent;
     Value: boolean) of object;
   TOnPasteComponents = procedure(Sender: TObject; LookupRoot: TComponent;
-    TxtCompStream: TStream; Parent: TWinControl;
+    TxtCompStream: TStream; Parent: TWinControl; NestedParent: TComponent;
     NewComponents: TFPList) of object;
   TOnPastedComponents = procedure(Sender: TObject; LookupRoot: TComponent) of object;
   TOnPersistentDeleted = procedure(Sender: TObject; APersistent: TPersistent)
@@ -216,6 +216,8 @@ type
     procedure SelectParentOfSelection;
     function DoCopySelectionToClipboard: boolean;
     function GetPasteParent: TWinControl;
+    function GetNestedPasteParent: TComponent;
+    function IsCopyableNestedSelection: boolean;
     procedure DoModified;
     function DoPasteSelectionFromClipboard(PasteFlags: TComponentPasteSelectionFlags
                                            ): boolean;
@@ -1112,6 +1114,19 @@ end;
 
 function TDesigner.CopySelectionToStream(AllComponentsStream: TStream): boolean;
 
+  function NestedParentInSelection(AComponent: TComponent): boolean;
+  var
+    AParent: TComponent;
+  begin
+    Result:=false;
+    if AComponent is TControl then exit; // handled by UnselectDistinctControls
+    AParent:=AComponent.GetParentComponent;
+    while AParent<>nil do begin
+      if Selection.IndexOf(AParent)>=0 then exit(true);
+      AParent:=AParent.GetParentComponent;
+    end;
+  end;
+
   function UnselectDistinctControls: boolean;
   var
     i: Integer;
@@ -1167,6 +1182,9 @@ begin
 
   for i:=0 to Selection.Count-1 do begin
     if not Selection[i].IsTComponent then continue;
+    // a nested component (e.g. a TMenuItem or a control inside a custom-drawn
+    // host) is streamed by its selected parent component already
+    if NestedParentInSelection(TComponent(Selection[i].Persistent)) then continue;
 
     BinCompStream:=TMemoryStream.Create;
     TxtCompStream:=TMemoryStream.Create;
@@ -1231,7 +1249,8 @@ var
 begin
   Result := false;
   if Selection.Count = 0 then exit;
-  if Selection.OnlyInvisiblePersistentsSelected then exit;
+  if Selection.OnlyInvisiblePersistentsSelected
+  and not IsCopyableNestedSelection then exit;
 
   AllComponentsStream:=TMemoryStream.Create;
   try
@@ -1278,6 +1297,48 @@ begin
   end;
   if (Result=nil) and (FLookupRoot is TWinControl) then
     Result:=TWinControl(FLookupRoot);
+end;
+
+function TDesigner.GetNestedPasteParent: TComponent;
+// The parent offered to pasted components that are not TControls but live
+// inside another component (HasParent), e.g. a TMenuItem in a TMenu, a series
+// in a chart, or a control drawn inside a custom host: the first selected
+// component. The pasted component's SetParentComponent decides what to do with
+// it. Nil when only the lookup root is selected.
+var
+  i: Integer;
+  AComponent: TComponent;
+begin
+  Result:=nil;
+  for i:=0 to Selection.Count-1 do begin
+    if not Selection[i].IsTComponent then continue;
+    AComponent:=TComponent(Selection[i].Persistent);
+    if AComponent=FLookupRoot then continue;
+    if Selection[i].ParentInSelection then continue;
+    if GetLookupRootForComponent(AComponent)<>FLookupRoot then continue;
+    exit(AComponent);
+  end;
+end;
+
+function TDesigner.IsCopyableNestedSelection: boolean;
+// True if every selected persistent is a component nested in a parent
+// component (HasParent + GetParentComponent), e.g. components registered with
+// RegisterNoIcon that are drawn inside their parent instead of as an icon.
+// They are invisible to the designer, but they can be streamed like controls.
+var
+  i: Integer;
+  AComponent: TComponent;
+begin
+  Result:=false;
+  if Selection.Count=0 then exit;
+  for i:=0 to Selection.Count-1 do begin
+    if not Selection[i].IsTComponent then exit;
+    AComponent:=TComponent(Selection[i].Persistent);
+    if (AComponent=FLookupRoot) or (AComponent is TControl) then exit;
+    if not AComponent.HasParent then exit;
+    if AComponent.GetParentComponent=nil then exit;
+  end;
+  Result:=true;
 end;
 
 procedure TDesigner.DoModified;
@@ -1364,6 +1425,28 @@ var
     end;
   end;
 
+  procedure RemoveOrphans;
+  var
+    i: Integer;
+    AComponent: TComponent;
+    Names: String;
+  begin
+    Names:='';
+    for i:=NewComps.Count-1 downto 0 do begin
+      AComponent:=TComponent(NewComps[i]);
+      if (AComponent is TControl) or (not AComponent.HasParent)
+      or (AComponent.GetParentComponent<>nil) then continue;
+      if Names<>'' then Names:=', '+Names;
+      Names:=AComponent.Name+': '+AComponent.ClassName+Names;
+      NewComps.Delete(i);
+      RemovePersistentAndChildren(AComponent);
+    end;
+    if Names<>'' then
+      IDEMessageDialog(lisInvalidPasteParent,
+        Format(lisPastedComponentsNeedAParentComponent, [Names, LineEnding]),
+        mtInformation, [mbOk]);
+  end;
+
 var
   i: Integer;
   NewComponent: TComponent;
@@ -1386,7 +1469,10 @@ begin
       end;
 
       // create components and add to LookupRoot
-      FOnPasteComponent(Self,FLookupRoot,s,PasteParent,NewComps);
+      FOnPasteComponent(Self,FLookupRoot,s,PasteParent,GetNestedPasteParent,NewComps);
+      // a nested component whose SetParentComponent refused the offered
+      // parent would float unparented and vanish on the next save -> remove it
+      RemoveOrphans;
       // add new component to new selection
       for i:=0 to NewComps.Count-1 do begin
         NewComponent:=TComponent(NewComps[i]);
@@ -1707,7 +1793,8 @@ begin
   Result := (Selection.Count > 0) and
             (Selection.SelectionForm = Form) and
             Selection.OkToCopy and
-            not Selection.OnlyInvisiblePersistentsSelected and
+            (not Selection.OnlyInvisiblePersistentsSelected
+             or IsCopyableNestedSelection) and
             not Selection.LookupRootSelected;
 end;
 

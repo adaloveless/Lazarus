@@ -245,7 +245,7 @@ type
                       ContextObj: TObject = nil): TComponent;
     procedure CreateChildComponentsFromStream(BinStream: TStream;
                        ComponentClass: TComponentClass; Root: TComponent;
-                       ParentControl: TWinControl; NewComponents: TFPList); override;
+                       ParentComponent: TComponent; NewComponents: TFPList); override;
     function ParentAcceptsChild(Parent, Child, aLookupRoot: TComponent): boolean; override;
     function ParentAcceptsChildClass(Parent: TComponent;
              ChildClass: TComponentClass; aLookupRoot: TComponent): boolean; override;
@@ -1643,7 +1643,7 @@ end;
 
 procedure TCustomFormEditor.CreateChildComponentsFromStream(BinStream: TStream;
   ComponentClass: TComponentClass; Root: TComponent;
-  ParentControl: TWinControl; NewComponents: TFPList);
+  ParentComponent: TComponent; NewComponents: TFPList);
 var
   JITList: TJITComponentList;
 begin
@@ -1653,7 +1653,7 @@ begin
                       Root.ClassName);
 
   JITList.AddJITChildComponentsFromStream(
-                     Root,BinStream,ComponentClass,ParentControl,NewComponents);
+                     Root,BinStream,ComponentClass,ParentComponent,NewComponents);
 end;
 
 function TCustomFormEditor.ParentAcceptsChild(Parent, Child,
@@ -2409,6 +2409,12 @@ begin
   begin
     //DebugLn(['TCustomFormEditor.JITListFindClass ',ComponentClassName,' is registered as ',DbgSName(RegComp.ComponentClass)]);
     ComponentClass:=RegComp.ComponentClass;
+    // A registered same-named descendant is a palette alias (e.g. a palette
+    // button for a class registered with RegisterNoIcon): stream the base class.
+    while (ComponentClass.ClassParent<>nil)
+    and SameText(ComponentClass.ClassParent.ClassName,ComponentClass.ClassName)
+    and (IDEComponentPalette.FindRegComponent(ComponentClass.ClassParent)<>nil) do
+      ComponentClass:=TComponentClass(ComponentClass.ClassParent);
   end else begin
     // search in open and hidden designer forms (e.g. nested frames)
     for TLazProjectFile(AnUnitInfo) in Project1.UnitsWithComponent do begin

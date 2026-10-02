@@ -592,7 +592,7 @@ type
     procedure DesignerShowOptions(Sender: TObject);
     procedure DesignerPasteComponents(Sender: TObject; LookupRoot: TComponent;
                             TxtCompStream: TStream; ParentControl: TWinControl;
-                            NewComponents: TFPList);
+                            NestedParent: TComponent; NewComponents: TFPList);
     procedure DesignerPastedComponents(Sender: TObject; LookupRoot: TComponent);
     procedure DesignerPropertiesChanged(Sender: TObject);
     procedure DesignerPersistentDeleted(Sender: TObject; APersistent: TPersistent);
@@ -9777,12 +9777,13 @@ end;
 
 procedure TMainIDE.DesignerPasteComponents(Sender: TObject;
   LookupRoot: TComponent; TxtCompStream: TStream; ParentControl: TWinControl;
-  NewComponents: TFPList);
+  NestedParent: TComponent; NewComponents: TFPList);
 var
   NewClassName: String;
   ARegComp: TRegisteredComponent;
   BinCompStream: TMemoryStream;
   c: Char;
+  ParentComp: TComponent;
 begin
   if ConsoleVerbosity>0 then
     DebugLn('Hint: (lazarus) TMainIDE.DesignerPasteComponent A');
@@ -9829,9 +9830,16 @@ begin
 
     BinCompStream.Position:=0;
 
+    // A control goes onto the paste parent control. Anything else that has a
+    // parent (TMenuItem, chart series, controls drawn inside a custom host, ...)
+    // is offered the selected component and decides in SetParentComponent.
+    ParentComp:=ParentControl;
+    if (NestedParent<>nil) and not ARegComp.ComponentClass.InheritsFrom(TControl) then
+      ParentComp:=NestedParent;
+
     // create the component
     FormEditor1.CreateChildComponentsFromStream(BinCompStream,
-                ARegComp.ComponentClass,LookupRoot,ParentControl,NewComponents);
+                ARegComp.ComponentClass,LookupRoot,ParentComp,NewComponents);
     if NewComponents.Count=0 then
       DebugLn('Error: (lazarus) TMainIDE.DesignerPasteComponent FAILED FormEditor1.CreateChildComponentFromStream');
 

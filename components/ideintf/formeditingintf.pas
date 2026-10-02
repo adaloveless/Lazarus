@@ -234,7 +234,7 @@ type
                       ContextObj: TObject = nil): TComponent; virtual; abstract;
     procedure CreateChildComponentsFromStream(BinStream: TStream;
                        ComponentClass: TComponentClass; Root: TComponent;
-                       ParentControl: TWinControl; NewComponents: TFPList); virtual; abstract;
+                       ParentComponent: TComponent; NewComponents: TFPList); virtual; abstract;
     function ParentAcceptsChild(Parent, Child, aLookupRoot: TComponent): boolean; virtual; abstract;
     function ParentAcceptsChildClass(Parent: TComponent; ChildClass: TComponentClass; aLookupRoot: TComponent): boolean; virtual; abstract;
 
