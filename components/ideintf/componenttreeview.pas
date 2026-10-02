@@ -56,6 +56,7 @@ type
     FDrawWholeTree: Boolean;
     FZOrderDelCommand: TZOrderDelete;
     FPreviousDeleted: TPersistent;   // Delete command can be called twice. Keep track.
+    FUpdatingSelection: integer;     // UpdateSelected is marking nodes, not the user
     // Events
     FOnComponentGetImageIndex: TCTVGetImageIndexEvent;
     FOnModified: TNotifyEvent;
@@ -80,6 +81,7 @@ type
     procedure UpdateCompNode(ANode: TTreeNode);
     procedure UpdateSelNode(ANode: TTreeNode);
     procedure UpdateSelected;
+    function SelectionHasMissingNodes: boolean;
   protected
     procedure DoSelectionChanged; override;
     function GetImageFor(APersistent: TPersistent):integer;
@@ -100,6 +102,7 @@ type
     procedure ChangeCompZOrder(APersistent: TPersistent; AZOrder: TZOrderDelete);
     procedure DeleteComponentNode(APersistent: TPersistent);
     procedure UpdateComponentNodesValues;
+    procedure ShowSelection;
   public
     ImgIndexForm: Integer;
     ImgIndexComponent: Integer;
@@ -326,7 +329,60 @@ begin
   FComponentList.LookupRoot := PropertyEditorHook.LookupRoot;
   FComponentList.Selection.Assign(NewSelection);
   NewSelection.ForceUpdate:=false;
+  // A component selected right after it was added (palette drop, paste) has no
+  // node yet: add the missing nodes now, they take their selection state.
+  if SelectionHasMissingNodes then
+  begin
+    inc(FUpdatingSelection);
+    try
+      BuildComponentNodes(False);
+    finally
+      dec(FUpdatingSelection);
+    end;
+  end;
   UpdateSelected;
+  // The selection came from outside the tree (designer, OI combo, code):
+  // show it with its parents and children.
+  ShowSelection;
+end;
+
+function TComponentTreeView.SelectionHasMissingNodes: boolean;
+var
+  i: Integer;
+begin
+  Result := false;
+  if IdleBuildNodes or (Items.GetFirstNode = nil) then exit;
+  for i := 0 to Selection.Count - 1 do
+    if (Selection[i] is TComponent)
+    and (Items.FindNodeWithData(Selection[i]) = nil) then
+      exit(true);
+end;
+
+procedure TComponentTreeView.ShowSelection;
+// Expand the parents of every selected node; for a single selection expand the
+// node too, and scroll so that it and (as far as they fit) its children show.
+var
+  ANode, First: TTreeNode;
+  Count: Integer;
+begin
+  First := GetFirstMultiSelected;
+  if First = nil then
+    First := Selected;
+  if First = nil then exit;
+  Count := 0;
+  ANode := First;
+  while ANode <> nil do
+  begin
+    ANode.ExpandParents;
+    inc(Count);
+    ANode := ANode.GetNextMultiSelected;
+  end;
+  if (Count = 1) and First.HasChildren then
+  begin
+    First.Expanded := true;
+    EnsureNodeIsVisible(First.GetLastChild);
+  end;
+  EnsureNodeIsVisible(First);  // the node itself wins if the children do not fit
 end;
 
 procedure TComponentTreeView.DoSelectionChanged;
@@ -335,6 +391,10 @@ var
   APersistent: TPersistent;
   NewSelection: TPersistentSelectionList;
 begin
+  // Marking the nodes of a selection set from outside must not report the
+  // marked nodes back as a new selection: a selected component without a
+  // node would be dropped from it.
+  if FUpdatingSelection > 0 then exit;
   NewSelection := TPersistentSelectionList.Create;
   try
     if (PropertyEditorHook<>nil) and
@@ -689,6 +749,10 @@ begin
   ImgIndexItem := IDEImages.GetImageIndex('oi_item');
   Images := IDEImages.Images_16;
   HideSelection := false;
+  // The themed "selected, not focused" item is barely visible (dark themes in
+  // particular), and this tree is normally unfocused while the designer is
+  // used: draw the selection in the highlight colour, focused or not.
+  Options := Options - [tvoThemedDraw];
 end;
 
 destructor TComponentTreeView.Destroy;
@@ -992,10 +1056,15 @@ end;
 
 procedure TComponentTreeView.UpdateSelected;
 begin
+  inc(FUpdatingSelection);
   BeginUpdate;
-  Selected := Nil;
-  UpdateSelNode(Items.GetFirstNode);
-  EndUpdate;
+  try
+    Selected := Nil;
+    UpdateSelNode(Items.GetFirstNode);
+  finally
+    EndUpdate;
+    dec(FUpdatingSelection);
+  end;
 end;
 
 end.
