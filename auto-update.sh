@@ -77,6 +77,12 @@ fi
 sha256_of()   { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d" " -f1; }
 md5_of()      { if command -v md5sum >/dev/null 2>&1; then md5sum "$1" | cut -d" " -f1; else md5 -q "$1"; fi; }
 mtime_of()    { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
+# Copy an EXECUTABLE to a new inode (temp file + mv), never `cp -f` over an existing one:
+# macOS caches a binary's code signature per vnode, so a signed binary overwritten in place
+# is SIGKILLed on its next exec (exit 137, no output). Measured 2026-10-02: after a
+# --force-rebuild the copied .vpcompiler/ppca64 died on `-iTP`, the RTL Makefile then saw
+# target "-" ("The Makefile doesn't support target -") and the RTL/packages were left wiped.
+copy_exe()    { local tmp="$2.tmp.$$"; cp -f "$1" "$tmp" && chmod +x "$tmp" && mv -f "$tmp" "$2" || { rm -f "$tmp"; return 1; }; }
 mtime_human() { stat -c "%y" "$1" 2>/dev/null | cut -d. -f1 || stat -f "%Sm" -t "%Y-%m-%d %H:%M:%S" "$1" 2>/dev/null; }
 sed_inplace() { local e="$1"; shift; if sed --version >/dev/null 2>&1; then sed -i "$e" "$@"; else sed -i "" "$e" "$@"; fi; }
 abspath_of()  { readlink -f "$1" 2>/dev/null || python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$1" 2>/dev/null; }
@@ -520,7 +526,7 @@ rebuild_vp_compiler() {
     fi
     boot_dir="$LAZARUS_DIR/.vpcompiler/bootstrap"
     boot="$boot_dir/$PPC_NAME"
-    if ! mkdir -p "$boot_dir" || ! cp -f "$boot_src" "$boot" || ! chmod +x "$boot"; then
+    if ! mkdir -p "$boot_dir" || ! copy_exe "$boot_src" "$boot"; then
         VP_COMPILER_REBUILD_FAILED=1
         log_err "Cannot stage a bootstrap copy of $boot_src at $boot."
         return 1
@@ -542,7 +548,7 @@ rebuild_vp_compiler() {
     log_info "Rebuilding the compiler from source: make -C $VP_DIR/compiler all FPC=$boot (bootstrap $("$boot" -iV 2>/dev/null) $("$boot" -iD 2>/dev/null)); log: $logf"
     if ! make -C "$VP_DIR/compiler" all FPC="$boot" OPT="$opt" > "$logf" 2>&1; then
         VP_COMPILER_REBUILD_FAILED=1
-        if [ ! -x "$src" ] && cp -f "$boot" "$src" 2>/dev/null && chmod +x "$src" 2>/dev/null; then
+        if [ ! -x "$src" ] && copy_exe "$boot" "$src" 2>/dev/null; then
             log_warn "Restored the previous compiler binary at $src from the bootstrap copy"
         fi
         log_err "VibePascal compiler rebuild FAILED -- the previous compiler stays in use and the pulled compiler change is NOT in effect."
@@ -571,7 +577,7 @@ rebuild_vp_compiler() {
     # bin/$PPC_NAME (Otto's dist/linux-bin-layout.sh layout) is now a stale copy; refresh it only
     # where it already exists as a real file, so a symlinked or absent bin/ is left alone.
     if [ -f "$VP_DIR/bin/$PPC_NAME" ] && [ ! -L "$VP_DIR/bin/$PPC_NAME" ]; then
-        if cp -f "$src" "$VP_DIR/bin/$PPC_NAME" 2>/dev/null; then
+        if copy_exe "$src" "$VP_DIR/bin/$PPC_NAME" 2>/dev/null; then
             log_info "Refreshed $VP_DIR/bin/$PPC_NAME from the rebuilt compiler"
         else
             log_warn "Could not refresh $VP_DIR/bin/$PPC_NAME -- it is stale and will be ignored in favour of a private copy"
@@ -1471,7 +1477,7 @@ resolve_vp_compiler() {
         return 0
     fi
     if [ ! -f "$copy" ] || [ "$VP_COMPILER" -nt "$copy" ]; then
-        if ! cp -f "$VP_COMPILER" "$copy" 2>/dev/null; then
+        if ! copy_exe "$VP_COMPILER" "$copy" 2>/dev/null; then
             log_warn "Could not copy $VP_COMPILER to $copy -- continuing with the in-tree compiler."
             return 0
         fi
