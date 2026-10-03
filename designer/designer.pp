@@ -211,6 +211,7 @@ type
     function GetSelectedComponentClass: TRegisteredComponent;
     procedure NudgePosition(DiffX, DiffY: Integer);
     procedure NudgeSize(DiffX, DiffY: Integer);
+    function NudgeNestedSelection(DiffX, DiffY: Integer; Resize: Boolean): Boolean;
     procedure NudgeSelection(DiffX, DiffY: Integer); overload;
     procedure NudgeSelection(SelectNext: Boolean); overload;
     procedure SelectParentOfSelection;
@@ -897,6 +898,82 @@ begin
   Selection.SizeSelection(DiffX, DiffY);
   Modified;
   Form.Invalidate;
+end;
+
+function TDesigner.NudgeNestedSelection(DiffX, DiffY: Integer; Resize: Boolean): Boolean;
+// Arrow keys on components nested in a parent component (see
+// IsCopyableNestedSelection), e.g. RegisterNoIcon controls drawn inside an
+// interactive host. The designer has no bounds for them (TControlSelection
+// would move their hidden icon position), but they publish Left/Top/Width/
+// Height: move (or resize) them through those properties. A component whose
+// parent component is selected too is moved by that parent, not again.
+// Returns false, changing nothing, if the selection is not such a set.
+var
+  i: Integer;
+  AComponent, AParent: TComponent;
+  XName, YName: String;
+  Comps: TFPList;
+
+  function NumProp(AComp: TComponent; const AName: String): PPropInfo;
+  begin
+    Result:=GetPropInfo(AComp, AName);
+    if (Result<>nil) and not (Result^.PropType^.Kind in [tkInteger, tkFloat]) then
+      Result:=nil;
+  end;
+
+  procedure AddTo(AComp: TComponent; const AName: String; Delta: Integer);
+  var
+    Info: PPropInfo;
+  begin
+    if Delta=0 then exit;
+    Info:=NumProp(AComp, AName);
+    if Info^.PropType^.Kind=tkFloat then
+      SetFloatProp(AComp, Info, GetFloatProp(AComp, Info)+Delta)
+    else
+      SetOrdProp(AComp, Info, GetOrdProp(AComp, Info)+Delta);
+  end;
+
+  function ParentSelected(AComp: TComponent): Boolean;
+  begin
+    Result:=false;
+    AParent:=AComp.GetParentComponent;
+    while AParent<>nil do begin
+      if Selection.IndexOf(AParent)>=0 then exit(true);
+      if not AParent.HasParent then break;
+      AParent:=AParent.GetParentComponent;
+    end;
+  end;
+
+begin
+  Result:=false;
+  if (Selection.SelectionForm<>Form) or not IsCopyableNestedSelection then exit;
+  if Resize then begin
+    XName:='Width'; YName:='Height';
+  end else begin
+    XName:='Left'; YName:='Top';
+  end;
+  Comps:=TFPList.Create;
+  try
+    for i:=0 to Selection.Count-1 do begin
+      AComponent:=TComponent(Selection[i].Persistent);
+      if (NumProp(AComponent, XName)=nil) or (NumProp(AComponent, YName)=nil) then exit;
+      if Resize or not ParentSelected(AComponent) then
+        Comps.Add(AComponent);
+    end;
+    Result:=true;
+    for i:=0 to Comps.Count-1 do begin
+      AComponent:=TComponent(Comps[i]);
+      AddTo(AComponent, XName, DiffX);
+      AddTo(AComponent, YName, DiffY);
+      if GlobalDesignHook<>nil then
+        GlobalDesignHook.Modified(AComponent);
+    end;
+  finally
+    Comps.Free;
+  end;
+  Modified;
+  if GlobalDesignHook<>nil then
+    GlobalDesignHook.RefreshPropertyValues;
 end;
 
 function ComponentsSortByLeft(Item1, Item2: Pointer): Integer;
@@ -2900,6 +2977,18 @@ var
 
   procedure Nudge(x, y: integer);
   begin
+    // nested no-icon components (e.g. controls inside an interactive host):
+    // no neighbour selection for them, so plain arrows move them as well
+    if IsCopyableNestedSelection then
+    begin
+      if Shift = [ssShift] then
+        NudgeNestedSelection(x, y, true)
+      else if Shift = [ssCtrl, ssShift] then
+        NudgeNestedSelection(x * GetGridSizeX, y * GetGridSizeY, false)
+      else if (Shift = []) or (Shift = [ssCtrl]) then
+        NudgeNestedSelection(x, y, false);
+      exit;
+    end;
     if (ssCtrl in Shift) then
     begin
       if ssShift in Shift then
