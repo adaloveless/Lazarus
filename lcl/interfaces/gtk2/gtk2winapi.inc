@@ -4299,6 +4299,12 @@ begin
           dpiY := Round(AMonitorRect.height * 25.4 / AHmm)
         else
           dpiY := AFallback;
+        // A physical size implying less than the desktop DPI is bogus: virtual outputs
+        // (xrdp reports 1 mm per pixel = 25 dpi) would scale every form to a quarter.
+        if dpiX < AFallback then
+          dpiX := AFallback;
+        if dpiY < AFallback then
+          dpiY := AFallback;
       end;
     end;
   end;
