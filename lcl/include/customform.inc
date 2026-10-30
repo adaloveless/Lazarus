@@ -2125,7 +2125,11 @@ begin
             WndParent := APopupParent.Handle;
         end;
         if (WndParent = 0) and
-           (((Self = Application.MainForm) and Application.MainFormOnTaskBar) or (GetEffectiveShowInTaskBar = stAlways)) then
+           (((Self = Application.MainForm) and Application.MainFormOnTaskBar) or (GetEffectiveShowInTaskBar = stAlways) or
+            // MainFormOnTaskBar, before there is a main form (a login or start-up window shown before
+            // Application.CreateForm): the window is the app, so it gets its own taskbar button
+            (Application.MainFormOnTaskBar and (Application.MainForm = nil) and
+             (GetEffectiveShowInTaskBar = stDefault))) then
           ExStyle := ExStyle or WS_EX_APPWINDOW;
       end;
       Style := Style and not Cardinal(WS_GROUP or WS_TABSTOP or WS_CHILD);

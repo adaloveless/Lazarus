@@ -445,6 +445,10 @@ begin
             if Assigned(Application.MainForm) and Application.MainForm.HandleAllocated then
               Parent := Application.MainFormHandle
             else
+            // no main form yet (a login or start-up window shown before Application.CreateForm):
+            // leave it unowned so it gets its own taskbar button (WS_EX_APPWINDOW, CreateParams);
+            // owned by the hidden AppHandle it had none and could be lost behind other windows
+            if Assigned(Application.MainForm) then
               Parent := Win32WidgetSet.AppHandle;
           end;
         end;
