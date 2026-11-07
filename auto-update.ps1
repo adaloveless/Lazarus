@@ -60,6 +60,9 @@ $script:LazarusUpdated = $false
 $script:LazarusMergeFailed = $false   # c730: the origin merge was attempted and FAILED -- the tree is stale
 $script:LazarusOffMain = $false       # c730: the checkout is not on main and could not be switched
 $script:VPUpdated = $false
+$script:VPCompilerRebuilt = $false
+$script:VPCompilerSource = $null
+$script:VPToolchainPrefix = $null
 $script:CheckFailed = $false   # a Check-* helper could not read or refresh a repository; "up to date" is then not a verdict (c675)
 $script:UpstreamUpdated = $false
 # c722 -- is an 'upstream' remote configured at all, and could it be read? Reported by Miles
@@ -600,6 +603,170 @@ function Extract-VPBinaries {
     }
 }
 
+# Unpinned toolchain (2026-11-07). Windows used to RUN whatever dist\win64\LATEST.txt named, so every
+# box sat on the last release cut (v62, frozen since 2026-09-22) while the source moved on: compiler
+# fixes landed in git and never reached a Windows IDE. Linux never had this pin -- auto-update.sh
+# builds from source (c682). Same rule here, and for the WHOLE distributable toolchain, not just
+# ppcx64.exe: "make all" + "make install" from the pulled source = compiler, RTL, packages and the
+# utilities (fpcres.exe, ...), all from one source tree, plus an fpc.cfg from fpcmkcfg. The dist
+# compiler is only the bootstrap; the dist unit set (v52, which also carries ~200 stale WPO-built
+# COMPILER units) is no longer used once this succeeds. The install lives OUTSIDE both checkouts
+# (the wipe's git clean -fdx empties them every run), keyed by the source trees it was built from,
+# so an unchanged tree costs nothing. Any failure keeps the dist toolchain and says so.
+function Build-VPToolchainFromSource {
+    $script:VPCompilerSource = $null
+    $script:VPToolchainPrefix = $null
+    $bootstrap = $script:VPCompiler
+    if (-not $bootstrap -or -not (Test-Path $bootstrap)) {
+        Log-Warn "No bootstrap ppcx64.exe at '$bootstrap' -- cannot build the toolchain from source"
+        return
+    }
+    if (-not (Test-Path (Join-Path $VPDir "Makefile"))) {
+        Log-Warn "No VibePascal source tree at $VPDir -- keeping the dist toolchain"
+        return
+    }
+    $trees = Get-GitOutput -WorkDir $VPDir -GitArgs @("rev-parse", "HEAD:compiler", "HEAD:rtl", "HEAD:packages", "HEAD:utils", "HEAD:Makefile", "HEAD:Makefile.fpc")
+    if (-not $trees -or @($trees -split "\s+" | Where-Object { $_ -match '^[0-9a-f]{40}$' }).Count -ne 6) {
+        Log-Warn "Cannot read the source trees with git in $VPDir -- keeping the dist toolchain"
+        return
+    }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $key = (($sha.ComputeHash([Text.Encoding]::ASCII.GetBytes(($trees -split "\s+") -join ";")) | ForEach-Object { $_.ToString("x2") }) -join "").Substring(0, 16)
+
+    $root = Join-Path (Join-Path $env:LOCALAPPDATA "vibepascal") "toolchain"
+    $prefix = Join-Path $root $key
+    $ppc = Join-Path $prefix "bin\x86_64-win64\ppcx64.exe"
+    $doneFile = Join-Path $prefix "toolchain-complete.txt"
+
+    Log-Header "VibePascal toolchain (from source)"
+    if ((Test-Path $doneFile) -and (Test-Path $ppc)) {
+        Log-Info "Toolchain for source $key is already built: $prefix"
+    } else {
+        $make = Find-Make
+        if (-not $make) {
+            Log-Err "No usable GNU make -- cannot build the toolchain from source; keeping the dist toolchain"
+            $script:VPCompilerSource = "dist (no GNU make to build from source)"
+            return
+        }
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $partial = "$prefix.partial"
+        Remove-Item -Recurse -Force $partial -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $prefix -ErrorAction SilentlyContinue
+        $log = Join-Path $root "build-$key.log"
+        $cores = [Environment]::ProcessorCount
+        $newPpc = Join-Path $VPDir "compiler\ppcx64.exe"
+        # Run the bootstrap from a directory of its own: next to bin\ppcx64.exe sits the dist fpc.cfg,
+        # which points at the v52 unit set and its stale WPO-built compiler units.
+        $bootDir = Join-Path $root "bootstrap"
+        New-Item -ItemType Directory -Path $bootDir -Force | Out-Null
+        $bootPpc = Join-Path $bootDir "ppcx64.exe"
+        Copy-Item -Path $bootstrap -Destination $bootPpc -Force
+        Log-Info "Building compiler + RTL + packages + utilities from source $key with $make ($cores cores; bootstrap $bootstrap). Log: $log"
+        # OVERRIDEVERSIONCHECK: the top-level Makefile only accepts a 3.2.2 bootstrap; ours is 3.3.1.
+        $steps = @(
+            @{ Name = "make all";     Args = @("-C", $VPDir, "all", "PP=$bootPpc", "OVERRIDEVERSIONCHECK=1", "FPMAKEOPT=-T $cores") },
+            @{ Name = "make install"; Args = @("-C", $VPDir, "install", "PP=$newPpc", "INSTALL_PREFIX=$partial", "OVERRIDEVERSIONCHECK=1", "FPMAKEOPT=-T $cores") }
+        )
+        # FPC's Makefiles call gecho/rm/cp/... by name: they sit next to make.exe (same as Rebuild-IDE).
+        $oldPath = $env:PATH
+        $makeDir = Split-Path -Parent $make
+        if ($env:PATH -notlike "*$makeDir*") { $env:PATH = "$makeDir;$env:PATH" }
+        try {
+            foreach ($step in $steps) {
+                $stepLog = "$log.$($step.Name -replace ' ', '-')"
+                $r = Invoke-VPTool -Exe $make -WorkDir $VPDir -ToolArgs $step.Args -LogFile $stepLog
+                if ($r.ExitCode -ne 0) {
+                    $first = ($r.Output -split "`n" | Where-Object { $_ -match 'Error:|Fatal:|\*\*\*' } | Select-Object -First 1)
+                    Log-Err "Toolchain build FAILED at '$($step.Name)' (exit $($r.ExitCode)) -- keeping the dist toolchain."
+                    Log-ErrDetail "  First error: $first"
+                    Log-ErrDetail "  Log: $stepLog"
+                    $script:VPCompilerSource = "dist (source build FAILED at $($step.Name), see $stepLog)"
+                    return
+                }
+            }
+        } finally {
+            $env:PATH = $oldPath
+        }
+        $partialPpc = Join-Path $partial "bin\x86_64-win64\ppcx64.exe"
+        if (-not (Test-Path $partialPpc)) {
+            Log-Err "make install produced no $partialPpc -- keeping the dist toolchain"
+            $script:VPCompilerSource = "dist (make install produced no compiler)"
+            return
+        }
+        Move-Item -Path $partial -Destination $prefix -Force
+        # fpc.cfg next to the compiler, as an FPC install has it; basepath is the FINAL prefix.
+        $mkcfg = Join-Path $prefix "bin\x86_64-win64\fpcmkcfg.exe"
+        if (Test-Path $mkcfg) {
+            $c = Invoke-VPTool -Exe $mkcfg -WorkDir $prefix -ToolArgs @("-d", "basepath=$prefix", "-o", (Join-Path $prefix "bin\x86_64-win64\fpc.cfg")) -LogFile "$log.fpcmkcfg"
+            if ($c.ExitCode -ne 0) { Log-Warn "fpcmkcfg failed (exit $($c.ExitCode)); the IDE still gets explicit unit paths. Log: $log.fpcmkcfg" }
+        }
+
+        # The new toolchain must build and run a real program before anything uses it.
+        $probeDir = Join-Path $prefix "probe"
+        New-Item -ItemType Directory -Path $probeDir -Force | Out-Null
+        $probeSrc = Join-Path $probeDir "vpprobe.pas"
+        Set-Content -Path $probeSrc -Encoding ASCII -Value @(
+            "program vpprobe;", "{`$mode objfpc}{`$H+}", "uses SysUtils, Classes;",
+            "var L: TStringList;", "begin", "  L := TStringList.Create;", "  L.Add(IntToStr(6 * 7));",
+            "  WriteLn('vpprobe ', L[0]);", "  L.Free;", "end.")
+        $probeLog = "$log.probe"
+        $probe = Invoke-VPTool -Exe $ppc -WorkDir $probeDir -ToolArgs @("-FE$probeDir", "-FU$probeDir", $probeSrc) -LogFile $probeLog
+        $probeRun = $null
+        $probeExe = Join-Path $probeDir "vpprobe.exe"
+        if ($probe.ExitCode -eq 0 -and (Test-Path $probeExe)) {
+            $probeRun = Invoke-VPTool -Exe $probeExe -WorkDir $probeDir -ToolArgs @() -LogFile "$log.probe-run"
+        }
+        if (-not $probeRun -or $probeRun.ExitCode -ne 0 -or $probeRun.Output -notmatch 'vpprobe 42') {
+            Log-Err "The toolchain built from source failed its smoke test -- keeping the dist toolchain. Log: $probeLog"
+            Remove-Item -Recurse -Force $prefix -ErrorAction SilentlyContinue
+            $script:VPCompilerSource = "dist (source-built toolchain failed its smoke test, see $probeLog)"
+            return
+        }
+        Remove-Item -Recurse -Force $probeDir -ErrorAction SilentlyContinue
+        [IO.File]::WriteAllText($doneFile, ($trees -split "\s+" -join "`n"), (New-Object System.Text.UTF8Encoding $false))
+        Log-Ok "Built the VibePascal toolchain from source $key -> $prefix"
+        $script:VPCompilerRebuilt = $true
+
+        # Keep the three most recent toolchains.
+        Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '^[0-9a-f]{16}$' } |
+            Sort-Object LastWriteTime -Descending | Select-Object -Skip 3 |
+            ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
+    }
+
+    $script:VPToolchainPrefix = $prefix
+    $script:VPCompiler = $ppc
+    Log-Ok "Using the toolchain built from source $key ($ppc)"
+    $script:VPCompilerSource = "built from source $key ($prefix)"
+}
+
+# Run a native tool with its stdout+stderr captured to a log file. Process-based like Invoke-Git:
+# under Windows PowerShell 5.1 with $ErrorActionPreference = "Stop", redirecting a native
+# command's stderr turns its first line into a terminating error.
+function Invoke-VPTool {
+    param([string]$Exe, [string]$WorkDir, [string[]]$ToolArgs, [string]$LogFile)
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $Exe
+    $psi.Arguments = ($ToolArgs | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
+    $psi.WorkingDirectory = $WorkDir
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    try {
+        $proc = [System.Diagnostics.Process]::Start($psi)
+    } catch {
+        Set-Content -Path $LogFile -Value "failed to start $Exe`: $($_.Exception.Message)" -ErrorAction SilentlyContinue
+        return @{ Output = ""; ExitCode = -1 }
+    }
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $stderr = $stderrTask.GetAwaiter().GetResult()
+    $proc.WaitForExit()
+    Set-Content -Path $LogFile -Value ($stdout + $stderr) -ErrorAction SilentlyContinue
+    return @{ Output = $stdout + $stderr; ExitCode = $proc.ExitCode }
+}
+
 $VPCfgPath = Join-Path $VPDir "vibepascal-win64-native.cfg"
 
 function Get-VPUnitPaths {
@@ -607,6 +774,14 @@ function Get-VPUnitPaths {
     # file. Wildcards like packages\*\units\x86_64-win64 do not reliably expand on Windows fpc.cfg,
     # and a path with no .ppu contributes nothing but noise. Parent "units" (no target subfolder)
     # never contains ppus and must not be included.
+    # A toolchain built from source (Build-VPToolchainFromSource) is complete on its own: its
+    # install tree holds the RTL and every package. Never mix it with the dist unit set.
+    if ($script:VPToolchainPrefix) {
+        $tcUnits = Join-Path $script:VPToolchainPrefix "units\x86_64-win64"
+        return @(Get-ChildItem -Path $tcUnits -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Get-ChildItem -Path $_.FullName -Filter *.ppu -ErrorAction SilentlyContinue | Select-Object -First 1 } |
+            ForEach-Object { $_.FullName })
+    }
     $tarballUnits = Join-Path $VPDir "units\x86_64-win64"
     $rtlUnits = Join-Path $VPDir "rtl\units\x86_64-win64"
     $pkgRoot = Join-Path $VPDir "packages"
@@ -2193,6 +2368,9 @@ function Print-Summary {
     } else {
         Write-Host "VibePascal version: UNKNOWN -- $VPDir\dist\...\LATEST.txt is missing or unreadable. This is NOT 'unchanged'."
     }
+    if ($script:VPCompilerSource) {
+        Write-Host "VibePascal compiler: $($script:VPCompilerSource)"
+    }
 
     # The two HEAD lines above describe the SOURCE. This one describes the BINARY.
     Report-IdeBinaryStaleness
@@ -2998,6 +3176,7 @@ if ($Doctor) {
 if ($ResetConfig) {
     Reset-LazarusConfig
     Extract-VPBinaries
+    Build-VPToolchainFromSource
     Configure-Environment
     $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
     if ($quality.Quality -ne "Compatible") {
@@ -3026,6 +3205,7 @@ if ($ResetConfig) {
 
 if ($Setup) {
     Extract-VPBinaries
+    Build-VPToolchainFromSource
     Configure-Environment
     $quality = Test-LazarusDirectoryQuality -Dir $LazarusDir
     if ($quality.Quality -ne "Compatible") {
@@ -3099,13 +3279,16 @@ if (-not $UpstreamOnly) {
         Log-Info "Re-extracting VibePascal binaries after VP source update"
         Extract-VPBinaries
     }
+    if (-not $NoBuild) {
+        Build-VPToolchainFromSource
+    }
 }
 Ensure-LazarusOnMain   # main only, before pulling origin
 Pull-LazarusOrigin
 
 Relaunch-IfUpdated -PreHash $scriptPreHash
 
-$anyUpdated = $script:VPUpdated -or $script:LazarusUpdated
+$anyUpdated = $script:VPUpdated -or $script:LazarusUpdated -or $script:VPCompilerRebuilt
 
 $missingBuildProducts = @()
 foreach ($buildProduct in @("lazbuild.exe", "lazarus.exe")) {
