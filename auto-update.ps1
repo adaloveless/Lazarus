@@ -2942,10 +2942,12 @@ function Configure-Environment {
 
     $vpUnitsDir = Join-Path $VPDir "units"
     $vpBinDir = Join-Path $VPDir "bin"
-    $vpCompilerPath = Join-Path $vpBinDir "ppcx64.exe"
-
-    if (-not (Test-Path $vpCompilerPath)) {
-        $vpCompilerPath = $VPCompiler
+    # $VPCompiler is the toolchain built from source (Build-VPToolchainFromSource). bin\ppcx64.exe
+    # is only the dist bootstrap and is always present, so preferring it left CompilerFilename on
+    # the old dist release (v62) and every IDE/lazbuild project build kept using it.
+    $vpCompilerPath = $VPCompiler
+    if (-not $vpCompilerPath -or -not (Test-Path $vpCompilerPath)) {
+        $vpCompilerPath = Join-Path $vpBinDir "ppcx64.exe"
     }
 
     if (Test-Path $envOptsFile) {
